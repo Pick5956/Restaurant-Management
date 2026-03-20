@@ -8,7 +8,7 @@ import (
 )
 
 func SetupAuthRoutes(r *gin.RouterGroup) {
-	userCtrl := controller.ProvideUserController(config.DB())
+	userCtrl := controller.ProvideUserController(config.DB()) //setup method
 	r.POST("/login", userCtrl.Login)
 	r.POST("/register", userCtrl.Register)
 }
