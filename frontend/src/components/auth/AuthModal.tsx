@@ -73,7 +73,7 @@ const InputField = ({
 
                 {value.length > 0 && onClear && (
                     <button
-                        type="button" onClick={onClear} title="ล้างข้อความ"
+                        type="button" onClick={onClear} title="ล้างข้อความ" tabIndex={-1}
                         className={`absolute ${showPasswordToggle ? 'right-11' : 'right-3'} top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full focus:outline-none transition-all`}
                     >
                         <ClearIcon />
@@ -82,7 +82,7 @@ const InputField = ({
 
                 {showPasswordToggle && (
                     <button
-                        type="button" onClick={onTogglePassword} title={isPasswordVisible ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                        type="button" onClick={onTogglePassword} title={isPasswordVisible ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} tabIndex={-1}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors"
                     >
                         {isPasswordVisible ? <EyeSlashIcon /> : <EyeIcon />}
@@ -174,8 +174,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = "login" }: Au
                     if (token) {
                         authRepository.setToken(token, tokenType);
                     }
-                    
-                    router.push("/dashboard");
+
+                    onClose();
+                    router.push("/home");
                 } else {
                     setError("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง");
                 }

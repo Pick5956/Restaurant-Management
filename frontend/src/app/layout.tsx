@@ -2,11 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import { Kanit } from "next/font/google";
-import { AuthProvider } from "../providers/AuthProvider";
-import { SidebarProvider } from "../providers/SidebarProvider";
-import Sidebar from "../components/shared/Sidebar";
-import MobileTopBar from "../components/shared/MobileTopBar";
-import ContentWrapper from "../components/shared/ContentWrapper";
+import { AuthProvider } from "@/src/providers/AuthProvider";
+import { ThemeProvider } from "@/src/providers/ThemeProvider";
 
 const fontKanit = Kanit({
   subsets: ["thai", "latin"],
@@ -26,21 +23,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th">
+    <html lang="th" suppressHydrationWarning>
       <body className={fontKanit.className}>
-        <AuthProvider>
-          <SidebarProvider>
-            {/* Sidebar renders itself as fixed — no wrapper div needed */}
-            <Sidebar />
-
-            {/* Content area: margin-left = sidebar width (animated in ContentWrapper) */}
-            <ContentWrapper>
-              {/* Mobile sticky topbar — hidden on desktop */}
-              <MobileTopBar />
-              <main>{children}</main>
-            </ContentWrapper>
-          </SidebarProvider>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSidebar } from '@/src/providers/SidebarProvider';
+import { useAuth } from '@/src/providers/AuthProvider';
+import { useTheme } from '@/src/providers/ThemeProvider';
 
 const NAV = [
   {
@@ -100,22 +102,81 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   );
 }
 
-// ── store footer ──────────────────────────────────────────────────────────────
-function StoreFooter() {
+// ── user footer ──────────────────────────────────────────────────────────────
+function UserFooter({ collapsed }: { collapsed: boolean }) {
+  const { user, logout } = useAuth();
+  const initials = user ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.toUpperCase() : "?";
+  const displayName = user ? `${user.first_name} ${user.last_name}` : "ผู้ใช้งาน";
+
+  if (collapsed) {
+    return (
+      <div className="px-3 py-4 border-t border-gray-100 dark:border-gray-800 shrink-0 flex flex-col items-center gap-2">
+        <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400 text-xs font-bold shrink-0">
+          {initials}
+        </div>
+        <ThemeToggle />
+        <button
+          onClick={logout}
+          title="ออกจากระบบ"
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-800 shrink-0">
-      <div className="flex items-center gap-3 p-3 rounded-2xl bg-orange-50 dark:bg-orange-900/20">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white text-xs font-black shadow shrink-0">R</div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">ร้านอาหาร Demo</p>
-          <p className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold">แผนทดลองใช้</p>
+      <div className="flex items-center gap-3 px-2 py-2 rounded-xl group">
+        <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400 text-xs font-bold shrink-0">
+          {initials}
         </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{displayName}</p>
+          <p className="text-[10px] text-gray-400 truncate">{user?.email ?? ""}</p>
+        </div>
+        <button
+          onClick={logout}
+          title="ออกจากระบบ"
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
       </div>
     </div>
   );
 }
 
 // ── main export ───────────────────────────────────────────────────────────────
+function ThemeToggle({ className = "" }: { className?: string }) {
+  const { theme, toggle } = useTheme();
+  return (
+    <button
+      onClick={toggle}
+      title={theme === 'dark' ? 'สลับเป็น Light mode' : 'สลับเป็น Dark mode'}
+      className={`p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors shrink-0 ${className}`}
+    >
+      {theme === 'dark' ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export default function Sidebar() {
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
 
@@ -141,24 +202,32 @@ export default function Sidebar() {
         {/* Mobile drawer header — brand only, no collapse button */}
         <div className="flex items-center justify-between h-14 px-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-black text-sm shadow-md">R</div>
-            <span className="font-extrabold text-gray-900 dark:text-white text-sm tracking-tight leading-tight">
-              RESTAURANT<br /><span className="text-orange-500">HUB</span>
-            </span>
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/>
+                <path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3"/><path d="M21 15v7"/>
+              </svg>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-gray-400 dark:text-gray-500 leading-none">Restaurant</p>
+              <p className="text-sm font-black tracking-tight text-gray-900 dark:text-white leading-snug">HUB</p>
+            </div>
           </div>
-          {/* Close button — only an X, no overlap */}
-          <button
-            onClick={() => setMobileOpen(false)}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-5 h-5">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-5 h-5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
-        <StoreFooter />
+        <UserFooter collapsed={false} />
       </aside>
 
       {/* ══ DESKTOP ═════════════════════════════════════════════════════════ */}
@@ -174,30 +243,39 @@ export default function Sidebar() {
         transition-[width] duration-200 ease-out will-change-[width] overflow-hidden
         ${collapsed ? 'w-[68px]' : 'w-60'}
       `}>
-        {/* Desktop header — brand + collapse toggle */}
+        {/* Desktop header */}
         <div className={`flex items-center h-14 px-3 border-b border-gray-100 dark:border-gray-800 shrink-0 ${collapsed ? 'justify-center' : 'justify-between'}`}>
           {!collapsed && (
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-black text-sm shadow-md shrink-0">R</div>
-              <span className="font-extrabold text-gray-900 dark:text-white text-sm tracking-tight leading-tight whitespace-nowrap">
-                RESTAURANT<br /><span className="text-orange-500">HUB</span>
-              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/>
+                  <path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3"/><path d="M21 15v7"/>
+                </svg>
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-gray-400 dark:text-gray-500 leading-none whitespace-nowrap">Restaurant</p>
+                <p className="text-sm font-black tracking-tight text-gray-900 dark:text-white leading-snug whitespace-nowrap">HUB</p>
+              </div>
             </div>
           )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors shrink-0"
-            title={collapsed ? 'ขยาย sidebar' : 'ย่อ sidebar'}
-          >
-            {collapsed
-              ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-4 h-4"><polyline points="9 18 15 12 9 6"/></svg>
-              : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-4 h-4"><polyline points="15 18 9 12 15 6"/></svg>
-            }
-          </button>
+          <div className="flex items-center gap-0.5">
+            {!collapsed && <ThemeToggle />}
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors shrink-0"
+              title={collapsed ? 'ขยาย sidebar' : 'ย่อ sidebar'}
+            >
+              {collapsed
+                ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-4 h-4"><polyline points="9 18 15 12 9 6"/></svg>
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-4 h-4"><polyline points="15 18 9 12 15 6"/></svg>
+              }
+            </button>
+          </div>
         </div>
 
         <NavLinks collapsed={collapsed} />
-        {!collapsed && <StoreFooter />}
+        <UserFooter collapsed={collapsed} />
       </aside>
     </>
   );

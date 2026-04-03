@@ -1,29 +1,25 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// กำหนดหน้าที่จะ "ล็อค" (ต้องล็อกอินถึงจะเข้าได้)
-// สามารถเพิ่ม path อื่นๆ ลงใน Array นี้ได้เลยครับ
-const protectedRoutes = ['/dashboard', '/settings', '/profile'];
-
-// หน้าที่ให้เฉพาะคน "ยังไม่ล็อกอิน" เข้า (ตอนนี้ไม่มีแล้ว เพราะ Home ก็ใช้ดูเป็น Dashboard ได้เลย)
-const authRoutes: string[] = [];
+// หน้าที่ต้อง login ก่อนถึงจะเข้าได้
+const protectedRoutes = ['/home', '/orders', '/tables', '/menu', '/inventory', '/staff', '/reports', '/settings', '/dashboard', '/profile'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
-  // Get token from cookies
   const token = request.cookies.get('token')?.value;
 
-  // ตรวจสอบว่า path ปัจจุบันอยู่ในกลุ่ม 'หน้าล็อค' หรือไม่
-  // (ใช้ .startsWith() เพื่อให้ครอบคลุม path ลูกๆ ด้วย เช่น /dashboard/projects)
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
+  const isProtected = protectedRoutes.some(route => pathname.startsWith(route));
 
-  // 1. ถ้าไม่ได้ล็อกอิน และกำลังเข้า 'หน้าล็อค'
-  if (!token && isProtectedRoute) {
+  // ยังไม่ login แล้วพยายามเข้าหน้าที่ต้องล็อค → กลับไปหน้า landing
+  if (!token && isProtected) {
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  // login แล้วแต่เข้าหน้า landing → ไปที่ dashboard
+  if (token && pathname === '/') {
     return NextResponse.redirect(new URL('/home', request.url));
   }
 
-  // ถ้าไม่ใช่ 2 กรณีด้านบน ก็ปล่อยผ่านให้แสดงหน้าเว็บปกติได้เลย!
   return NextResponse.next();
 }
 

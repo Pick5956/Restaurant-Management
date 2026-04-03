@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = () => {
     authRepository.clearToken();
     setUser(null);
-    window.location.href = '/home'; // Graceful redirect after logout
+    window.location.href = '/';
   };
 
   const openLoginModal = () => setIsLoginModalOpen(true);
