@@ -108,6 +108,56 @@ describe("aiThreads — the active chat and its caches", () => {
     expect(threads.loadThreadCache(BASE, "a1")).toBeNull();
   });
 
+  // A chat with no server id yet caches under a slot of its own, and everything
+  // typed before the first answer lands there. Once the server issues an id the
+  // transcript moves to that id — and the unsent slot has to be emptied, or the
+  // next "new chat" opens on the leftovers instead of a clean page.
+  it("empties the unsent slot when a chat gains its server id", () => {
+    threads.saveThreadCache(BASE, null, [
+      { id: "welcome", role: "assistant", content: "สวัสดี" },
+      { id: "q1", role: "user", content: "สรุปร้าน" },
+    ]);
+    expect(threads.loadThreadCache(BASE, null)).toHaveLength(2);
+
+    threads.adoptUnsentThread(BASE, "abc123", [
+      { id: "welcome", role: "assistant", content: "สวัสดี" },
+      { id: "q1", role: "user", content: "สรุปร้าน" },
+      { id: "a1", role: "assistant", content: "วันนี้ขายได้ 4,061 บาท" },
+    ]);
+    threads.setActiveThread(BASE, "abc123");
+
+    expect(threads.loadThreadCache(BASE, "abc123")).toHaveLength(3);
+    expect(threads.loadThreadCache(BASE, null)).toBeNull();
+  });
+
+  // Every browser that hit the bug above is still carrying the leftover, and a
+  // fix that only stops new ones would leave those owners staring at the same
+  // stale page. The unsent slot ages out on its own in half an hour, so they
+  // heal without being told to clear anything.
+  it("forgets an unsent chat that is hours old, but keeps a real one", () => {
+    const stale = (baseKey: string, id: string | null, ageMs: number) => {
+      threads.saveThreadCache(baseKey, id, [
+        { id: "welcome", role: "assistant", content: "สวัสดี" },
+        { id: "q1", role: "user", content: "สรุปร้าน" },
+      ]);
+      const key = threads.threadKey(baseKey, id)!;
+      const entry = JSON.parse(storage.getItem(key)!);
+      entry.savedAt = Date.now() - ageMs;
+      storage.setItem(key, JSON.stringify(entry));
+    };
+
+    stale(BASE, null, 3 * 60 * 60 * 1000);
+    expect(threads.loadThreadCache(BASE, null)).toBeNull();
+
+    // A minute-old draft is exactly what the slot is for, so it survives.
+    stale(BASE, null, 60 * 1000);
+    expect(threads.loadThreadCache(BASE, null)).toHaveLength(2);
+
+    // A chat with a server id keeps the full seven days it always had.
+    stale(BASE, "abc123", 3 * 60 * 60 * 1000);
+    expect(threads.loadThreadCache(BASE, "abc123")).toHaveLength(2);
+  });
+
   // The pre-list app kept one thread at the base key with the server id beside
   // it. On first load that thread becomes the cache of its conversation and the
   // active chat, so the owner opens the app on the chat they were in.

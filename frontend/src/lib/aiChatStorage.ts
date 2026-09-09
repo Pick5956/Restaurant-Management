@@ -86,13 +86,13 @@ export function chatStorageKey(restaurantId?: number | null, userId?: number | n
 
 // Load the stored message array if it exists and is still fresh; otherwise remove
 // the expired entry and return null. Returns raw messages for the caller to hydrate.
-export function loadStoredMessages<T = unknown>(key: string | null): T[] | null {
+export function loadStoredMessages<T = unknown>(key: string | null, maxAgeMs: number = CHAT_HISTORY_TTL_MS): T[] | null {
   if (typeof window === "undefined" || !key) return null;
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const entry = JSON.parse(raw) as ChatEnvelope<T>;
-    if (!entry.savedAt || Date.now() - entry.savedAt > CHAT_HISTORY_TTL_MS) {
+    if (!entry.savedAt || Date.now() - entry.savedAt > maxAgeMs) {
       localStorage.removeItem(key);
       return null;
     }
