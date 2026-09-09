@@ -151,7 +151,15 @@ export default function AIAssistantScreen() {
   const generation = useRef(0);
 
   const hasPermission = useCallback((permission: string) => can(activeMembership, permission), [activeMembership]);
-  const welcome = welcomeFor(language, ownerTitle);
+  // One roll for as long as the screen is open. Rolling inside the render would
+  // reword the greeting on every state change — the owner would watch it shuffle
+  // as they typed — and the date is read here rather than inside welcomeFor so
+  // the wording is settled by the same rule.
+  const greetingRoll = useRef(Math.random()).current;
+  const welcome = useMemo(
+    () => welcomeFor(language, ownerTitle, new Date(), greetingRoll),
+    [greetingRoll, language, ownerTitle],
+  );
   const suggestions = language === 'th' ? SUGGESTIONS_TH : SUGGESTIONS_EN;
   const busy = loading || threadLoading;
   // The floating header's height: the status bar plus one button row.
@@ -640,7 +648,7 @@ export default function AIAssistantScreen() {
         <View style={{ flex: 1, alignSelf: 'center', width: '100%', maxWidth: wide ? 760 : undefined }}>
           {empty ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 22, paddingHorizontal: 24, paddingTop: headerHeight, paddingBottom: composerHeight }}>
-              <AIOrb size={128} speed={20} style={{ shadowColor: ai.orange, shadowOpacity: 0.4, shadowRadius: 25, shadowOffset: { width: 0, height: 15 } }} />
+              <AIOrb size={128} speed={20} interactive style={{ shadowColor: ai.orange, shadowOpacity: 0.4, shadowRadius: 25, shadowOffset: { width: 0, height: 15 } }} />
               <Text style={{ fontSize: 19, fontWeight: '600', color: '#0a0a0a', textAlign: 'center' }}>{welcome}</Text>
             </View>
           ) : (
