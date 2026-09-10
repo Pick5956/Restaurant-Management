@@ -245,10 +245,10 @@ export default function InventoryScreen() {
         />
       ) : (
         <FloatingHeader
+          centered
           backLabel={t('ย้อนกลับ', 'Back')}
           onBack={() => router.back()}
           title={t('คลังวัตถุดิบ', 'Inventory')}
-          subtitle={t(`${totals.all.toLocaleString(locale)} รายการ · ${totals.needsOrder.toLocaleString(locale)} ต้องตรวจสอบ`, `${totals.all.toLocaleString(locale)} items · ${totals.needsOrder.toLocaleString(locale)} need attention`)}
           trailing={canManage ? <GlassButton icon="ellipsis-horizontal" label={t('จัดการคลัง', 'Manage inventory')} onPress={() => setSheet({ kind: 'manage' })} /> : undefined}
           rail={rail}
         />
@@ -263,7 +263,7 @@ export default function InventoryScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อ, SKU หรือหมวด', 'Search name, SKU or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
             <View>
-              <SquareButton icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
+              <SquareButton size={50} icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
               {filtersActive ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}
             </View>
           </View>

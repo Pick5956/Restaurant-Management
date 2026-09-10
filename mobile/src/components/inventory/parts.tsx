@@ -121,9 +121,9 @@ export function Segmented<T extends string>({
         const on = option.value === value;
         const inner = (
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? palette.textStrong : palette.muted }}>{option.label}</Text>
+            <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? '#FFFFFF' : palette.muted }}>{option.label}</Text>
             {option.count !== undefined ? (
-              <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? palette.primaryInk : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
+              <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? 'rgba(255,255,255,0.8)' : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
             ) : null}
           </View>
         );
@@ -136,15 +136,9 @@ export function Segmented<T extends string>({
             style={{ flex: 1 }}
           >
             {on ? (
-              LIQUID_GLASS ? (
-                <GlassView glassEffectStyle="regular" colorScheme="light" tintColor="rgba(255,255,255,0.6)" style={{ flex: 1, borderRadius: 12, flexDirection: 'row' }}>
-                  {inner}
-                </GlassView>
-              ) : (
-                <View style={{ flex: 1, borderRadius: 12, backgroundColor: palette.surface, flexDirection: 'row', shadowColor: '#3d2b1f', shadowOpacity: 0.14, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2 }}>
-                  {inner}
-                </View>
-              )
+              <View style={{ flex: 1, borderRadius: 12, backgroundColor: palette.textStrong, flexDirection: 'row', shadowColor: '#3d2b1f', shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
+                {inner}
+              </View>
             ) : (
               <View style={{ flex: 1, flexDirection: 'row' }}>{inner}</View>
             )}
@@ -208,18 +202,18 @@ export function CheckBox({ checked }: { checked: boolean }) {
 }
 
 /** A 44px rounded-square button: solid orange for the primary act, glass for the rest. */
-export function SquareButton({ icon, label, onPress, primary, disabled }: { icon: AppIconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
-  const shape = { width: 44, height: 44, borderRadius: 14, alignItems: 'center' as const, justifyContent: 'center' as const };
+export function SquareButton({ icon, label, onPress, primary, disabled, size = 44 }: { icon: AppIconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean; size?: number }) {
+  const shape = { width: size, height: size, borderRadius: Math.round(size * 0.32), alignItems: 'center' as const, justifyContent: 'center' as const };
   if (primary) {
     return (
       <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : disabled ? 0.5 : 1 })}>
         {LIQUID_GLASS ? (
           <GlassView glassEffectStyle="regular" isInteractive colorScheme="light" tintColor="rgba(194,65,12,0.86)" style={shape}>
-            <AppIcon name={icon} size={22} color="#ffffff" />
+            <AppIcon name={icon} size={Math.round(size * 0.5)} color="#ffffff" />
           </GlassView>
         ) : (
           <View style={{ ...shape, backgroundColor: palette.primary, shadowColor: palette.primary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
-            <AppIcon name={icon} size={22} color="#ffffff" />
+            <AppIcon name={icon} size={Math.round(size * 0.5)} color="#ffffff" />
           </View>
         )}
       </Pressable>
@@ -228,7 +222,7 @@ export function SquareButton({ icon, label, onPress, primary, disabled }: { icon
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
       <GlassLayer style={shape} fallback={palette.surface} fallbackBorder={palette.border}>
-        <AppIcon name={icon} size={20} color={palette.muted} />
+        <AppIcon name={icon} size={Math.round(size * 0.45)} color={palette.muted} />
       </GlassLayer>
     </Pressable>
   );
@@ -278,9 +272,7 @@ export function IngredientCard({
         </View>
         <LevelBar item={item} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <View style={{ maxWidth: '50%', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: palette.surfaceStrong }}>
-            <Text numberOfLines={1} style={{ fontSize: 11.5, color: palette.muted }}>{item.category?.name ?? t('ไม่มีหมวด', 'Uncategorised')}</Text>
-          </View>
+          <Text numberOfLines={1} style={{ maxWidth: '50%', fontSize: 11.5, fontWeight: '600', color: palette.muted }}>{item.category?.name ?? t('ไม่มีหมวด', 'Uncategorised')}</Text>
           <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: palette.placeholder }}>
             {Number(item.min_stock) > 0 ? t(`ขั้นต่ำ ${fmt(item.min_stock, locale)} ${item.unit}`, `Min ${fmt(item.min_stock, locale)} ${item.unit}`) : t('ยังไม่ตั้งขั้นต่ำ', 'No reorder level')}
           </Text>
