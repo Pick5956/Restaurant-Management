@@ -1101,9 +1101,10 @@ export function BottomSheet({
   const between = (atRest: number, atFull: number) =>
     lift ? lift.interpolate({ inputRange: [0, 1], outputRange: [atRest, atFull] }) : atFull;
   const sideInset = between(CARD_INSET, 0);
-  // Off the bottom by the same gap as the sides, and clear of the home
-  // indicator, which the card would otherwise sit on.
-  const bottomInset = between(CARD_INSET + insets.bottom, 0);
+  // Off the bottom by exactly the gap it has at the sides — the owner's call
+  // over clearing the home indicator, which made the gap read as a margin
+  // rather than a frame.
+  const bottomInset = between(CARD_INSET, 0);
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
   const bottomPadding = between(10, insets.bottom + 6);
