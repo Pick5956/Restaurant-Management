@@ -154,6 +154,7 @@ export default function IngredientDetailScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: palette.canvas }}>
       <FloatingHeader
+        centered
         backLabel={t('ย้อนกลับ', 'Back')}
         onBack={() => router.back()}
         title={item?.name ?? t('รายละเอียดวัตถุดิบ', 'Ingredient details')}

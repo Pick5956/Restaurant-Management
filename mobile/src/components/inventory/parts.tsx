@@ -118,13 +118,19 @@ export function FloatingHeader({
 }) {
   const insets = useSafeAreaInsets();
   const solidTo = headerBlockHeight(Boolean(bar), Boolean(rail));
+  // How much room the title has to leave at each end. The back button is always
+  // 46 across; the trailing control is whatever the screen put there — a round
+  // button, or "เลือกทั้งหมด", which is twice as wide. Reserving the wider of
+  // the two at BOTH ends is what keeps the title on the screen's centre line
+  // while keeping it clear of either control.
+  const [reserve, setReserve] = useState(HEADER_BUTTON);
   return (
     <>
       <GlassHeaderPane top={insets.top} solidTo={solidTo} fade={HEADER_FADE} />
       <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, paddingTop: insets.top + HEADER_PAD_TOP, paddingHorizontal: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           {centered ? (
-            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 96 }}>
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: reserve + 12 }}>
               <Text numberOfLines={1} style={{ fontSize: 18, fontWeight: '700', color: palette.textStrong, lineHeight: 24 }}>{title}</Text>
               {subtitle ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>{subtitle}</Text> : null}
             </View>
@@ -138,7 +144,9 @@ export function FloatingHeader({
               </>
             ) : null}
           </View>
-          {trailing ?? <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />}
+          <View onLayout={(event) => setReserve(Math.max(HEADER_BUTTON, Math.round(event.nativeEvent.layout.width)))}>
+            {trailing ?? <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />}
+          </View>
         </View>
         {bar ? <View style={{ marginTop: HEADER_ROW_GAP, height: SEARCH_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{bar}</View> : null}
         {rail ? <View style={{ marginTop: HEADER_ROW_GAP }}>{rail}</View> : null}
