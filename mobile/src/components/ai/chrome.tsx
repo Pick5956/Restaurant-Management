@@ -68,12 +68,25 @@ export function GlassButton({
   size?: number;
 }) {
   const icon_ = <AppIcon name={icon} size={size * 0.46} color={active ? ai.deep : ai.ink} />;
+  // The shadow waits for the glass. iOS draws a view's shadow from its actual
+  // shape, and the glass module only builds its material in the first layout
+  // pass — until then the view is a plain rectangle, so a button that mounts
+  // mid-animation (the back button as a settings page slides in) flashed a
+  // square shadow for a frame or two before the round one took over. Holding
+  // the shadow back until the first layout has been reported avoids the flash;
+  // without glass there is nothing to wait for.
+  const [shadowReady, setShadowReady] = useState(!LIQUID_GLASS);
+  const onFirstLayout = () => {
+    if (shadowReady) return;
+    requestAnimationFrame(() => setShadowReady(true));
+  };
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={badge ? `${label} ${badge}` : label}
       hitSlop={8}
       onPress={onPress}
+      onLayout={onFirstLayout}
       style={({ pressed }) => ({
         width: size,
         height: size,
@@ -83,7 +96,7 @@ export function GlassButton({
         // Whatever is behind the header is blurred, so the button needs its own
         // edge to read as an object rather than part of the haze.
         shadowColor: '#3d2b1f',
-        shadowOpacity: 0.24,
+        shadowOpacity: shadowReady ? 0.24 : 0,
         shadowRadius: 9,
         shadowOffset: { width: 0, height: 3 },
       })}
