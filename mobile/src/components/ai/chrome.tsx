@@ -23,10 +23,6 @@ import { ai } from './theme';
 // the screen never asks which platform it is on.
 export const LIQUID_GLASS = isLiquidGlassAvailable();
 
-// How long a freshly mounted glass view takes to show its material. Measured
-// by eye on an iPhone: a square shadow was visible for about a second.
-const GLASS_SETTLE_MS = 1100;
-
 /**
  * A panel in the same material as the buttons: real glass on iOS 26, the
  * frosted white surface everywhere else. `style` is the shape both share;
@@ -73,23 +69,12 @@ export function GlassButton({
   size?: number;
 }) {
   const icon_ = <AppIcon name={icon} size={size * 0.46} color={active ? ai.deep : ai.ink} />;
-  // The shadow waits for the glass. iOS draws a view's shadow from the shape
-  // it has actually rendered, and the glass material takes most of a second
-  // to appear after the view mounts — until then the view is a plain
-  // rectangle, so a button arriving mid-animation (the back button as a
-  // settings page slides in) wore a square shadow for that whole second.
-  //
-  // An opaque disc under the glass would give iOS a round shadow at once, but
-  // it also turns the button into a flat disc, and the owner wants the real
-  // glass everywhere. So instead the shadow simply stays off until the glass
-  // has had its second. A soft shadow arriving late is invisible; a square one
-  // arriving early was not. Without glass there is nothing to wait for.
-  const [shadowReady, setShadowReady] = useState(!LIQUID_GLASS);
-  useEffect(() => {
-    if (shadowReady) return;
-    const timer = setTimeout(() => setShadowReady(true), GLASS_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [shadowReady]);
+  // The shadow is here from the first frame, and it is round from the first
+  // frame, because the glass is told its corner radius through props rather
+  // than through `style` — see GlassPanel below. iOS builds a shadow from the
+  // shape the layer really has: with the radius only in style the glass stayed
+  // square for as long as it took the material to appear, which is why this
+  // button used to hold its shadow back for a second and then land it late.
   return (
     <Pressable
       accessibilityRole="button"
@@ -105,24 +90,22 @@ export function GlassButton({
         // Whatever is behind the header is blurred, so the button needs its own
         // edge to read as an object rather than part of the haze.
         shadowColor: '#3d2b1f',
-        shadowOpacity: shadowReady ? 0.24 : 0,
+        shadowOpacity: 0.24,
         shadowRadius: 9,
         shadowOffset: { width: 0, height: 3 },
       })}
     >
       {LIQUID_GLASS ? (
-        <GlassView
-          glassEffectStyle="regular"
-          isInteractive
-          // The screen is light-only, so the glass must not follow a dark system theme.
-          colorScheme="light"
+        <GlassPanel
+          radius={size / 2}
           // A fixed lift, never a state colour: changing this at runtime leaves the
           // native view wearing the old one.
-          tintColor="rgba(255,255,255,0.42)"
-          style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' }}
+          tint="rgba(255,255,255,0.42)"
+          fallback="transparent"
+          style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
         >
           {icon_}
-        </GlassView>
+        </GlassPanel>
       ) : (
         <View
           style={{

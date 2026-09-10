@@ -45,6 +45,14 @@ const HEADER_FADE = 15;
 const HEADER_ROW = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_ROW_PADDING_BOTTOM;
 const CONTENT_TOP = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE + 10;
 
+// From here up the sheet is wide enough to hold the list and a subject side by
+// side, so it stops sliding pages over one another: an iPad in portrait is 834
+// points across, and even that has room for both.
+const SPLIT_AT = 768;
+const SIDEBAR = 330;
+/** A settings page reads at a column's width, not a tablet's. */
+const DETAIL_MAX = 680;
+
 const ACTION_LABELS: Record<AIActionType, { th: string; en: string }> = {
   set_menu_availability: { th: 'เปิด/ปิดขายเมนู', en: 'Menu availability' },
   set_menu_price: { th: 'เปลี่ยนราคาเมนู', en: 'Menu price' },
@@ -87,6 +95,7 @@ function Row({
   toggle,
   disabled,
   first,
+  selected,
 }: {
   icon?: AppIconName;
   label: string;
@@ -97,6 +106,8 @@ function Row({
   toggle?: { on: boolean; onChange: (next: boolean) => void };
   disabled?: boolean;
   first?: boolean;
+  /** The row whose page is open beside it, on the split layout. */
+  selected?: boolean;
 }) {
   const body = (
     <View
@@ -110,9 +121,9 @@ function Row({
         opacity: disabled ? 0.45 : 1,
       }}
     >
-      {icon ? <AppIcon name={icon} size={22} color={ai.body} /> : null}
+      {icon ? <AppIcon name={icon} size={22} color={selected ? ai.deep : ai.body} /> : null}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 16, color: ai.ink }}>{label}</Text>
+        <Text style={{ fontSize: 16, fontWeight: selected ? '600' : '400', color: selected ? ai.deep : ai.ink }}>{label}</Text>
         {detail ? <Text style={{ fontSize: 12.5, color: ai.faded, marginTop: 1 }}>{detail}</Text> : null}
       </View>
       {value ? <Text style={{ fontSize: 15, color: ai.faded, maxWidth: 150 }} numberOfLines={1}>{value}</Text> : null}
@@ -131,7 +142,13 @@ function Row({
   return (
     <View style={{ borderTopWidth: first ? 0 : 1, borderTopColor: '#f1f0ee' }}>
       {onPress ? (
-        <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? '#f6f4f0' : 'transparent' })}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: Boolean(selected) }}
+          disabled={disabled}
+          onPress={onPress}
+          style={({ pressed }) => ({ backgroundColor: selected ? ai.orangeSoft : pressed ? '#f6f4f0' : 'transparent' })}
+        >
           {body}
         </Pressable>
       ) : (
@@ -178,7 +195,9 @@ export function SettingsSheet({
   const slide = useRef(new Animated.Value(1)).current;
   const go = (next: Page) => {
     if (next === page) return;
-    if (reducedMotion) {
+    // Side by side there is nothing to slide: the list never leaves, and only
+    // the pane beside it changes.
+    if (reducedMotion || width >= SPLIT_AT) {
       setPage(next);
       return;
     }
@@ -317,7 +336,9 @@ export function SettingsSheet({
   useEffect(() => {
     if (!open) return;
     let active = true;
-    setPage('root');
+    // The phone opens on the list; the split layout opens with the first subject
+    // already in the pane, because an empty half-screen says nothing.
+    setPage(width >= SPLIT_AT ? 'title' : 'root');
     setTransition(null);
     setError(null);
     void readFollowUpsEnabled().then((enabled) => { if (active) setFollowUps(enabled); });
@@ -375,6 +396,12 @@ export function SettingsSheet({
     <View style={{ paddingVertical: 28, alignItems: 'center' }}><ActivityIndicator color={ai.orange} /></View>
   ) : null;
 
+  const wide = width >= SPLIT_AT;
+  // What the sidebar should mark as chosen. `renderPage` shadows `page` with its
+  // own parameter — deliberately, so it can draw two pages at once during a
+  // move — so the current one is captured here where it is still visible.
+  const chosen = page;
+
   // The body of one page. Named `page` on purpose: the checks inside read the
   // parameter, so the same markup can draw the page leaving and the page
   // arriving while a move is on.
@@ -393,6 +420,7 @@ export function SettingsSheet({
               icon="person-circle-outline"
               label={t('ชื่อเรียก', 'Name')}
               value={settings?.owner_title?.trim() || t('คุณผู้จัดการ', 'Manager')}
+              selected={wide && chosen === 'title'}
               onPress={() => go('title')}
             />
             <Row
@@ -408,11 +436,13 @@ export function SettingsSheet({
               first
               icon="shield-checkmark-outline"
               label={t('ความปลอดภัย', 'Safety')}
+              selected={wide && chosen === 'actions'}
               onPress={() => go('actions')}
             />
             <Row
               icon="notifications-outline"
               label={t('การแจ้งเตือน', 'Notifications')}
+              selected={wide && chosen === 'notifications'}
               onPress={() => go('notifications')}
             />
           </Group>
@@ -424,6 +454,7 @@ export function SettingsSheet({
               icon="trash-outline"
               label={t('ถังขยะ', 'Trash')}
               detail={t('แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน', 'Deleted chats, restorable for 7 days')}
+              selected={wide && chosen === 'trash'}
               onPress={() => { go('trash'); void loadTrash(); }}
             />
           </Group>
@@ -595,10 +626,29 @@ export function SettingsSheet({
     renderPage(page)
   );
 
+  // The list on the left, the subject on the right, a hairline between them —
+  // and no page ever moves, so there is nothing to animate.
+  const split = (
+    <View style={{ flex: 1, flexDirection: 'row' }}>
+      <View style={{ width: SIDEBAR, borderRightWidth: 1, borderRightColor: '#e6e3dd' }}>
+        {renderPage('root')}
+      </View>
+      <View style={{ flex: 1, alignItems: 'center' }}>
+        {page === 'root' ? (
+          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 24 }}>
+            <Text style={{ fontSize: 15, color: ai.faded, textAlign: 'center' }}>{t('เลือกหัวข้อทางซ้าย', 'Pick a subject on the left')}</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1, width: '100%', maxWidth: DETAIL_MAX }}>{renderPage(page)}</View>
+        )}
+      </View>
+    </View>
+  );
+
   return (
     <BottomSheet open={open} onClose={onClose} heightFraction={1} background="#f4f2ee" label={t('ปิดตั้งค่า', 'Close settings')}>
       <View style={{ flex: 1 }}>
-        {stage}
+        {wide ? split : stage}
         {/* The header's backdrop, the chat screen's: a blurred copy of what
             scrolls past, masked solid behind the buttons and faded to nothing
             just below them. No panel, no tint — the fade is the edge. */}
@@ -618,6 +668,16 @@ export function SettingsSheet({
           </GlassSurface>
         </MaskedView>
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: HEADER_ROW_PADDING_TOP, paddingBottom: HEADER_ROW_PADDING_BOTTOM, gap: 8 }}>
+          {/* Two titles when there are two columns: the list keeps its own name
+              over the sidebar, and the subject's name sits over its pane. */}
+          {wide ? (
+            <>
+              <Text numberOfLines={1} style={{ width: SIDEBAR - 18, paddingLeft: 6, fontSize: 20, fontWeight: '700', color: ai.ink }}>{t('การตั้งค่า', 'Settings')}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, paddingLeft: 6, fontSize: 18, fontWeight: '700', color: ai.ink }}>{page === 'root' ? '' : heading}</Text>
+              <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+            </>
+          ) : (
+          <>
           {/* Back sits where a back button belongs; close sits under the thumb
               that opened the sheet. Each side keeps a slot so the title stays centred. */}
           <View style={{ width: 44, height: 44 }}>
@@ -639,6 +699,8 @@ export function SettingsSheet({
               <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
             </Animated.View>
           </View>
+          </>
+          )}
         </View>
       </View>
     </BottomSheet>
