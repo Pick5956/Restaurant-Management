@@ -386,7 +386,7 @@ export function GlassMorphMenu({
     // circle to box — the drop needs time on screen to be seen at all.
     const animation = Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: reducedMotion ? 0 : open ? 680 : 500,
+      duration: reducedMotion ? 0 : open ? 780 : 560,
       // Fast out of the button, long settle. Closing is gentler both ends.
       easing: open ? Easing.bezier(0.22, 0.8, 0.24, 1) : Easing.bezier(0.4, 0, 0.6, 1),
       useNativeDriver: false,
@@ -715,8 +715,10 @@ export function BottomSheet({
     }
     Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: reducedMotion ? 0 : open ? 300 : 240,
-      easing: Easing.bezier(0.32, 0.72, 0, 1),
+      // The owner asked for every panel to arrive more slowly; the first cut
+      // (300/240) read as abrupt on the phone.
+      duration: reducedMotion ? 0 : open ? 460 : 340,
+      easing: Easing.bezier(0.2, 0.8, 0.2, 1),
       useNativeDriver: false,
     }).start(({ finished }) => {
       if (finished && !open) {
@@ -763,8 +765,8 @@ export function BottomSheet({
         const glide = (to: number, then?: () => void) => {
           Animated.timing(snap, {
             toValue: to,
-            duration: 300,
-            easing: Easing.bezier(0.32, 0.72, 0, 1),
+            duration: 400,
+            easing: Easing.bezier(0.2, 0.8, 0.2, 1),
             useNativeDriver: false,
           }).start(({ finished }) => { if (finished) then?.(); });
         };

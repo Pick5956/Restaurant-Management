@@ -163,7 +163,7 @@ export function SettingsSheet({
     slide.setValue(0);
     Animated.timing(slide, {
       toValue: 1,
-      duration: 340,
+      duration: 460,
       easing: Easing.bezier(0.2, 0.8, 0.2, 1),
       useNativeDriver: true,
     }).start(({ finished }) => {
@@ -517,24 +517,23 @@ export function SettingsSheet({
         style={[
           fill,
           {
-            opacity: transition.dir === 'push' ? slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] }) : 1,
+            opacity: transition.dir === 'push' ? slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0.78] }) : 1,
             transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, transition.dir === 'push' ? -width * 0.28 : width] }) }],
           },
         ]}
       >
         {renderPage(transition.from)}
       </Animated.View>
-      {/* The page arriving, with a soft edge so it reads as sliding over. */}
+      {/* The page arriving. No shadow along its edge: a shadow the full height
+          of the page drew a dark band down its left and across its top, which
+          read as the page being cut off rather than sliding in. Both pages share
+          the sheet's colour, so with nothing drawn at the join there is no join. */}
       <Animated.View
         style={[
           fill,
           {
-            opacity: transition.dir === 'pop' ? slide.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) : 1,
+            opacity: transition.dir === 'pop' ? slide.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1] }) : 1,
             transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [transition.dir === 'push' ? width : -width * 0.28, 0] }) }],
-            shadowColor: '#000',
-            shadowOpacity: transition.dir === 'push' ? 0.12 : 0,
-            shadowRadius: 14,
-            shadowOffset: { width: -4, height: 0 },
           },
         ]}
       >
