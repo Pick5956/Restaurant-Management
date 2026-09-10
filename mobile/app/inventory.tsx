@@ -5,7 +5,7 @@ import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIMana
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adjustStock, deleteIngredient, listIngredientCategories, listIngredients } from '@/src/api/ingredient';
-import { BottomSheet, GlassButton, SwipeRow } from '@/src/components/ai/chrome';
+import { BottomSheet, GlassMorphMenu, SwipeRow } from '@/src/components/ai/chrome';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import {
@@ -14,6 +14,7 @@ import {
   Dock,
   DockButton,
   FloatingHeader,
+  HEADER_PAD_TOP,
   HeaderTextButton,
   IngredientCard,
   KeyValue,
@@ -58,7 +59,6 @@ type Sheet =
   | { kind: 'restock'; item: Ingredient }
   | { kind: 'count'; item: Ingredient }
   | { kind: 'filter' }
-  | { kind: 'manage' }
   | { kind: 'batch'; mode: 'restock' | 'count' };
 
 /**
@@ -92,6 +92,7 @@ export default function InventoryScreen() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sheet, setSheet] = useState<Sheet>({ kind: 'none' });
+  const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (quiet = false) => {
@@ -249,10 +250,25 @@ export default function InventoryScreen() {
           backLabel={t('ย้อนกลับ', 'Back')}
           onBack={() => router.back()}
           title={t('คลังวัตถุดิบ', 'Inventory')}
-          trailing={canManage ? <GlassButton icon="ellipsis-horizontal" label={t('จัดการคลัง', 'Manage inventory')} onPress={() => setSheet({ kind: 'manage' })} /> : undefined}
           rail={rail}
         />
       )}
+      {canManage && !selecting ? (
+        <GlassMorphMenu
+          open={menuOpen}
+          onOpen={() => setMenuOpen(true)}
+          onClose={() => setMenuOpen(false)}
+          icon="ellipsis-horizontal"
+          label={t('จัดการคลัง', 'Manage inventory')}
+          // The header row leaves a 46pt slot at its right; this sits in it.
+          style={{ top: insets.top + HEADER_PAD_TOP, right: 12 }}
+          items={[
+            { key: 'bulk', icon: 'duplicate-outline', label: t('เพิ่มหลายรายการ', 'Add several at once'), onPress: () => router.push('/inventory/bulk-add' as never) },
+            { key: 'select', icon: 'checkmark-circle-outline', label: t('เลือกหลายรายการ', 'Select several'), onPress: () => setSelecting(true) },
+            { key: 'categories', icon: 'folder-open-outline', label: t('จัดการหมวดหมู่', 'Manage categories'), onPress: () => router.push('/inventory/categories' as never) },
+          ]}
+        />
+      ) : null}
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -378,14 +394,6 @@ export default function InventoryScreen() {
           <SheetButton secondary label={t('ล้างตัวกรอง', 'Clear')} onPress={() => setDraft({ category: 'all', sort: 'urgent' })} />
           <SheetButton label={t(`ดูผลลัพธ์ · ${draftCount}`, `Show ${draftCount}`)} onPress={() => { setCategory(draft.category); setSort(draft.sort); close(); }} />
         </SheetFooter>
-      </BottomSheet>
-
-      {/* ---- manage ---- */}
-      <BottomSheet open={sheet.kind === 'manage'} onClose={close} heightFraction={0.44} label={t('ปิด', 'Close')} showClose>
-        <SheetTitle title={t('จัดการคลัง', 'Manage inventory')} />
-        <SheetAction icon="duplicate-outline" label={t('เพิ่มหลายรายการ', 'Add several at once')} onPress={() => { close(); router.push('/inventory/bulk-add' as never); }} />
-        <SheetAction icon="checkmark-circle-outline" label={t('เลือกหลายรายการ', 'Select several')} onPress={() => { close(); setSelecting(true); }} />
-        <SheetAction icon="folder-open-outline" label={t('จัดการหมวดหมู่', 'Manage categories')} onPress={() => { close(); router.push('/inventory/categories' as never); }} />
       </BottomSheet>
 
       <BatchSheet

@@ -22,7 +22,7 @@ import type { Ingredient } from '@/src/types/ingredient';
 
 export const HEADER_BUTTON = 46;
 export const HEADER_FADE = 15;
-const HEADER_PAD_TOP = 4;
+export const HEADER_PAD_TOP = 4;
 const RAIL_HEIGHT = 46;
 
 export function fmt(value: number | string, locale: string, digits = 2): string {
@@ -41,8 +41,24 @@ export function statusColour(status: StockStatus): { ink: string; soft: string }
   return { ink: palette.success, soft: palette.successSoft };
 }
 
-/** A card: glass on iOS 26, cream with a pale edge everywhere else. */
-export function Card({ children, style, radius = 22 }: { children: ReactNode; style?: StyleProp<ViewStyle>; radius?: number }) {
+/**
+ * A card: glass on iOS 26, cream with a pale edge everywhere else.
+ *
+ * `solid` skips the glass on every platform. Glass is for the control layer —
+ * the header, the dock, a sheet — not for content that scrolls. Each glass
+ * view refracts what is behind it on every frame, and thirty cards each with
+ * two glass buttons inside made ninety of them in one scroll view: the list
+ * stuttered on an iPad. Apple's own guidance says the same — the content layer
+ * is opaque, the controls float over it in glass.
+ */
+export function Card({ children, style, radius = 22, solid }: { children: ReactNode; style?: StyleProp<ViewStyle>; radius?: number; solid?: boolean }) {
+  if (solid) {
+    return (
+      <View style={[{ borderRadius: radius, borderCurve: 'continuous', backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }, style]}>
+        {children}
+      </View>
+    );
+  }
   return (
     <GlassPanel
       radius={radius}
@@ -202,12 +218,12 @@ export function CheckBox({ checked }: { checked: boolean }) {
 }
 
 /** A 44px rounded-square button: solid orange for the primary act, glass for the rest. */
-export function SquareButton({ icon, label, onPress, primary, disabled, size = 44 }: { icon: AppIconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean; size?: number }) {
-  const shape = { width: size, height: size, borderRadius: Math.round(size * 0.32), alignItems: 'center' as const, justifyContent: 'center' as const };
+export function SquareButton({ icon, label, onPress, primary, disabled, size = 44, solid }: { icon: AppIconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean; size?: number; /** No glass, on any platform — for a button that lives inside scrolling content. */ solid?: boolean }) {
+  const shape = { width: size, height: size, borderRadius: Math.round(size * 0.32), borderCurve: 'continuous' as const, alignItems: 'center' as const, justifyContent: 'center' as const };
   if (primary) {
     return (
       <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : disabled ? 0.5 : 1 })}>
-        {LIQUID_GLASS ? (
+        {LIQUID_GLASS && !solid ? (
           <GlassView glassEffectStyle="regular" isInteractive colorScheme="light" tintColor="rgba(194,65,12,0.86)" style={shape}>
             <AppIcon name={icon} size={Math.round(size * 0.5)} color="#ffffff" />
           </GlassView>
@@ -219,11 +235,14 @@ export function SquareButton({ icon, label, onPress, primary, disabled, size = 4
       </Pressable>
     );
   }
+  const face = <AppIcon name={icon} size={Math.round(size * 0.45)} color={palette.muted} />;
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-      <GlassPanel radius={shape.borderRadius} style={shape} fallback={palette.surface} fallbackBorder={palette.border}>
-        <AppIcon name={icon} size={Math.round(size * 0.45)} color={palette.muted} />
-      </GlassPanel>
+      {solid ? (
+        <View style={{ ...shape, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}>{face}</View>
+      ) : (
+        <GlassPanel radius={shape.borderRadius} style={shape} fallback={palette.surface} fallbackBorder={palette.border}>{face}</GlassPanel>
+      )}
     </Pressable>
   );
 }
@@ -259,7 +278,7 @@ export function IngredientCard({
       onPress={onPress}
       style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.985 : 1 }] })}
     >
-      <Card style={{ padding: 12, flexDirection: 'row', gap: 10, ...(selected ? { borderWidth: 1.5, borderColor: palette.primary } : {}) }}>
+      <Card solid style={{ padding: 12, flexDirection: 'row', gap: 10, ...(selected ? { borderWidth: 1.5, borderColor: palette.primary } : {}) }}>
         {selecting ? <CheckBox checked={selected} /> : null}
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -282,8 +301,8 @@ export function IngredientCard({
         </View>
         {!selecting && canManage ? (
           <View style={{ justifyContent: 'center', gap: 6 }}>
-            <SquareButton primary icon="add" label={t('เติมสต็อก', 'Restock')} onPress={onRestock} />
-            <SquareButton icon="ellipsis-horizontal" label={t('ตัวเลือก', 'Options')} onPress={onMore} />
+            <SquareButton solid primary icon="add" label={t('เติมสต็อก', 'Restock')} onPress={onRestock} />
+            <SquareButton solid icon="ellipsis-horizontal" label={t('ตัวเลือก', 'Options')} onPress={onMore} />
           </View>
         ) : null}
       </Card>
