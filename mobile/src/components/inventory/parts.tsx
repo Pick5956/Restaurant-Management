@@ -190,10 +190,14 @@ export function Segmented<T extends string>({
 
   const pan = useRef(
     PanResponder.create({
-      // Taps belong to the cells. A sideways move takes the touch off whichever
-      // cell it started on and hands it to the thumb.
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponderCapture: (_event, gesture) => Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      // The thumb takes its touch the moment a finger lands on it, so holding
+      // it and dragging works from the first frame. The first cut waited to
+      // steal the touch from the cell underneath once the finger moved, and
+      // the cell never gave it up. Taps on the other cells are still theirs.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // Nothing above gets to take a drag away half-way through.
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         dragging.current = true;
         grabbed.current = at.current;
@@ -219,7 +223,6 @@ export function Segmented<T extends string>({
 
   return (
     <View
-      {...pan.panHandlers}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       style={{ height: RAIL_HEIGHT, padding: RAIL_PAD, borderRadius: 16, backgroundColor: LIQUID_GLASS ? 'rgba(255,237,213,0.55)' : palette.surfaceStrong }}
     >
@@ -239,7 +242,9 @@ export function Segmented<T extends string>({
       {cell > 0 ? (
         // Shadow on the outer view, clip on the inner: one view cannot do both on iOS.
         <Animated.View
-          pointerEvents="none"
+          {...pan.panHandlers}
+          accessibilityRole="adjustable"
+          accessibilityLabel={options[index]?.label}
           style={{ position: 'absolute', top: RAIL_PAD, left: RAIL_PAD, width: cell, height: RAIL_HEIGHT - RAIL_PAD * 2, borderRadius: THUMB_RADIUS, transform: [{ translateX: x }], shadowColor: '#3d2b1f', shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}
         >
           <View style={{ flex: 1, borderRadius: THUMB_RADIUS, backgroundColor: palette.textStrong, overflow: 'hidden' }}>

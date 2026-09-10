@@ -754,24 +754,38 @@ export function SwipeRow({
   deleteLabel: string;
   /** Called as this row starts to open, with the way to close it. */
   onWillOpen: (id: string, close: () => void) => void;
-  children: React.ReactNode;
+  /** The row; as a function it is told whether the row is slid open. */
+  children: React.ReactNode | ((open: boolean) => React.ReactNode);
 }) {
   const x = useRef(new Animated.Value(0)).current;
   const openRef = useRef(false);
   const startRef = useRef(0);
+  // Where the row is right now, for a drag that gets cut short.
+  const atRef = useRef(0);
+  const [isOpen, setIsOpen] = useState(false);
 
   const settle = (to: number) => {
     openRef.current = to !== 0;
+    setIsOpen(to !== 0);
+    atRef.current = to;
     Animated.spring(x, { toValue: to, useNativeDriver: false, damping: 22, stiffness: 280, mass: 0.8 }).start();
   };
   const close = () => settle(0);
+  // Wherever the finger left it: past half-way the row opens, short of it the
+  // row closes. Used both for a release and for a drag something else cut
+  // short — the first version closed on a cut-short drag whatever had been
+  // done with it, so a swipe with any drift in it snapped straight back.
+  const rest = () => settle(atRef.current < -SWIPE_REVEAL / 2 ? -SWIPE_REVEAL : 0);
 
   const pan = useRef(
     PanResponder.create({
-      // An open row claims the tap so it closes instead of opening the chat.
-      onStartShouldSetPanResponder: () => openRef.current,
+      // An open row claims the tap before its content can, so it closes
+      // instead of opening the chat.
+      onStartShouldSetPanResponderCapture: () => openRef.current,
       onMoveShouldSetPanResponder: (_event, gesture) =>
         Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+      // Once the row is moving nothing above it takes the touch away.
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         startRef.current = openRef.current ? -SWIPE_REVEAL : 0;
         if (!openRef.current) onWillOpen(id, close);
@@ -781,6 +795,7 @@ export function SwipeRow({
         // Past the button the row still follows the finger, but at a third of
         // the pace, so it feels held rather than stopped.
         if (next < -SWIPE_REVEAL) next = -SWIPE_REVEAL + (next + SWIPE_REVEAL) / 3;
+        atRef.current = next;
         x.setValue(next);
       },
       onPanResponderRelease: (_event, gesture) => {
@@ -789,11 +804,12 @@ export function SwipeRow({
           settle(0);
           return;
         }
-        const at = startRef.current + gesture.dx;
-        const open = gesture.vx < -0.3 || (gesture.vx <= 0.3 && at < -SWIPE_REVEAL / 2);
-        settle(open ? -SWIPE_REVEAL : 0);
+        // A flick decides by direction; a slow drag by where it stopped.
+        if (gesture.vx < -0.3) settle(-SWIPE_REVEAL);
+        else if (gesture.vx > 0.3) settle(0);
+        else rest();
       },
-      onPanResponderTerminate: () => settle(openRef.current ? -SWIPE_REVEAL : 0),
+      onPanResponderTerminate: rest,
     }),
   ).current;
 
@@ -833,7 +849,7 @@ export function SwipeRow({
         </Pressable>
       </Animated.View>
       <Animated.View {...pan.panHandlers} style={{ backgroundColor: background, transform: [{ translateX: x }] }}>
-        {children}
+        {typeof children === 'function' ? children(isOpen) : children}
       </Animated.View>
     </View>
   );
@@ -1056,10 +1072,11 @@ export function BottomSheet({
     }),
   ).current;
 
-  const translateY = Animated.add(
-    Animated.add(progress.interpolate({ inputRange: [0, 1], outputRange: [tallHeight, 0] }), snap),
-    drag,
-  );
+  // Opening and closing slide the whole card in from below; the drag and the
+  // snap change how tall it is instead, so the bottom edge — and its rounded
+  // corners — stay on screen the whole way.
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [tallHeight, 0] });
+  const shownHeight = full ? tallHeight : Animated.subtract(tallHeight, Animated.add(snap, drag));
 
   // A part-height sheet is a card: glass, rounded all round, and held off the
   // sides and the bottom of the screen. Pulled up to full it is a sheet again —
@@ -1084,7 +1101,9 @@ export function BottomSheet({
   const between = (atRest: number, atFull: number) =>
     lift ? lift.interpolate({ inputRange: [0, 1], outputRange: [atRest, atFull] }) : atFull;
   const sideInset = between(CARD_INSET, 0);
-  const raise = between(-CARD_INSET, 0);
+  // Off the bottom by the same gap as the sides, and clear of the home
+  // indicator, which the card would otherwise sit on.
+  const bottomInset = between(CARD_INSET + insets.bottom, 0);
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
   const bottomPadding = between(10, insets.bottom + 6);
@@ -1114,9 +1133,10 @@ export function BottomSheet({
             corners, and a shadow on a clipping view is clipped away with it. */}
         <Animated.View
           style={{
-            height: tallHeight,
+            height: shownHeight,
             marginHorizontal: sideInset,
-            transform: [{ translateY: lift ? Animated.add(translateY, raise) : translateY }],
+            marginBottom: bottomInset,
+            transform: [{ translateY }],
             shadowColor: '#000',
             shadowOpacity: 0.18,
             shadowRadius: 20,

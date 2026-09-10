@@ -209,6 +209,7 @@ export function ChatListSheet({
                       onDelete={() => confirmDelete(conversation)}
                       onWillOpen={onRowWillOpen}
                     >
+                    {(slidOpen) => (
                     <Pressable
                       accessibilityRole="button"
                       onPress={() => { if (!isEditing) { onClose(); onOpen(conversation.id); } }}
@@ -262,12 +263,16 @@ export function ChatListSheet({
                         accessibilityRole="button"
                         accessibilityLabel={t('ตัวเลือก', 'Options')}
                         hitSlop={10}
+                        disabled={slidOpen}
                         onPress={() => openMenu(conversation)}
-                        style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
+                        // Kept in the layout, just not shown: the row must not
+                        // reflow while it is sliding.
+                        style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center', marginTop: 2, opacity: slidOpen ? 0 : 1 }}
                       >
                         <AppIcon name="ellipsis-horizontal" size={18} color="#c9c4bc" />
                       </Pressable>
                     </Pressable>
+                    )}
                     </SwipeRow>
                   );
                 })}

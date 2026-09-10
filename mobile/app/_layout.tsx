@@ -138,7 +138,9 @@ function AppNavigator() {
           <Stack.Screen name="staff" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="settings/printer" />
-          <Stack.Screen name="inventory" />
+          {/* Its status rail starts at the left edge, where iOS listens for the
+              swipe-back; a thumb grabbed there popped the screen. Back is the button. */}
+          <Stack.Screen name="inventory" options={{ gestureEnabled: false }} />
           <Stack.Screen name="reports" />
           <Stack.Screen name="ai-assistant" />
         </Stack>
