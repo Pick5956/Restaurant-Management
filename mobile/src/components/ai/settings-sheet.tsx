@@ -1,5 +1,8 @@
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, Switch, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   getAISettings,
@@ -18,7 +21,7 @@ import { readFollowUpsEnabled, writeCachedOwnerTitle, writeFollowUpsEnabled } fr
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { AI_ACTION_TYPES, type AIActionType, type AIConversationSummary, type AIInsightKind, type AISettingsPatch, type AISettingsView } from '@/src/types/ai';
 
-import { BottomSheet, GlassButton } from './chrome';
+import { BottomSheet, GlassButton, GlassSurface } from './chrome';
 import { ai } from './theme';
 
 // Settings the way a phone does them: a short list of subjects, each opening its
@@ -29,6 +32,18 @@ import { ai } from './theme';
 // is in it.
 
 type Page = 'root' | 'title' | 'actions' | 'notifications' | 'trash';
+
+// The header's geometry, shared by the pane behind it and the space each page
+// leaves for it. Same idea as the chat screen: the row floats, the content
+// scrolls under a blur that fades out just past the buttons, and the first
+// thing on the page starts below that fade rather than inside it.
+const HEADER_BUTTON = 44;
+const HEADER_ROW_PADDING_TOP = 4;
+const HEADER_ROW_PADDING_BOTTOM = 10;
+/** How far the blur spills past the buttons before it is gone. The owner's pick on the chat screen. */
+const HEADER_FADE = 15;
+const HEADER_ROW = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_ROW_PADDING_BOTTOM;
+const CONTENT_TOP = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE + 10;
 
 const ACTION_LABELS: Record<AIActionType, { th: string; en: string }> = {
   set_menu_availability: { th: 'เปิด/ปิดขายเมนู', en: 'Menu availability' },
@@ -149,7 +164,15 @@ export function SettingsSheet({
   // mounted, sliding the other way; `transition` holds which one and which
   // direction, and `slide` is how far along the move is.
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  // The blurred pane reaches up over the status bar (the sheet's own top
+  // padding) and down to the buttons' bottom edge plus the fade. Where the fade
+  // starts is computed against the pane, so it lands on the buttons on every
+  // phone whatever its status bar height.
+  const headerPane = insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE;
+  const headerSolid = (insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON) / headerPane;
+  const fadeAt = (through: number) => headerSolid + (1 - headerSolid) * through;
   const [transition, setTransition] = useState<{ from: Page; dir: 'push' | 'pop' } | null>(null);
   const slide = useRef(new Animated.Value(1)).current;
   const go = (next: Page) => {
@@ -328,7 +351,7 @@ export function SettingsSheet({
   // parameter, so the same markup can draw the page leaving and the page
   // arriving while a move is on.
   const renderPage = (page: Page) => (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: CONTENT_TOP, paddingBottom: 32 }}>
       {error ? (
         <Text style={{ fontSize: 13, color: '#dc2626', paddingHorizontal: 18, paddingBottom: 8 }}>{error}</Text>
       ) : null}
@@ -547,7 +570,26 @@ export function SettingsSheet({
   return (
     <BottomSheet open={open} onClose={onClose} heightFraction={1} background="#f4f2ee" label={t('ปิดตั้งค่า', 'Close settings')}>
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 4, paddingBottom: 10, gap: 8 }}>
+        {stage}
+        {/* The header's backdrop, the chat screen's: a blurred copy of what
+            scrolls past, masked solid behind the buttons and faded to nothing
+            just below them. No panel, no tint — the fade is the edge. */}
+        <MaskedView
+          pointerEvents="none"
+          style={{ position: 'absolute', top: -insets.top, left: 0, right: 0, height: headerPane, zIndex: 2 }}
+          maskElement={
+            <LinearGradient
+              colors={['#000000', '#000000', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.42)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)']}
+              locations={[0, headerSolid, fadeAt(0.3), fadeAt(0.55), fadeAt(0.75), fadeAt(0.9), 1]}
+              style={{ flex: 1 }}
+            />
+          }
+        >
+          <GlassSurface effect="regular" style={{ flex: 1 }} fallbackStyle={{ backgroundColor: 'rgba(244,242,238,0.9)' }}>
+            <View />
+          </GlassSurface>
+        </MaskedView>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: HEADER_ROW_PADDING_TOP, paddingBottom: HEADER_ROW_PADDING_BOTTOM, gap: 8 }}>
           {/* Back sits where a back button belongs; close sits under the thumb
               that opened the sheet. Each side keeps a slot so the title stays centred. */}
           {page === 'root' ? (
@@ -570,8 +612,6 @@ export function SettingsSheet({
             <View style={{ width: 44 }} />
           )}
         </View>
-
-        {stage}
       </View>
     </BottomSheet>
   );
