@@ -489,6 +489,19 @@ export function GlassMorphMenu({
   const rowBounds = useRef<Array<{ y: number; height: number } | undefined>>([]);
   const anchor = useRef<{ top: number; right: number } | null>(null);
   const strayed = useRef(false);
+  // True while the touch in hand is the one that opened the menu: letting go of
+  // that one leaves the menu open, it does not pick whatever it landed on.
+  const opening = useRef(false);
+  // The list itself, measured on screen once the panel has settled. Deriving
+  // the panel's position from where the finger hit the button only works for
+  // the touch that opens it; every later touch lands on a row, and a row's
+  // locationY is measured from the row.
+  const list = useRef<View>(null);
+  const measureList = () => {
+    list.current?.measureInWindow((x, y, panelWidth, panelHeight) => {
+      if (panelWidth > 4 && panelHeight > 4) anchor.current = { top: y, right: x + panelWidth };
+    });
+  };
   const gesture = useRef({ open, items, width, size, fromTop, targetHeight: 0, onOpen, onClose });
   gesture.current.open = open;
   gesture.current.items = items;
@@ -522,20 +535,31 @@ export function GlassMorphMenu({
 
   const drag = useRef(
     PanResponder.create({
-      // Captured at the button, before the Pressable underneath can take it —
-      // that Pressable's job is only to give VoiceOver something to activate.
-      // Once the menu is open the rows own their own taps again.
-      onStartShouldSetPanResponderCapture: () => !gesture.current.open,
+      // Every touch on the panel: the one that opens it, and every one after.
+      // Taken in the capture phase so the rows underneath never start a press
+      // of their own — the highlight that follows the finger is this gesture's
+      // job now. The one case left to the rows is a panel whose position is not
+      // known yet, where this gesture could not say what is under the finger.
+      onStartShouldSetPanResponderCapture: () => !gesture.current.open || anchor.current !== null,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (event) => {
         const { pageX, pageY, locationX, locationY } = event.nativeEvent;
-        const { size: side, fromTop: down, targetHeight: tall } = gesture.current;
-        // The button is the panel's top-right corner, or its bottom-right one.
+        const { size: side, fromTop: down, targetHeight: tall, open: already } = gesture.current;
+        strayed.current = false;
+        opening.current = !already;
+        if (already) {
+          // The panel is where it was measured; light up what is under the
+          // finger at once, the way a pressed row used to.
+          lightUp(hoverAt(pageX, pageY));
+          return;
+        }
+        // Opening: the finger is on the button, which is the panel's top-right
+        // corner — or its bottom-right one when the menu grows upward. Nothing
+        // lights up yet; a tap on the button is not a choice.
         anchor.current = {
           top: pageY - locationY - (down ? 0 : Math.max(0, tall - side)),
           right: pageX + (side - locationX),
         };
-        strayed.current = false;
         lightUp(null);
         gesture.current.onOpen();
       },
@@ -545,18 +569,24 @@ export function GlassMorphMenu({
       },
       onPanResponderRelease: (event) => {
         const index = hoverAt(event.nativeEvent.pageX, event.nativeEvent.pageY);
+        const drifted = strayed.current;
+        const opened = opening.current;
         lightUp(null);
+        opening.current = false;
         const { items: rows, onClose: close } = gesture.current;
+        // The tap that opened the menu leaves it open, whatever it is sitting
+        // on — the button covers the first row, and opening a menu is not
+        // choosing from it.
+        if (opened && !drifted) return;
         if (index !== null && rows[index]) {
           close();
           rows[index].onPress();
           return;
         }
-        // A tap opened the menu and leaves it open; a drag that ended nowhere
-        // is a change of mind.
-        if (strayed.current) close();
+        // Dragged off the list and let go: a change of mind.
+        if (drifted) close();
       },
-      onPanResponderTerminate: () => lightUp(null),
+      onPanResponderTerminate: () => { lightUp(null); opening.current = false; },
     }),
   ).current;
 
@@ -580,6 +610,9 @@ export function GlassMorphMenu({
     });
     animation.start(({ finished }) => {
       if (finished && !open) setEngaged(false);
+      // Measured at rest, never mid-flight: the list is scaled to the frame
+      // while the drop is still growing, so its rect means nothing until then.
+      if (finished && open) measureList();
     });
   }, [open, progress, reducedMotion]);
 
@@ -699,6 +732,7 @@ export function GlassMorphMenu({
 
   const rows = (live: boolean) => (
     <View
+      ref={live ? list : undefined}
       onLayout={live ? (event) => setContentHeight(Math.round(event.nativeEvent.layout.height)) : undefined}
       style={{ paddingVertical: 6 }}
     >
