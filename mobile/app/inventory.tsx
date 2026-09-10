@@ -320,7 +320,10 @@ export default function InventoryScreen() {
         {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
         {notice ? <Feedback title={notice} tone="success" /> : null}
 
-        {!selecting && !search && status === 'all' ? <TotalsCard value={totals.value} needsOrder={totals.needsOrder} language={language} /> : null}
+        {/* The totals are the whole inventory's, whatever the rail is showing, so
+            they stay put across all three tabs. Only a search or select mode
+            hides them — then the list is no longer the inventory. */}
+        {!selecting && !search ? <TotalsCard value={totals.value} needsOrder={totals.needsOrder} language={language} /> : null}
 
         {loading && !ingredients.length ? (
           <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View>
