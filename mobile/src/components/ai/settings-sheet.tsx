@@ -553,7 +553,7 @@ export function SettingsSheet({
           {page === 'root' ? (
             <View style={{ width: 44 }} />
           ) : (
-            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
+            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} onFlat="#f4f2ee" />
           )}
           <Animated.View
             style={{
@@ -565,7 +565,7 @@ export function SettingsSheet({
             <Text numberOfLines={1} style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{heading}</Text>
           </Animated.View>
           {page === 'root' ? (
-            <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+            <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} onFlat="#f4f2ee" />
           ) : (
             <View style={{ width: 44 }} />
           )}

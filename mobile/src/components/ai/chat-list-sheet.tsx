@@ -294,7 +294,7 @@ export function ChatListSheet({
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 4, paddingBottom: 6, gap: 8 }}>
           <View style={{ width: 44 }} />
           <Text style={{ flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{t('แชท', 'Chats')}</Text>
-          <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+          <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} onFlat="#f4f2ee" />
         </View>
 
 
