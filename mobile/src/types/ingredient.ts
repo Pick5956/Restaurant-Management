@@ -20,6 +20,10 @@ export interface Ingredient {
   yield_percent: number;
   storage_type: string;
   category?: IngredientCategory;
+  /** Days of cover at the last 30 days' kitchen usage; null with no usage yet. */
+  days_left?: number | null;
+  /** Bumped by every stock write, so it is a truthful "last moved". */
+  UpdatedAt?: string;
 }
 
 export interface IngredientTransaction {
@@ -31,6 +35,9 @@ export interface IngredientTransaction {
   note: string;
   created_by_id: number;
   created_by?: { ID: number; first_name: string; last_name: string };
+  created_by_name?: string;
+  /** Money that moved with the stock; only a restock carries one today. */
+  amount?: number;
   CreatedAt?: string;
 }
 

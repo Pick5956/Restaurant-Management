@@ -1,3 +1,4 @@
+import MaskedView from '@react-native-masked-view/masked-view';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -643,6 +644,158 @@ export function GlassMorphMenu({
         </Pressable>
       </Animated.View>
     </View>
+  );
+}
+
+// How far a row slides to show its trash button, and the button itself.
+const SWIPE_REVEAL = 76;
+
+/**
+ * A list row that slides left to uncover a delete button, the way rows do in
+ * Mail. The row itself is the moving part; the button sits still underneath
+ * and is revealed, growing from small to full as the row clears it.
+ *
+ * PanResponder rather than a gesture library: the sheet's own drag already
+ * works this way, and the list lives inside a Modal, where gesture-handler
+ * needs its own root view to hear anything. Only a clearly sideways move takes
+ * the touch, so the list still scrolls; a tap on a row that is already open
+ * closes it rather than opening the chat underneath — the same rule Mail uses.
+ *
+ * One row open at a time: opening one asks the parent to close the last.
+ */
+export function SwipeRow({
+  id,
+  background,
+  onDelete,
+  deleteLabel,
+  onWillOpen,
+  children,
+}: {
+  id: string;
+  /** The list's colour, so the row hides the button while it is closed. */
+  background: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  /** Called as this row starts to open, with the way to close it. */
+  onWillOpen: (id: string, close: () => void) => void;
+  children: React.ReactNode;
+}) {
+  const x = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const startRef = useRef(0);
+
+  const settle = (to: number) => {
+    openRef.current = to !== 0;
+    Animated.spring(x, { toValue: to, useNativeDriver: false, damping: 22, stiffness: 280, mass: 0.8 }).start();
+  };
+  const close = () => settle(0);
+
+  const pan = useRef(
+    PanResponder.create({
+      // An open row claims the tap so it closes instead of opening the chat.
+      onStartShouldSetPanResponder: () => openRef.current,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+      onPanResponderGrant: () => {
+        startRef.current = openRef.current ? -SWIPE_REVEAL : 0;
+        if (!openRef.current) onWillOpen(id, close);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        let next = Math.min(0, startRef.current + gesture.dx);
+        // Past the button the row still follows the finger, but at a third of
+        // the pace, so it feels held rather than stopped.
+        if (next < -SWIPE_REVEAL) next = -SWIPE_REVEAL + (next + SWIPE_REVEAL) / 3;
+        x.setValue(next);
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        const tapped = Math.abs(gesture.dx) < 4 && Math.abs(gesture.dy) < 4;
+        if (tapped) {
+          settle(0);
+          return;
+        }
+        const at = startRef.current + gesture.dx;
+        const open = gesture.vx < -0.3 || (gesture.vx <= 0.3 && at < -SWIPE_REVEAL / 2);
+        settle(open ? -SWIPE_REVEAL : 0);
+      },
+      onPanResponderTerminate: () => settle(openRef.current ? -SWIPE_REVEAL : 0),
+    }),
+  ).current;
+
+  // The button comes up out of the gap as the row uncovers it.
+  const buttonScale = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 2, 0], outputRange: [1, 0.72, 0.4], extrapolate: 'clamp' });
+  const buttonOpacity = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 3, 0], outputRange: [1, 0.9, 0], extrapolate: 'clamp' });
+
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: SWIPE_REVEAL,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: buttonOpacity,
+          transform: [{ scale: buttonScale }],
+        }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={deleteLabel}
+          onPress={() => { close(); onDelete(); }}
+          style={({ pressed }) => ({
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: pressed ? '#b91c1c' : '#dc2626',
+            alignItems: 'center',
+            justifyContent: 'center',
+          })}
+        >
+          <AppIcon name="trash-outline" size={21} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
+      <Animated.View {...pan.panHandlers} style={{ backgroundColor: background, transform: [{ translateX: x }] }}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+
+/**
+ * The blurred band a floating header sits on — the chat screen's, shared.
+ *
+ * A blurred copy of whatever scrolls past, masked solid from the top of the
+ * screen down to `solidTo` below the safe area (the bottom of the header's
+ * controls), then faded to nothing over `fade`. No panel and no tint: the fade
+ * is the only edge. The ramp is placed against the pane's real height, so it
+ * starts at the controls on every phone whatever its status bar measures.
+ *
+ * Content must start below `top + solidTo + fade`; anything inside the band is
+ * still being blurred.
+ */
+export function GlassHeaderPane({ top, solidTo, fade }: { top: number; solidTo: number; fade: number }) {
+  const pane = top + solidTo + fade;
+  const solid = (top + solidTo) / pane;
+  const at = (through: number) => solid + (1 - solid) * through;
+  return (
+    <MaskedView
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: pane, zIndex: 2 }}
+      maskElement={
+        <LinearGradient
+          colors={['#000000', '#000000', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.42)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)']}
+          locations={[0, solid, at(0.3), at(0.55), at(0.75), at(0.9), 1]}
+          style={{ flex: 1 }}
+        />
+      }
+    >
+      <GlassSurface effect="regular" style={{ flex: 1 }} fallbackStyle={{ backgroundColor: 'rgba(255,247,237,0.92)' }}>
+        <View />
+      </GlassSurface>
+    </MaskedView>
   );
 }
 
