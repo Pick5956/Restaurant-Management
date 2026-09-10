@@ -38,7 +38,34 @@ export interface IngredientTransaction {
   created_by_name?: string;
   /** Money that moved with the stock; only a restock carries one today. */
   amount?: number;
+  // The log stores ids only. The whole-inventory read joins these on, so a row
+  // can be read without looking anything up; a per-ingredient read leaves them
+  // empty, because the screen already knows which ingredient it is showing.
+  ingredient_name?: string;
+  ingredient_unit?: string;
+  category_name?: string;
   CreatedAt?: string;
+}
+
+/** Filters the API applies server-side, so the phone never pages through the lot. */
+export interface TransactionQuery {
+  ingredient_id?: number;
+  category_id?: number;
+  type?: 'in' | 'out' | 'adjust' | '';
+  search?: string;
+  /** Inclusive YYYY-MM-DD in the shop's timezone. */
+  from?: string;
+  /** Inclusive YYYY-MM-DD — the API widens it to cover the whole day. */
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface TransactionListResponse {
+  transactions: IngredientTransaction[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface IngredientMetadataInput {

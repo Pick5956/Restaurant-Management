@@ -1,5 +1,6 @@
 import MaskedView from '@react-native-masked-view/masked-view';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import * as Haptics from 'expo-haptics';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
@@ -272,14 +273,7 @@ export function GlassMenu({
               accessibilityRole="button"
               accessibilityLabel={item.label}
               onPress={() => { onClose(); item.onPress(); }}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                minHeight: 48,
-                paddingHorizontal: 16,
-                backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
-              })}
+              style={({ pressed }) => menuRowShape(pressed)}
             >
               <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
               <View style={{ flex: 1 }}>
@@ -386,6 +380,25 @@ export function GlassPanel({
 }
 
 /**
+ * One row of a menu. What the finger is on wears a capsule inset from the
+ * panel's edges — the shape iOS gives a highlighted menu row, and the reason
+ * the highlight cannot simply fill the row edge to edge.
+ */
+function menuRowShape(active: boolean) {
+  return {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    marginHorizontal: 6,
+    borderRadius: 999,
+    borderCurve: 'continuous' as const,
+    backgroundColor: active ? 'rgba(249,115,22,0.16)' : 'transparent',
+  };
+}
+
+/**
  * The "…" button that becomes the menu.
  *
  * Built from a frame-by-frame read of the Claude app's version (screen
@@ -465,6 +478,90 @@ export function GlassMorphMenu({
   const origin = fromTop ? 'top right' : 'bottom right';
   const pin = fromTop ? { top: 0 } : { bottom: 0 };
 
+  // Hold the button and drag: the row under the finger lights up and is chosen
+  // when the finger lifts. One touch does the whole thing, so the gesture has
+  // to be taken at the button — before the menu it will open even exists —
+  // and held to the end.
+  const [hover, setHover] = useState<number | null>(null);
+  const hoverRef = useRef<number | null>(null);
+  // Where each row sits inside the panel, from its own layout, and where the
+  // panel itself is on the screen, from where the finger landed on the button.
+  const rowBounds = useRef<Array<{ y: number; height: number } | undefined>>([]);
+  const anchor = useRef<{ top: number; right: number } | null>(null);
+  const strayed = useRef(false);
+  const gesture = useRef({ open, items, width, size, fromTop, targetHeight: 0, onOpen, onClose });
+  gesture.current.open = open;
+  gesture.current.items = items;
+  gesture.current.width = width;
+  gesture.current.size = size;
+  gesture.current.fromTop = fromTop;
+  gesture.current.onOpen = onOpen;
+  gesture.current.onClose = onClose;
+
+  const hoverAt = (pageX: number, pageY: number): number | null => {
+    const at = anchor.current;
+    if (!at) return null;
+    const { width: panel, items: rows } = gesture.current;
+    // A little slop either side, so a finger tracking down the edge still counts.
+    if (pageX < at.right - panel - 12 || pageX > at.right + 12) return null;
+    for (let index = 0; index < rows.length; index += 1) {
+      const bounds = rowBounds.current[index];
+      if (!bounds) continue;
+      const top = at.top + bounds.y;
+      if (pageY >= top && pageY <= top + bounds.height) return index;
+    }
+    return null;
+  };
+
+  const lightUp = (index: number | null) => {
+    if (hoverRef.current === index) return;
+    hoverRef.current = index;
+    if (index !== null) void Haptics.selectionAsync();
+    setHover(index);
+  };
+
+  const drag = useRef(
+    PanResponder.create({
+      // Captured at the button, before the Pressable underneath can take it —
+      // that Pressable's job is only to give VoiceOver something to activate.
+      // Once the menu is open the rows own their own taps again.
+      onStartShouldSetPanResponderCapture: () => !gesture.current.open,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => {
+        const { pageX, pageY, locationX, locationY } = event.nativeEvent;
+        const { size: side, fromTop: down, targetHeight: tall } = gesture.current;
+        // The button is the panel's top-right corner, or its bottom-right one.
+        anchor.current = {
+          top: pageY - locationY - (down ? 0 : Math.max(0, tall - side)),
+          right: pageX + (side - locationX),
+        };
+        strayed.current = false;
+        lightUp(null);
+        gesture.current.onOpen();
+      },
+      onPanResponderMove: (event, state) => {
+        if (Math.abs(state.dx) > 8 || Math.abs(state.dy) > 8) strayed.current = true;
+        lightUp(hoverAt(event.nativeEvent.pageX, event.nativeEvent.pageY));
+      },
+      onPanResponderRelease: (event) => {
+        const index = hoverAt(event.nativeEvent.pageX, event.nativeEvent.pageY);
+        lightUp(null);
+        const { items: rows, onClose: close } = gesture.current;
+        if (index !== null && rows[index]) {
+          close();
+          rows[index].onPress();
+          return;
+        }
+        // A tap opened the menu and leaves it open; a drag that ended nowhere
+        // is a change of mind.
+        if (strayed.current) close();
+      },
+      onPanResponderTerminate: () => lightUp(null),
+    }),
+  ).current;
+
+  useEffect(() => { if (!open) lightUp(null); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (open) setEngaged(true);
     // A timed clock, not a spring. The swell and the wobble are written into
@@ -498,6 +595,7 @@ export function GlassMorphMenu({
   // Before the first layout the estimate keeps the spring aimed somewhere
   // sensible; the measurement takes over the moment it lands.
   const targetHeight = contentHeight > 0 ? contentHeight : items.length * 48 + 12;
+  gesture.current.targetHeight = targetHeight;
   // 'extend', not 'clamp', on everything that carries the shape: the spring's
   // overshoot past 1 is what makes the panel swell before it settles.
   const grow = { extrapolate: 'extend' as const };
@@ -604,21 +702,15 @@ export function GlassMorphMenu({
       onLayout={live ? (event) => setContentHeight(Math.round(event.nativeEvent.layout.height)) : undefined}
       style={{ paddingVertical: 6 }}
     >
-      {items.map((item) => (
+      {items.map((item, index) => (
         <Pressable
           key={item.key}
           accessibilityRole="button"
           accessibilityLabel={item.label}
           disabled={!live || !open}
           onPress={() => { onClose(); item.onPress(); }}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-            minHeight: 48,
-            paddingHorizontal: 16,
-            backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
-          })}
+          onLayout={live ? (event) => { rowBounds.current[index] = { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height }; } : undefined}
+          style={({ pressed }) => menuRowShape(pressed || hover === index)}
         >
           <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
           <View style={{ flex: 1 }}>
@@ -646,6 +738,7 @@ export function GlassMorphMenu({
         />
       ) : null}
       <Animated.View
+        {...drag.panHandlers}
         style={{
           position: 'absolute',
           ...pin,

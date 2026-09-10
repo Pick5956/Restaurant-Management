@@ -308,6 +308,7 @@ export default function InventoryScreen() {
             { key: 'bulk', icon: 'duplicate-outline', label: t('เพิ่มหลายรายการ', 'Add several at once'), onPress: () => router.push('/inventory/bulk-add' as never) },
             { key: 'select', icon: 'checkmark-circle-outline', label: t('เลือกหลายรายการ', 'Select several'), onPress: () => setSelecting(true) },
             { key: 'categories', icon: 'folder-open-outline', label: t('จัดการหมวดหมู่', 'Manage categories'), onPress: () => router.push('/inventory/categories' as never) },
+            { key: 'history', icon: 'time-outline', label: t('ประวัติทั้งคลัง', 'Inventory history'), onPress: () => router.push('/inventory/history' as never) },
           ]}
         />
       ) : null}
