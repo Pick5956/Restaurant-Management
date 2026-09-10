@@ -1110,7 +1110,7 @@ export function BottomSheet({
       toValue: open ? 1 : 0,
       // The owner asked for every panel to arrive more slowly; the first cut
       // (300/240) read as abrupt on the phone.
-      duration: reducedMotion ? 0 : open ? 460 : 340,
+      duration: reducedMotion ? 0 : open ? 460 : 380,
       easing: Easing.bezier(0.2, 0.8, 0.2, 1),
       useNativeDriver: false,
     }).start(({ finished }) => {
@@ -1176,8 +1176,10 @@ export function BottomSheet({
         }
         if (!expandedRef.current && (travelled > 90 || gesture.vy > 0.8)) {
           Animated.timing(snap, {
-            toValue: tallHeightRef.current,
-            duration: 180,
+            // Past the resting place this is travel, not height: enough to
+            // clear the card, its bottom gap and its shadow.
+            toValue: tallHeightRef.current + 80,
+            duration: 220,
             easing: Easing.out(Easing.quad),
             useNativeDriver: false,
             // The close animation resets the offset once it is off screen; doing
@@ -1199,11 +1201,18 @@ export function BottomSheet({
     }),
   ).current;
 
-  // Opening and closing slide the whole card in from below; the drag and the
-  // snap change how tall it is instead, so the bottom edge — and its rounded
-  // corners — stay on screen the whole way.
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [tallHeight, 0] });
-  const shownHeight = full ? tallHeight : Animated.subtract(tallHeight, Animated.add(snap, drag));
+  // Where the sheet sits below "full", from its resting place and the finger.
+  // The first restingOffset of it is height — the card grows out of the bottom
+  // of the screen, so its own bottom edge and rounded corners never leave —
+  // and anything past that is the card travelling downward, on its way out.
+  const below = Animated.add(snap, drag);
+  const shrink = full || restingOffset <= 0
+    ? null
+    : below.interpolate({ inputRange: [0, restingOffset], outputRange: [0, restingOffset], extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const pushDown = full || restingOffset <= 0
+    ? below
+    : below.interpolate({ inputRange: [restingOffset, restingOffset + 1], outputRange: [0, 1], extrapolateLeft: 'clamp', extrapolateRight: 'extend' });
+  const shownHeight = shrink ? Animated.subtract(tallHeight, shrink) : tallHeight;
 
   // A part-height sheet is a card: glass, rounded all round, and held off the
   // sides and the bottom of the screen. Pulled up to full it is a sheet again —
@@ -1235,6 +1244,16 @@ export function BottomSheet({
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
   const bottomPadding = between(10, insets.bottom + 6);
+
+  // How far down the card has to go to be gone: its own height, the gap it
+  // keeps at the bottom, and a little more for its shadow. Travelling a whole
+  // tallHeight instead — as this did — put it off screen in the first fifth of
+  // the animation, which is why closing read as vanishing rather than sliding.
+  const away = full ? tallHeight : Animated.add(shownHeight, Animated.add(bottomInset, 28));
+  const translateY = Animated.add(
+    Animated.multiply(progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), away),
+    pushDown,
+  );
 
   const inner = (
     <>
