@@ -176,6 +176,8 @@ export type GlassMenuItem = {
   detail?: string;
   /** An unread mark on the row, matching the one on the button that opened it. */
   dot?: boolean;
+  /** Red: the row that deletes something. */
+  danger?: boolean;
   onPress: () => void;
 };
 
@@ -195,7 +197,7 @@ export function GlassMenu({
   onClose: () => void;
   items: GlassMenuItem[];
   /** Which corner it grows out of. */
-  from: 'top-right' | 'bottom-left';
+  from: 'top-right' | 'bottom-left' | 'bottom-right';
   style?: StyleProp<ViewStyle>;
 }) {
   const reducedMotion = useReducedMotion();
@@ -242,7 +244,7 @@ export function GlassMenu({
             position: 'absolute',
             zIndex: 9,
             // Grows out of the button's own corner, not out of its middle.
-            transformOrigin: from === 'top-right' ? 'top right' : 'bottom left',
+            transformOrigin: from === 'top-right' ? 'top right' : from === 'bottom-right' ? 'bottom right' : 'bottom left',
             transform: [{ scale }],
           },
           style,
@@ -279,9 +281,9 @@ export function GlassMenu({
                 backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
               })}
             >
-              <AppIcon name={item.icon} size={20} color={ai.muted} />
+              <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, color: ai.ink }}>{item.label}</Text>
+                <Text style={{ fontSize: 15, color: item.danger ? ai.dangerText : ai.ink }}>{item.label}</Text>
                 {item.detail ? <Text style={{ fontSize: 12, color: ai.faded }}>{item.detail}</Text> : null}
               </View>
               {item.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ai.orange }} /> : null}
@@ -427,6 +429,9 @@ export function GlassMorphMenu({
   dot,
   style,
   width = 232,
+  size = 46,
+  restRadius,
+  from = 'top-right',
 }: {
   open: boolean;
   onOpen: () => void;
@@ -436,9 +441,19 @@ export function GlassMorphMenu({
   label: string;
   /** An unread mark on the closed button. */
   dot?: boolean;
-  /** Where the button's top-right corner sits; the menu opens down and to the left of it. */
+  /** Where the button's anchored corner sits — top-right by default, bottom-right with `from`. */
   style?: StyleProp<ViewStyle>;
   width?: number;
+  /** The closed button's side. */
+  size?: number;
+  /** The closed button's corner radius; a circle unless said otherwise. */
+  restRadius?: number;
+  /**
+   * Which corner the drop hangs from. 'top-right' grows down and to the left;
+   * 'bottom-right' grows up and to the left, for a button low on the screen
+   * with no room under it.
+   */
+  from?: 'top-right' | 'bottom-right';
 }) {
   const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
@@ -446,7 +461,9 @@ export function GlassMorphMenu({
   const [engaged, setEngaged] = useState(open);
   // The list's natural height, measured once it has laid out at full width.
   const [contentHeight, setContentHeight] = useState(0);
-  const size = 46;
+  const fromTop = from === 'top-right';
+  const origin = fromTop ? 'top right' : 'bottom right';
+  const pin = fromTop ? { top: 0 } : { bottom: 0 };
 
   useEffect(() => {
     if (open) setEngaged(true);
@@ -470,8 +487,8 @@ export function GlassMorphMenu({
   if (!LIQUID_GLASS) {
     return (
       <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9 }, style]}>
-        <GlassButton icon={icon} label={label} dot={dot} onPress={onOpen} />
-        <GlassMenu open={open} onClose={onClose} items={items} from="top-right" style={{ top: 0, right: 0 }} />
+        <GlassButton icon={icon} label={label} dot={dot} onPress={onOpen} size={size} />
+        <GlassMenu open={open} onClose={onClose} items={items} from={from} style={{ ...pin, right: 0 }} />
       </View>
     );
   }
@@ -530,13 +547,20 @@ export function GlassMorphMenu({
   // final 22px is 22/width of the finished panel, so that is where they end.
   // In between the top-right stays tight — the drop hangs from it — and the
   // bottom-left is the belly.
-  const rest = 0.5;
+  const rest = (restRadius ?? size / 2) / size;
   const done = 22 / width;
   const share = (stops: number[], values: number[]) => Animated.multiply(panelWidth, corner(stops, values));
-  const cornerTR = share([0, 0.35, 0.7, 1], [rest, 0.26, 0.18, done]);
-  const cornerTL = share([0, 0.35, 0.7, 1], [rest, 0.64, 0.34, done]);
-  const cornerBR = share([0, 0.4, 0.75, 1], [rest, 0.5, 0.3, done]);
-  const cornerBL = share([0, 0.3, 0.55, 0.8, 1], [rest, 0.58, 0.62, 0.28, done]);
+  // Named for a drop hanging from the top-right. Hanging from the bottom-right
+  // the same shape is turned over: the tight corner is the one it hangs from,
+  // the belly is the one furthest away.
+  const hang = share([0, 0.35, 0.7, 1], [rest, 0.26, 0.18, done]);
+  const beside = share([0, 0.35, 0.7, 1], [rest, 0.64, 0.34, done]);
+  const under = share([0, 0.4, 0.75, 1], [rest, 0.5, 0.3, done]);
+  const belly = share([0, 0.3, 0.55, 0.8, 1], [rest, 0.58, 0.62, 0.28, done]);
+  const cornerTR = fromTop ? hang : under;
+  const cornerTL = fromTop ? beside : belly;
+  const cornerBR = fromTop ? under : hang;
+  const cornerBL = fromTop ? belly : beside;
   // The give at the start; the sag as it leaves the button, with a small lift
   // past its mark at the end; a lean to the left as it falls; and a degree or
   // so of wobble either way, which is the last thing separating a drop from a
@@ -594,9 +618,9 @@ export function GlassMorphMenu({
             backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
           })}
         >
-          <AppIcon name={item.icon} size={20} color={ai.muted} />
+          <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, color: ai.ink }}>{item.label}</Text>
+            <Text style={{ fontSize: 15, color: item.danger ? ai.dangerText : ai.ink }}>{item.label}</Text>
             {item.detail ? <Text style={{ fontSize: 12, color: ai.faded }}>{item.detail}</Text> : null}
           </View>
           {item.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ai.orange }} /> : null}
@@ -607,7 +631,7 @@ export function GlassMorphMenu({
 
   // Both copies sit at the top-right of the glass at the menu's full width and
   // are scaled from that corner to the frame, so they stretch with the shape.
-  const sheet = { position: 'absolute' as const, top: 0, right: 0, width, transformOrigin: 'top right' };
+  const sheet = { position: 'absolute' as const, ...pin, right: 0, width, transformOrigin: origin };
 
   return (
     <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9, width, height: Math.max(size, targetHeight) }, style]}>
@@ -622,13 +646,14 @@ export function GlassMorphMenu({
       <Animated.View
         style={{
           position: 'absolute',
-          top: 0,
+          ...pin,
           right: 0,
           width: panelWidth,
           height: panelHeight,
           zIndex: 9,
-          transformOrigin: 'top right',
-          transform: [{ translateY: sag }, { translateX: lean }, { rotate: wobble }, { scale: squish }],
+          transformOrigin: origin,
+          // Upward, the sag is a lift: the drop still leaves the button first.
+          transform: [{ translateY: fromTop ? sag : Animated.multiply(sag, -1) }, { translateX: lean }, { rotate: wobble }, { scale: squish }],
           // On the wrapper, not the glass: the glass clips its content, and a
           // shadow on a clipping view is clipped away with it.
           shadowColor: '#3d2b1f',
@@ -682,7 +707,7 @@ export function GlassMorphMenu({
             {/* The dots, in the circle the glass rests in. */}
             <Animated.View
               pointerEvents="none"
-              style={{ position: 'absolute', top: 0, right: 0, width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dotsOut }}
+              style={{ position: 'absolute', ...pin, right: 0, width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dotsOut }}
             >
               <AppIcon name={icon} size={size * 0.46} color={ai.ink} />
               {dot ? (

@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIManager, View } from 'react-native';
+import type { Anchor } from '@/src/components/inventory/parts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adjustStock, deleteIngredient, listIngredientCategories, listIngredients } from '@/src/api/ingredient';
@@ -19,9 +20,9 @@ import {
   IngredientCard,
   KeyValue,
   RestockSheet,
+  SQUARE_RADIUS,
   SearchCapsule,
   Segmented,
-  SheetAction,
   SheetButton,
   SheetFooter,
   SheetSection,
@@ -55,7 +56,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 type Sheet =
   | { kind: 'none' }
-  | { kind: 'row'; item: Ingredient }
   | { kind: 'restock'; item: Ingredient }
   | { kind: 'count'; item: Ingredient }
   | { kind: 'filter' }
@@ -93,6 +93,13 @@ export default function InventoryScreen() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sheet, setSheet] = useState<Sheet>({ kind: 'none' });
   const [menuOpen, setMenuOpen] = useState(false);
+  // The one row menu, drawn over whichever card's … was tapped. One, not one
+  // per card: it is a live glass view, and thirty of those in a scroll view is
+  // the stutter that was just taken out of this screen.
+  const [rowMenu, setRowMenu] = useState<{ item: Ingredient; right: number; top?: number; bottom?: number; from: 'top-right' | 'bottom-right' } | null>(null);
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  const rowMenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const root = useRef<View>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (quiet = false) => {
@@ -232,8 +239,30 @@ export default function InventoryScreen() {
 
   const dockBottom = Math.max(insets.bottom, 12) + 6 + 54 + 22;
 
+  const ROW_MENU_ITEMS = 5;
+  const openRowMenu = (item: Ingredient, at: Anchor) => {
+    const host = root.current;
+    if (!host) return;
+    if (rowMenuTimer.current) { clearTimeout(rowMenuTimer.current); rowMenuTimer.current = null; }
+    host.measureInWindow((hx, hy, hw, hh) => {
+      const top = at.y - hy;
+      const right = hw - (at.x - hx + at.width);
+      // The drop hangs down from the button when there is room under it,
+      // and rises from it when the button sits low, near the dock.
+      const fits = top + ROW_MENU_ITEMS * 48 + 12 <= hh - dockBottom;
+      setRowMenu(fits ? { item, right, top, from: 'top-right' } : { item, right, bottom: hh - (top + at.height), from: 'bottom-right' });
+      setRowMenuOpen(true);
+    });
+  };
+  const closeRowMenu = () => {
+    setRowMenuOpen(false);
+    // Gone once it has finished gathering back into the button; unmounting at
+    // once would cut the close short.
+    rowMenuTimer.current = setTimeout(() => { setRowMenu(null); rowMenuTimer.current = null; }, 600);
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: palette.canvas }}>
+    <View ref={root} style={{ flex: 1, backgroundColor: palette.canvas }}>
       {selecting ? (
         <FloatingHeader
           centered
@@ -305,7 +334,7 @@ export default function InventoryScreen() {
               canManage={canManage}
               onPress={() => (selecting ? toggle(item.ID) : router.push({ pathname: '/inventory/detail' as never, params: { id: String(item.ID) } } as never))}
               onRestock={() => setSheet({ kind: 'restock', item })}
-              onMore={() => setSheet({ kind: 'row', item })}
+              onMore={(at) => openRowMenu(item, at)}
             />
           );
           if (!canManage || selecting) return <View key={item.ID}>{card}</View>;
@@ -337,19 +366,28 @@ export default function InventoryScreen() {
         </Dock>
       ) : null}
 
-      {/* ---- row menu ---- */}
-      <BottomSheet open={sheet.kind === 'row'} onClose={close} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
-        {sheet.kind === 'row' ? (
-          <>
-            <SheetTitle title={sheet.item.name} subtitle={t(`คงเหลือ ${fmt(sheet.item.stock, locale)} ${sheet.item.unit}`, `${fmt(sheet.item.stock, locale)} ${sheet.item.unit} on hand`)} />
-            <SheetAction icon="document-text-outline" label={t('ดูรายละเอียดและประวัติ', 'Details and history')} onPress={() => { close(); router.push({ pathname: '/inventory/detail' as never, params: { id: String(sheet.item.ID) } } as never); }} />
-            <SheetAction icon="add-circle-outline" label={t('เติมสต็อก', 'Restock')} onPress={() => setSheet({ kind: 'restock', item: sheet.item })} />
-            <SheetAction icon="calculator-outline" label={t('ปรับยอด (นับจริง)', 'Set counted quantity')} onPress={() => setSheet({ kind: 'count', item: sheet.item })} />
-            <SheetAction icon="create-outline" label={t('แก้ไขข้อมูลวัตถุดิบ', 'Edit ingredient')} onPress={() => { close(); router.push({ pathname: '/inventory/item' as never, params: { id: String(sheet.item.ID) } } as never); }} />
-            <SheetAction icon="trash-outline" label={t('ลบวัตถุดิบ', 'Delete ingredient')} danger divided onPress={() => { const item = sheet.item; close(); setTimeout(() => confirmDelete(item), 380); }} />
-          </>
-        ) : null}
-      </BottomSheet>
+      {/* ---- row menu: the … of one card, grown into a menu ---- */}
+      {rowMenu ? (
+        <GlassMorphMenu
+          open={rowMenuOpen}
+          onOpen={() => setRowMenuOpen(true)}
+          onClose={closeRowMenu}
+          icon="ellipsis-horizontal"
+          label={t(`ตัวเลือกของ ${rowMenu.item.name}`, `Options for ${rowMenu.item.name}`)}
+          size={44}
+          restRadius={SQUARE_RADIUS}
+          from={rowMenu.from}
+          width={260}
+          style={{ right: rowMenu.right, top: rowMenu.top, bottom: rowMenu.bottom }}
+          items={[
+            { key: 'detail', icon: 'document-text-outline', label: t('ดูรายละเอียดและประวัติ', 'Details and history'), onPress: () => router.push({ pathname: '/inventory/detail' as never, params: { id: String(rowMenu.item.ID) } } as never) },
+            { key: 'restock', icon: 'add-circle-outline', label: t('เติมสต็อก', 'Restock'), onPress: () => setSheet({ kind: 'restock', item: rowMenu.item }) },
+            { key: 'count', icon: 'calculator-outline', label: t('ปรับยอด (นับจริง)', 'Set counted quantity'), onPress: () => setSheet({ kind: 'count', item: rowMenu.item }) },
+            { key: 'edit', icon: 'create-outline', label: t('แก้ไขข้อมูลวัตถุดิบ', 'Edit ingredient'), onPress: () => router.push({ pathname: '/inventory/item' as never, params: { id: String(rowMenu.item.ID) } } as never) },
+            { key: 'delete', icon: 'trash-outline', label: t('ลบวัตถุดิบ', 'Delete ingredient'), danger: true, onPress: () => confirmDelete(rowMenu.item) },
+          ]}
+        />
+      ) : null}
 
       <RestockSheet
         item={sheet.kind === 'restock' ? sheet.item : null}

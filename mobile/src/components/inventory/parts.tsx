@@ -308,11 +308,22 @@ export function CheckBox({ checked }: { checked: boolean }) {
 }
 
 /** A 44px rounded-square button: solid orange for the primary act, glass for the rest. */
-export function SquareButton({ icon, label, onPress, primary, disabled, size = 44, solid }: { icon: AppIconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean; size?: number; /** No glass, on any platform — for a button that lives inside scrolling content. */ solid?: boolean }) {
-  const shape = { width: size, height: size, borderRadius: Math.round(size * 0.32), borderCurve: 'continuous' as const, alignItems: 'center' as const, justifyContent: 'center' as const };
+/** Where a button sits on the window, so something can grow out of it. */
+export type Anchor = { x: number; y: number; width: number; height: number };
+
+export const SQUARE_RADIUS = 14;
+
+export function SquareButton({ icon, label, onPress, primary, disabled, size = 44, solid }: { icon: AppIconName; label: string; onPress: (anchor: Anchor) => void; primary?: boolean; disabled?: boolean; size?: number; /** No glass, on any platform — for a button that lives inside scrolling content. */ solid?: boolean }) {
+  const shape = { width: size, height: size, borderRadius: size === 44 ? SQUARE_RADIUS : Math.round(size * 0.32), borderCurve: 'continuous' as const, alignItems: 'center' as const, justifyContent: 'center' as const };
+  const self = useRef<View>(null);
+  const press = () => {
+    const node = self.current;
+    if (!node) return;
+    node.measureInWindow((x, y, width, height) => onPress({ x, y, width, height }));
+  };
   if (primary) {
     return (
-      <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : disabled ? 0.5 : 1 })}>
+      <Pressable ref={self} accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={press} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : disabled ? 0.5 : 1 })}>
         {LIQUID_GLASS && !solid ? (
           <GlassView glassEffectStyle="regular" isInteractive colorScheme="light" tintColor="rgba(194,65,12,0.86)" style={shape}>
             <AppIcon name={icon} size={Math.round(size * 0.5)} color="#ffffff" />
@@ -327,7 +338,7 @@ export function SquareButton({ icon, label, onPress, primary, disabled, size = 4
   }
   const face = <AppIcon name={icon} size={Math.round(size * 0.45)} color={palette.muted} />;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
+    <Pressable ref={self} accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={press} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
       {solid ? (
         <View style={{ ...shape, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}>{face}</View>
       ) : (
@@ -356,7 +367,8 @@ export function IngredientCard({
   canManage: boolean;
   onPress: () => void;
   onRestock: () => void;
-  onMore: () => void;
+  /** Passed where the … button is, so the menu can grow out of that spot. */
+  onMore: (anchor: Anchor) => void;
 }) {
   const status = stockStatus(item);
   const colour = statusColour(status);
