@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { createIngredient, listIngredientCategories } from '@/src/api/ingredient';
@@ -9,7 +9,7 @@ import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, HeaderTextButton, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { buildIngredientCreateInput, ingredientUnitOptions } from '@/src/lib/inventory-form';
 import { can } from '@/src/lib/rbac';
@@ -98,15 +98,17 @@ export default function BulkAddIngredientsScreen() {
   // Back to the list. A row left without a name was never an ingredient, so
   // it goes rather than sitting in the list as a blank line.
   const closeForm = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    Keyboard.dismiss();
+    setPicker('none');
     setRows((prev) => prev.map((row) => ({ ...row, name: row.name.trim() })).filter((row) => row.name.length > 0));
     setOpenKey(null);
   };
 
-  const removeRow = (key: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setRows((prev) => prev.filter((row) => row.key !== key));
-    setOpenKey(null);
+  // Everything back to blank. To drop the row, clear it and go back: a row
+  // with no name does not survive the trip to the list.
+  const clearForm = () => {
+    Keyboard.dismiss();
+    set({ name: '', categoryId: 'none', unit: 'กก.', cost: '0', stock: '0', minStock: '0', storageType: 'room_temp' });
   };
 
   async function saveAll() {
@@ -176,17 +178,7 @@ export default function BulkAddIngredientsScreen() {
           title={open.name.trim() || t(`รายการที่ ${index}`, `Item ${index}`)}
           backLabel={t('กลับไปรายการ', 'Back to the list')}
           onBack={closeForm}
-          trailing={(
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('เอารายการนี้ออก', 'Remove this item')}
-              onPress={() => removeRow(open.key)}
-              hitSlop={6}
-              style={({ pressed }) => ({ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.danger, opacity: pressed ? 0.85 : 1, shadowColor: '#3d2b1f', shadowOpacity: 0.24, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 })}
-            >
-              <AppIcon name="trash-outline" size={21} color="#ffffff" />
-            </Pressable>
-          )}
+          trailing={<HeaderTextButton label={t('ล้าง', 'Clear')} onPress={clearForm} />}
         />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingTop: contentTop, paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}>
