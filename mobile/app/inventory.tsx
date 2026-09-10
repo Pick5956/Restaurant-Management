@@ -281,7 +281,7 @@ export default function InventoryScreen() {
           backLabel={t('ออกจากการเลือก', 'Leave selection')}
           onBack={leaveSelect}
           title={selected.size ? t(`เลือก ${selected.size} รายการ`, `${selected.size} selected`) : t('เลือกรายการ', 'Select items')}
-          trailing={<HeaderTextButton label={allSelected ? t('ไม่เลือก', 'None') : t('เลือกทั้งหมด', 'All')} onPress={toggleAll} />}
+          trailing={<HeaderTextButton label={allSelected ? t('ยกเลิก', 'Deselect all') : t('เลือกทั้งหมด', 'Select all')} onPress={toggleAll} />}
           bar={bar}
           rail={rail}
         />
