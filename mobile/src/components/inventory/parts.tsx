@@ -333,10 +333,13 @@ export function CheckBox({ checked }: { checked: boolean }) {
 /** Where a button sits on the window, so something can grow out of it. */
 export type Anchor = { x: number; y: number; width: number; height: number };
 
-export const SQUARE_RADIUS = 14;
+// The round buttons: the filter beside the search, the + and … on a card.
+// They were rounded squares; the owner asked for circles, which the header's
+// own glass buttons already are, so now everything that is pressed here is round.
+export const SQUARE_RADIUS = 22;
 
 export function SquareButton({ icon, label, onPress, primary, disabled, size = 44, solid }: { icon: AppIconName; label: string; onPress: (anchor: Anchor) => void; primary?: boolean; disabled?: boolean; size?: number; /** No glass, on any platform — for a button that lives inside scrolling content. */ solid?: boolean }) {
-  const shape = { width: size, height: size, borderRadius: size === 44 ? SQUARE_RADIUS : Math.round(size * 0.32), borderCurve: 'continuous' as const, alignItems: 'center' as const, justifyContent: 'center' as const };
+  const shape = { width: size, height: size, borderRadius: size / 2, alignItems: 'center' as const, justifyContent: 'center' as const };
   const self = useRef<View>(null);
   const press = () => {
     const node = self.current;
