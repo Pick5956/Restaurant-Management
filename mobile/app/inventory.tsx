@@ -20,6 +20,7 @@ import {
   IngredientCard,
   KeyValue,
   RestockSheet,
+  SEARCH_HEIGHT,
   SQUARE_RADIUS,
   SearchCapsule,
   Segmented,
@@ -225,6 +226,16 @@ export default function InventoryScreen() {
     );
   }
 
+  const bar = (
+    <>
+      <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อ, SKU หรือหมวด', 'Search name, SKU or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
+      <View>
+        <SquareButton size={SEARCH_HEIGHT} icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
+        {filtersActive ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}
+      </View>
+    </>
+  );
+
   const rail = (
     <Segmented
       value={status}
@@ -271,6 +282,7 @@ export default function InventoryScreen() {
           onBack={leaveSelect}
           title={selected.size ? t(`เลือก ${selected.size} รายการ`, `${selected.size} selected`) : t('เลือกรายการ', 'Select items')}
           trailing={<HeaderTextButton label={allSelected ? t('ไม่เลือก', 'None') : t('เลือกทั้งหมด', 'All')} onPress={toggleAll} />}
+          bar={bar}
           rail={rail}
         />
       ) : (
@@ -279,6 +291,7 @@ export default function InventoryScreen() {
           backLabel={t('ย้อนกลับ', 'Back')}
           onBack={() => router.back()}
           title={t('คลังวัตถุดิบ', 'Inventory')}
+          bar={bar}
           rail={rail}
         />
       )}
@@ -302,18 +315,8 @@ export default function InventoryScreen() {
       <ScrollView
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true), paddingHorizontal: 12, paddingBottom: dockBottom + 12, gap: 10 }}
+        contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true, true), paddingHorizontal: 12, paddingBottom: dockBottom + 12, gap: 10 }}
       >
-        {!selecting ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อ, SKU หรือหมวด', 'Search name, SKU or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
-            <View>
-              <SquareButton size={50} icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
-              {filtersActive ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}
-            </View>
-          </View>
-        ) : null}
-
         {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
         {notice ? <Feedback title={notice} tone="success" /> : null}
 

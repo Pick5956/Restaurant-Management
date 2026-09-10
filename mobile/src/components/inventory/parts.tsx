@@ -24,7 +24,12 @@ import type { Ingredient } from '@/src/types/ingredient';
 export const HEADER_BUTTON = 46;
 export const HEADER_FADE = 15;
 export const HEADER_PAD_TOP = 4;
-const RAIL_HEIGHT = 46;
+// The rail is a pill, and a smaller one than the search above it: the search
+// is where the hand goes, the rail is a setting.
+const RAIL_HEIGHT = 38;
+export const SEARCH_HEIGHT = 50;
+/** Between the rows of the header block. */
+const HEADER_ROW_GAP = 8;
 
 export function fmt(value: number | string, locale: string, digits = 2): string {
   return Number(value).toLocaleString(locale, { maximumFractionDigits: digits });
@@ -78,8 +83,13 @@ export function Card({ children, style, radius = 22, solid }: { children: ReactN
  * rail underneath (the status segments). Everything below scrolls under it, so
  * the screen has to start its content at `headerContentTop`.
  */
-export function headerContentTop(insetsTop: number, withRail: boolean): number {
-  return insetsTop + HEADER_PAD_TOP + HEADER_BUTTON + (withRail ? 8 + RAIL_HEIGHT : 0) + HEADER_FADE + 10;
+export function headerContentTop(insetsTop: number, withRail: boolean, withBar = false): number {
+  return insetsTop + headerBlockHeight(withBar, withRail) + HEADER_FADE + 10;
+}
+
+/** The header's rows below the safe area: title, then the search bar, then the rail. */
+function headerBlockHeight(withBar: boolean, withRail: boolean): number {
+  return HEADER_PAD_TOP + HEADER_BUTTON + (withBar ? HEADER_ROW_GAP + SEARCH_HEIGHT : 0) + (withRail ? HEADER_ROW_GAP + RAIL_HEIGHT : 0);
 }
 
 export function FloatingHeader({
@@ -89,6 +99,7 @@ export function FloatingHeader({
   backLabel,
   backIcon = 'chevron-back',
   trailing,
+  bar,
   rail,
   centered,
 }: {
@@ -99,11 +110,14 @@ export function FloatingHeader({
   /** "close" when the header is leaving a mode rather than a screen. */
   backIcon?: AppIconName;
   trailing?: ReactNode;
+  /** The search row, SEARCH_HEIGHT tall, under the title. */
+  bar?: ReactNode;
+  /** The status rail, under the bar. */
   rail?: ReactNode;
   centered?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const solidTo = HEADER_PAD_TOP + HEADER_BUTTON + (rail ? 8 + RAIL_HEIGHT : 0);
+  const solidTo = headerBlockHeight(Boolean(bar), Boolean(rail));
   return (
     <>
       <GlassHeaderPane top={insets.top} solidTo={solidTo} fade={HEADER_FADE} />
@@ -116,7 +130,8 @@ export function FloatingHeader({
           </View>
           {trailing ?? <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />}
         </View>
-        {rail ? <View style={{ marginTop: 8 }}>{rail}</View> : null}
+        {bar ? <View style={{ marginTop: HEADER_ROW_GAP, height: SEARCH_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{bar}</View> : null}
+        {rail ? <View style={{ marginTop: HEADER_ROW_GAP }}>{rail}</View> : null}
       </View>
     </>
   );
@@ -134,7 +149,9 @@ export function FloatingHeader({
  */
 const RAIL_PAD = 4;
 const RAIL_GAP = 4;
-const THUMB_RADIUS = 12;
+// Pill ends: the thumb is as round as it is tall, and so is the rail around it.
+const THUMB_RADIUS = (RAIL_HEIGHT - RAIL_PAD * 2) / 2;
+const RAIL_RADIUS = RAIL_HEIGHT / 2;
 
 export function Segmented<T extends string>({
   value,
@@ -214,9 +231,9 @@ export function Segmented<T extends string>({
 
   const labelOf = (option: { label: string; count?: number }, on: boolean) => (
     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-      <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? '#FFFFFF' : palette.muted }}>{option.label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '600', color: on ? '#FFFFFF' : palette.muted }}>{option.label}</Text>
       {option.count !== undefined ? (
-        <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? 'rgba(255,255,255,0.8)' : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: on ? 'rgba(255,255,255,0.8)' : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
       ) : null}
     </View>
   );
@@ -224,7 +241,7 @@ export function Segmented<T extends string>({
   return (
     <View
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-      style={{ height: RAIL_HEIGHT, padding: RAIL_PAD, borderRadius: 16, backgroundColor: LIQUID_GLASS ? 'rgba(255,237,213,0.55)' : palette.surfaceStrong }}
+      style={{ height: RAIL_HEIGHT, padding: RAIL_PAD, borderRadius: RAIL_RADIUS, backgroundColor: LIQUID_GLASS ? 'rgba(255,237,213,0.55)' : palette.surfaceStrong }}
     >
       <View style={{ flex: 1, flexDirection: 'row', gap: RAIL_GAP }}>
         {options.map((option) => (
