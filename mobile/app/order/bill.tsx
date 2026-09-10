@@ -1,16 +1,21 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, useWindowDimensions, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Image, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
 import { listCategories, listMenuItems } from '@/src/api/menu';
-import { addOrderItem, getBill, payOrder, updateOrderItemStatus } from '@/src/api/order';
+import { addOrderItem, deleteOrderItem, getBill, payOrder, sendOrderToKitchen, updateOrderItemStatus } from '@/src/api/order';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
-import { ActionDock, Button, Divider, EmptyState, Feedback, RadioGroup, SearchField, SectionHeader, Select, StatusBadge, TextField } from '@/src/components/ui';
+import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
+import { ActionDock, Button, EmptyState, Feedback, RadioGroup, SearchField, SectionHeader, Select, StatusBadge, TextField } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
-import { selectOrderItemImage } from '@/src/lib/order-detail-runtime';
+import {
+  currentRoundPresentation,
+  selectOrderItemImage,
+  summarizeCurrentRound,
+} from '@/src/lib/order-detail-runtime';
 import {
   activeOrderItems,
   billExitRoute,
@@ -32,6 +37,9 @@ import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
 import type { Category, MenuItem } from '@/src/types/menu';
 import type { Bill, OrderItem } from '@/src/types/order';
+
+/** How far the item-status chip drops to sit on the item name's optical line. */
+const ROW_CHIP_OPTICAL_DROP = 4;
 
 function resolveImage(value: string) {
   if (!value) return '';
@@ -77,7 +85,13 @@ export default function BillScreen() {
   const [categoryId, setCategoryId] = useState('all');
   const [search, setSearch] = useState('');
   const [method, setMethod] = useState<'cash' | 'promptpay_qr'>('cash');
-  const [editing, setEditing] = useState(false);
+  // No edit MODE. The screen used to hide removal behind a `แก้รายการ` toggle
+  // and then switch the toggle on by itself whenever the order had undelivered
+  // items - which, since the basket started landing here, is every arrival
+  // mid-service. A row is removed by swiping it left and tapping the rail that
+  // appears, the same gesture the retired basket screen used, so nothing about
+  // the list changes state to allow it.
+  const [openRowId, setOpenRowId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -113,7 +127,6 @@ export default function BillScreen() {
         ]);
         setMenuItems(menuResponse.menu_items || []);
         setCategories(categoryResponse.categories || []);
-        if (undeliveredOrderItems(nextBill.items).length > 0) setEditing(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill'));
@@ -126,21 +139,41 @@ export default function BillScreen() {
     void load();
   }, [load]));
 
+  // The swipe that CLOSES a delete rail travels right - the same direction as
+  // the stack's back gesture. That gesture is a native recogniser and takes no
+  // part in the JS responder negotiation the row wins against the scroll view,
+  // so closing a rail was popping the whole screen instead. It is switched off
+  // for exactly as long as a rail is open; the row is the only thing a swipe
+  // can mean then.
+  const navigation = useNavigation();
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: openRowId === null });
+  }, [navigation, openRowId]);
+
   const activeItems = useMemo(() => activeOrderItems(bill?.items), [bill?.items]);
   const itemCount = useMemo(
     () => activeItems.reduce((sum, item) => sum + item.quantity, 0),
     [activeItems],
   );
   const undelivered = useMemo(() => undeliveredOrderItems(activeItems), [activeItems]);
+  const billContextLabel = bill?.order.table?.display_label
+    || (bill?.order.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : '');
   const menuImageById = useMemo(
     () => new Map(menuItems.map((item) => [item.ID, item.image_url])),
     [menuItems],
   );
   const paymentReady = canTakeOrderPayment(activeItems);
+  // The unsent round, on the summary screen because this is where the basket
+  // lands now. `pending` is the only status that has not reached the kitchen,
+  // so it is the only one that can still be edited freely or dropped without a
+  // cancellation reason - and the only one `ส่งเข้าครัว` acts on.
+  const roundSummary = useMemo(() => summarizeCurrentRound(activeItems), [activeItems]);
+  const roundCopy = useMemo(() => currentRoundPresentation(roundSummary, language), [language, roundSummary]);
   const paymentStage = bill
     ? billPaymentStage(bill.payment_status)
     : 'due';
   const canEditBill = paymentStage === 'due' && canTakeOrder;
+  const canSendRound = canEditBill && roundSummary.quantity > 0;
   const filteredMenu = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return menuItems.filter((item) => {
@@ -155,16 +188,75 @@ export default function BillScreen() {
     });
   }, [categoryId, menuItems, search]);
 
-  async function refreshBillAfterMutation(successMessage: string) {
+  // `null` for work that speaks for itself: deleting a row makes the row
+  // disappear, and a green banner announcing it pushes the whole list down to
+  // report something the eye has already seen.
+  async function refreshBillAfterMutation(successMessage: string | null) {
     setMessage(successMessage);
     try {
       setBill(await getBill(orderId));
       setBillStale(false);
     } catch (err) {
       setBillStale(true);
+      const done = successMessage ?? copy('ทำรายการแล้ว', 'Done');
       setError(err instanceof Error
-        ? copy(`${successMessage} แต่โหลดบิลล่าสุดไม่สำเร็จ: ${err.message}`, `${successMessage}, but the latest bill could not be loaded: ${err.message}`)
-        : copy(`${successMessage} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${successMessage}, but the latest bill could not be loaded`));
+        ? copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ: ${err.message}`, `${done}, but the latest bill could not be loaded: ${err.message}`)
+        : copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${done}, but the latest bill could not be loaded`));
+    }
+  }
+
+  // Sending is the whole reason the basket can land here. It leaves the screen
+  // open rather than popping back the way the basket screen did: the same list
+  // stays on screen and the rows it just sent turn from unsent to `ยังไม่เสิร์ฟ`,
+  // which is the confirmation.
+  async function sendRoundToKitchen() {
+    if (!bill || !canSendRound || saving) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await sendOrderToKitchen(orderId);
+      await refreshBillAfterMutation(roundCopy.sentMessage);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // The delete rail behind a row. What it does depends on where the line has
+  // got to: an unsent one is deleted outright, because the kitchen has never
+  // seen it and there is nothing to explain to anyone; anything already cooking
+  // or served opens the reason field instead, which is what the kitchen and the
+  // day's cancellation record need.
+  function removeBillItem(item: OrderItem) {
+    if (!canEditBill || saving) return;
+    setOpenRowId(null);
+    if (item.status !== 'pending') {
+      setCancelTarget(item);
+      setCancelReason('');
+      setAdding(false);
+      return;
+    }
+    void deletePendingItem(item);
+  }
+
+  async function deletePendingItem(item: OrderItem) {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteOrderItem(orderId, item.ID);
+      await refreshBillAfterMutation(null);
+      // Silent on screen, not silent to VoiceOver: a row vanishing is obvious
+      // to the eye and invisible to a screen reader.
+      AccessibilityInfo.announceForAccessibility(
+        copy(`ลบ ${item.menu_name} แล้ว`, `${item.menu_name} deleted`),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -237,7 +329,6 @@ export default function BillScreen() {
       // it: a failed re-read can never strand a paid order on a screen that
       // still offers a Pay button. The receipt stays reachable from the order
       // archive, the same place the web sends people for a reprint.
-      setEditing(false);
       setAdding(false);
       setCancelTarget(null);
       setCancelReason('');
@@ -320,6 +411,11 @@ export default function BillScreen() {
   }
 
   const splitWorkspace = width >= breakpoints.tabletWorkspace;
+  // The delete rail behind a row has to reach the screen edge; a rail that
+  // stops at the page gutter reads as a half-finished gesture. Only the row
+  // bleeds - its content is padded back to the page's own margin - and only on
+  // phones, where the page gutter IS the screen edge.
+  const rowBleed = width < breakpoints.tablet ? spacing.lg : 0;
   const exitLabel = canTakeOrder
     ? copy('กลับไปหน้าโต๊ะ', 'Back to tables')
     : canViewOrders
@@ -357,117 +453,203 @@ export default function BillScreen() {
       label={copy('ยืนยันรับชำระเงิน', 'Confirm payment')}
       onPress={pay}
       loading={saving}
-      disabled={!paymentReady || editing || billStale || (method === 'promptpay_qr' && !bill.promptpay_qr_image)}
+      disabled={!paymentReady || billStale || (method === 'promptpay_qr' && !bill.promptpay_qr_image)}
     />
   );
   const exitAction = <Button icon="arrow-back" label={exitLabel} onPress={exitBill} />;
+  const sendRoundAction = canSendRound ? (
+    <Button
+      icon="flame-outline"
+      label={roundCopy.sendLabel}
+      onPress={sendRoundToKitchen}
+      loading={saving}
+      disabled={billStale}
+    />
+  ) : null;
 
   const billItemsPanel = (
     <Panel>
-      <SectionHeader
-        title={bill.order.table?.display_label || (bill.order.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : bill.order.order_number)}
-        detail={copy(
-          `${itemCount.toLocaleString('th-TH')} รายการในบิล`,
-          `${itemCount.toLocaleString('en-US')} items on this bill`,
-        )}
-        action={canEditBill ? (
-          <Button
-            compact
-            icon={editing ? 'checkmark' : 'create-outline'}
-            variant="secondary"
-            label={editing ? copy('เสร็จสิ้น', 'Done') : copy('แก้รายการ', 'Edit items')}
-            onPress={() => {
-              setEditing((value) => !value);
-              setAdding(false);
-              setCancelTarget(null);
-              setCancelReason('');
-            }}
-          />
-        ) : undefined}
-      />
-
+      {/* The rows carry their own vertical padding, so the panel's gap would
+          be a second helping of space between every pair of dishes. */}
+      <View>
       {activeItems.map((item, index) => {
-        const thumbnailSize = splitWorkspace ? 64 : 56;
+        // Big enough to actually see the dish, the way a delivery app's order
+        // summary shows it. 56 was a favicon of a photo next to two lines of
+        // bold text, and the eye had nothing to land on.
+        const thumbnailSize = splitWorkspace ? 88 : 76;
         const imageUrl = selectOrderItemImage({
           menuId: item.menu_id,
           menuImageUrl: item.menu?.image_url,
         }, menuImageById);
         return (
           <View key={item.ID}>
-            {index ? <Divider /> : null}
-            <View style={{ gap: spacing.sm, paddingVertical: spacing.sm }}>
-              <View style={{ minHeight: 56, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-                <MenuImage
-                  accessibilityLabel={copy(`รูปเมนู ${item.menu_name}`, `Photo of ${item.menu_name}`)}
-                  imageUrl={imageUrl}
-                  size={thumbnailSize}
-                  variant="row"
-                />
-                <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
-                  <Text selectable style={typeScale.cardTitle}>{item.menu_name}</Text>
-                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
-                    {copy(
-                      `จำนวน ${item.quantity.toLocaleString('th-TH')}`,
-                      `Quantity ${item.quantity.toLocaleString('en-US')}`,
-                    )}
-                    {item.selected_options?.length ? ` · ${item.selected_options.map((option) => option.option_name).join(', ')}` : ''}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-                  <Text selectable style={typeScale.number}>{money(item.subtotal, language)}</Text>
-                  {isCookingItem(item.status) ? (
-                    <StatusBadge label={copy('ยังไม่เสิร์ฟ', 'Not served')} tone="warning" />
-                  ) : null}
-                </View>
-              </View>
-
-              {editing && canEditBill ? (
-                cancelTarget?.ID === item.ID ? (
-                  <View style={{ gap: spacing.sm }}>
-                    <TextField
-                      label={copy('เหตุผลที่นำออกจากบิล', 'Reason for removing this item')}
-                      value={cancelReason}
-                      onChangeText={setCancelReason}
-                      multiline
-                    />
-                    <View style={{ flexDirection: width < 460 ? 'column' : 'row', gap: spacing.sm }}>
-                      <Button
-                        variant="secondary"
-                        label={copy('เก็บรายการไว้', 'Keep item')}
-                        onPress={() => {
-                          setCancelTarget(null);
-                          setCancelReason('');
-                        }}
-                        style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                      />
-                      <Button
-                        variant="danger"
-                        label={copy('ยืนยันนำออก', 'Remove item')}
-                        onPress={cancelBillItem}
-                        loading={saving}
-                        disabled={!cancelReason.trim()}
-                        style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                      />
+            <View style={{ marginHorizontal: -rowBleed }}>
+            <SwipeToDeleteRow
+              deleteAccessibilityLabel={copy(`นำ ${item.menu_name} ออกจากบิล`, `Remove ${item.menu_name} from the bill`)}
+              deleteLabel={copy('ลบ', 'Delete')}
+              disabled={saving || !canEditBill}
+              editHint={item.status === 'pending'
+                ? copy('แตะเพื่อแก้ไข ปัดไปทางซ้ายเพื่อลบ', 'Tap to edit, swipe left to delete')
+                : copy('ปัดไปทางซ้ายเพื่อนำออกจากบิล', 'Swipe left to remove from the bill')}
+              editLabel={copy(
+                `${item.menu_name} จำนวน ${item.quantity.toLocaleString('th-TH')}`,
+                `${item.menu_name}, quantity ${item.quantity.toLocaleString('en-US')}`,
+              )}
+              itemId={item.ID}
+              open={openRowId === item.ID}
+              onClose={() => setOpenRowId((current) => (current === item.ID ? null : current))}
+              // Only an unsent line can be opened for editing; everything else
+              // is already on the kitchen's board. It opens the SAME screen the
+              // dish was chosen on, with options, note and quantity filled back
+              // in - the quantity-only editor it replaced could not undo a
+              // wrong option at all.
+              onEdit={item.status === 'pending' && canEditBill ? () => router.push({
+                pathname: '/order/item' as never,
+                params: { id: String(orderId), menuId: String(item.menu_id), itemId: String(item.ID) },
+              } as never) : undefined}
+              onDelete={() => removeBillItem(item)}
+              onOpen={() => setOpenRowId(item.ID)}
+              onSwipeEnd={() => undefined}
+              onSwipeStart={() => undefined}
+            >
+              <View style={{ gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: rowBleed }}>
+                <View style={{ minHeight: 56, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+                  <MenuImage
+                    accessibilityLabel={copy(`รูปเมนู ${item.menu_name}`, `Photo of ${item.menu_name}`)}
+                    imageUrl={imageUrl}
+                    size={thumbnailSize}
+                    variant="row"
+                  />
+                  <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+                    {/* The status leads the name rather than sitting out on the
+                        right. An unsent line and a cooking line are both "not
+                        served", but only one of them is what `ส่งเข้าครัว` is
+                        about to act on, and since the basket lands here a bill
+                        can hold both at once - so it is the first thing read,
+                        not a footnote across the row. */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                      {/* Nudged down by ROW_CHIP_OPTICAL_DROP. Thai glyphs sit
+                          LOW inside their line box - the space above them is
+                          reserved for tone marks that most words never use - so
+                          the visual line of a word is below the box's centre.
+                          A chip centred on the box therefore floats above the
+                          word, and `alignItems: 'baseline'` made it worse, not
+                          better: Yoga takes a View child's baseline from its
+                          bottom edge, which lifted the chip further. Optical
+                          alignment against a font's own metrics is a measured
+                          offset; there is no layout rule that produces it. */}
+                      {item.status === 'pending' ? (
+                        <View style={{ marginTop: ROW_CHIP_OPTICAL_DROP }}>
+                          <StatusBadge emphasis="strong" label={copy('รอส่ง', 'Not sent')} tone="info" />
+                        </View>
+                      ) : isCookingItem(item.status) ? (
+                        <View style={{ marginTop: ROW_CHIP_OPTICAL_DROP }}>
+                          <StatusBadge emphasis="strong" label={copy('ยังไม่เสิร์ฟ', 'Not served')} tone="warning" />
+                        </View>
+                      ) : null}
+                      {/* Medium, not bold. With the photo carrying the row, a
+                          700 name, an 800 price and a 700 count made three
+                          things shout at once. */}
+                      <Text numberOfLines={2} selectable style={[typeScale.cardTitle, { minWidth: 0, flex: 1, color: palette.textStrong, fontWeight: '500' }]}>{item.menu_name}</Text>
+                    </View>
+                    {/* One line per option, not a comma-joined string. Four
+                        add-ons ran into a wrapped grey sentence nobody could
+                        read back to a customer; a stack reads as a list of what
+                        was actually ordered, which is why the name is pinned to
+                        the top of the row rather than centred on the photo. */}
+                    {item.selected_options?.length ? (
+                      <View>
+                        {item.selected_options.map((option) => (
+                          <Text
+                            key={option.ID}
+                            selectable
+                            // 12/18 rather than the caption's 13/20, and no gap
+                            // between the lines. 1.5x is the floor the type
+                            // scale sets - tighter than that and React Native
+                            // crops the Thai tone marks off the top, silently -
+                            // so the size comes down instead of the ratio.
+                            style={[typeScale.caption, { color: palette.textStrong, fontSize: 12, lineHeight: 18 }]}
+                          >
+                            {option.option_name}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                    {/* Under the options and quieter than them: it is the last
+                        thing about the dish and the least structured. */}
+                    {item.note ? (
+                      <Text selectable style={[typeScale.caption, { color: palette.placeholder, fontSize: 12, lineHeight: 18 }]}>
+                        {item.note}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+                    {/* The same 23pt line box the name uses (typeScale.cardTitle),
+                        so the price and the name - and the chip centred on the
+                        name - all start on one level. `number` carries no line
+                        height of its own, so the price sat a couple of points
+                        low against a taller natural line box. */}
+                    <Text selectable style={[typeScale.number, { fontSize: 17, fontWeight: '600', lineHeight: 23 }]}>{money(item.subtotal, language)}</Text>
+                    {/* The count, where the status chip used to be. `x2` in a
+                        disc says quantity without spending a line on the word,
+                        which is what `จำนวน 2` under the name was doing. */}
+                    <View
+                      style={{
+                        minWidth: 32,
+                        height: 32,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: radius.full,
+                        backgroundColor: palette.neutralSoft,
+                        paddingHorizontal: 7,
+                      }}
+                    >
+                      <Text
+                        selectable
+                        style={{ color: palette.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                      >
+                        {`x${item.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}`}
+                      </Text>
                     </View>
                   </View>
-                ) : (
-                  <Button
-                    compact
-                    icon="trash-outline"
-                    variant="secondary"
-                    label={copy('นำออกจากบิล', 'Remove from bill')}
-                    onPress={() => {
-                      setCancelTarget(item);
-                      setCancelReason('');
-                      setAdding(false);
-                    }}
-                  />
-                )
-              ) : null}
+                </View>
+              </View>
+            </SwipeToDeleteRow>
             </View>
+            {cancelTarget?.ID === item.ID ? (
+              <View style={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
+                <TextField
+                  label={copy('เหตุผลที่นำออกจากบิล', 'Reason for removing this item')}
+                  value={cancelReason}
+                  onChangeText={setCancelReason}
+                  multiline
+                />
+                <View style={{ flexDirection: width < 460 ? 'column' : 'row', gap: spacing.sm }}>
+                  <Button
+                    variant="secondary"
+                    label={copy('เก็บรายการไว้', 'Keep item')}
+                    onPress={() => {
+                      setCancelTarget(null);
+                      setCancelReason('');
+                    }}
+                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
+                  />
+                  <Button
+                    variant="danger"
+                    label={copy('ยืนยันนำออก', 'Remove item')}
+                    onPress={cancelBillItem}
+                    loading={saving}
+                    disabled={!cancelReason.trim()}
+                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
+                  />
+                </View>
+              </View>
+            ) : null}
           </View>
         );
       })}
+
+      </View>
 
       {!activeItems.length ? (
         <EmptyState
@@ -476,7 +658,9 @@ export default function BillScreen() {
         />
       ) : null}
 
-      {editing && canEditBill ? (
+      {splitWorkspace ? sendRoundAction : null}
+
+      {canEditBill ? (
         <Button
           icon={adding ? 'arrow-back' : 'add-circle-outline'}
           variant="secondary"
@@ -491,7 +675,7 @@ export default function BillScreen() {
     </Panel>
   );
 
-  const addServedItemPanel = adding && editing && canEditBill ? (
+  const addServedItemPanel = adding && canEditBill ? (
     <Panel>
       <SectionHeader
         title={copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add a served item')}
@@ -672,13 +856,24 @@ export default function BillScreen() {
 
   // The one place the total is stated on this screen, so it gets a line to
   // itself with the action full width beneath, rather than the two sharing a row.
-  const phoneFooter = !splitWorkspace && paymentStage === 'due' && canPay && !editing ? (
-    <View style={{ gap: spacing.md, borderTopWidth: 1, borderTopColor: palette.border, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+  // While a round is unsent, sending it IS the primary action of the screen -
+  // payment cannot complete until the kitchen has the items anyway, and two
+  // full-width actions in one dock is the duplicate-CTA trap.
+  // Whichever primary action the order is up to, it gets the SAME footer: the
+  // bill total on its own line, the action full width beneath it. Sending used
+  // to sit in an ActionDock instead - figure left, button right - which put two
+  // different bottom bars on one screen depending on the stage. `รวมทั้งหมด`
+  // stays the whole bill in both states, so the number does not change meaning
+  // the moment the round is sent.
+  const footerPrimaryAction = sendRoundAction
+    ?? (paymentStage === 'due' && canPay ? confirmPaymentAction : null);
+  const phoneFooter = !splitWorkspace && footerPrimaryAction ? (
+    <View style={{ gap: spacing.md, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md }}>
         <Text selectable style={[typeScale.body, { color: palette.text, fontWeight: '400' }]}>{copy('รวมทั้งหมด', 'Total')}</Text>
         <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '700' }]}>{money(bill.grand_total, language)}</Text>
       </View>
-      {confirmPaymentAction}
+      {footerPrimaryAction}
     </View>
   ) : !splitWorkspace && paymentStage === 'paid' ? (
     <ActionDock>{exitAction}</ActionDock>
@@ -686,20 +881,21 @@ export default function BillScreen() {
 
   return (
     <AppScreen
-      title={copy('สรุปคำสั่งซื้อ', 'Order summary')}
-      subtitle={bill.order.order_number}
+      // Which table this is belongs in the title. It used to head the item
+      // list instead, in a section header that also carried the count and the
+      // edit toggle; with the toggle gone that header was a heading for a list
+      // that starts right underneath it anyway.
+      title={billContextLabel
+        ? `${copy('สรุปคำสั่งซื้อ', 'Order summary')} - ${billContextLabel}`
+        : copy('สรุปคำสั่งซื้อ', 'Order summary')}
+      subtitle={copy(
+        `${bill.order.order_number} · ${itemCount.toLocaleString('th-TH')} รายการ`,
+        `${bill.order.order_number} · ${itemCount.toLocaleString('en-US')} items`,
+      )}
       topLevel={false}
       contentMaxWidth={splitWorkspace ? 1240 : 720}
       contentStyle={{ gap: splitWorkspace ? spacing.lg : spacing.xl }}
       footer={phoneFooter}
-      action={(
-        <StatusBadge
-          label={paymentStage === 'paid'
-            ? copy('ชำระแล้ว', 'Paid')
-            : copy('รอชำระ', 'Payment due')}
-          tone={paymentStage === 'paid' ? 'success' : 'warning'}
-        />
-      )}
     >
       {error ? <Feedback title={copy('ทำรายการไม่สำเร็จ', 'Could not complete this action')} detail={error} tone="danger" /> : null}
       {message && paymentStage === 'due' ? <Feedback title={message} tone="success" /> : null}

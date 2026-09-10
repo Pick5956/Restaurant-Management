@@ -73,7 +73,14 @@ export function addOrderItem(orderId: number, data: { menu_id: number; quantity:
   });
 }
 
-export function updateOrderItem(orderId: number, itemId: number, data: { quantity: number; note?: string }) {
+export function updateOrderItem(
+  orderId: number,
+  itemId: number,
+  // `selected_option_ids` REPLACES the line's options. Leave it off to edit the
+  // quantity or note without touching them - the field is a pointer on the
+  // server so "not sent" and "cleared" are different requests.
+  data: { quantity: number; note?: string; selected_option_ids?: number[] },
+) {
   return apiRequest<Order>(`/api/v1/orders/${orderId}/items/${itemId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),

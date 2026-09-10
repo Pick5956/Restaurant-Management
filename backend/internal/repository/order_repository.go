@@ -348,6 +348,23 @@ func (r *OrderRepository) CreateItemRecipeSnapshots(snapshots []entity.OrderItem
 	return r.db.Create(&snapshots).Error
 }
 
+// DeleteItemOptions and DeleteItemRecipeSnapshots clear what an item is
+// carrying so the caller can write it again — editing the options on a pending
+// line. Both delete UNSCOPED on purpose: the snapshot table carries a unique
+// index on (order_item_id, ingredient_id) that does not include deleted_at, so
+// a soft-deleted row would still occupy the slot the re-write needs.
+func (r *OrderRepository) DeleteItemOptions(restaurantID, orderItemID uint) error {
+	return r.db.Unscoped().
+		Where("restaurant_id = ? AND order_item_id = ?", restaurantID, orderItemID).
+		Delete(&entity.OrderItemOption{}).Error
+}
+
+func (r *OrderRepository) DeleteItemRecipeSnapshots(restaurantID, orderItemID uint) error {
+	return r.db.Unscoped().
+		Where("restaurant_id = ? AND order_item_id = ?", restaurantID, orderItemID).
+		Delete(&entity.OrderItemRecipeSnapshot{}).Error
+}
+
 func (r *OrderRepository) SaveItem(item *entity.OrderItem) error {
 	return r.db.Omit(clause.Associations).Save(item).Error
 }

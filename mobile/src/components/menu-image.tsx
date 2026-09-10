@@ -92,7 +92,8 @@ const styles = StyleSheet.create({
   },
   landscapeFrame: {
     width: '100%',
-    aspectRatio: 4 / 3,
+    // Square, matching the crop the editor exports. See MENU_IMAGE_OUTPUT_*.
+    aspectRatio: 1,
     overflow: 'hidden',
     borderRadius: radius.md,
     backgroundColor: 'transparent',

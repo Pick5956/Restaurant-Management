@@ -36,6 +36,7 @@ import { useReducedMotion } from '@/src/components/motion';
 import {
   PrimaryTabSceneProvider,
   PrimaryTabsHostProvider,
+  PrimaryTabStageProvider,
   PrimaryTabSwipeGestureProvider,
 } from '@/src/components/primary-tabs-runtime';
 import {
@@ -615,5 +616,12 @@ function PrimaryPager({
 }
 
 export default function PrimaryTabsLayout() {
-  return <PrimaryTabsNavigator />;
+  // Above the navigator rather than inside it: the dock reads this, and the
+  // navigator is what renders the dock, so a provider mounted in the navigator's
+  // own return would be below the consumer that needs it.
+  return (
+    <PrimaryTabStageProvider>
+      <PrimaryTabsNavigator />
+    </PrimaryTabStageProvider>
+  );
 }

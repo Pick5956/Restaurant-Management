@@ -261,7 +261,7 @@ test('category active toggle preserves editable metadata and flips only the stat
 
 test('menu image validation matches the web upload contract', () => {
   assert.equal(MENU_IMAGE_OUTPUT_WIDTH, 1200);
-  assert.equal(MENU_IMAGE_OUTPUT_HEIGHT, 900);
+  assert.equal(MENU_IMAGE_OUTPUT_HEIGHT, 1200);
   assert.equal(MENU_IMAGE_OUTPUT_MIME_TYPE, 'image/webp');
   assert.equal(MENU_IMAGE_OUTPUT_QUALITY, 0.9);
   assert.equal(MENU_IMAGE_BACKGROUND_PROCESSING_MIME_TYPE, 'image/png');
@@ -293,8 +293,8 @@ test('native picker metadata resolves to compact default and safe PNG processing
 });
 
 test('native capture and zoom helpers preserve the exact output contract', () => {
-  assert.deepEqual(menuImageCaptureLogicalSize(3), { width: 400, height: 300 });
-  assert.deepEqual(menuImageCaptureLogicalSize(0), { width: 1200, height: 900 });
+  assert.deepEqual(menuImageCaptureLogicalSize(3), { width: 400, height: 400 });
+  assert.deepEqual(menuImageCaptureLogicalSize(0), { width: 1200, height: 1200 });
   assert.equal(menuImageZoomFromTrackPosition(0, 200), -100);
   assert.equal(menuImageZoomFromTrackPosition(100, 200), 0);
   assert.equal(menuImageZoomFromTrackPosition(200, 200), 100);
@@ -347,7 +347,7 @@ test('native background-removal preview and strength follow the multipart contra
   assert.equal(menuImageUploadCanCommit({ removeBackground: true, backgroundStrength: 50 }, false), false);
 });
 
-test('menu image positioning uses the same 4:3 framing as the web editor', () => {
+test('menu image positioning uses the same square framing as the web editor', () => {
   assert.deepEqual(
     calculateMenuImageFrame({
       naturalWidth: 1600,
@@ -434,7 +434,7 @@ test('mobile menu framing remains numerically identical to the web implementatio
   }
 });
 
-test('the on-device 4:3 preview scales to the exported 1200 by 900 frame', () => {
+test('the on-device square preview scales to the exported 1200 by 1200 frame', () => {
   for (const zoomPercent of [-100, -55, 0, 35, 100]) {
     const input = {
       naturalWidth: 1600,
@@ -522,12 +522,12 @@ test('the shared mobile image component owns web-parity fit and fallback policy'
   assert.match(source, /if \(!square\)/);
   assert.match(source, /resizeMode="cover"/);
   assert.match(source, /resizeMode="contain"/);
-  assert.match(source, /aspectRatio:\s*4\s*\/\s*3/);
+  assert.match(source, /aspectRatio:\s*1\s*,/);
   assert.match(source, /failedUrl === resolvedUrl/);
   assert.doesNotMatch(source, /brand-logo\.png/);
 });
 
-test('landscape menu images render inside a bounded 4:3 frame instead of measuring from the image itself', () => {
+test('cover menu images render inside a bounded square frame instead of measuring from the image itself', () => {
   const source = readFileSync(
     new URL('../components/menu-image.tsx', import.meta.url),
     'utf8',
@@ -541,8 +541,8 @@ test('landscape menu images render inside a bounded 4:3 frame instead of measuri
   );
   assert.match(
     source,
-    /aspectRatio:\s*4\s*\/\s*3[\s\S]{0,240}overflow:\s*'hidden'|overflow:\s*'hidden'[\s\S]{0,240}aspectRatio:\s*4\s*\/\s*3/,
-    'the container must own the 4:3 bounds and clip its image',
+    /aspectRatio:\s*1\s*,[\s\S]{0,240}overflow:\s*'hidden'|overflow:\s*'hidden'[\s\S]{0,240}aspectRatio:\s*1\s*,/,
+    'the container must own the square bounds and clip its image',
   );
   assert.match(
     source,
@@ -561,7 +561,6 @@ test('every mobile menu and order surface consumes the shared image policy', () 
     '../../app/menu.tsx',
     '../../app/order/[id].tsx',
     '../../app/order/item.tsx',
-    '../../app/order/current-item.tsx',
   ];
   for (const relativePath of cardFiles) {
     const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
@@ -571,7 +570,6 @@ test('every mobile menu and order surface consumes the shared image policy', () 
 
   const rowFiles = [
     '../../app/order/[id].tsx',
-    '../../app/order/current-round.tsx',
     '../../app/order/bill.tsx',
     // The kitchen ticket carries no menu photo - the web KDS shows none
     // either - so the KDS is not an image surface to police here.
@@ -584,7 +582,7 @@ test('every mobile menu and order surface consumes the shared image policy', () 
   }
 });
 
-test('the bill add-item catalog uses the same 4:3 menu card image as web', () => {
+test('the bill add-item catalog uses the same square menu card image as web', () => {
   const source = readFileSync(new URL('../../app/order/bill.tsx', import.meta.url), 'utf8');
   assert.match(
     source,

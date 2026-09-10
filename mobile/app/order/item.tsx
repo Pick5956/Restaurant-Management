@@ -4,13 +4,14 @@ import { Keyboard, Platform, Pressable, useWindowDimensions, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { listMenuItems } from '@/src/api/menu';
-import { addOrderItem, getOrder } from '@/src/api/order';
+import { addOrderItem, getOrder, updateOrderItem } from '@/src/api/order';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
 import { ActionDock, Button, ChipGroup, EmptyState, Feedback, IconButton, TextField } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
+import { findPendingOrderItem } from '@/src/lib/order-detail-runtime';
 import { isOptionSelectionBelowMinimum } from '@/src/lib/order-workflow';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -26,8 +27,15 @@ export default function AddOrderItemScreen() {
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
-  const params = useLocalSearchParams<{ id: string; menuId: string }>();
+  const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string }>();
   const orderId = Number(params.id); const menuId = Number(params.menuId);
+  // With `itemId` this screen is editing a line that is already on the order
+  // rather than adding one. Same screen on purpose: a waiter fixing an option
+  // is doing the same job they did when they chose it, and the quantity-only
+  // editor this replaced could not undo a wrong option at all - it told them to
+  // delete the line and start again.
+  const itemId = Number(params.itemId);
+  const editing = Number.isInteger(itemId) && itemId > 0;
   const validParams = Number.isInteger(orderId) && orderId > 0 && Number.isInteger(menuId) && menuId > 0;
   const [order, setOrder] = useState<Order | null>(null);
   const [menu, setMenu] = useState<MenuItem | null>(null);
@@ -72,7 +80,7 @@ export default function AddOrderItemScreen() {
     });
     return () => change.remove();
   }, [noteFocused]);
-  useEffect(() => { if (!canTakeOrder || !validParams) return; Promise.all([getOrder(orderId), listMenuItems()]).then(([nextOrder, response]) => { const nextMenu = response.menu_items.find((item) => item.ID === menuId) || null; setOrder(nextOrder); setMenu(nextMenu); setFulfillment(nextOrder.order_type || 'dine_in'); setSelectedOptionIds((nextMenu?.option_groups || []).flatMap((group) => (group.options || []).filter((option) => option.is_active && option.is_default).map((option) => option.ID))); if (!nextMenu) setError(copy('ไม่พบเมนูนี้', 'Menu item not found')); }).catch((err) => setError(err instanceof Error ? err.message : copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item'))); }, [canTakeOrder, copy, menuId, orderId, validParams]);
+  useEffect(() => { if (!canTakeOrder || !validParams) return; Promise.all([getOrder(orderId), listMenuItems()]).then(([nextOrder, response]) => { const nextMenu = response.menu_items.find((item) => item.ID === menuId) || null; setOrder(nextOrder); setMenu(nextMenu); const existing = editing ? findPendingOrderItem(nextOrder.items, itemId) : null; setFulfillment(existing?.fulfillment_type || nextOrder.order_type || 'dine_in'); setQuantity(existing ? Math.max(1, existing.quantity) : 1); setNote(existing?.note || ''); setSelectedOptionIds(existing ? (existing.selected_options || []).map((option) => option.menu_option_id) : (nextMenu?.option_groups || []).flatMap((group) => (group.options || []).filter((option) => option.is_active && option.is_default).map((option) => option.ID))); if (!nextMenu) setError(copy('ไม่พบเมนูนี้', 'Menu item not found')); else if (editing && !findPendingOrderItem(nextOrder.items, itemId)) setError(copy('รายการนี้ส่งเข้าครัวแล้ว แก้ไขไม่ได้', 'This item is already with the kitchen and can no longer be edited')); }).catch((err) => setError(err instanceof Error ? err.message : copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item'))); }, [canTakeOrder, copy, editing, itemId, menuId, orderId, validParams]);
   const optionTotal = useMemo(() => (menu?.option_groups || []).flatMap((group) => group.options || []).filter((option) => selectedOptionIds.includes(option.ID)).reduce((sum, option) => sum + Number(option.price_delta), 0), [menu, selectedOptionIds]);
   const total = (Number(menu?.price || 0) + optionTotal) * quantity;
   const missingRequired = Boolean(menu?.option_groups?.some((group) => (
@@ -95,10 +103,17 @@ export default function AddOrderItemScreen() {
     });
   }
   async function add() {
-    if (!canTakeOrder || !menu?.is_available || missingRequired) return;
+    // A sold-out menu still has to be SAVEABLE while editing: the line is
+    // already on the order, and refusing would strand whoever opened it to fix
+    // an option. Only adding a new one is blocked.
+    if (!canTakeOrder || missingRequired || !menu || (!editing && !menu.is_available)) return;
     setSaving(true); setError(null);
-    try { await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment }); router.back(); }
-    catch (err) { setError(err instanceof Error ? err.message : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item')); }
+    try {
+      if (editing) await updateOrderItem(orderId, itemId, { quantity, note: note.trim(), selected_option_ids: selectedOptionIds });
+      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment });
+      router.back();
+    }
+    catch (err) { setError(err instanceof Error ? err.message : editing ? copy('บันทึกรายการไม่สำเร็จ', 'Could not save this item') : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item')); }
     finally { setSaving(false); }
   }
   if (!canTakeOrder) return <AppScreen title={copy('เลือกเมนู', 'Choose menu item')} topLevel={false}><EmptyState title={copy('ไม่มีสิทธิ์รับออเดอร์', 'No order-taking permission')} /></AppScreen>;
@@ -163,11 +178,15 @@ export default function AddOrderItemScreen() {
       footer={menu ? (
         <ActionDock>
           <Button
-            icon="add"
-            label={copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
+            icon={editing ? 'checkmark' : 'add'}
+            label={editing
+              ? copy(`บันทึกรายการ · ${money(total, language)}`, `Save item · ${money(total, language)}`)
+              : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
             onPress={add}
             loading={saving}
-            disabled={missingRequired || !menu.is_available}
+            disabled={missingRequired || (!editing && !menu.is_available)}
+            pill
+           
             variant="glass"
           />
         </ActionDock>
@@ -202,7 +221,11 @@ export default function AddOrderItemScreen() {
             </View>
           ) : null}
 
-          {order?.order_type !== 'takeaway' ? (
+          {/* Not offered while editing: the update endpoint takes quantity,
+              note and options, and a line's dine-in/takeaway is settled when it
+              is added. A control that silently does nothing is worse than no
+              control. */}
+          {!editing && order?.order_type !== 'takeaway' ? (
             <>
               {rule}
               <View style={{ gap: spacing.md, paddingVertical: spacing.lg }}>
@@ -219,9 +242,15 @@ export default function AddOrderItemScreen() {
             const ids = options.map((option) => option.ID);
             const minSelect = Math.max(0, Number(group.min_select) || 0);
             const maxSelect = Math.max(1, Number(group.max_select) || 1);
-            // One choice is a radio, several are checkboxes. The control has to
-            // say which it is before it is touched, not after.
             const single = maxSelect <= 1;
+            // Round means "you have to pick one of these", square means "take it
+            // or leave it". The shape used to follow max_select - one choice
+            // drew a radio - but whether a group can be SKIPPED is the thing a
+            // person needs to know before touching it, and it is the thing that
+            // stops the add button working. The accessibility role still
+            // follows the real behaviour: a screen reader must hear checkbox
+            // for a group that takes several answers, whatever the icon is.
+            const required = minSelect > 0;
             return (
               <View key={group.ID}>
                 {rule}
@@ -241,7 +270,7 @@ export default function AddOrderItemScreen() {
                       >
                         <AppIcon
                           color={active ? palette.primary : palette.placeholder}
-                          name={single
+                          name={required
                             ? (active ? 'radio-button-on' : 'radio-button-off')
                             : (active ? 'checkbox' : 'square-outline')}
                           size={23}

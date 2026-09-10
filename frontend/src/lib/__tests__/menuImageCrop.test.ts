@@ -77,7 +77,7 @@ describe("menu image crop", () => {
     expect(menuPageSource).toContain("Cut more");
   });
 
-  it("centers a wide image while covering a 4:3 crop without gaps", () => {
+  it("centers a wide image while covering a landscape crop without gaps", () => {
     const frame = calculateCropFrame({
       naturalWidth: 1600,
       naturalHeight: 900,
@@ -96,7 +96,7 @@ describe("menu image crop", () => {
     });
   });
 
-  it("centers a tall image while covering a 4:3 crop without gaps", () => {
+  it("centers a tall image while covering a landscape crop without gaps", () => {
     const frame = calculateCropFrame({
       naturalWidth: 900,
       naturalHeight: 1600,
@@ -147,7 +147,7 @@ describe("menu image crop", () => {
     expect(frame.y).toBe(-450);
   });
 
-  it("keeps the preview framing proportional to the exported 4:3 card image", () => {
+  it("keeps the preview framing proportional to the exported card image", () => {
     const preview = calculateCropFrame({
       naturalWidth: 1600,
       naturalHeight: 900,

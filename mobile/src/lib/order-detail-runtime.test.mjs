@@ -206,46 +206,65 @@ test('only the requested pending line can open the quantity editor', () => {
   assert.equal(findPendingOrderItem([pending, cooking], Number.NaN), null);
 });
 
-test('current-round source uses tap-to-edit and explicit swipe delete without inline steppers', async () => {
-  const [roundSource, editorSource] = await Promise.all([
-    readFile(path.join(mobileRoot, 'app', 'order', 'current-round.tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'app', 'order', 'current-item.tsx'), 'utf8'),
+test('the basket and the header chip open the same summary, and the summary can send the round', async () => {
+  const [detailSource, billSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'app', 'order', '[id].tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8'),
   ]);
 
-  assert.doesNotMatch(roundSource, /function QuantityAction\b|<QuantityAction\b/);
-  assert.doesNotMatch(roundSource, /<Surface\b/);
-  assert.match(roundSource, /<FlatList\b/);
-  assert.match(roundSource, /directionalLockEnabled/);
-  assert.match(roundSource, /function SwipeToDeleteRow\b/);
-  assert.match(roundSource, /accessibilityActions=/);
-  assert.match(roundSource, /onPanResponderTerminationRequest:\s*\(\)\s*=>\s*false/);
-  assert.match(roundSource, /onShouldBlockNativeResponder:\s*\(\)\s*=>\s*true/);
-  assert.match(roundSource, /translateX\.stopAnimation\(\(value\)/);
-  assert.match(roundSource, /\/order\/current-item/);
-  assert.match(editorSource, /updateOrderItem\(/);
-  assert.doesNotMatch(editorSource, /addOrderItem\(/);
+  // Both controls on the order screen lead to the summary. This is a call-site
+  // fact - the routes are strings - so nothing but reading the source catches a
+  // fork, and a fork is what this replaced: the chip opened the summary while
+  // the basket opened a separate screen listing the same unsent items.
+  const basket = detailSource.slice(detailSource.indexOf('<CurrentRoundBasket'));
+  assert.match(basket.slice(0, basket.indexOf('/>')), /onPress=\{openOrderSummary\}/);
+  const chip = detailSource.slice(detailSource.indexOf('<OrderSummaryAction'));
+  assert.match(chip.slice(0, chip.indexOf('/>')), /onPress=\{openOrderSummary\}/);
+  assert.match(detailSource, /const openOrderSummary[\s\S]{0,200}pathname: '\/order\/bill'/);
+
+  // Everything the retired basket screen owned has to exist on the summary, or
+  // repointing the basket takes a round of orders off the kitchen board:
+  // sending it, editing an unsent line, and dropping one without a
+  // cancellation reason.
+  assert.match(billSource, /sendOrderToKitchen\(orderId\)/);
+  assert.match(billSource, /pathname: '\/order\/item'[\s\S]{0,160}itemId: String\(item\.ID\)/);
+  assert.match(billSource, /deleteOrderItem\(orderId, item\.ID\)/);
 });
 
-test('current-round list leaves unused tablet space on the app canvas while keeping focused surfaces', async () => {
-  const roundSource = await readFile(path.join(mobileRoot, 'app', 'order', 'current-round.tsx'), 'utf8')
-    .then((source) => source.replace(/\r\n/g, '\n'));
-  const listSectionStart = roundSource.indexOf('<EdgeSection');
-  const listSectionEnd = roundSource.indexOf('</EdgeSection>', listSectionStart);
-  const rowStart = roundSource.indexOf('function SwipeToDeleteRow(');
-  const rowEnd = roundSource.indexOf('function SendCurrentRoundAction(', rowStart);
-  const footerStart = roundSource.indexOf('const footer =');
-  const footerEnd = roundSource.indexOf('\n  return (', footerStart);
+test('the swipe-to-delete row keeps its gesture contract, and the summary uses it', async () => {
+  const [rowSource, billSource, editorSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'src', 'components', 'swipe-to-delete-row.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8'),
+  ]);
 
-  assert.ok(listSectionStart >= 0 && listSectionEnd > listSectionStart);
-  const listSection = roundSource.slice(listSectionStart, listSectionEnd);
-  assert.match(listSection, /backgroundColor:\s*'transparent'/);
-  assert.match(listSection, /<FlatList\b/);
+  // The four lines that make the gesture survive a scrolling parent. Lifted
+  // out of the retired current-round screen on 2026-09-11; the row is now the
+  // only copy, so this is the only place they are guarded.
+  assert.match(rowSource, /export function SwipeToDeleteRow\b/);
+  assert.match(rowSource, /accessibilityActions=/);
+  assert.match(rowSource, /onPanResponderTerminationRequest:\s*\(\)\s*=>\s*false/);
+  assert.match(rowSource, /onShouldBlockNativeResponder:\s*\(\)\s*=>\s*true/);
+  assert.match(rowSource, /translateX\.stopAnimation\(\(value\)/);
 
-  assert.ok(rowStart >= 0 && rowEnd > rowStart);
-  assert.match(roundSource.slice(rowStart, rowEnd), /backgroundColor:\s*palette\.surface/);
-  assert.ok(footerStart >= 0 && footerEnd > footerStart);
-  assert.match(roundSource.slice(footerStart, footerEnd), /<ActionDock\b/);
-  assert.match(roundSource, /footer=\{footer\}/);
+  // Removal on the summary is the swipe and nothing else - no edit mode, no
+  // per-row buttons, no inline steppers.
+  assert.match(billSource, /<SwipeToDeleteRow\b/);
+  assert.doesNotMatch(billSource, /setEditing|\[editing,/);
+  assert.doesNotMatch(billSource, /'Edit items'/);
+
+  // The stack's back gesture has to stand down while a rail is open, or the
+  // swipe that closes the rail pops the screen instead. Native recogniser, so
+  // no amount of responder negotiation in the row can win it.
+  assert.match(billSource, /gestureEnabled: openRowId === null/);
+  assert.doesNotMatch(billSource, /function QuantityAction\b|<QuantityAction\b/);
+  // One item screen for both jobs: it adds a dish and it edits a line already
+  // on the order, and an edit has to be able to change the OPTIONS - the
+  // quantity-only editor it replaced could not, so a wrong option meant
+  // deleting the line and starting again.
+  assert.match(editorSource, /const editing = Number\.isInteger\(itemId\)/);
+  assert.match(editorSource, /updateOrderItem\(orderId, itemId, \{ quantity, note: note\.trim\(\), selected_option_ids: selectedOptionIds \}\)/);
+  assert.match(editorSource, /addOrderItem\(/);
 });
 
 test('editable order taking uses routed review surfaces at every width', async () => {
@@ -253,12 +272,13 @@ test('editable order taking uses routed review surfaces at every width', async (
 
   assert.doesNotMatch(detailSource, /\bsplitWorkspace\b/);
   assert.doesNotMatch(detailSource, /width:\s*'40%'/);
-  // The item count opens the bill, which is now the order summary too: the
+  // Both review controls open the bill, which is the order summary: the
   // separate /order/summary screen was removed rather than kept as a stop on
-  // the way to the same information.
-  assert.match(detailSource, /<OrderSummaryAction\b[\s\S]*?\/order\/bill/);
+  // the way to the same information, and the current-round screen went the
+  // same way once the basket started landing on the summary. Which control
+  // routes where is asserted in the test above.
   assert.doesNotMatch(detailSource, /\/order\/summary/);
-  assert.match(detailSource, /<CurrentRoundBasket\b[\s\S]*?\/order\/current-round/);
+  assert.doesNotMatch(detailSource, /pathname: '\/order\/current-round'/);
   // The footer carries the current-round basket and nothing else. The billing
   // dock that used to sit beside it moved to the bill screen, so a reappearance
   // of `actionDock` here means the bottom bar has crept back over the menu grid.

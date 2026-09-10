@@ -428,7 +428,7 @@ export default function CustomerTableOrderPage() {
                       {copy.added} x{orderedQuantity}
                     </span>
                   )}
-                  <div className="aspect-[4/3] w-full bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${item.image_url || "/menu-placeholder-v2.webp"})` }} aria-label={item.image_url ? `${item.name}` : undefined} />
+                  <div className="aspect-square w-full bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${item.image_url || "/menu-placeholder-v2.webp"})` }} aria-label={item.image_url ? `${item.name}` : undefined} />
                   <div className="flex min-w-0 flex-1 flex-col p-3">
                     <h2 className="truncate text-[15px] font-semibold text-gray-900 dark:text-white">{item.name}</h2>
                     <p className="mt-auto pt-2 text-right font-mono text-[16px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
@@ -512,7 +512,7 @@ export default function CustomerTableOrderPage() {
         <div {...menuBackdrop} className={`${selectedMenuClosing ? "motion-overlay-exit" : "motion-overlay"} fixed left-0 top-0 z-40 h-dvh w-dvw max-w-full bg-gray-950/55`}>
           <div className="fixed inset-3 m-auto h-fit w-[calc(100dvw-1.5rem)] max-w-md">
             <div className={`${selectedMenuClosing ? "motion-dialog-exit" : "motion-dialog"} max-h-[calc(100dvh-1.5rem)] overflow-auto rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950`}>
-              <div className="relative aspect-[4/3] w-full rounded-t-md bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${selectedMenu.image_url || "/menu-placeholder-v2.webp"})` }}>
+              <div className="relative aspect-square w-full rounded-t-md bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${selectedMenu.image_url || "/menu-placeholder-v2.webp"})` }}>
                 <button type="button" aria-label={copy.close} onClick={closeMenu} className="ui-press absolute left-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/70 bg-white/95 text-gray-700 shadow-md shadow-gray-950/15 hover:bg-white dark:border-gray-700 dark:bg-gray-950/90 dark:text-gray-200 dark:shadow-black/30">
                   <X className="h-4 w-4" aria-hidden="true" />
                 </button>

@@ -59,8 +59,8 @@ test('mobile surfaces and primary navigation use an accessible orange-forward pa
     navigationSurface: palette.navigationSurface,
     navigationActive: palette.navigationActive,
   }, {
-    canvas: '#FFF7ED',
-    surface: '#FFFCF8',
+    canvas: '#FFFFFF',
+    surface: '#FFFFFF',
     surfaceSubtle: '#FFF4E8',
     surfaceStrong: '#FFEDD5',
     border: '#FED7AA',
@@ -78,6 +78,9 @@ test('mobile surfaces and primary navigation use an accessible orange-forward pa
   assert.ok(contrastRatio(palette.controlBorder, palette.surfaceSubtle) >= 3);
   assert.ok(contrastRatio(palette.navigationActiveText, palette.navigationActive) >= 4.5);
   assert.ok(contrastRatio(palette.navigationMuted, palette.navigationSurface) >= 3);
+  // The phone dock is its own surface - dark glass, white glyphs - so its ink is
+  // measured against its own non-glass fill, which is the darkest it ever gets.
+  assert.ok(contrastRatio(palette.navigationDockIcon, palette.navigationDockSurface) >= 4.5);
 
   assert.deepEqual({
     success: palette.success,
@@ -109,7 +112,8 @@ test('mobile chrome does not retain dark neutral background islands', async () =
   assert.doesNotMatch(orderDetailSource, retiredDarkNeutrals);
   assert.doesNotMatch(cropperSource, retiredDarkNeutrals);
   assert.match(appShellSource, /backgroundColor:\s*palette\.navigationSurface/);
-  assert.match(appShellSource, /backgroundColor:\s*palette\.navigationActive/);
+  // The dock's selection capsule is translucent glass now, not the rail's cream.
+  assert.match(appShellSource, /backgroundColor:\s*palette\.navigationDockIndicator/);
   assert.match(cropperSource, /aspectBadge:[\s\S]{0,260}backgroundColor:\s*palette\.navigationBorder/);
 });
 

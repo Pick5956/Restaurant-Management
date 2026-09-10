@@ -18,7 +18,10 @@ import {
 } from "@/src/lib/menuImageCrop";
 
 const OUTPUT_WIDTH = 1200;
-const OUTPUT_HEIGHT = 900;
+// Square since 2026-09-11. The menu-image contract is shared with Expo -
+// mobile/src/lib/menu-image.ts holds the same pair - so this ratio moves on
+// both platforms or on neither.
+const OUTPUT_HEIGHT = 1200;
 const MIN_ZOOM = -100;
 const MAX_ZOOM = 100;
 const ZOOM_STEP = 5;
@@ -554,7 +557,7 @@ export default function MenuImageCropper({
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          className={`relative aspect-[4/3] w-full touch-none overflow-hidden rounded-md border border-gray-300 bg-slate-50 outline-none dark:border-gray-700 dark:bg-gray-950 ${
+          className={`relative aspect-square w-full touch-none overflow-hidden rounded-md border border-gray-300 bg-slate-50 outline-none dark:border-gray-700 dark:bg-gray-950 ${
             dragging ? "cursor-grabbing" : "cursor-grab"
           }`}
           style={cropCanvasStyle}
@@ -567,7 +570,7 @@ export default function MenuImageCropper({
           <div className="pointer-events-none absolute inset-0 border border-white/65 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.16)]" />
           <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1.5 rounded-md bg-gray-950/75 px-2 py-1 text-[10px] font-medium text-white">
             <Move className="h-3.5 w-3.5" aria-hidden="true" />
-            4:3
+            3:3
           </span>
           {removeBackground && previewStatus === "updating" ? (
             <span aria-hidden="true" className="pointer-events-none absolute right-2 top-2 rounded-md bg-gray-950/75 px-2 py-1 text-[10px] font-medium text-white">

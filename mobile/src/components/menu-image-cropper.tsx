@@ -990,7 +990,7 @@ export function MenuImageCropper({
         <View pointerEvents="none" style={styles.cropBorder} />
         <View pointerEvents="none" style={styles.aspectBadge}>
           <AppIcon color={palette.primaryText} name="move-outline" size={14} />
-          <Text style={styles.aspectBadgeText}>4:3</Text>
+          <Text style={styles.aspectBadgeText}>3:3</Text>
         </View>
       </View>
 
@@ -1190,7 +1190,7 @@ const styles = StyleSheet.create({
   },
   cropViewport: {
     width: '100%',
-    aspectRatio: 4 / 3,
+    aspectRatio: 1,
     position: 'relative',
     overflow: 'hidden',
     borderRadius: radius.md,
