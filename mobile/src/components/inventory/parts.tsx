@@ -506,26 +506,36 @@ export function SheetAction({ icon, label, onPress, danger, divided }: { icon: A
 export function Stepper({ value, step, unit, onChange }: { value: number; step: number; unit: string; onChange: (value: number) => void }) {
   const [text, setText] = useState(String(value));
   useEffect(() => { setText(String(value)); }, [value]);
+  // The keys are the save button's colour: they are the act, the field is the
+  // answer. Round, like every other button on the inventory screens.
   const key = (icon: AppIconName, label: string, to: number, disabled?: boolean) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={() => onChange(Math.max(0, Math.round(to * 100) / 100))} style={({ pressed }) => ({ opacity: disabled ? 0.4 : pressed ? 0.8 : 1 })}>
-      <GlassPanel radius={16} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
-        <AppIcon name={icon} size={24} color={palette.textStrong} />
-      </GlassPanel>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={() => onChange(Math.max(0, Math.round(to * 100) / 100))}
+      hitSlop={6}
+      style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: LIQUID_GLASS ? 'rgba(194,65,12,0.9)' : palette.primary, opacity: disabled ? 0.4 : pressed ? 0.85 : 1 })}
+    >
+      <AppIcon name={icon} size={26} color="#ffffff" />
     </Pressable>
   );
   return (
-    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 4 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginTop: 4 }}>
       {key('remove', '−', value - step, value <= 0)}
-      <GlassPanel radius={16} interactive={false} style={{ flex: 1, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 14, gap: 6 }} fallback={palette.surface} fallbackBorder={palette.border}>
+      {/* The number sits at the exact centre of the row: the field is centred
+          text with the unit hung on its right, so the digits do not drift. */}
+      <View style={{ flex: 1, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
         <TextInput
           value={text}
           onChangeText={(next) => { setText(next); const n = Number(next); if (Number.isFinite(n) && n >= 0) onChange(n); }}
           keyboardType="decimal-pad"
           selectTextOnFocus
-          style={{ flex: 1, textAlign: 'right', fontSize: 20, fontWeight: '600', color: palette.textStrong, paddingVertical: 0 }}
+          accessibilityLabel={unit}
+          style={{ minWidth: 72, textAlign: 'center', fontSize: 30, fontWeight: '700', color: palette.textStrong, paddingVertical: 0, fontVariant: ['tabular-nums'] }}
         />
-        <Text style={{ fontSize: 12, color: palette.muted }}>{unit}</Text>
-      </GlassPanel>
+        <Text style={{ fontSize: 14, color: palette.muted }}>{unit}</Text>
+      </View>
       {key('add', '+', value + step)}
     </View>
   );
@@ -533,7 +543,7 @@ export function Stepper({ value, step, unit, onChange }: { value: number; step: 
 
 export function QuickChips({ amounts, value, onPick, prefix = '+' }: { amounts: number[]; value: number; onPick: (amount: number) => void; prefix?: string }) {
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginTop: 10 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, paddingHorizontal: 16, marginTop: 14 }}>
       {amounts.map((amount) => {
         const on = amount === value;
         return (
