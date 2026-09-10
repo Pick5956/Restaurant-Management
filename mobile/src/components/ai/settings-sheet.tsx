@@ -173,6 +173,7 @@ export function SettingsSheet({
   const headerPane = insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE;
   const headerSolid = (insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON) / headerPane;
   const fadeAt = (through: number) => headerSolid + (1 - headerSolid) * through;
+
   const [transition, setTransition] = useState<{ from: Page; dir: 'push' | 'pop' } | null>(null);
   const slide = useRef(new Animated.Value(1)).current;
   const go = (next: Page) => {
@@ -285,6 +286,33 @@ export function SettingsSheet({
       ],
     );
   };
+
+  // Both header buttons stay mounted for the life of the sheet and slide in and
+  // out with the page. Mounting the back button only on sub-pages meant a fresh
+  // glass view on every push — and glass takes most of a second to appear, so
+  // its shadow had to be held back that long and then landed late. A button
+  // that never unmounts has had its glass since the sheet opened.
+  //
+  // Each one's visibility is a number 0..1 that moves with the page slide; it
+  // drives scale and a small slide, never opacity — fading a glass view's
+  // parent is what made the material vanish on the menu.
+  const wasRoot = transition ? transition.from === 'root' : page === 'root';
+  const isRoot = page === 'root';
+  const shown = (atRoot: boolean) => {
+    const before = (wasRoot === atRoot) ? 1 : 0;
+    const after = (isRoot === atRoot) ? 1 : 0;
+    if (before === after) return new Animated.Value(after);
+    return Animated.add(before, Animated.multiply(slide, after - before));
+  };
+  const backShown = shown(false);
+  const closeShown = shown(true);
+  const slot = (visible: Animated.Value | Animated.AnimatedAddition<number>, fromX: number) => ({
+    position: 'absolute' as const,
+    transform: [
+      { translateX: visible.interpolate({ inputRange: [0, 1], outputRange: [fromX, 0] }) },
+      { scale: visible.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.01, 0.7, 1] }) },
+    ],
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -592,11 +620,11 @@ export function SettingsSheet({
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: HEADER_ROW_PADDING_TOP, paddingBottom: HEADER_ROW_PADDING_BOTTOM, gap: 8 }}>
           {/* Back sits where a back button belongs; close sits under the thumb
               that opened the sheet. Each side keeps a slot so the title stays centred. */}
-          {page === 'root' ? (
-            <View style={{ width: 44 }} />
-          ) : (
-            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
-          )}
+          <View style={{ width: 44, height: 44 }}>
+            <Animated.View pointerEvents={isRoot ? 'none' : 'auto'} style={slot(backShown, -26)}>
+              <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
+            </Animated.View>
+          </View>
           <Animated.View
             style={{
               flex: 1,
@@ -606,11 +634,11 @@ export function SettingsSheet({
           >
             <Text numberOfLines={1} style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{heading}</Text>
           </Animated.View>
-          {page === 'root' ? (
-            <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
-          ) : (
-            <View style={{ width: 44 }} />
-          )}
+          <View style={{ width: 44, height: 44 }}>
+            <Animated.View pointerEvents={isRoot ? 'auto' : 'none'} style={slot(closeShown, 26)}>
+              <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+            </Animated.View>
+          </View>
         </View>
       </View>
     </BottomSheet>
