@@ -2,7 +2,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { Animated, Easing, Modal, PanResponder, Pressable, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -333,6 +333,72 @@ const NativeGlassView = (() => {
   }
 })();
 const AnimatedGlassView = Animated.createAnimatedComponent(NativeGlassView);
+// The host view takes more props than the exported wrapper's types admit —
+// borderCurve and the four radii among them. Animated's wrapper loosens them on
+// its own; a plain render needs this.
+const RawGlassView = NativeGlassView as ComponentType<Record<string, unknown>>;
+
+
+/**
+ * A pane of glass whose corners the glass itself keeps.
+ *
+ * `GlassLayer` in ui.tsx rounds only the React Native view around the material.
+ * The material's own rim — the refracted outline the eye reads as the shape —
+ * comes from props (see NativeGlassView above), so with a radius in `style`
+ * alone that rim stays square and its corners sit outside the rounded view: a
+ * pale arc at each corner, on every card in a list, which is exactly what the
+ * inventory rows showed.
+ *
+ * The radius goes on both, therefore: as props for the glass, in the style for
+ * the view and whatever it clips.
+ */
+export function GlassPanel({
+  radius,
+  style,
+  tint = 'rgba(255,255,255,0.42)',
+  fallback,
+  fallbackBorder,
+  interactive = true,
+  children,
+}: {
+  /** One radius for all four corners — a card, a capsule, a round button. */
+  radius: number;
+  style?: ViewStyle;
+  /** What the glass is tinted with on iOS 26. */
+  tint?: string;
+  /** The opaque stand-in painted everywhere else. */
+  fallback: string;
+  /** The stand-in's edge, since it has no material to separate it. */
+  fallbackBorder?: string;
+  interactive?: boolean;
+  children?: ReactNode;
+}) {
+  const shape: ViewStyle = { ...style, borderRadius: radius };
+  if (!LIQUID_GLASS) {
+    return (
+      <View style={[shape, fallbackBorder ? { borderWidth: 1, borderColor: fallbackBorder } : null, { backgroundColor: fallback }]}>
+        {children}
+      </View>
+    );
+  }
+  return (
+    <RawGlassView
+      glassEffectStyle="regular"
+      isInteractive={interactive}
+      // These surfaces are light-only; the glass must not follow a dark system theme.
+      colorScheme="light"
+      tintColor={tint}
+      borderCurve="continuous"
+      borderTopLeftRadius={radius}
+      borderTopRightRadius={radius}
+      borderBottomLeftRadius={radius}
+      borderBottomRightRadius={radius}
+      style={[shape, { overflow: 'hidden' }]}
+    >
+      {children}
+    </RawGlassView>
+  );
+}
 
 /**
  * The "…" button that becomes the menu.

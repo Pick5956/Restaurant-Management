@@ -4,11 +4,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomSheet, GlassButton, GlassHeaderPane, LIQUID_GLASS } from '@/src/components/ai/chrome';
+import { BottomSheet, GlassButton, GlassHeaderPane, GlassPanel, LIQUID_GLASS } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { GlassLayer } from '@/src/components/ui';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { money } from '@/src/lib/format';
 import { countPayload, quickAmounts, restockStep, stockShare, stockStatus, type StockStatus } from '@/src/lib/inventory-list';
@@ -45,14 +44,15 @@ export function statusColour(status: StockStatus): { ink: string; soft: string }
 /** A card: glass on iOS 26, cream with a pale edge everywhere else. */
 export function Card({ children, style, radius = 22 }: { children: ReactNode; style?: StyleProp<ViewStyle>; radius?: number }) {
   return (
-    <GlassLayer
-      style={{ borderRadius: radius, ...(style as object) }}
-      tint="rgba(255,255,255,0.42)"
+    <GlassPanel
+      radius={radius}
+      style={style as ViewStyle}
+      interactive={false}
       fallback={palette.surface}
       fallbackBorder={palette.border}
     >
       {children}
-    </GlassLayer>
+    </GlassPanel>
   );
 }
 
@@ -221,9 +221,9 @@ export function SquareButton({ icon, label, onPress, primary, disabled, size = 4
   }
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-      <GlassLayer style={shape} fallback={palette.surface} fallbackBorder={palette.border}>
+      <GlassPanel radius={shape.borderRadius} style={shape} fallback={palette.surface} fallbackBorder={palette.border}>
         <AppIcon name={icon} size={Math.round(size * 0.45)} color={palette.muted} />
-      </GlassLayer>
+      </GlassPanel>
     </Pressable>
   );
 }
@@ -253,39 +253,41 @@ export function IngredientCard({
   const colour = statusColour(status);
   const t = (th: string, en: string) => (language === 'th' ? th : en);
   return (
-    <Card style={{ padding: 12, flexDirection: 'row', gap: 10, ...(selected ? { borderWidth: 1.5, borderColor: palette.primary } : {}) }}>
-      {selecting ? <CheckBox checked={selected} /> : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={selecting ? t(`เลือก ${item.name}`, `Select ${item.name}`) : t(`ดู ${item.name}`, `View ${item.name}`)}
-        onPress={onPress}
-        style={({ pressed }) => ({ flex: 1, minWidth: 0, opacity: pressed ? 0.7 : 1 })}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 15.5, fontWeight: '600', color: palette.textStrong }}>{item.name}</Text>
-          <StatusPill status={status} language={language} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={selecting ? t(`เลือก ${item.name}`, `Select ${item.name}`) : t(`ดู ${item.name}`, `View ${item.name}`)}
+      onPress={onPress}
+      style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.985 : 1 }] })}
+    >
+      <Card style={{ padding: 12, flexDirection: 'row', gap: 10, ...(selected ? { borderWidth: 1.5, borderColor: palette.primary } : {}) }}>
+        {selecting ? <CheckBox checked={selected} /> : null}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 15.5, fontWeight: '600', color: palette.textStrong }}>{item.name}</Text>
+            <StatusPill status={status} language={language} />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+            <Text style={{ fontSize: 22, fontWeight: '600', color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{fmt(item.stock, locale)}</Text>
+            <Text style={{ fontSize: 12, color: palette.muted }}>{item.unit}</Text>
+            <Text style={{ marginLeft: 'auto', fontSize: 12, color: palette.muted, fontVariant: ['tabular-nums'] }}>฿{fmt(item.cost_per_unit, locale)} / {item.unit}</Text>
+          </View>
+          <LevelBar item={item} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <Text numberOfLines={1} style={{ maxWidth: '50%', fontSize: 11.5, fontWeight: '600', color: palette.muted }}>{item.category?.name ?? t('ไม่มีหมวด', 'Uncategorised')}</Text>
+            <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: palette.placeholder }}>
+              {Number(item.min_stock) > 0 ? t(`ขั้นต่ำ ${fmt(item.min_stock, locale)} ${item.unit}`, `Min ${fmt(item.min_stock, locale)} ${item.unit}`) : t('ยังไม่ตั้งขั้นต่ำ', 'No reorder level')}
+            </Text>
+            {!selecting ? <AppIcon name="chevron-forward" size={16} color={palette.placeholder} /> : null}
+          </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-          <Text style={{ fontSize: 22, fontWeight: '600', color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{fmt(item.stock, locale)}</Text>
-          <Text style={{ fontSize: 12, color: palette.muted }}>{item.unit}</Text>
-          <Text style={{ marginLeft: 'auto', fontSize: 12, color: palette.muted, fontVariant: ['tabular-nums'] }}>฿{fmt(item.cost_per_unit, locale)} / {item.unit}</Text>
-        </View>
-        <LevelBar item={item} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <Text numberOfLines={1} style={{ maxWidth: '50%', fontSize: 11.5, fontWeight: '600', color: palette.muted }}>{item.category?.name ?? t('ไม่มีหมวด', 'Uncategorised')}</Text>
-          <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: palette.placeholder }}>
-            {Number(item.min_stock) > 0 ? t(`ขั้นต่ำ ${fmt(item.min_stock, locale)} ${item.unit}`, `Min ${fmt(item.min_stock, locale)} ${item.unit}`) : t('ยังไม่ตั้งขั้นต่ำ', 'No reorder level')}
-          </Text>
-          {!selecting ? <AppIcon name="chevron-forward" size={16} color={palette.placeholder} /> : null}
-        </View>
-      </Pressable>
-      {!selecting && canManage ? (
-        <View style={{ justifyContent: 'center', gap: 6 }}>
-          <SquareButton primary icon="add" label={t('เติมสต็อก', 'Restock')} onPress={onRestock} />
-          <SquareButton icon="ellipsis-horizontal" label={t('ตัวเลือก', 'Options')} onPress={onMore} />
-        </View>
-      ) : null}
-    </Card>
+        {!selecting && canManage ? (
+          <View style={{ justifyContent: 'center', gap: 6 }}>
+            <SquareButton primary icon="add" label={t('เติมสต็อก', 'Restock')} onPress={onRestock} />
+            <SquareButton icon="ellipsis-horizontal" label={t('ตัวเลือก', 'Options')} onPress={onMore} />
+          </View>
+        ) : null}
+      </Card>
+    </Pressable>
   );
 }
 
@@ -310,7 +312,7 @@ export function DockButton({ label, icon, onPress, secondary, disabled }: { labe
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ flex: 1, opacity: disabled ? 0.5 : pressed ? 0.88 : 1 })}>
       {secondary ? (
-        <GlassLayer style={{ borderRadius: 27 }} fallback={palette.surface} fallbackBorder={palette.border}>{inner}</GlassLayer>
+        <GlassPanel radius={27} fallback={palette.surface} fallbackBorder={palette.border}>{inner}</GlassPanel>
       ) : LIQUID_GLASS ? (
         <GlassView glassEffectStyle="regular" isInteractive colorScheme="light" tintColor="rgba(194,65,12,0.84)" style={{ borderRadius: 27, shadowColor: palette.primary, shadowOpacity: 0.32, shadowRadius: 20, shadowOffset: { width: 0, height: 8 } }}>
           {inner}
@@ -360,15 +362,15 @@ export function Stepper({ value, step, unit, onChange }: { value: number; step: 
   useEffect(() => { setText(String(value)); }, [value]);
   const key = (icon: AppIconName, label: string, to: number, disabled?: boolean) => (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={() => onChange(Math.max(0, Math.round(to * 100) / 100))} style={({ pressed }) => ({ opacity: disabled ? 0.4 : pressed ? 0.8 : 1 })}>
-      <GlassLayer style={{ width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
+      <GlassPanel radius={16} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
         <AppIcon name={icon} size={24} color={palette.textStrong} />
-      </GlassLayer>
+      </GlassPanel>
     </Pressable>
   );
   return (
     <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 4 }}>
       {key('remove', '−', value - step, value <= 0)}
-      <GlassLayer style={{ flex: 1, height: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 14, gap: 6 }} fallback={palette.surface} fallbackBorder={palette.border}>
+      <GlassPanel radius={16} interactive={false} style={{ flex: 1, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 14, gap: 6 }} fallback={palette.surface} fallbackBorder={palette.border}>
         <TextInput
           value={text}
           onChangeText={(next) => { setText(next); const n = Number(next); if (Number.isFinite(n) && n >= 0) onChange(n); }}
@@ -377,7 +379,7 @@ export function Stepper({ value, step, unit, onChange }: { value: number; step: 
           style={{ flex: 1, textAlign: 'right', fontSize: 20, fontWeight: '600', color: palette.textStrong, paddingVertical: 0 }}
         />
         <Text style={{ fontSize: 12, color: palette.muted }}>{unit}</Text>
-      </GlassLayer>
+      </GlassPanel>
       {key('add', '+', value + step)}
     </View>
   );
@@ -395,9 +397,9 @@ export function QuickChips({ amounts, value, onPick, prefix = '+' }: { amounts: 
                 <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#fff' }}>{prefix}{amount.toLocaleString('th-TH')}</Text>
               </View>
             ) : (
-              <GlassLayer style={{ height: 36, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
+              <GlassPanel radius={18} style={{ height: 36, paddingHorizontal: 14, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
                 <Text style={{ fontSize: 13.5, fontWeight: '500', color: palette.text }}>{prefix}{amount.toLocaleString('th-TH')}</Text>
-              </GlassLayer>
+              </GlassPanel>
             )}
           </Pressable>
         );
@@ -423,9 +425,9 @@ export function SheetButton({ label, onPress, secondary, disabled }: { label: st
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ flex: 1, opacity: disabled ? 0.5 : pressed ? 0.88 : 1 })}>
       {secondary ? (
-        <GlassLayer style={{ height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
+        <GlassPanel radius={25} style={{ height: 50, alignItems: 'center', justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: palette.textStrong }}>{label}</Text>
-        </GlassLayer>
+        </GlassPanel>
       ) : (
         <View style={{ height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', backgroundColor: LIQUID_GLASS ? 'rgba(194,65,12,0.9)' : palette.primary }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>{label}</Text>
@@ -523,9 +525,9 @@ export function CountSheet({
 export function HeaderTextButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={6} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-      <GlassLayer style={{ height: HEADER_BUTTON, paddingHorizontal: 14, borderRadius: HEADER_BUTTON / 2, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
+      <GlassPanel radius={HEADER_BUTTON / 2} style={{ height: HEADER_BUTTON, paddingHorizontal: 14, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
         <Text style={{ fontSize: 14, fontWeight: '600', color: palette.textStrong }}>{label}</Text>
-      </GlassLayer>
+      </GlassPanel>
     </Pressable>
   );
 }
@@ -533,7 +535,7 @@ export function HeaderTextButton({ label, onPress }: { label: string; onPress: (
 /** The search capsule: a magnifier, the field and a clear button, in the card material. */
 export function SearchCapsule({ value, onChangeText, placeholder, clearLabel }: { value: string; onChangeText: (value: string) => void; placeholder: string; clearLabel: string }) {
   return (
-    <GlassLayer style={{ flex: 1, height: 50, borderRadius: 25, flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 8, gap: 8 }} fallback={palette.surface} fallbackBorder={palette.border}>
+    <GlassPanel radius={25} interactive={false} style={{ flex: 1, height: 50, flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 8, gap: 8 }} fallback={palette.surface} fallbackBorder={palette.border}>
       <AppIcon name="search-outline" size={18} color={palette.muted} />
       <TextInput
         value={value}
@@ -549,7 +551,7 @@ export function SearchCapsule({ value, onChangeText, placeholder, clearLabel }: 
           <AppIcon name="close-circle" size={18} color={palette.placeholder} />
         </Pressable>
       ) : null}
-    </GlassLayer>
+    </GlassPanel>
   );
 }
 
@@ -562,9 +564,9 @@ export function ChoiceChip({ label, on, onPress }: { label: string; on: boolean;
           <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#fff' }}>{label}</Text>
         </View>
       ) : (
-        <GlassLayer style={{ height: 38, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
+        <GlassPanel radius={19} style={{ height: 38, paddingHorizontal: 14, justifyContent: 'center' }} fallback={palette.surface} fallbackBorder={palette.border}>
           <Text style={{ fontSize: 13.5, fontWeight: '500', color: palette.text }}>{label}</Text>
-        </GlassLayer>
+        </GlassPanel>
       )}
     </Pressable>
   );
