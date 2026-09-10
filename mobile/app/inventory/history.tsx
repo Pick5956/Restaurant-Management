@@ -3,14 +3,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { listAllTransactions } from '@/src/api/ingredient';
+import { listAllTransactions, listIngredientCategories } from '@/src/api/ingredient';
+import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import {
   Card,
+  ChoiceChip,
   FloatingHeader,
+  SEARCH_HEIGHT,
   SearchCapsule,
   Segmented,
+  SheetButton,
+  SheetFooter,
+  SheetSection,
+  SheetTitle,
+  SquareButton,
   dayHeading,
   dayKey,
   fmt,
@@ -22,11 +30,34 @@ import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette } from '@/src/theme';
-import type { IngredientTransaction } from '@/src/types/ingredient';
+import type { IngredientCategory, IngredientTransaction } from '@/src/types/ingredient';
 
 type Kind = 'all' | 'in' | 'out' | 'adjust';
 
 const PAGE = 100;
+
+/**
+ * How far back to look. The web asks for two dates; a phone asks for a length
+ * of time, which is what someone actually has in mind — "this week", "this
+ * month" — and is one tap instead of two calendars.
+ */
+type Range = 7 | 30 | 90 | 0;
+const RANGES: Range[] = [0, 7, 30, 90];
+
+/** YYYY-MM-DD in the shop's own day, not UTC's. */
+function dateInput(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function rangeBounds(days: Range): { from?: string; to?: string } {
+  if (!days) return {};
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - (days - 1));
+  return { from: dateInput(start), to: dateInput(today) };
+}
 
 /**
  * Every stock movement in the shop, newest first — the same log the detail
@@ -46,6 +77,13 @@ export default function InventoryHistoryScreen() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [kind, setKind] = useState<Kind>('all');
+  const [range, setRange] = useState<Range>(0);
+  const [category, setCategory] = useState('all');
+  const [categories, setCategories] = useState<IngredientCategory[]>([]);
+  // The sheet edits a copy and applies on "ดูผลลัพธ์", so the list behind it
+  // does not reshuffle while the person is still choosing.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draft, setDraft] = useState<{ range: Range; category: string }>({ range: 0, category: 'all' });
   const [search, setSearch] = useState('');
   // What the API was last asked for. Typing should not fire a request per
   // keystroke; the settled term does.
@@ -66,6 +104,8 @@ export default function InventoryHistoryScreen() {
     try {
       const response = await listAllTransactions({
         type: kind === 'all' ? '' : kind,
+        category_id: category === 'all' ? undefined : Number(category),
+        ...rangeBounds(range),
         search: term,
         page: nextPage,
         limit: PAGE,
@@ -80,10 +120,17 @@ export default function InventoryHistoryScreen() {
       setLoading(false);
       setMore(false);
     }
-  }, [canView, kind, term, t]);
+  }, [canView, kind, category, range, term, t]);
 
   // A new filter is a new list, from the first page.
   useEffect(() => { void load(1); }, [load]);
+
+  useEffect(() => {
+    if (!canView) return;
+    listIngredientCategories()
+      .then((response) => setCategories(response.categories || []))
+      .catch(() => undefined);
+  }, [canView]);
 
   const groups = useMemo(() => {
     const out: Array<{ key: string; heading: string; rows: IngredientTransaction[] }> = [];
@@ -104,13 +151,29 @@ export default function InventoryHistoryScreen() {
     );
   }
 
+  const filtered = range !== 0 || category !== 'all';
+  const rangeLabel = (days: Range) => (days === 0
+    ? t('ทั้งหมด', 'All time')
+    : t(`${days} วันล่าสุด`, `Last ${days} days`));
+
   const bar = (
-    <SearchCapsule
-      value={search}
-      onChangeText={setSearch}
-      placeholder={t('ค้นหาชื่อวัตถุดิบ', 'Search ingredient name')}
-      clearLabel={t('ล้างคำค้นหา', 'Clear search')}
-    />
+    <>
+      <SearchCapsule
+        value={search}
+        onChangeText={setSearch}
+        placeholder={t('ค้นหาชื่อวัตถุดิบ', 'Search ingredient name')}
+        clearLabel={t('ล้างคำค้นหา', 'Clear search')}
+      />
+      <View>
+        <SquareButton
+          size={SEARCH_HEIGHT}
+          icon="options-outline"
+          label={t('ตัวกรอง', 'Filter')}
+          onPress={() => { setDraft({ range, category }); setFilterOpen(true); }}
+        />
+        {filtered ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}
+      </View>
+    </>
   );
 
   const rail = (
@@ -179,12 +242,38 @@ export default function InventoryHistoryScreen() {
           </Pressable>
         ) : null}
 
+        {!loading && filtered && rows.length ? (
+          <Text style={{ fontSize: 12, color: palette.placeholder, textAlign: 'center', marginTop: 2 }}>
+            {rangeLabel(range)}
+            {category !== 'all' ? ` · ${categories.find((row) => String(row.ID) === category)?.name ?? ''}` : ''}
+          </Text>
+        ) : null}
+
         {!loading && rows.length && rows.length >= total ? (
           <Text style={{ fontSize: 12, color: palette.placeholder, textAlign: 'center', marginTop: 6 }}>
             {t(`ทั้งหมด ${total.toLocaleString(locale)} รายการ`, `${total.toLocaleString(locale)} movements in all`)}
           </Text>
         ) : null}
       </ScrollView>
+
+      <BottomSheet open={filterOpen} onClose={() => setFilterOpen(false)} heightFraction={0.62} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('ตัวกรอง', 'Filter')} />
+        <SheetSection title={t('ช่วงเวลา', 'When')}>
+          {RANGES.map((days) => (
+            <ChoiceChip key={days} label={rangeLabel(days)} on={draft.range === days} onPress={() => setDraft((prev) => ({ ...prev, range: days }))} />
+          ))}
+        </SheetSection>
+        <SheetSection title={t('หมวดหมู่', 'Category')}>
+          <ChoiceChip label={t('ทุกหมวด', 'All categories')} on={draft.category === 'all'} onPress={() => setDraft((prev) => ({ ...prev, category: 'all' }))} />
+          {categories.filter((row) => row.is_active).map((row) => (
+            <ChoiceChip key={row.ID} label={row.name} on={draft.category === String(row.ID)} onPress={() => setDraft((prev) => ({ ...prev, category: String(row.ID) }))} />
+          ))}
+        </SheetSection>
+        <SheetFooter>
+          <SheetButton secondary label={t('ล้างตัวกรอง', 'Clear')} onPress={() => setDraft({ range: 0, category: 'all' })} />
+          <SheetButton label={t('ดูผลลัพธ์', 'Show results')} onPress={() => { setRange(draft.range); setCategory(draft.category); setFilterOpen(false); }} />
+        </SheetFooter>
+      </BottomSheet>
     </View>
   );
 }
