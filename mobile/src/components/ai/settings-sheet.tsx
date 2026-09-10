@@ -1,5 +1,8 @@
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, Switch, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   getAISettings,
@@ -18,7 +21,7 @@ import { readFollowUpsEnabled, writeCachedOwnerTitle, writeFollowUpsEnabled } fr
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { AI_ACTION_TYPES, type AIActionType, type AIConversationSummary, type AIInsightKind, type AISettingsPatch, type AISettingsView } from '@/src/types/ai';
 
-import { BottomSheet, GlassButton } from './chrome';
+import { BottomSheet, GlassButton, GlassSurface } from './chrome';
 import { ai } from './theme';
 
 // Settings the way a phone does them: a short list of subjects, each opening its
@@ -29,6 +32,26 @@ import { ai } from './theme';
 // is in it.
 
 type Page = 'root' | 'title' | 'actions' | 'notifications' | 'trash';
+
+// The header's geometry, shared by the pane behind it and the space each page
+// leaves for it. Same idea as the chat screen: the row floats, the content
+// scrolls under a blur that fades out just past the buttons, and the first
+// thing on the page starts below that fade rather than inside it.
+const HEADER_BUTTON = 44;
+const HEADER_ROW_PADDING_TOP = 4;
+const HEADER_ROW_PADDING_BOTTOM = 10;
+/** How far the blur spills past the buttons before it is gone. The owner's pick on the chat screen. */
+const HEADER_FADE = 15;
+const HEADER_ROW = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_ROW_PADDING_BOTTOM;
+const CONTENT_TOP = HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE + 10;
+
+// From here up the sheet is wide enough to hold the list and a subject side by
+// side, so it stops sliding pages over one another: an iPad in portrait is 834
+// points across, and even that has room for both.
+const SPLIT_AT = 768;
+const SIDEBAR = 330;
+/** A settings page reads at a column's width, not a tablet's. */
+const DETAIL_MAX = 680;
 
 const ACTION_LABELS: Record<AIActionType, { th: string; en: string }> = {
   set_menu_availability: { th: 'เปิด/ปิดขายเมนู', en: 'Menu availability' },
@@ -72,6 +95,7 @@ function Row({
   toggle,
   disabled,
   first,
+  selected,
 }: {
   icon?: AppIconName;
   label: string;
@@ -82,6 +106,8 @@ function Row({
   toggle?: { on: boolean; onChange: (next: boolean) => void };
   disabled?: boolean;
   first?: boolean;
+  /** The row whose page is open beside it, on the split layout. */
+  selected?: boolean;
 }) {
   const body = (
     <View
@@ -95,9 +121,9 @@ function Row({
         opacity: disabled ? 0.45 : 1,
       }}
     >
-      {icon ? <AppIcon name={icon} size={22} color={ai.body} /> : null}
+      {icon ? <AppIcon name={icon} size={22} color={selected ? ai.deep : ai.body} /> : null}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 16, color: ai.ink }}>{label}</Text>
+        <Text style={{ fontSize: 16, fontWeight: selected ? '600' : '400', color: selected ? ai.deep : ai.ink }}>{label}</Text>
         {detail ? <Text style={{ fontSize: 12.5, color: ai.faded, marginTop: 1 }}>{detail}</Text> : null}
       </View>
       {value ? <Text style={{ fontSize: 15, color: ai.faded, maxWidth: 150 }} numberOfLines={1}>{value}</Text> : null}
@@ -116,7 +142,13 @@ function Row({
   return (
     <View style={{ borderTopWidth: first ? 0 : 1, borderTopColor: '#f1f0ee' }}>
       {onPress ? (
-        <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? '#f6f4f0' : 'transparent' })}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: Boolean(selected) }}
+          disabled={disabled}
+          onPress={onPress}
+          style={({ pressed }) => ({ backgroundColor: selected ? ai.orangeSoft : pressed ? '#f6f4f0' : 'transparent' })}
+        >
           {body}
         </Pressable>
       ) : (
@@ -149,12 +181,23 @@ export function SettingsSheet({
   // mounted, sliding the other way; `transition` holds which one and which
   // direction, and `slide` is how far along the move is.
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  // The blurred pane reaches up over the status bar (the sheet's own top
+  // padding) and down to the buttons' bottom edge plus the fade. Where the fade
+  // starts is computed against the pane, so it lands on the buttons on every
+  // phone whatever its status bar height.
+  const headerPane = insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON + HEADER_FADE;
+  const headerSolid = (insets.top + HEADER_ROW_PADDING_TOP + HEADER_BUTTON) / headerPane;
+  const fadeAt = (through: number) => headerSolid + (1 - headerSolid) * through;
+
   const [transition, setTransition] = useState<{ from: Page; dir: 'push' | 'pop' } | null>(null);
   const slide = useRef(new Animated.Value(1)).current;
   const go = (next: Page) => {
     if (next === page) return;
-    if (reducedMotion) {
+    // Side by side there is nothing to slide: the list never leaves, and only
+    // the pane beside it changes.
+    if (reducedMotion || width >= SPLIT_AT) {
       setPage(next);
       return;
     }
@@ -163,7 +206,7 @@ export function SettingsSheet({
     slide.setValue(0);
     Animated.timing(slide, {
       toValue: 1,
-      duration: 340,
+      duration: 460,
       easing: Easing.bezier(0.2, 0.8, 0.2, 1),
       useNativeDriver: true,
     }).start(({ finished }) => {
@@ -263,10 +306,39 @@ export function SettingsSheet({
     );
   };
 
+  // Both header buttons stay mounted for the life of the sheet and slide in and
+  // out with the page. Mounting the back button only on sub-pages meant a fresh
+  // glass view on every push — and glass takes most of a second to appear, so
+  // its shadow had to be held back that long and then landed late. A button
+  // that never unmounts has had its glass since the sheet opened.
+  //
+  // Each one's visibility is a number 0..1 that moves with the page slide; it
+  // drives scale and a small slide, never opacity — fading a glass view's
+  // parent is what made the material vanish on the menu.
+  const wasRoot = transition ? transition.from === 'root' : page === 'root';
+  const isRoot = page === 'root';
+  const shown = (atRoot: boolean) => {
+    const before = (wasRoot === atRoot) ? 1 : 0;
+    const after = (isRoot === atRoot) ? 1 : 0;
+    if (before === after) return new Animated.Value(after);
+    return Animated.add(before, Animated.multiply(slide, after - before));
+  };
+  const backShown = shown(false);
+  const closeShown = shown(true);
+  const slot = (visible: Animated.Value | Animated.AnimatedAddition<number>, fromX: number) => ({
+    position: 'absolute' as const,
+    transform: [
+      { translateX: visible.interpolate({ inputRange: [0, 1], outputRange: [fromX, 0] }) },
+      { scale: visible.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.01, 0.7, 1] }) },
+    ],
+  });
+
   useEffect(() => {
     if (!open) return;
     let active = true;
-    setPage('root');
+    // The phone opens on the list; the split layout opens with the first subject
+    // already in the pane, because an empty half-screen says nothing.
+    setPage(width >= SPLIT_AT ? 'title' : 'root');
     setTransition(null);
     setError(null);
     void readFollowUpsEnabled().then((enabled) => { if (active) setFollowUps(enabled); });
@@ -324,11 +396,17 @@ export function SettingsSheet({
     <View style={{ paddingVertical: 28, alignItems: 'center' }}><ActivityIndicator color={ai.orange} /></View>
   ) : null;
 
+  const wide = width >= SPLIT_AT;
+  // What the sidebar should mark as chosen. `renderPage` shadows `page` with its
+  // own parameter — deliberately, so it can draw two pages at once during a
+  // move — so the current one is captured here where it is still visible.
+  const chosen = page;
+
   // The body of one page. Named `page` on purpose: the checks inside read the
   // parameter, so the same markup can draw the page leaving and the page
   // arriving while a move is on.
   const renderPage = (page: Page) => (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: CONTENT_TOP, paddingBottom: 32 }}>
       {error ? (
         <Text style={{ fontSize: 13, color: '#dc2626', paddingHorizontal: 18, paddingBottom: 8 }}>{error}</Text>
       ) : null}
@@ -342,6 +420,7 @@ export function SettingsSheet({
               icon="person-circle-outline"
               label={t('ชื่อเรียก', 'Name')}
               value={settings?.owner_title?.trim() || t('คุณผู้จัดการ', 'Manager')}
+              selected={wide && chosen === 'title'}
               onPress={() => go('title')}
             />
             <Row
@@ -357,11 +436,13 @@ export function SettingsSheet({
               first
               icon="shield-checkmark-outline"
               label={t('ความปลอดภัย', 'Safety')}
+              selected={wide && chosen === 'actions'}
               onPress={() => go('actions')}
             />
             <Row
               icon="notifications-outline"
               label={t('การแจ้งเตือน', 'Notifications')}
+              selected={wide && chosen === 'notifications'}
               onPress={() => go('notifications')}
             />
           </Group>
@@ -373,6 +454,7 @@ export function SettingsSheet({
               icon="trash-outline"
               label={t('ถังขยะ', 'Trash')}
               detail={t('แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน', 'Deleted chats, restorable for 7 days')}
+              selected={wide && chosen === 'trash'}
               onPress={() => { go('trash'); void loadTrash(); }}
             />
           </Group>
@@ -517,24 +599,23 @@ export function SettingsSheet({
         style={[
           fill,
           {
-            opacity: transition.dir === 'push' ? slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] }) : 1,
+            opacity: transition.dir === 'push' ? slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0.78] }) : 1,
             transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, transition.dir === 'push' ? -width * 0.28 : width] }) }],
           },
         ]}
       >
         {renderPage(transition.from)}
       </Animated.View>
-      {/* The page arriving, with a soft edge so it reads as sliding over. */}
+      {/* The page arriving. No shadow along its edge: a shadow the full height
+          of the page drew a dark band down its left and across its top, which
+          read as the page being cut off rather than sliding in. Both pages share
+          the sheet's colour, so with nothing drawn at the join there is no join. */}
       <Animated.View
         style={[
           fill,
           {
-            opacity: transition.dir === 'pop' ? slide.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) : 1,
+            opacity: transition.dir === 'pop' ? slide.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1] }) : 1,
             transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [transition.dir === 'push' ? width : -width * 0.28, 0] }) }],
-            shadowColor: '#000',
-            shadowOpacity: transition.dir === 'push' ? 0.12 : 0,
-            shadowRadius: 14,
-            shadowOffset: { width: -4, height: 0 },
           },
         ]}
       >
@@ -545,17 +626,65 @@ export function SettingsSheet({
     renderPage(page)
   );
 
+  // The list on the left, the subject on the right, a hairline between them —
+  // and no page ever moves, so there is nothing to animate.
+  const split = (
+    <View style={{ flex: 1, flexDirection: 'row' }}>
+      <View style={{ width: SIDEBAR, borderRightWidth: 1, borderRightColor: '#e6e3dd' }}>
+        {renderPage('root')}
+      </View>
+      <View style={{ flex: 1, alignItems: 'center' }}>
+        {page === 'root' ? (
+          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 24 }}>
+            <Text style={{ fontSize: 15, color: ai.faded, textAlign: 'center' }}>{t('เลือกหัวข้อทางซ้าย', 'Pick a subject on the left')}</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1, width: '100%', maxWidth: DETAIL_MAX }}>{renderPage(page)}</View>
+        )}
+      </View>
+    </View>
+  );
+
   return (
     <BottomSheet open={open} onClose={onClose} heightFraction={1} background="#f4f2ee" label={t('ปิดตั้งค่า', 'Close settings')}>
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 4, paddingBottom: 10, gap: 8 }}>
+        {wide ? split : stage}
+        {/* The header's backdrop, the chat screen's: a blurred copy of what
+            scrolls past, masked solid behind the buttons and faded to nothing
+            just below them. No panel, no tint — the fade is the edge. */}
+        <MaskedView
+          pointerEvents="none"
+          style={{ position: 'absolute', top: -insets.top, left: 0, right: 0, height: headerPane, zIndex: 2 }}
+          maskElement={
+            <LinearGradient
+              colors={['#000000', '#000000', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.42)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)']}
+              locations={[0, headerSolid, fadeAt(0.3), fadeAt(0.55), fadeAt(0.75), fadeAt(0.9), 1]}
+              style={{ flex: 1 }}
+            />
+          }
+        >
+          <GlassSurface effect="regular" style={{ flex: 1 }} fallbackStyle={{ backgroundColor: 'rgba(244,242,238,0.9)' }}>
+            <View />
+          </GlassSurface>
+        </MaskedView>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: HEADER_ROW_PADDING_TOP, paddingBottom: HEADER_ROW_PADDING_BOTTOM, gap: 8 }}>
+          {/* Two titles when there are two columns: the list keeps its own name
+              over the sidebar, and the subject's name sits over its pane. */}
+          {wide ? (
+            <>
+              <Text numberOfLines={1} style={{ width: SIDEBAR - 18, paddingLeft: 6, fontSize: 20, fontWeight: '700', color: ai.ink }}>{t('การตั้งค่า', 'Settings')}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, paddingLeft: 6, fontSize: 18, fontWeight: '700', color: ai.ink }}>{page === 'root' ? '' : heading}</Text>
+              <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+            </>
+          ) : (
+          <>
           {/* Back sits where a back button belongs; close sits under the thumb
               that opened the sheet. Each side keeps a slot so the title stays centred. */}
-          {page === 'root' ? (
-            <View style={{ width: 44 }} />
-          ) : (
-            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
-          )}
+          <View style={{ width: 44, height: 44 }}>
+            <Animated.View pointerEvents={isRoot ? 'none' : 'auto'} style={slot(backShown, -26)}>
+              <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
+            </Animated.View>
+          </View>
           <Animated.View
             style={{
               flex: 1,
@@ -565,14 +694,14 @@ export function SettingsSheet({
           >
             <Text numberOfLines={1} style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{heading}</Text>
           </Animated.View>
-          {page === 'root' ? (
-            <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
-          ) : (
-            <View style={{ width: 44 }} />
+          <View style={{ width: 44, height: 44 }}>
+            <Animated.View pointerEvents={isRoot ? 'auto' : 'none'} style={slot(closeShown, 26)}>
+              <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
+            </Animated.View>
+          </View>
+          </>
           )}
         </View>
-
-        {stage}
       </View>
     </BottomSheet>
   );

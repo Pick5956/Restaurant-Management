@@ -1,7 +1,9 @@
+import MaskedView from '@react-native-masked-view/masked-view';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import * as Haptics from 'expo-haptics';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { Animated, Easing, Modal, PanResponder, Pressable, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -68,6 +70,12 @@ export function GlassButton({
   size?: number;
 }) {
   const icon_ = <AppIcon name={icon} size={size * 0.46} color={active ? ai.deep : ai.ink} />;
+  // The shadow is here from the first frame, and it is round from the first
+  // frame, because the glass is told its corner radius through props rather
+  // than through `style` — see GlassPanel below. iOS builds a shadow from the
+  // shape the layer really has: with the radius only in style the glass stayed
+  // square for as long as it took the material to appear, which is why this
+  // button used to hold its shadow back for a second and then land it late.
   return (
     <Pressable
       accessibilityRole="button"
@@ -89,18 +97,16 @@ export function GlassButton({
       })}
     >
       {LIQUID_GLASS ? (
-        <GlassView
-          glassEffectStyle="regular"
-          isInteractive
-          // The screen is light-only, so the glass must not follow a dark system theme.
-          colorScheme="light"
+        <GlassPanel
+          radius={size / 2}
           // A fixed lift, never a state colour: changing this at runtime leaves the
           // native view wearing the old one.
-          tintColor="rgba(255,255,255,0.42)"
-          style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' }}
+          tint="rgba(255,255,255,0.42)"
+          fallback="transparent"
+          style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
         >
           {icon_}
-        </GlassView>
+        </GlassPanel>
       ) : (
         <View
           style={{
@@ -171,6 +177,8 @@ export type GlassMenuItem = {
   detail?: string;
   /** An unread mark on the row, matching the one on the button that opened it. */
   dot?: boolean;
+  /** Red: the row that deletes something. */
+  danger?: boolean;
   onPress: () => void;
 };
 
@@ -190,7 +198,7 @@ export function GlassMenu({
   onClose: () => void;
   items: GlassMenuItem[];
   /** Which corner it grows out of. */
-  from: 'top-right' | 'bottom-left';
+  from: 'top-right' | 'bottom-left' | 'bottom-right';
   style?: StyleProp<ViewStyle>;
 }) {
   const reducedMotion = useReducedMotion();
@@ -237,7 +245,7 @@ export function GlassMenu({
             position: 'absolute',
             zIndex: 9,
             // Grows out of the button's own corner, not out of its middle.
-            transformOrigin: from === 'top-right' ? 'top right' : 'bottom left',
+            transformOrigin: from === 'top-right' ? 'top right' : from === 'bottom-right' ? 'bottom right' : 'bottom left',
             transform: [{ scale }],
           },
           style,
@@ -265,18 +273,11 @@ export function GlassMenu({
               accessibilityRole="button"
               accessibilityLabel={item.label}
               onPress={() => { onClose(); item.onPress(); }}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                minHeight: 48,
-                paddingHorizontal: 16,
-                backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
-              })}
+              style={({ pressed }) => menuRowShape(pressed)}
             >
-              <AppIcon name={item.icon} size={20} color={ai.muted} />
+              <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, color: ai.ink }}>{item.label}</Text>
+                <Text style={{ fontSize: 15, color: item.danger ? ai.dangerText : ai.ink }}>{item.label}</Text>
                 {item.detail ? <Text style={{ fontSize: 12, color: ai.faded }}>{item.detail}</Text> : null}
               </View>
               {item.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ai.orange }} /> : null}
@@ -311,6 +312,91 @@ const NativeGlassView = (() => {
   }
 })();
 const AnimatedGlassView = Animated.createAnimatedComponent(NativeGlassView);
+// The host view takes more props than the exported wrapper's types admit —
+// borderCurve and the four radii among them. Animated's wrapper loosens them on
+// its own; a plain render needs this.
+const RawGlassView = NativeGlassView as ComponentType<Record<string, unknown>>;
+
+
+/**
+ * A pane of glass whose corners the glass itself keeps.
+ *
+ * `GlassLayer` in ui.tsx rounds only the React Native view around the material.
+ * The material's own rim — the refracted outline the eye reads as the shape —
+ * comes from props (see NativeGlassView above), so with a radius in `style`
+ * alone that rim stays square and its corners sit outside the rounded view: a
+ * pale arc at each corner, on every card in a list, which is exactly what the
+ * inventory rows showed.
+ *
+ * The radius goes on both, therefore: as props for the glass, in the style for
+ * the view and whatever it clips.
+ */
+export function GlassPanel({
+  radius,
+  style,
+  tint = 'rgba(255,255,255,0.42)',
+  fallback,
+  fallbackBorder,
+  interactive = true,
+  children,
+}: {
+  /** One radius for all four corners — a card, a capsule, a round button. */
+  radius: number;
+  style?: ViewStyle;
+  /** What the glass is tinted with on iOS 26. */
+  tint?: string;
+  /** The opaque stand-in painted everywhere else. */
+  fallback: string;
+  /** The stand-in's edge, since it has no material to separate it. */
+  fallbackBorder?: string;
+  interactive?: boolean;
+  children?: ReactNode;
+}) {
+  const shape: ViewStyle = { ...style, borderRadius: radius };
+  if (!LIQUID_GLASS) {
+    return (
+      <View style={[shape, fallbackBorder ? { borderWidth: 1, borderColor: fallbackBorder } : null, { backgroundColor: fallback }]}>
+        {children}
+      </View>
+    );
+  }
+  return (
+    <RawGlassView
+      glassEffectStyle="regular"
+      isInteractive={interactive}
+      // These surfaces are light-only; the glass must not follow a dark system theme.
+      colorScheme="light"
+      tintColor={tint}
+      borderCurve="continuous"
+      borderTopLeftRadius={radius}
+      borderTopRightRadius={radius}
+      borderBottomLeftRadius={radius}
+      borderBottomRightRadius={radius}
+      style={[shape, { overflow: 'hidden' }]}
+    >
+      {children}
+    </RawGlassView>
+  );
+}
+
+/**
+ * One row of a menu. What the finger is on wears a capsule inset from the
+ * panel's edges — the shape iOS gives a highlighted menu row, and the reason
+ * the highlight cannot simply fill the row edge to edge.
+ */
+function menuRowShape(active: boolean) {
+  return {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    marginHorizontal: 6,
+    borderRadius: 999,
+    borderCurve: 'continuous' as const,
+    backgroundColor: active ? 'rgba(249,115,22,0.16)' : 'transparent',
+  };
+}
 
 /**
  * The "…" button that becomes the menu.
@@ -356,6 +442,9 @@ export function GlassMorphMenu({
   dot,
   style,
   width = 232,
+  size = 46,
+  restRadius,
+  from = 'top-right',
 }: {
   open: boolean;
   onOpen: () => void;
@@ -365,9 +454,19 @@ export function GlassMorphMenu({
   label: string;
   /** An unread mark on the closed button. */
   dot?: boolean;
-  /** Where the button's top-right corner sits; the menu opens down and to the left of it. */
+  /** Where the button's anchored corner sits — top-right by default, bottom-right with `from`. */
   style?: StyleProp<ViewStyle>;
   width?: number;
+  /** The closed button's side. */
+  size?: number;
+  /** The closed button's corner radius; a circle unless said otherwise. */
+  restRadius?: number;
+  /**
+   * Which corner the drop hangs from. 'top-right' grows down and to the left;
+   * 'bottom-right' grows up and to the left, for a button low on the screen
+   * with no room under it.
+   */
+  from?: 'top-right' | 'bottom-right';
 }) {
   const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
@@ -375,7 +474,123 @@ export function GlassMorphMenu({
   const [engaged, setEngaged] = useState(open);
   // The list's natural height, measured once it has laid out at full width.
   const [contentHeight, setContentHeight] = useState(0);
-  const size = 46;
+  const fromTop = from === 'top-right';
+  const origin = fromTop ? 'top right' : 'bottom right';
+  const pin = fromTop ? { top: 0 } : { bottom: 0 };
+
+  // Hold the button and drag: the row under the finger lights up and is chosen
+  // when the finger lifts. One touch does the whole thing, so the gesture has
+  // to be taken at the button — before the menu it will open even exists —
+  // and held to the end.
+  const [hover, setHover] = useState<number | null>(null);
+  const hoverRef = useRef<number | null>(null);
+  // Where each row sits inside the panel, from its own layout, and where the
+  // panel itself is on the screen, from where the finger landed on the button.
+  const rowBounds = useRef<Array<{ y: number; height: number } | undefined>>([]);
+  const anchor = useRef<{ top: number; right: number } | null>(null);
+  const strayed = useRef(false);
+  // True while the touch in hand is the one that opened the menu: letting go of
+  // that one leaves the menu open, it does not pick whatever it landed on.
+  const opening = useRef(false);
+  // The list itself, measured on screen once the panel has settled. Deriving
+  // the panel's position from where the finger hit the button only works for
+  // the touch that opens it; every later touch lands on a row, and a row's
+  // locationY is measured from the row.
+  const list = useRef<View>(null);
+  const measureList = () => {
+    list.current?.measureInWindow((x, y, panelWidth, panelHeight) => {
+      if (panelWidth > 4 && panelHeight > 4) anchor.current = { top: y, right: x + panelWidth };
+    });
+  };
+  const gesture = useRef({ open, items, width, size, fromTop, targetHeight: 0, onOpen, onClose });
+  gesture.current.open = open;
+  gesture.current.items = items;
+  gesture.current.width = width;
+  gesture.current.size = size;
+  gesture.current.fromTop = fromTop;
+  gesture.current.onOpen = onOpen;
+  gesture.current.onClose = onClose;
+
+  const hoverAt = (pageX: number, pageY: number): number | null => {
+    const at = anchor.current;
+    if (!at) return null;
+    const { width: panel, items: rows } = gesture.current;
+    // A little slop either side, so a finger tracking down the edge still counts.
+    if (pageX < at.right - panel - 12 || pageX > at.right + 12) return null;
+    for (let index = 0; index < rows.length; index += 1) {
+      const bounds = rowBounds.current[index];
+      if (!bounds) continue;
+      const top = at.top + bounds.y;
+      if (pageY >= top && pageY <= top + bounds.height) return index;
+    }
+    return null;
+  };
+
+  const lightUp = (index: number | null) => {
+    if (hoverRef.current === index) return;
+    hoverRef.current = index;
+    if (index !== null) void Haptics.selectionAsync();
+    setHover(index);
+  };
+
+  const drag = useRef(
+    PanResponder.create({
+      // Every touch on the panel: the one that opens it, and every one after.
+      // Taken in the capture phase so the rows underneath never start a press
+      // of their own — the highlight that follows the finger is this gesture's
+      // job now. The one case left to the rows is a panel whose position is not
+      // known yet, where this gesture could not say what is under the finger.
+      onStartShouldSetPanResponderCapture: () => !gesture.current.open || anchor.current !== null,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => {
+        const { pageX, pageY, locationX, locationY } = event.nativeEvent;
+        const { size: side, fromTop: down, targetHeight: tall, open: already } = gesture.current;
+        strayed.current = false;
+        opening.current = !already;
+        if (already) {
+          // The panel is where it was measured; light up what is under the
+          // finger at once, the way a pressed row used to.
+          lightUp(hoverAt(pageX, pageY));
+          return;
+        }
+        // Opening: the finger is on the button, which is the panel's top-right
+        // corner — or its bottom-right one when the menu grows upward. Nothing
+        // lights up yet; a tap on the button is not a choice.
+        anchor.current = {
+          top: pageY - locationY - (down ? 0 : Math.max(0, tall - side)),
+          right: pageX + (side - locationX),
+        };
+        lightUp(null);
+        gesture.current.onOpen();
+      },
+      onPanResponderMove: (event, state) => {
+        if (Math.abs(state.dx) > 8 || Math.abs(state.dy) > 8) strayed.current = true;
+        lightUp(hoverAt(event.nativeEvent.pageX, event.nativeEvent.pageY));
+      },
+      onPanResponderRelease: (event) => {
+        const index = hoverAt(event.nativeEvent.pageX, event.nativeEvent.pageY);
+        const drifted = strayed.current;
+        const opened = opening.current;
+        lightUp(null);
+        opening.current = false;
+        const { items: rows, onClose: close } = gesture.current;
+        // The tap that opened the menu leaves it open, whatever it is sitting
+        // on — the button covers the first row, and opening a menu is not
+        // choosing from it.
+        if (opened && !drifted) return;
+        if (index !== null && rows[index]) {
+          close();
+          rows[index].onPress();
+          return;
+        }
+        // Dragged off the list and let go: a change of mind.
+        if (drifted) close();
+      },
+      onPanResponderTerminate: () => { lightUp(null); opening.current = false; },
+    }),
+  ).current;
+
+  useEffect(() => { if (!open) lightUp(null); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (open) setEngaged(true);
@@ -383,24 +598,29 @@ export function GlassMorphMenu({
     // the shape curves below, where they can be read and tuned; a spring on top
     // of them added a second, unrelated bounce and rushed the drop phase past
     // in five frames. The first version ran in 0.3s and read as a jump from
-    // circle to box — the drop needs time on screen to be seen at all.
+    // circle to box — the drop needs time on screen to be seen at all. 780ms
+    // showed the drop but felt slow once the menu was on every card; 520 is
+    // the owner's pick, still long enough for the drop phase to register.
     const animation = Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: reducedMotion ? 0 : open ? 680 : 500,
+      duration: reducedMotion ? 0 : open ? 520 : 380,
       // Fast out of the button, long settle. Closing is gentler both ends.
       easing: open ? Easing.bezier(0.22, 0.8, 0.24, 1) : Easing.bezier(0.4, 0, 0.6, 1),
       useNativeDriver: false,
     });
     animation.start(({ finished }) => {
       if (finished && !open) setEngaged(false);
+      // Measured at rest, never mid-flight: the list is scaled to the frame
+      // while the drop is still growing, so its rect means nothing until then.
+      if (finished && open) measureList();
     });
   }, [open, progress, reducedMotion]);
 
   if (!LIQUID_GLASS) {
     return (
       <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9 }, style]}>
-        <GlassButton icon={icon} label={label} dot={dot} onPress={onOpen} />
-        <GlassMenu open={open} onClose={onClose} items={items} from="top-right" style={{ top: 0, right: 0 }} />
+        <GlassButton icon={icon} label={label} dot={dot} onPress={onOpen} size={size} />
+        <GlassMenu open={open} onClose={onClose} items={items} from={from} style={{ ...pin, right: 0 }} />
       </View>
     );
   }
@@ -408,6 +628,7 @@ export function GlassMorphMenu({
   // Before the first layout the estimate keeps the spring aimed somewhere
   // sensible; the measurement takes over the moment it lands.
   const targetHeight = contentHeight > 0 ? contentHeight : items.length * 48 + 12;
+  gesture.current.targetHeight = targetHeight;
   // 'extend', not 'clamp', on everything that carries the shape: the spring's
   // overshoot past 1 is what makes the panel swell before it settles.
   const grow = { extrapolate: 'extend' as const };
@@ -459,13 +680,20 @@ export function GlassMorphMenu({
   // final 22px is 22/width of the finished panel, so that is where they end.
   // In between the top-right stays tight — the drop hangs from it — and the
   // bottom-left is the belly.
-  const rest = 0.5;
+  const rest = (restRadius ?? size / 2) / size;
   const done = 22 / width;
   const share = (stops: number[], values: number[]) => Animated.multiply(panelWidth, corner(stops, values));
-  const cornerTR = share([0, 0.35, 0.7, 1], [rest, 0.26, 0.18, done]);
-  const cornerTL = share([0, 0.35, 0.7, 1], [rest, 0.64, 0.34, done]);
-  const cornerBR = share([0, 0.4, 0.75, 1], [rest, 0.5, 0.3, done]);
-  const cornerBL = share([0, 0.3, 0.55, 0.8, 1], [rest, 0.58, 0.62, 0.28, done]);
+  // Named for a drop hanging from the top-right. Hanging from the bottom-right
+  // the same shape is turned over: the tight corner is the one it hangs from,
+  // the belly is the one furthest away.
+  const hang = share([0, 0.35, 0.7, 1], [rest, 0.26, 0.18, done]);
+  const beside = share([0, 0.35, 0.7, 1], [rest, 0.64, 0.34, done]);
+  const under = share([0, 0.4, 0.75, 1], [rest, 0.5, 0.3, done]);
+  const belly = share([0, 0.3, 0.55, 0.8, 1], [rest, 0.58, 0.62, 0.28, done]);
+  const cornerTR = fromTop ? hang : under;
+  const cornerTL = fromTop ? beside : belly;
+  const cornerBR = fromTop ? under : hang;
+  const cornerBL = fromTop ? belly : beside;
   // The give at the start; the sag as it leaves the button, with a small lift
   // past its mark at the end; a lean to the left as it falls; and a degree or
   // so of wobble either way, which is the last thing separating a drop from a
@@ -504,28 +732,23 @@ export function GlassMorphMenu({
 
   const rows = (live: boolean) => (
     <View
+      ref={live ? list : undefined}
       onLayout={live ? (event) => setContentHeight(Math.round(event.nativeEvent.layout.height)) : undefined}
       style={{ paddingVertical: 6 }}
     >
-      {items.map((item) => (
+      {items.map((item, index) => (
         <Pressable
           key={item.key}
           accessibilityRole="button"
           accessibilityLabel={item.label}
           disabled={!live || !open}
           onPress={() => { onClose(); item.onPress(); }}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-            minHeight: 48,
-            paddingHorizontal: 16,
-            backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
-          })}
+          onLayout={live ? (event) => { rowBounds.current[index] = { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height }; } : undefined}
+          style={({ pressed }) => menuRowShape(pressed || hover === index)}
         >
-          <AppIcon name={item.icon} size={20} color={ai.muted} />
+          <AppIcon name={item.icon} size={20} color={item.danger ? ai.dangerText : ai.muted} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, color: ai.ink }}>{item.label}</Text>
+            <Text style={{ fontSize: 15, color: item.danger ? ai.dangerText : ai.ink }}>{item.label}</Text>
             {item.detail ? <Text style={{ fontSize: 12, color: ai.faded }}>{item.detail}</Text> : null}
           </View>
           {item.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ai.orange }} /> : null}
@@ -536,7 +759,7 @@ export function GlassMorphMenu({
 
   // Both copies sit at the top-right of the glass at the menu's full width and
   // are scaled from that corner to the frame, so they stretch with the shape.
-  const sheet = { position: 'absolute' as const, top: 0, right: 0, width, transformOrigin: 'top right' };
+  const sheet = { position: 'absolute' as const, ...pin, right: 0, width, transformOrigin: origin };
 
   return (
     <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9, width, height: Math.max(size, targetHeight) }, style]}>
@@ -549,15 +772,17 @@ export function GlassMorphMenu({
         />
       ) : null}
       <Animated.View
+        {...drag.panHandlers}
         style={{
           position: 'absolute',
-          top: 0,
+          ...pin,
           right: 0,
           width: panelWidth,
           height: panelHeight,
           zIndex: 9,
-          transformOrigin: 'top right',
-          transform: [{ translateY: sag }, { translateX: lean }, { rotate: wobble }, { scale: squish }],
+          transformOrigin: origin,
+          // Upward, the sag is a lift: the drop still leaves the button first.
+          transform: [{ translateY: fromTop ? sag : Animated.multiply(sag, -1) }, { translateX: lean }, { rotate: wobble }, { scale: squish }],
           // On the wrapper, not the glass: the glass clips its content, and a
           // shadow on a clipping view is clipped away with it.
           shadowColor: '#3d2b1f',
@@ -611,7 +836,7 @@ export function GlassMorphMenu({
             {/* The dots, in the circle the glass rests in. */}
             <Animated.View
               pointerEvents="none"
-              style={{ position: 'absolute', top: 0, right: 0, width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dotsOut }}
+              style={{ position: 'absolute', ...pin, right: 0, width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dotsOut }}
             >
               <AppIcon name={icon} size={size * 0.46} color={ai.ink} />
               {dot ? (
@@ -622,6 +847,174 @@ export function GlassMorphMenu({
         </Pressable>
       </Animated.View>
     </View>
+  );
+}
+
+// How far a row slides to show its trash button, and the button itself.
+const SWIPE_REVEAL = 76;
+
+/**
+ * A list row that slides left to uncover a delete button, the way rows do in
+ * Mail. The row itself is the moving part; the button sits still underneath
+ * and is revealed, growing from small to full as the row clears it.
+ *
+ * PanResponder rather than a gesture library: the sheet's own drag already
+ * works this way, and the list lives inside a Modal, where gesture-handler
+ * needs its own root view to hear anything. Only a clearly sideways move takes
+ * the touch, so the list still scrolls; a tap on a row that is already open
+ * closes it rather than opening the chat underneath — the same rule Mail uses.
+ *
+ * One row open at a time: opening one asks the parent to close the last.
+ */
+export function SwipeRow({
+  id,
+  background,
+  onDelete,
+  deleteLabel,
+  onWillOpen,
+  children,
+}: {
+  id: string;
+  /** The list's colour, so the row hides the button while it is closed. */
+  background: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  /** Called as this row starts to open, with the way to close it. */
+  onWillOpen: (id: string, close: () => void) => void;
+  /** The row; as a function it is told whether the row is slid open. */
+  children: React.ReactNode | ((open: boolean) => React.ReactNode);
+}) {
+  const x = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const startRef = useRef(0);
+  // Where the row is right now, for a drag that gets cut short.
+  const atRef = useRef(0);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const settle = (to: number) => {
+    openRef.current = to !== 0;
+    setIsOpen(to !== 0);
+    atRef.current = to;
+    Animated.spring(x, { toValue: to, useNativeDriver: false, damping: 22, stiffness: 280, mass: 0.8 }).start();
+  };
+  const close = () => settle(0);
+  // Wherever the finger left it: past half-way the row opens, short of it the
+  // row closes. Used both for a release and for a drag something else cut
+  // short — the first version closed on a cut-short drag whatever had been
+  // done with it, so a swipe with any drift in it snapped straight back.
+  const rest = () => settle(atRef.current < -SWIPE_REVEAL / 2 ? -SWIPE_REVEAL : 0);
+
+  const pan = useRef(
+    PanResponder.create({
+      // An open row claims the tap before its content can, so it closes
+      // instead of opening the chat.
+      onStartShouldSetPanResponderCapture: () => openRef.current,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+      // Once the row is moving nothing above it takes the touch away.
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        startRef.current = openRef.current ? -SWIPE_REVEAL : 0;
+        if (!openRef.current) onWillOpen(id, close);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        let next = Math.min(0, startRef.current + gesture.dx);
+        // Past the button the row still follows the finger, but at a third of
+        // the pace, so it feels held rather than stopped.
+        if (next < -SWIPE_REVEAL) next = -SWIPE_REVEAL + (next + SWIPE_REVEAL) / 3;
+        atRef.current = next;
+        x.setValue(next);
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        const tapped = Math.abs(gesture.dx) < 4 && Math.abs(gesture.dy) < 4;
+        if (tapped) {
+          settle(0);
+          return;
+        }
+        // A flick decides by direction; a slow drag by where it stopped.
+        if (gesture.vx < -0.3) settle(-SWIPE_REVEAL);
+        else if (gesture.vx > 0.3) settle(0);
+        else rest();
+      },
+      onPanResponderTerminate: rest,
+    }),
+  ).current;
+
+  // The button comes up out of the gap as the row uncovers it.
+  const buttonScale = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 2, 0], outputRange: [1, 0.72, 0.4], extrapolate: 'clamp' });
+  const buttonOpacity = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 3, 0], outputRange: [1, 0.9, 0], extrapolate: 'clamp' });
+
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: SWIPE_REVEAL,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: buttonOpacity,
+          transform: [{ scale: buttonScale }],
+        }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={deleteLabel}
+          onPress={() => { close(); onDelete(); }}
+          style={({ pressed }) => ({
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: pressed ? '#b91c1c' : '#dc2626',
+            alignItems: 'center',
+            justifyContent: 'center',
+          })}
+        >
+          <AppIcon name="trash-outline" size={21} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
+      <Animated.View {...pan.panHandlers} style={{ backgroundColor: background, transform: [{ translateX: x }] }}>
+        {typeof children === 'function' ? children(isOpen) : children}
+      </Animated.View>
+    </View>
+  );
+}
+
+
+/**
+ * The blurred band a floating header sits on — the chat screen's, shared.
+ *
+ * A blurred copy of whatever scrolls past, masked solid from the top of the
+ * screen down to `solidTo` below the safe area (the bottom of the header's
+ * controls), then faded to nothing over `fade`. No panel and no tint: the fade
+ * is the only edge. The ramp is placed against the pane's real height, so it
+ * starts at the controls on every phone whatever its status bar measures.
+ *
+ * Content must start below `top + solidTo + fade`; anything inside the band is
+ * still being blurred.
+ */
+export function GlassHeaderPane({ top, solidTo, fade }: { top: number; solidTo: number; fade: number }) {
+  const pane = top + solidTo + fade;
+  const solid = (top + solidTo) / pane;
+  const at = (through: number) => solid + (1 - solid) * through;
+  return (
+    <MaskedView
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: pane, zIndex: 2 }}
+      maskElement={
+        <LinearGradient
+          colors={['#000000', '#000000', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.42)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)']}
+          locations={[0, solid, at(0.3), at(0.55), at(0.75), at(0.9), 1]}
+          style={{ flex: 1 }}
+        />
+      }
+    >
+      <GlassSurface effect="regular" style={{ flex: 1 }} fallbackStyle={{ backgroundColor: 'rgba(255,247,237,0.92)' }}>
+        <View />
+      </GlassSurface>
+    </MaskedView>
   );
 }
 
@@ -715,8 +1108,10 @@ export function BottomSheet({
     }
     Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: reducedMotion ? 0 : open ? 300 : 240,
-      easing: Easing.bezier(0.32, 0.72, 0, 1),
+      // The owner asked for every panel to arrive more slowly; the first cut
+      // (300/240) read as abrupt on the phone.
+      duration: reducedMotion ? 0 : open ? 460 : 380,
+      easing: Easing.bezier(0.2, 0.8, 0.2, 1),
       useNativeDriver: false,
     }).start(({ finished }) => {
       if (finished && !open) {
@@ -763,8 +1158,8 @@ export function BottomSheet({
         const glide = (to: number, then?: () => void) => {
           Animated.timing(snap, {
             toValue: to,
-            duration: 300,
-            easing: Easing.bezier(0.32, 0.72, 0, 1),
+            duration: 400,
+            easing: Easing.bezier(0.2, 0.8, 0.2, 1),
             useNativeDriver: false,
           }).start(({ finished }) => { if (finished) then?.(); });
         };
@@ -781,8 +1176,10 @@ export function BottomSheet({
         }
         if (!expandedRef.current && (travelled > 90 || gesture.vy > 0.8)) {
           Animated.timing(snap, {
-            toValue: tallHeightRef.current,
-            duration: 180,
+            // Past the resting place this is travel, not height: enough to
+            // clear the card, its bottom gap and its shadow.
+            toValue: tallHeightRef.current + 80,
+            duration: 220,
             easing: Easing.out(Easing.quad),
             useNativeDriver: false,
             // The close animation resets the offset once it is off screen; doing
@@ -804,10 +1201,18 @@ export function BottomSheet({
     }),
   ).current;
 
-  const translateY = Animated.add(
-    Animated.add(progress.interpolate({ inputRange: [0, 1], outputRange: [tallHeight, 0] }), snap),
-    drag,
-  );
+  // Where the sheet sits below "full", from its resting place and the finger.
+  // The first restingOffset of it is height — the card grows out of the bottom
+  // of the screen, so its own bottom edge and rounded corners never leave —
+  // and anything past that is the card travelling downward, on its way out.
+  const below = Animated.add(snap, drag);
+  const shrink = full || restingOffset <= 0
+    ? null
+    : below.interpolate({ inputRange: [0, restingOffset], outputRange: [0, restingOffset], extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const pushDown = full || restingOffset <= 0
+    ? below
+    : below.interpolate({ inputRange: [restingOffset, restingOffset + 1], outputRange: [0, 1], extrapolateLeft: 'clamp', extrapolateRight: 'extend' });
+  const shownHeight = shrink ? Animated.subtract(tallHeight, shrink) : tallHeight;
 
   // A part-height sheet is a card: glass, rounded all round, and held off the
   // sides and the bottom of the screen. Pulled up to full it is a sheet again —
@@ -832,10 +1237,23 @@ export function BottomSheet({
   const between = (atRest: number, atFull: number) =>
     lift ? lift.interpolate({ inputRange: [0, 1], outputRange: [atRest, atFull] }) : atFull;
   const sideInset = between(CARD_INSET, 0);
-  const raise = between(-CARD_INSET, 0);
+  // Off the bottom by exactly the gap it has at the sides — the owner's call
+  // over clearing the home indicator, which made the gap read as a margin
+  // rather than a frame.
+  const bottomInset = between(CARD_INSET, 0);
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
   const bottomPadding = between(10, insets.bottom + 6);
+
+  // How far down the card has to go to be gone: its own height, the gap it
+  // keeps at the bottom, and a little more for its shadow. Travelling a whole
+  // tallHeight instead — as this did — put it off screen in the first fifth of
+  // the animation, which is why closing read as vanishing rather than sliding.
+  const away = full ? tallHeight : Animated.add(shownHeight, Animated.add(bottomInset, 28));
+  const translateY = Animated.add(
+    Animated.multiply(progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), away),
+    pushDown,
+  );
 
   const inner = (
     <>
@@ -862,9 +1280,10 @@ export function BottomSheet({
             corners, and a shadow on a clipping view is clipped away with it. */}
         <Animated.View
           style={{
-            height: tallHeight,
+            height: shownHeight,
             marginHorizontal: sideInset,
-            transform: [{ translateY: lift ? Animated.add(translateY, raise) : translateY }],
+            marginBottom: bottomInset,
+            transform: [{ translateY }],
             shadowColor: '#000',
             shadowOpacity: 0.18,
             shadowRadius: 20,
