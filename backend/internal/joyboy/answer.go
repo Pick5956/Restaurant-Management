@@ -474,12 +474,21 @@ func todayLine(today string) string {
 // only name in the prompt is the platform's, and the model reached for that one:
 // asked something light, it answered that it looks after "ร้าน Dishy" for an
 // owner whose shop is called something else entirely.
+//
+// The first version said only "call the shop by this name", and the model read
+// that as an instruction to work the name in somewhere: small talk came back
+// with it wedged in ("ช่วงนี้มีเรื่องร้าน บ้านกูเอง ให้ช่วยดูต่อไหมครับ"). The line
+// needs both halves — which name to use, and that using it at all is only for
+// when the shop is what is being talked about.
 func shopLine(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ""
 	}
-	return "ร้านของเขาชื่อ “" + name + "” — เอ่ยถึงร้านด้วยชื่อนี้ ไม่ใช่ Dishy\n"
+	return "ร้านของเขาชื่อ “" + name + "” — **เวลาที่ต้องเอ่ยถึงร้าน** ให้ใช้ชื่อนี้ ไม่ใช่ Dishy\n" +
+		"บรรทัดนี้บอกไว้เผื่อต้องใช้ ไม่ใช่สิ่งที่ต้องพูดถึง ถ้าเรื่องที่คุยไม่เกี่ยวกับร้าน **ห้ามเอ่ยชื่อร้านเลย**\n" +
+		"ผิด: ถูกทักเล่น ๆ แล้วตอบว่า “ขยันเพื่อร้าน " + name + " เลยครับ” หรือ “มีเรื่องร้าน " + name + " ให้ช่วยดูต่อไหม”\n" +
+		"ถูก: ตอบเรื่องที่เขาถามสั้น ๆ แล้วจบ ไม่ต้องลากกลับมาเรื่องร้าน\n"
 }
 
 // ownerTitleLine is the one dynamic line about the owner: what to call them.

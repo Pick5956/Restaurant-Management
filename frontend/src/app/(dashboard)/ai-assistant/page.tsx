@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, SquarePen, X } from "lucide-react";
+import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, X } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
@@ -30,6 +30,7 @@ import {
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
+  adoptUnsentThread,
   saveThreadCache,
   setActiveThread,
   threadKey,
@@ -451,10 +452,11 @@ export default function AIAssistantPage() {
       ]);
       if (newThreadId) {
         // Cache what is on screen under the new id before switching to it, so
-        // the switch repaints the same thread instead of a blank one.
+        // the switch repaints the same thread instead of a blank one. This also
+        // lets go of the unsent slot, which every future new chat opens on.
         skipServerLoadRef.current = newThreadId;
         setMessages((prev) => {
-          saveThreadCache(storageKey, newThreadId, prev, chatWriteSourceRef.current);
+          adoptUnsentThread(storageKey, newThreadId, prev, chatWriteSourceRef.current);
           return prev;
         });
         setActiveThread(storageKey, newThreadId);
@@ -812,17 +814,6 @@ export default function AIAssistantPage() {
                     {insightsCount}
                   </span>
                 )}
-              </button>
-            </HoverTip>
-            <HoverTip label={copy.newChat} placement="bottom">
-              <button
-                type="button"
-                onClick={() => openThread(null)}
-                disabled={loading || actionConfirming || actionCancelling}
-                aria-label={copy.newChat}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200/80 bg-white/80 text-gray-600 shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:text-gray-900 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800/80 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:text-white"
-              >
-                <SquarePen className="h-3.5 w-3.5" />
               </button>
             </HoverTip>
             <HoverTip

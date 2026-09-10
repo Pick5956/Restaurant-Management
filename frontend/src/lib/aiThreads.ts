@@ -107,9 +107,22 @@ export function useActiveThread(baseKey: string | null): string | null {
   );
 }
 
+/**
+ * How long a chat that has no server id yet is worth restoring.
+ *
+ * The unsent slot exists for one reason: a reload while a question is in flight
+ * should not lose what is on screen. A leftover older than that is not a draft
+ * any more, it is debris — and because every new chat opens on this one slot,
+ * debris here is what the owner sees instead of a clean page. Seven days (the
+ * TTL a real chat gets) is far too long for that; half an hour covers the reload
+ * it was built for.
+ */
+const UNSENT_THREAD_TTL_MS = 30 * 60 * 1000;
+
 /** Cached transcript of one chat, if this device has seen it recently. */
 export function loadThreadCache<T = unknown>(baseKey: string | null, conversationId: string | null): T[] | null {
-  return loadStoredMessages<T>(threadKey(baseKey, conversationId));
+  const unsent = !conversationId || !validConversationId(conversationId);
+  return loadStoredMessages<T>(threadKey(baseKey, conversationId), unsent ? UNSENT_THREAD_TTL_MS : undefined);
 }
 
 /** Cache a chat's transcript and drop the oldest caches beyond the limit. */
@@ -118,6 +131,31 @@ export function saveThreadCache(baseKey: string | null, conversationId: string |
   if (!key) return;
   saveMessages(key, messages, source);
   if (baseKey) pruneThreadCaches(baseKey);
+}
+
+/**
+ * Hand a chat that has just been given a server id its cache, and empty the
+ * slot it was living in before.
+ *
+ * A chat with no id yet caches under one shared "unsent" slot, so a reload
+ * mid-question does not lose what is on screen. The moment the server answers,
+ * the transcript belongs to a real conversation and that slot has to be let go:
+ * it is the same slot every future new chat opens on, and a copy left behind is
+ * what the next one paints instead of a clean page — the owner presses "new
+ * chat" and gets an old half-finished exchange, questions with no answers under
+ * them, because the leftover was written before the first answer arrived.
+ *
+ * The two writes live in one function so no caller can do the first and forget
+ * the second.
+ */
+export function adoptUnsentThread(
+  baseKey: string | null,
+  conversationId: string,
+  messages: unknown[],
+  source?: ChatWriteSource,
+): void {
+  saveThreadCache(baseKey, conversationId, messages, source);
+  clearThreadCache(baseKey, null);
 }
 
 export function clearThreadCache(baseKey: string | null, conversationId: string | null): void {

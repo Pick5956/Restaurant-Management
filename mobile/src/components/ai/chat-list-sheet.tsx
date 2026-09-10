@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, TextInput as NativeTextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Keyboard, LayoutAnimation, PanResponder, Platform, Pressable, ScrollView, TextInput as NativeTextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -19,6 +19,122 @@ import { ai } from './theme';
 // thumb reaches, instead of sitting in the header.
 
 const GROUP_ORDER: AIThreadGroup[] = ['today', 'yesterday', 'week', 'older'];
+
+// How far a row slides to show its trash button, and the button itself.
+const SWIPE_REVEAL = 76;
+
+/**
+ * A list row that slides left to uncover a delete button, the way rows do in
+ * Mail. The row itself is the moving part; the button sits still underneath
+ * and is revealed, growing from small to full as the row clears it.
+ *
+ * PanResponder rather than a gesture library: the sheet's own drag already
+ * works this way, and the list lives inside a Modal, where gesture-handler
+ * needs its own root view to hear anything. Only a clearly sideways move takes
+ * the touch, so the list still scrolls; a tap on a row that is already open
+ * closes it rather than opening the chat underneath — the same rule Mail uses.
+ *
+ * One row open at a time: opening one asks the parent to close the last.
+ */
+function SwipeRow({
+  id,
+  background,
+  onDelete,
+  deleteLabel,
+  onWillOpen,
+  children,
+}: {
+  id: string;
+  /** The list's colour, so the row hides the button while it is closed. */
+  background: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  /** Called as this row starts to open, with the way to close it. */
+  onWillOpen: (id: string, close: () => void) => void;
+  children: React.ReactNode;
+}) {
+  const x = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const startRef = useRef(0);
+
+  const settle = (to: number) => {
+    openRef.current = to !== 0;
+    Animated.spring(x, { toValue: to, useNativeDriver: false, damping: 22, stiffness: 280, mass: 0.8 }).start();
+  };
+  const close = () => settle(0);
+
+  const pan = useRef(
+    PanResponder.create({
+      // An open row claims the tap so it closes instead of opening the chat.
+      onStartShouldSetPanResponder: () => openRef.current,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+      onPanResponderGrant: () => {
+        startRef.current = openRef.current ? -SWIPE_REVEAL : 0;
+        if (!openRef.current) onWillOpen(id, close);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        let next = Math.min(0, startRef.current + gesture.dx);
+        // Past the button the row still follows the finger, but at a third of
+        // the pace, so it feels held rather than stopped.
+        if (next < -SWIPE_REVEAL) next = -SWIPE_REVEAL + (next + SWIPE_REVEAL) / 3;
+        x.setValue(next);
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        const tapped = Math.abs(gesture.dx) < 4 && Math.abs(gesture.dy) < 4;
+        if (tapped) {
+          settle(0);
+          return;
+        }
+        const at = startRef.current + gesture.dx;
+        const open = gesture.vx < -0.3 || (gesture.vx <= 0.3 && at < -SWIPE_REVEAL / 2);
+        settle(open ? -SWIPE_REVEAL : 0);
+      },
+      onPanResponderTerminate: () => settle(openRef.current ? -SWIPE_REVEAL : 0),
+    }),
+  ).current;
+
+  // The button comes up out of the gap as the row uncovers it.
+  const buttonScale = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 2, 0], outputRange: [1, 0.72, 0.4], extrapolate: 'clamp' });
+  const buttonOpacity = x.interpolate({ inputRange: [-SWIPE_REVEAL, -SWIPE_REVEAL / 3, 0], outputRange: [1, 0.9, 0], extrapolate: 'clamp' });
+
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: SWIPE_REVEAL,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: buttonOpacity,
+          transform: [{ scale: buttonScale }],
+        }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={deleteLabel}
+          onPress={() => { close(); onDelete(); }}
+          style={({ pressed }) => ({
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: pressed ? '#b91c1c' : '#dc2626',
+            alignItems: 'center',
+            justifyContent: 'center',
+          })}
+        >
+          <AppIcon name="trash-outline" size={21} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
+      <Animated.View {...pan.panHandlers} style={{ backgroundColor: background, transform: [{ translateX: x }] }}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
 
 export function ChatListSheet({
   open,
@@ -132,6 +248,32 @@ export function ChatListSheet({
     }
   };
 
+  // The row currently slid open, if any, and how to close it.
+  const openSwipe = useRef<{ id: string; close: () => void } | null>(null);
+  const onRowWillOpen = (id: string, close: () => void) => {
+    if (openSwipe.current && openSwipe.current.id !== id) openSwipe.current.close();
+    openSwipe.current = { id, close };
+  };
+
+  const confirmDelete = (conversation: AIConversationSummary) => {
+    Alert.alert(
+      t('ลบแชทนี้ไหม?', 'Delete this chat?'),
+      t('แชทจะย้ายไปถังขยะ กู้คืนได้ภายใน 7 วันจากตั้งค่าผู้ช่วยบนเว็บ', 'The chat moves to the trash and can be restored within 7 days from the web settings'),
+      [
+        { text: t('ยกเลิก', 'Cancel'), style: 'cancel' },
+        {
+          text: t('ย้ายไปถังขยะ', 'Move to trash'),
+          style: 'destructive',
+          onPress: () => {
+            // The rows below slide up into the gap rather than jumping.
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            void onDelete(conversation.id);
+          },
+        },
+      ],
+    );
+  };
+
   const openMenu = (conversation: AIConversationSummary) => {
     Alert.alert(conversation.title || t('แชทไม่มีชื่อ', 'Untitled chat'), undefined, [
       {
@@ -141,20 +283,7 @@ export function ChatListSheet({
           setTimeout(() => editInput.current?.focus(), 50);
         },
       },
-      {
-        text: t('ลบ', 'Delete'),
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            t('ลบแชทนี้ไหม?', 'Delete this chat?'),
-            t('แชทจะย้ายไปถังขยะ กู้คืนได้ภายใน 7 วันจากตั้งค่าผู้ช่วยบนเว็บ', 'The chat moves to the trash and can be restored within 7 days from the web settings'),
-            [
-              { text: t('ยกเลิก', 'Cancel'), style: 'cancel' },
-              { text: t('ย้ายไปถังขยะ', 'Move to trash'), style: 'destructive', onPress: () => { void onDelete(conversation.id); } },
-            ],
-          );
-        },
-      },
+      { text: t('ลบ', 'Delete'), style: 'destructive', onPress: () => confirmDelete(conversation) },
       { text: t('ยกเลิก', 'Cancel'), style: 'cancel' },
     ]);
   };
@@ -188,8 +317,15 @@ export function ChatListSheet({
                   const active = conversation.id === activeId;
                   const isEditing = editing?.id === conversation.id;
                   return (
-                    <Pressable
+                    <SwipeRow
                       key={conversation.id}
+                      id={conversation.id}
+                      background="#f4f2ee"
+                      deleteLabel={t('ลบแชท', 'Delete chat')}
+                      onDelete={() => confirmDelete(conversation)}
+                      onWillOpen={onRowWillOpen}
+                    >
+                    <Pressable
                       accessibilityRole="button"
                       onPress={() => { if (!isEditing) { onClose(); onOpen(conversation.id); } }}
                       onLongPress={() => openMenu(conversation)}
@@ -248,6 +384,7 @@ export function ChatListSheet({
                         <AppIcon name="ellipsis-horizontal" size={18} color="#c9c4bc" />
                       </Pressable>
                     </Pressable>
+                    </SwipeRow>
                   );
                 })}
               </View>

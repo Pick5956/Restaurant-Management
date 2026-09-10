@@ -1,4 +1,5 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Modal, PanResponder, Pressable, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
@@ -289,6 +290,341 @@ export function GlassMenu({
   );
 }
 
+// The native glass view itself, with its corner radii driven by Animated.
+//
+// Two things had to be true for the shape to change on screen, and neither was
+// in the first attempt. The glass's outline — the refracted rim that tells the
+// eye what shape it is — is set by the native module from *props* named
+// borderTopLeftRadius and so on (see Prop("borderTopLeftRadius") in
+// GlassEffectModule.swift), not from `style`. Radii in style only rounded the
+// React Native view around it; the glass underneath kept whatever corners it
+// had, so the outline never moved and the drop never appeared. And the
+// exported GlassView is a function component, which Animated can only drive
+// by re-rendering; the host view underneath takes setNativeProps, so the
+// corners can be pushed every frame without React in the loop.
+const NativeGlassView = (() => {
+  if (!LIQUID_GLASS) return GlassView;
+  try {
+    return requireNativeViewManager('ExpoGlassEffect', 'GlassView');
+  } catch {
+    return GlassView;
+  }
+})();
+const AnimatedGlassView = Animated.createAnimatedComponent(NativeGlassView);
+
+/**
+ * The "…" button that becomes the menu.
+ *
+ * Built from a frame-by-frame read of the Claude app's version (screen
+ * recording, 40 fps), which does four things in about half a second:
+ *
+ *   0.00  the button gives — shrinks to ~85% — and its dots blur away
+ *   0.10  it is a drop now, hanging down and to the left of where the button
+ *         was, roundest at its bottom-left; there is no button any more
+ *   0.20  the drop fills out into a rounded panel, and the menu's text shows
+ *         through it blurred and stretched to the panel's shape
+ *   0.30  the text sharpens, overshoots tall for a frame, and settles
+ *
+ * Closing runs the same film backwards: text blurs first, the panel gathers
+ * into a drop hanging from the corner, the drop is a circle, the dots return.
+ *
+ * So there is one piece of glass here, not a button and a panel. At rest it is
+ * a 46px circle with three dots in it; open, it is the menu. Its real frame is
+ * what animates — width, height, and each corner on its own — because the drop
+ * is a shape, not a scaled rectangle: its bottom-left corner rounds far more
+ * than its top-right while it hangs. Layout cannot go through the native
+ * driver, so this runs on the JS driver; it is one view and it is fine.
+ *
+ * The text is laid out once at the menu's full size and *scaled* to whatever
+ * the frame currently is, from the top-right corner, so it stretches with the
+ * glass instead of being clipped by it — that stretch, and the spring carrying
+ * the scale a little past 1 before it settles, is the "tall for a frame". The
+ * blur is two copies of the same rows, one drawn through a blur filter, cross-
+ * fading: the blurred one is what you see mid-morph, the sharp one what you
+ * read at the end.
+ *
+ * Everywhere without Liquid Glass this is the ordinary button and the ordinary
+ * menu, at the same spot, so the screen does not care which it got.
+ */
+export function GlassMorphMenu({
+  open,
+  onOpen,
+  onClose,
+  items,
+  icon,
+  label,
+  dot,
+  style,
+  width = 232,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  items: GlassMenuItem[];
+  icon: AppIconName;
+  label: string;
+  /** An unread mark on the closed button. */
+  dot?: boolean;
+  /** Where the button's top-right corner sits; the menu opens down and to the left of it. */
+  style?: StyleProp<ViewStyle>;
+  width?: number;
+}) {
+  const reducedMotion = useReducedMotion();
+  const progress = useRef(new Animated.Value(0)).current;
+  // The backdrop that closes on an outside tap stays for the closing animation.
+  const [engaged, setEngaged] = useState(open);
+  // The list's natural height, measured once it has laid out at full width.
+  const [contentHeight, setContentHeight] = useState(0);
+  const size = 46;
+
+  useEffect(() => {
+    if (open) setEngaged(true);
+    // A timed clock, not a spring. The swell and the wobble are written into
+    // the shape curves below, where they can be read and tuned; a spring on top
+    // of them added a second, unrelated bounce and rushed the drop phase past
+    // in five frames. The first version ran in 0.3s and read as a jump from
+    // circle to box — the drop needs time on screen to be seen at all.
+    const animation = Animated.timing(progress, {
+      toValue: open ? 1 : 0,
+      duration: reducedMotion ? 0 : open ? 680 : 500,
+      // Fast out of the button, long settle. Closing is gentler both ends.
+      easing: open ? Easing.bezier(0.22, 0.8, 0.24, 1) : Easing.bezier(0.4, 0, 0.6, 1),
+      useNativeDriver: false,
+    });
+    animation.start(({ finished }) => {
+      if (finished && !open) setEngaged(false);
+    });
+  }, [open, progress, reducedMotion]);
+
+  if (!LIQUID_GLASS) {
+    return (
+      <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9 }, style]}>
+        <GlassButton icon={icon} label={label} dot={dot} onPress={onOpen} />
+        <GlassMenu open={open} onClose={onClose} items={items} from="top-right" style={{ top: 0, right: 0 }} />
+      </View>
+    );
+  }
+
+  // Before the first layout the estimate keeps the spring aimed somewhere
+  // sensible; the measurement takes over the moment it lands.
+  const targetHeight = contentHeight > 0 ? contentHeight : items.length * 48 + 12;
+  // 'extend', not 'clamp', on everything that carries the shape: the spring's
+  // overshoot past 1 is what makes the panel swell before it settles.
+  const grow = { extrapolate: 'extend' as const };
+  const clamp = { extrapolate: 'clamp' as const };
+  // What makes it water and not a box getting bigger: nothing below moves in
+  // step with anything else. The drop stretches *down* first — height is well
+  // ahead of width until half-way — and only then bellies out sideways, past
+  // its final width and back. Each corner swells and relaxes on its own beat,
+  // so the outline is never the same rounded rectangle twice on the way there.
+  const along = (stops: number[], values: number[]) =>
+    progress.interpolate({ inputRange: stops, outputRange: values, ...grow });
+  const span = (fraction: number, from: number, to: number) => from + (to - from) * fraction;
+  // For the first 12% it is still the circle, giving under the finger; by
+  // half-way it is tall and narrow — the drop; then it bellies out sideways,
+  // past its final width, and settles back. Height overshoots too, less.
+  //
+  // Opening and closing are not the same film run backwards. Run in reverse,
+  // that swell comes *first*, and the menu visibly puffed up before it shrank
+  // — the hitch on close. Closing holds its size while the text blurs, then
+  // gathers into the drop, with no swell anywhere.
+  const panelHeight = open
+    ? along(
+        [0, 0.12, 0.5, 0.72, 0.86, 1],
+        [size, size + 4, span(0.6, size, targetHeight), span(1.015, size, targetHeight), span(0.99, size, targetHeight), targetHeight],
+      )
+    : along(
+        [0, 0.2, 0.55, 0.85, 1],
+        [size, size + 6, span(0.55, size, targetHeight), targetHeight, targetHeight],
+      );
+  const panelWidth = open
+    ? along(
+        [0, 0.12, 0.5, 0.72, 0.86, 1],
+        [size, size + 2, span(0.4, size, width), span(0.96, size, width), span(1.035, size, width), width],
+      )
+    : along(
+        [0, 0.2, 0.55, 0.85, 1],
+        [size, size + 3, span(0.38, size, width), width, width],
+      );
+  const corner = (stops: number[], values: number[]) =>
+    progress.interpolate({ inputRange: stops, outputRange: values, ...clamp });
+  // Each corner's radius is a share of the panel's width *at that moment*, not
+  // a number of pixels. Fixed pixels were the reason the drop never showed:
+  // at a hundred wide, radii of 46 and 16 leave a forty-pixel straight run
+  // along the top, and a shape with straight runs is a box. When two corners
+  // together take the whole edge, that edge is one curve — and with the belly
+  // pair asked for more than the edge, UIKit rounds it off entirely.
+  //
+  // Half the width is a circle, so that is where every corner starts; the
+  // final 22px is 22/width of the finished panel, so that is where they end.
+  // In between the top-right stays tight — the drop hangs from it — and the
+  // bottom-left is the belly.
+  const rest = 0.5;
+  const done = 22 / width;
+  const share = (stops: number[], values: number[]) => Animated.multiply(panelWidth, corner(stops, values));
+  const cornerTR = share([0, 0.35, 0.7, 1], [rest, 0.26, 0.18, done]);
+  const cornerTL = share([0, 0.35, 0.7, 1], [rest, 0.64, 0.34, done]);
+  const cornerBR = share([0, 0.4, 0.75, 1], [rest, 0.5, 0.3, done]);
+  const cornerBL = share([0, 0.3, 0.55, 0.8, 1], [rest, 0.58, 0.62, 0.28, done]);
+  // The give at the start; the sag as it leaves the button, with a small lift
+  // past its mark at the end; a lean to the left as it falls; and a degree or
+  // so of wobble either way, which is the last thing separating a drop from a
+  // shape being resized.
+  const squish = corner([0, 0.12, 0.42, 1], [1, 0.86, 1.02, 1]);
+  const sag = open
+    ? corner([0, 0.12, 0.45, 0.75, 0.9, 1], [0, 3, 14, 4, -2, 0])
+    : corner([0, 0.12, 0.45, 0.8, 1], [0, 3, 14, 2, 0]);
+  const lean = corner([0, 0.2, 0.5, 0.8, 1], [0, -2, -7, -1, 0]);
+  const wobble = progress.interpolate({
+    inputRange: [0, 0.2, 0.5, 0.78, 1],
+    outputRange: ['0deg', '-1.6deg', '1.2deg', '-0.5deg', '0deg'],
+    ...clamp,
+  });
+  // Matched geometry: the rows are laid out at full size and scaled to the
+  // frame, from the same corner the frame grows from.
+  // Derived from the frame itself, not from the clock: the first version gave
+  // the text its own curve, and when the frame swelled past its width the text
+  // did not, so the two bounced out of step and the menu looked like a picture
+  // sliding around inside a window. Divided by the frame, they cannot differ.
+  const contentScaleX = Animated.divide(panelWidth, width);
+  const contentScaleY = Animated.divide(panelHeight, targetHeight);
+  // Closing blurs the text first, while the frame still holds its size.
+  // Closing, read from the end backwards: sharp text gives way to blurred
+  // text at once, the blurred text is gone by the half-way mark, and the
+  // drop hangs empty for the rest of the way down — the reference never
+  // shows shrinking text inside a small drop, and ours lingering there was
+  // what made the close feel slow. The dots come back while it is still a drop.
+  const sharpIn = open
+    ? progress.interpolate({ inputRange: [0, 0.5, 0.88], outputRange: [0, 0, 1], ...clamp })
+    : progress.interpolate({ inputRange: [0, 0.86, 0.97], outputRange: [0, 0, 1], ...clamp });
+  const blurredIn = open
+    ? progress.interpolate({ inputRange: [0, 0.18, 0.55, 0.92], outputRange: [0, 0.6, 1, 0], ...clamp })
+    : progress.interpolate({ inputRange: [0, 0.5, 0.64, 0.88, 1], outputRange: [0, 0, 1, 1, 0], ...clamp });
+  const dotsOut = progress.interpolate({ inputRange: [0, open ? 0.2 : 0.4], outputRange: [1, 0], ...clamp });
+
+  const rows = (live: boolean) => (
+    <View
+      onLayout={live ? (event) => setContentHeight(Math.round(event.nativeEvent.layout.height)) : undefined}
+      style={{ paddingVertical: 6 }}
+    >
+      {items.map((item) => (
+        <Pressable
+          key={item.key}
+          accessibilityRole="button"
+          accessibilityLabel={item.label}
+          disabled={!live || !open}
+          onPress={() => { onClose(); item.onPress(); }}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            minHeight: 48,
+            paddingHorizontal: 16,
+            backgroundColor: pressed ? 'rgba(249,115,22,0.12)' : 'transparent',
+          })}
+        >
+          <AppIcon name={item.icon} size={20} color={ai.muted} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, color: ai.ink }}>{item.label}</Text>
+            {item.detail ? <Text style={{ fontSize: 12, color: ai.faded }}>{item.detail}</Text> : null}
+          </View>
+          {item.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ai.orange }} /> : null}
+        </Pressable>
+      ))}
+    </View>
+  );
+
+  // Both copies sit at the top-right of the glass at the menu's full width and
+  // are scaled from that corner to the frame, so they stretch with the shape.
+  const sheet = { position: 'absolute' as const, top: 0, right: 0, width, transformOrigin: 'top right' };
+
+  return (
+    <View pointerEvents="box-none" style={[{ position: 'absolute', zIndex: 9, width, height: Math.max(size, targetHeight) }, style]}>
+      {engaged ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          onPress={onClose}
+          style={{ position: 'absolute', top: -1000, right: -1000, bottom: -1000, left: -1000, zIndex: 8 }}
+        />
+      ) : null}
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: panelWidth,
+          height: panelHeight,
+          zIndex: 9,
+          transformOrigin: 'top right',
+          transform: [{ translateY: sag }, { translateX: lean }, { rotate: wobble }, { scale: squish }],
+          // On the wrapper, not the glass: the glass clips its content, and a
+          // shadow on a clipping view is clipped away with it.
+          shadowColor: '#3d2b1f',
+          shadowOpacity: 0.22,
+          shadowRadius: 9,
+          shadowOffset: { width: 0, height: 3 },
+        }}
+      >
+        {/* Closed, the whole circle is the button. Open, this is disabled and
+            the rows inside take the taps; the backdrop takes the rest. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ expanded: open }}
+          disabled={open}
+          hitSlop={open ? 0 : 8}
+          onPress={onOpen}
+          style={{ flex: 1 }}
+        >
+          <AnimatedGlassView
+            glassEffectStyle="regular"
+            isInteractive
+            colorScheme="light"
+            // A fixed lift, never a state colour: changing this at runtime leaves
+            // the native view wearing the old one.
+            tintColor="rgba(255,255,255,0.42)"
+            // Props, not style: see NativeGlassView above. "continuous" is
+            // Apple's own corner curve, the difference between a blob and a box.
+            borderCurve="continuous"
+            borderTopLeftRadius={cornerTL}
+            borderTopRightRadius={cornerTR}
+            borderBottomLeftRadius={cornerBL}
+            borderBottomRightRadius={cornerBR}
+            style={{ flex: 1, overflow: 'hidden' }}
+          >
+            {/* The rows as read: sharp, live, measured. */}
+            <Animated.View
+              pointerEvents={open ? 'auto' : 'none'}
+              style={[sheet, { opacity: sharpIn, transform: [{ scaleX: contentScaleX }, { scaleY: contentScaleY }] }]}
+            >
+              {rows(true)}
+            </Animated.View>
+            {/* The rows as seen through the drop: the same thing under a blur,
+                shown while the shape is still moving. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[sheet, { opacity: blurredIn, transform: [{ scaleX: contentScaleX }, { scaleY: contentScaleY }], filter: [{ blur: 9 }] }]}
+            >
+              {rows(false)}
+            </Animated.View>
+            {/* The dots, in the circle the glass rests in. */}
+            <Animated.View
+              pointerEvents="none"
+              style={{ position: 'absolute', top: 0, right: 0, width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dotsOut }}
+            >
+              <AppIcon name={icon} size={size * 0.46} color={ai.ink} />
+              {dot ? (
+                <View style={{ position: 'absolute', top: 5, right: 5, width: 9, height: 9, borderRadius: 5, backgroundColor: ai.orange, borderWidth: 1.5, borderColor: '#fff' }} />
+              ) : null}
+            </Animated.View>
+          </AnimatedGlassView>
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+
 /** The same material as a capsule, for the suggested-question chips. */
 export function GlassPill({
   label,
@@ -473,21 +809,62 @@ export function BottomSheet({
     drag,
   );
 
+  // A part-height sheet is a card: glass, rounded all round, and held off the
+  // sides and the bottom of the screen. Pulled up to full it is a sheet again —
+  // the gaps close, the bottom corners square off against the screen's edge,
+  // and the top corners round out to the screen's own radius. Everything about
+  // that is driven by `lift`, how far between resting and full the sheet is
+  // right now, so the card becomes the sheet continuously under the finger and
+  // the glide to either end carries it the rest of the way.
+  //
+  // (snap + drag) is the sheet's distance below full: restingOffset at rest, 0
+  // at full, and anything in between while dragging.
+  const CARD_INSET = 10;
+  const REST_RADIUS = 28;
+  const FULL_RADIUS = 40;
+  const lift = full
+    ? null
+    : Animated.divide(Animated.subtract(restingOffset, Animated.add(snap, drag)), Math.max(1, restingOffset)).interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+      });
+  const between = (atRest: number, atFull: number) =>
+    lift ? lift.interpolate({ inputRange: [0, 1], outputRange: [atRest, atFull] }) : atFull;
+  const sideInset = between(CARD_INSET, 0);
+  const raise = between(-CARD_INSET, 0);
+  const topRadius = between(REST_RADIUS, FULL_RADIUS);
+  const bottomRadius = between(REST_RADIUS, 0);
+  const bottomPadding = between(10, insets.bottom + 6);
+
+  const inner = (
+    <>
+      {!full ? <View style={{ alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: 'rgba(60,50,40,0.22)', marginBottom: 6 }} /> : null}
+      {!full ? (
+        <View {...pan.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 52, zIndex: 2 }} />
+      ) : null}
+      {showClose ? (
+        <View style={{ position: 'absolute', top: 10, right: 14, zIndex: 3 }}>
+          <GlassButton icon="close" label={label} onPress={onClose} />
+        </View>
+      ) : null}
+      {children}
+    </>
+  );
+
   return (
     <Modal visible={shown} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Animated.View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.3)', opacity: progress }}>
           <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onClose} style={{ flex: 1 }} />
         </Animated.View>
+        {/* The shadow lives on this wrapper; the surface inside clips to its
+            corners, and a shadow on a clipping view is clipped away with it. */}
         <Animated.View
           style={{
             height: tallHeight,
-            backgroundColor: background ?? (full ? ai.canvas : ai.surface),
-            borderTopLeftRadius: full ? 0 : 28,
-            borderTopRightRadius: full ? 0 : 28,
-            paddingTop: full ? insets.top : 8,
-            paddingBottom: insets.bottom,
-            transform: [{ translateY }],
+            marginHorizontal: sideInset,
+            transform: [{ translateY: lift ? Animated.add(translateY, raise) : translateY }],
             shadowColor: '#000',
             shadowOpacity: 0.18,
             shadowRadius: 20,
@@ -495,16 +872,45 @@ export function BottomSheet({
             elevation: 16,
           }}
         >
-          {!full ? <View style={{ alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: '#e5e7eb', marginBottom: 6 }} /> : null}
-          {!full ? (
-            <View {...pan.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 52, zIndex: 2 }} />
-          ) : null}
-          {showClose ? (
-            <View style={{ position: 'absolute', top: 10, right: 14, zIndex: 3 }}>
-              <GlassButton icon="close" label={label} onPress={onClose} />
+          {full ? (
+            <View style={{ flex: 1, backgroundColor: background ?? ai.canvas, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+              {inner}
             </View>
-          ) : null}
-          {children}
+          ) : LIQUID_GLASS ? (
+            // Real glass, in the light scheme whatever the phone is set to. The
+            // corners are props, not style — the glass reads its outline from
+            // them (see NativeGlassView).
+            <AnimatedGlassView
+              glassEffectStyle="regular"
+              colorScheme="light"
+              tintColor="rgba(255,255,255,0.6)"
+              borderCurve="continuous"
+              borderTopLeftRadius={topRadius}
+              borderTopRightRadius={topRadius}
+              borderBottomLeftRadius={bottomRadius}
+              borderBottomRightRadius={bottomRadius}
+              style={{ flex: 1, overflow: 'hidden', paddingTop: 8, paddingBottom: bottomPadding }}
+            >
+              {inner}
+            </AnimatedGlassView>
+          ) : (
+            <Animated.View
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                backgroundColor: background ?? ai.surface,
+                borderCurve: 'continuous',
+                borderTopLeftRadius: topRadius,
+                borderTopRightRadius: topRadius,
+                borderBottomLeftRadius: bottomRadius,
+                borderBottomRightRadius: bottomRadius,
+                paddingTop: 8,
+                paddingBottom: bottomPadding,
+              }}
+            >
+              {inner}
+            </Animated.View>
+          )}
         </Animated.View>
       </View>
     </Modal>

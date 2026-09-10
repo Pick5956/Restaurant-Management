@@ -89,10 +89,31 @@ test('matchesThreadQuery is a case-insensitive substring match', () => {
   assert.equal(matchesThreadQuery('อะไรก็ได้', '  '), true);
 });
 
-test('welcomeFor falls back to the default title', () => {
-  assert.equal(welcomeFor('th', ''), 'สวัสดีคุณผู้จัดการ');
-  assert.equal(welcomeFor('th', 'พี่กัน'), 'สวัสดีพี่กัน');
-  assert.equal(welcomeFor('en', ' '), 'Hello, Manager');
+test('welcomeFor greets by the part of the day, and always ends on the name', () => {
+  const at = (hour) => new Date(2026, 8, 8, hour, 0, 0);
+
+  // The first line of each band, so the wording is pinned rather than sampled.
+  assert.equal(welcomeFor('th', 'พี่กัน', at(7), 0), 'อรุณสวัสดิ์พี่กัน');
+  assert.equal(welcomeFor('th', 'พี่กัน', at(12), 0), 'สวัสดีตอนกลางวันพี่กัน');
+  assert.equal(welcomeFor('th', 'พี่กัน', at(15), 0), 'สวัสดีตอนบ่ายพี่กัน');
+  assert.equal(welcomeFor('th', 'พี่กัน', at(20), 0), 'สวัสดีตอนเย็นพี่กัน');
+  assert.equal(welcomeFor('th', 'พี่กัน', at(23), 0), 'ดึกแล้วนะพี่กัน');
+  // Before 05:00 belongs to the night that started the evening before, not to
+  // the morning — the owner is still on the same shift.
+  assert.equal(welcomeFor('th', 'พี่กัน', at(2), 0), 'ดึกแล้วนะพี่กัน');
+
+  assert.equal(welcomeFor('en', 'Kan', at(7), 0), 'Good morning, Kan');
+  assert.equal(welcomeFor('en', 'Kan', at(20), 0), 'Good evening, Kan');
+
+  // No title set: the default is used, in the language being read.
+  assert.equal(welcomeFor('th', '', at(7), 0), 'อรุณสวัสดิ์คุณผู้จัดการ');
+  assert.equal(welcomeFor('en', ' ', at(12), 0), 'Good afternoon, Manager');
+
+  // The roll picks between the lines of one band and never runs off the end,
+  // including at exactly 1 — Math.random() cannot return it, but a caller can.
+  const rolled = new Set([0, 0.4, 0.9, 1].map((roll) => welcomeFor('th', 'พี่กัน', at(7), roll)));
+  assert.ok(rolled.size > 1, 'the roll should choose between different lines');
+  for (const line of rolled) assert.ok(line.endsWith('พี่กัน'), line);
 });
 
 test('formatCountdown never goes negative and pads seconds', () => {

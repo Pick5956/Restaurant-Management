@@ -206,10 +206,65 @@ export const DEFAULT_OWNER_TITLE_TH = 'คุณผู้จัดการ';
 export const DEFAULT_OWNER_TITLE_EN = 'Manager';
 
 /** The greeting at the top of an empty thread. */
-export function welcomeFor(language: DisplayLanguage, title: string): string {
-  const name = title.trim();
-  if (language === 'th') return `สวัสดี${name || DEFAULT_OWNER_TITLE_TH}`;
-  return `Hello, ${name || DEFAULT_OWNER_TITLE_EN}`;
+/**
+ * The openers, by the part of the day the owner is in.
+ *
+ * Hours are the shop's, not a calendar's: a restaurant owner opening this at
+ * 23:00 is still working, and greeting them with "good evening" reads as though
+ * nobody is paying attention. The late band runs to 05:00 for the same reason.
+ *
+ * Every line has to work with the name pushed straight onto the end of it, and
+ * has to be as true at the start of a shift as at the end of one — the greeting
+ * knows the clock and nothing else, so anything that guesses at how the day is
+ * going ("busy one today?") will be wrong about half the time.
+ */
+const GREETINGS: { from: number; th: string[]; en: string[] }[] = [
+  {
+    from: 5,
+    th: ['อรุณสวัสดิ์', 'สวัสดีตอนเช้า', 'เช้านี้เป็นไงบ้าง'],
+    en: ['Good morning, ', 'Morning, ', 'Hello, '],
+  },
+  {
+    from: 11,
+    th: ['สวัสดีตอนกลางวัน', 'สวัสดี', 'ช่วงนี้เป็นไงบ้าง'],
+    en: ['Good afternoon, ', 'Hello, ', 'Hi, '],
+  },
+  {
+    from: 14,
+    th: ['สวัสดีตอนบ่าย', 'บ่ายนี้เป็นไงบ้าง', 'สวัสดี'],
+    en: ['Good afternoon, ', 'Hello, ', 'Hi, '],
+  },
+  {
+    from: 18,
+    th: ['สวัสดีตอนเย็น', 'เย็นนี้เป็นไงบ้าง', 'สวัสดี'],
+    en: ['Good evening, ', 'Evening, ', 'Hello, '],
+  },
+  {
+    from: 22,
+    th: ['ดึกแล้วนะ', 'ยังไม่พักเลย', 'สวัสดีตอนดึก'],
+    en: ['Still up, ', 'Working late, ', 'Good evening, '],
+  },
+];
+
+/**
+ * The greeting on the empty chat: which part of the day it is, and what to call
+ * the owner. Nothing else — it is drawn before any shop data has loaded, so a
+ * line that sounds like it knows how trade is going would be a guess.
+ *
+ * `at` and `roll` are arguments rather than read inside, so the choice is a pure
+ * function of them: the screen holds one roll for as long as it is open (a
+ * greeting that reworded itself on every re-render would be unsettling), and the
+ * tests can ask for a specific hour and a specific line.
+ */
+export function welcomeFor(language: DisplayLanguage, title: string, at: Date = new Date(), roll: number = Math.random()): string {
+  const name = title.trim() || (language === 'th' ? DEFAULT_OWNER_TITLE_TH : DEFAULT_OWNER_TITLE_EN);
+  const hour = at.getHours();
+  // Last band whose start hour has passed; before 05:00 that is the late one,
+  // which began the previous evening.
+  const band = [...GREETINGS].reverse().find((entry) => hour >= entry.from) ?? GREETINGS[GREETINGS.length - 1];
+  const lines = language === 'th' ? band.th : band.en;
+  const index = Math.min(lines.length - 1, Math.max(0, Math.floor(roll * lines.length)));
+  return `${lines[index]}${name}`;
 }
 
 // ---------------------------------------------------------------- confirm card

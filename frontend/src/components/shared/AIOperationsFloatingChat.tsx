@@ -51,6 +51,7 @@ import {
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
+  adoptUnsentThread,
   saveThreadCache,
   setActiveThread,
   threadKey,
@@ -619,7 +620,7 @@ export default function AIOperationsFloatingChat() {
       
       setMessages(prev => {
         const next = [...prev, assistantMsg];
-        if (newThreadId) saveThreadCache(storageKey, newThreadId, next, chatWriteSourceRef.current);
+        if (newThreadId) adoptUnsentThread(storageKey, newThreadId, next, chatWriteSourceRef.current);
         return next;
       });
       if (newThreadId) {
