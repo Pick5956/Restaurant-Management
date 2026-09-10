@@ -1,75 +1,102 @@
+import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIManager, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { listIngredientCategories, listIngredients } from '@/src/api/ingredient';
-import { AppIcon } from '@/src/components/app-icon';
+import { adjustStock, deleteIngredient, listIngredientCategories, listIngredients } from '@/src/api/ingredient';
+import { BottomSheet, GlassButton, SwipeRow } from '@/src/components/ai/chrome';
+import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
-import { ActionDock, Button, ChipGroup, EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, SearchField, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
-import { money } from '@/src/lib/format';
+import {
+  ChoiceChip,
+  CountSheet,
+  Dock,
+  DockButton,
+  FloatingHeader,
+  HeaderTextButton,
+  IngredientCard,
+  KeyValue,
+  RestockSheet,
+  SearchCapsule,
+  Segmented,
+  SheetAction,
+  SheetButton,
+  SheetFooter,
+  SheetSection,
+  SheetTitle,
+  SquareButton,
+  Stepper,
+  TotalsCard,
+  fmt,
+  headerContentTop,
+} from '@/src/components/inventory/parts';
+import { EmptyState, Feedback } from '@/src/components/ui';
+import {
+  countPayload,
+  filterIngredients,
+  inventoryTotals,
+  restockStep,
+  sortIngredients,
+  suggestedRestock,
+  type SortKey,
+  type StatusFilter,
+} from '@/src/lib/inventory-list';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
+import { palette } from '@/src/theme';
 import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
 
-type StockStatus = 'all' | 'ok' | 'low' | 'out';
-type SortKey = 'priority' | 'name' | 'category' | 'stock' | 'price';
-
-function itemStatus(item: Ingredient): Exclude<StockStatus, 'all'> {
-  if (Number(item.stock) <= 0) return 'out';
-  if (Number(item.min_stock) > 0 && Number(item.stock) <= Number(item.min_stock)) return 'low';
-  return 'ok';
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Riskiest first when no explicit sort is chosen: out -> low -> ok.
-const statusRank: Record<Exclude<StockStatus, 'all'>, number> = { out: 0, low: 1, ok: 2 };
+type Sheet =
+  | { kind: 'none' }
+  | { kind: 'row'; item: Ingredient }
+  | { kind: 'restock'; item: Ingredient }
+  | { kind: 'count'; item: Ingredient }
+  | { kind: 'filter' }
+  | { kind: 'manage' }
+  | { kind: 'batch'; mode: 'restock' | 'count' };
 
-function SelectBox({ checked }: { checked: boolean }) {
-  return (
-    <View
-      style={{
-        width: 22,
-        height: 22,
-        borderRadius: 6,
-        borderWidth: 2,
-        borderColor: checked ? palette.primary : palette.controlBorder,
-        backgroundColor: checked ? palette.primary : 'transparent',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {checked ? <AppIcon color={palette.primaryText} name="checkmark" size={14} /> : null}
-    </View>
-  );
-}
-
+/**
+ * The inventory, laid out for a phone held in front of the fridge: what is
+ * missing first, one tap to restock, the rest behind sheets. The header is
+ * the chat screen's glass band with the status rail pinned inside it; cards,
+ * rail and dock are Liquid Glass on iOS 26 and cream everywhere else.
+ */
 export default function InventoryScreen() {
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [categories, setCategories] = useState<IngredientCategory[]>([]);
-  const [category, setCategory] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<StockStatus>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('priority');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [search, setSearch] = useState('');
-  const [selecting, setSelecting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const canManage = can(activeMembership, 'manage_inventory');
   const canView = can(activeMembership, 'view_inventory') || canManage;
 
-  const load = useCallback(async () => {
-    if (!canView) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [categories, setCategories] = useState<IngredientCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [category, setCategory] = useState('all');
+  const [sort, setSort] = useState<SortKey>('urgent');
+  // The filter sheet edits a draft and applies on "ดูผลลัพธ์", so the list
+  // behind it does not jump while the person is still choosing.
+  const [draft, setDraft] = useState({ category: 'all', sort: 'urgent' as SortKey });
+
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [sheet, setSheet] = useState<Sheet>({ kind: 'none' });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async (quiet = false) => {
+    if (!canView) { setLoading(false); return; }
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const [ingredientResponse, categoryResponse] = await Promise.all([listIngredients(), listIngredientCategories()]);
@@ -82,312 +109,384 @@ export default function InventoryScreen() {
     }
   }, [canView, copy]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(ingredients.length > 0); }, [load])); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A new filter context is a new selection context — drop the selection so a
-  // stale pick can never be bulk-deleted after the visible rows change.
-  useEffect(() => { setSelectedIds(new Set()); }, [category, search, statusFilter]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
-  const baseFiltered = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return ingredients.filter((item) => {
-      const categoryMatch = category === 'all' || String(item.category_id || 'none') === category;
-      const searchMatch = !keyword || [item.name, item.sku, item.category?.name].some((value) => String(value || '').toLowerCase().includes(keyword));
-      return categoryMatch && searchMatch;
-    });
-  }, [category, ingredients, search]);
+  // A new filter is a new selection context; a stale pick must never be batch-restocked.
+  useEffect(() => { setSelected(new Set()); }, [search, status, category]);
 
-  const statusCounts = useMemo(() => {
-    let ok = 0;
-    let low = 0;
-    let out = 0;
-    for (const item of baseFiltered) {
-      const status = itemStatus(item);
-      if (status === 'ok') ok += 1;
-      else if (status === 'low') low += 1;
-      else out += 1;
+  const scoped = useMemo(() => filterIngredients(ingredients, { search, category, status: 'all' }), [ingredients, search, category]);
+  const counts = useMemo(() => inventoryTotals(scoped), [scoped]);
+  const totals = useMemo(() => inventoryTotals(ingredients), [ingredients]);
+  const visible = useMemo(() => sortIngredients(filterIngredients(scoped, { search: '', category: 'all', status }), sort), [scoped, status, sort]);
+  const draftCount = useMemo(() => filterIngredients(ingredients, { search, category: draft.category, status }).length, [ingredients, search, draft.category, status]);
+  const filtersActive = category !== 'all' || sort !== 'urgent';
+
+  const t = copy;
+  const close = () => setSheet({ kind: 'none' });
+
+  const openSwipe = useRef<{ id: string; close: () => void } | null>(null);
+  const onRowWillOpen = (id: string, closeRow: () => void) => {
+    if (openSwipe.current && openSwipe.current.id !== id) openSwipe.current.close();
+    openSwipe.current = { id, close: closeRow };
+  };
+
+  const patchItem = (next: Ingredient) => {
+    setIngredients((prev) => prev.map((row) => (row.ID === next.ID ? { ...row, ...next } : row)));
+  };
+
+  const restock = async (item: Ingredient, quantity: number) => {
+    if (busy || quantity <= 0) return;
+    setBusy(true);
+    try {
+      const next = await adjustStock(item.ID, { type: 'in', quantity });
+      patchItem(next);
+      close();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setNotice(t(`เติม ${item.name} +${fmt(quantity, locale)} ${item.unit} แล้ว`, `Restocked ${item.name} +${fmt(quantity, locale)} ${item.unit}`));
+    } catch (err) {
+      Alert.alert(t('เติมสต็อกไม่สำเร็จ', 'Could not restock'), err instanceof Error ? err.message : undefined);
+    } finally {
+      setBusy(false);
     }
-    return { all: baseFiltered.length, ok, low, out };
-  }, [baseFiltered]);
+  };
 
-  const filtered = useMemo(() => {
-    const list = statusFilter === 'all' ? baseFiltered : baseFiltered.filter((item) => itemStatus(item) === statusFilter);
-    return [...list].sort((a, b) => {
-      if (sortKey === 'priority') {
-        const cmp = statusRank[itemStatus(a)] - statusRank[itemStatus(b)];
-        return cmp !== 0 ? cmp : a.name.localeCompare(b.name);
-      }
-      let cmp = 0;
-      if (sortKey === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortKey === 'category') cmp = String(a.category?.name || '').localeCompare(String(b.category?.name || ''));
-      else if (sortKey === 'stock') cmp = Number(a.stock) - Number(b.stock);
-      else if (sortKey === 'price') cmp = Number(a.cost_per_unit) - Number(b.cost_per_unit);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [baseFiltered, statusFilter, sortKey, sortDir]);
+  const count = async (item: Ingredient, payload: ReturnType<typeof countPayload>) => {
+    if (busy) return;
+    if (!payload) { close(); return; }
+    setBusy(true);
+    try {
+      const next = await adjustStock(item.ID, payload);
+      patchItem(next);
+      close();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setNotice(t(`บันทึกยอด ${item.name} = ${fmt(next.stock, locale)} ${item.unit}`, `${item.name} set to ${fmt(next.stock, locale)} ${item.unit}`));
+    } catch (err) {
+      Alert.alert(t('ปรับยอดไม่สำเร็จ', 'Could not save the count'), err instanceof Error ? err.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const low = statusCounts.low;
-  const out = statusCounts.out;
-  const value = ingredients.reduce((sum, item) => sum + Number(item.stock) * Number(item.cost_per_unit), 0);
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
-  const allSelected = filtered.length > 0 && filtered.every((item) => selectedIds.has(item.ID));
+  const confirmDelete = (item: Ingredient) => {
+    Alert.alert(
+      t(`ลบ ${item.name}?`, `Delete ${item.name}?`),
+      t('ประวัติสต็อกของรายการนี้จะหายไปด้วย', 'Its stock history goes with it.'),
+      [
+        { text: t('ยกเลิก', 'Cancel'), style: 'cancel' },
+        {
+          text: t('ลบ', 'Delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteIngredient(item.ID);
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setIngredients((prev) => prev.filter((row) => row.ID !== item.ID));
+              setNotice(t(`ลบ ${item.name} แล้ว`, `Deleted ${item.name}`));
+            } catch (err) {
+              Alert.alert(t('ลบไม่สำเร็จ', 'Could not delete'), err instanceof Error ? err.message : undefined);
+            }
+          },
+        },
+      ],
+    );
+  };
 
-  function toggleSelect(id: number) {
-    setSelectedIds((prev) => {
+  const toggle = (id: number) => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
-
-  function toggleSelectAll() {
-    setSelectedIds((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((item) => item.ID))));
-  }
-
-  function exitSelect() {
-    setSelecting(false);
-    setSelectedIds(new Set());
-  }
+  };
+  const allSelected = visible.length > 0 && visible.every((row) => selected.has(row.ID));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map((row) => row.ID)));
+  const leaveSelect = () => { setSelecting(false); setSelected(new Set()); };
+  const selectedRows = visible.filter((row) => selected.has(row.ID));
 
   if (!canView) {
     return (
-      <AppScreen title={copy('คลังวัตถุดิบ', 'Inventory')} topLevel={false}>
-        <EmptyState title={copy('ไม่มีสิทธิ์ดูคลังวัตถุดิบ', 'Inventory access unavailable')} detail={copy('บัญชีนี้ต้องมีสิทธิ์ดูหรือจัดการคลังวัตถุดิบ', 'This account needs permission to view or manage inventory.')} />
+      <AppScreen title={t('คลังวัตถุดิบ', 'Inventory')} topLevel={false}>
+        <EmptyState title={t('ไม่มีสิทธิ์ดูคลังวัตถุดิบ', 'Inventory access unavailable')} detail={t('บัญชีนี้ต้องมีสิทธิ์ดูหรือจัดการคลังวัตถุดิบ', 'This account needs permission to view or manage inventory.')} />
       </AppScreen>
     );
   }
 
-  const summaryPanel = (
-    <Surface style={{ gap: 0, padding: 0, overflow: 'hidden' }}>
-      <View style={{ flexDirection: tabletWorkspace ? 'column' : 'row' }}>
-        {[
-          { label: copy('มูลค่าคงคลัง', 'Inventory value'), value: money(value, language) },
-          { label: copy('ใกล้หมด', 'Low stock'), value: low.toLocaleString(locale) },
-          { label: copy('หมด', 'Out of stock'), value: out.toLocaleString(locale) },
-        ].map((stat, index) => (
-          <View
-            key={stat.label}
-            style={{
-              minWidth: 0,
-              flex: 1,
-              gap: 3,
-              borderLeftWidth: !tabletWorkspace && index ? 1 : 0,
-              borderTopWidth: tabletWorkspace && index ? 1 : 0,
-              borderColor: palette.border,
-              padding: spacing.md,
-            }}
-          >
-            <Text adjustsFontSizeToFit minimumFontScale={0.76} numberOfLines={1} selectable style={typeScale.number}>{stat.value}</Text>
-            <Text selectable numberOfLines={2} style={[typeScale.caption, { color: palette.muted }]}>{stat.label}</Text>
-          </View>
-        ))}
-      </View>
-    </Surface>
+  const rail = (
+    <Segmented
+      value={status}
+      onChange={setStatus}
+      options={[
+        { value: 'all', label: t('ทั้งหมด', 'All'), count: counts.all },
+        { value: 'low', label: t('ใกล้หมด', 'Low'), count: counts.low },
+        { value: 'out', label: t('หมด', 'Out'), count: counts.out },
+      ]}
+    />
   );
 
-  const statusOptions: Array<{ label: string; value: StockStatus }> = [
-    { label: copy(`ทั้งหมด ${statusCounts.all}`, `All ${statusCounts.all}`), value: 'all' },
-    { label: copy(`ปกติ ${statusCounts.ok}`, `In stock ${statusCounts.ok}`), value: 'ok' },
-    { label: copy(`ใกล้หมด ${statusCounts.low}`, `Low ${statusCounts.low}`), value: 'low' },
-    { label: copy(`หมด ${statusCounts.out}`, `Out ${statusCounts.out}`), value: 'out' },
-  ];
-
-  const sortOptions: Array<{ label: string; value: SortKey }> = [
-    { label: copy('ความเสี่ยง', 'Priority'), value: 'priority' },
-    { label: copy('ชื่อ', 'Name'), value: 'name' },
-    { label: copy('หมวด', 'Category'), value: 'category' },
-    { label: copy('คงเหลือ', 'Stock'), value: 'stock' },
-    { label: copy('ต้นทุน', 'Cost'), value: 'price' },
-  ];
-
-  const filterPanel = (
-    <View style={{ gap: spacing.md }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <View style={{ minWidth: 0, flex: 1, justifyContent: 'center' }}>
-          <SearchField
-            accessibilityLabel={copy('ค้นหาชื่อหรือ SKU', 'Search by name or SKU')}
-            clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
-            value={search}
-            onChangeText={setSearch}
-            placeholder={copy('ค้นหาวัตถุดิบ', 'Search inventory')}
-          />
-        </View>
-        {canManage ? (
-          selecting ? (
-            <Button compact icon="close-outline" variant="secondary" label={copy('เสร็จ', 'Done')} onPress={exitSelect} />
-          ) : (
-            <Button compact icon="checkmark-circle-outline" variant="secondary" label={copy('เลือก', 'Select')} onPress={() => setSelecting(true)} />
-          )
-        ) : null}
-        {canManage && !selecting ? (
-          <Button
-            compact
-            icon="duplicate-outline"
-            variant="secondary"
-            label={copy('หลายรายการ', 'Bulk')}
-            onPress={() => router.push('/inventory/bulk-add' as never)}
-          />
-        ) : null}
-        {canManage && !selecting ? (
-          <Button
-            compact
-            icon="folder-open-outline"
-            variant="secondary"
-            label={copy('หมวด', 'Categories')}
-            onPress={() => router.push('/inventory/categories' as never)}
-          />
-        ) : null}
-      </View>
-      <ChipGroup scrollable value={category} onChange={setCategory} options={[{ label: copy('ทั้งหมด', 'All'), value: 'all' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))]} />
-      <ChipGroup scrollable value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <View style={{ minWidth: 0, flex: 1 }}>
-          <ChipGroup scrollable value={sortKey} onChange={setSortKey} options={sortOptions} />
-        </View>
-        <Button
-          compact
-          variant="secondary"
-          icon={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'}
-          label={sortDir === 'asc' ? copy('น้อย→มาก', 'Asc') : copy('มาก→น้อย', 'Desc')}
-          disabled={sortKey === 'priority'}
-          onPress={() => setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-        />
-      </View>
-    </View>
-  );
-
-  const ingredientRows = filtered.map((item) => {
-    const tone = Number(item.stock) <= 0 ? 'danger' : Number(item.stock) <= Number(item.min_stock) ? 'warning' : 'success';
-    const label = tone === 'danger' ? copy('หมด', 'Out') : tone === 'warning' ? copy('ใกล้หมด', 'Low') : copy('ปกติ', 'In stock');
-    const detail = `${item.category?.name || copy('ไม่มีหมวด', 'Uncategorized')}${item.sku ? ` · ${item.sku}` : ''}`;
-    const selected = selectedIds.has(item.ID);
-    const onPress = selecting ? () => toggleSelect(item.ID) : () => router.push({ pathname: '/inventory/item' as never, params: { id: String(item.ID) } } as never);
-    const trailing = (
-      <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-        <Text selectable numberOfLines={1} style={typeScale.number}>{Number(item.stock).toLocaleString(locale)} {item.unit}</Text>
-        <StatusBadge label={label} tone={tone} />
-      </View>
-    );
-
-    if (!tabletWorkspace) {
-      return (
-        <EdgeRow
-          accessibilityLabel={selecting ? copy(`เลือกวัตถุดิบ ${item.name}`, `Select ingredient ${item.name}`) : copy(`ดูวัตถุดิบ ${item.name}`, `View ingredient ${item.name}`)}
-          detail={detail}
-          icon={selecting ? undefined : 'cube-outline'}
-          iconColor={palette.muted}
-          leading={selecting ? <SelectBox checked={selected} /> : undefined}
-          showChevron={!selecting}
-          key={item.ID}
-          onPress={onPress}
-          style={selected ? { backgroundColor: palette.accentSoft } : undefined}
-          title={item.name}
-          trailing={trailing}
-        />
-      );
-    }
-
-    return (
-      <Pressable
-        accessibilityLabel={selecting ? copy(`เลือกวัตถุดิบ ${item.name}`, `Select ingredient ${item.name}`) : copy(`ดูวัตถุดิบ ${item.name}`, `View ingredient ${item.name}`)}
-        accessibilityRole="button"
-        key={item.ID}
-        onPress={onPress}
-        style={({ pressed }) => ({
-          minHeight: 72,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          borderTopWidth: 1,
-          borderTopColor: palette.border,
-          backgroundColor: selected ? palette.accentSoft : pressed ? palette.surfaceSubtle : palette.surface,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
-          opacity: pressed ? 0.78 : 1,
-        })}
-      >
-        {selecting ? (
-          <SelectBox checked={selected} />
-        ) : (
-          <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: palette.surfaceStrong }}>
-            <AppIcon color={palette.muted} name="cube-outline" size={21} />
-          </View>
-        )}
-        <View style={{ minWidth: 0, flex: 1, gap: spacing.xs }}>
-          <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{item.name}</Text>
-          <Text selectable numberOfLines={1} style={[typeScale.caption, { color: palette.muted }]}>{detail}</Text>
-        </View>
-        {trailing}
-      </Pressable>
-    );
-  });
-
-  const selectionBar = selecting ? (
-    <Surface style={{ padding: 0, overflow: 'hidden' }}>
-      <ActionDock
-        separated={false}
-        label={copy('เลือกแล้ว', 'Selected')}
-        value={selectedIds.size.toLocaleString(locale)}
-      >
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <Button compact variant="secondary" icon="checkmark-done-outline" label={allSelected ? copy('ไม่เลือก', 'None') : copy('เลือกทั้งหมด', 'All')} onPress={toggleSelectAll} disabled={!filtered.length} />
-          </View>
-        </View>
-      </ActionDock>
-    </Surface>
-  ) : null;
-
-  const emptyIngredients = !loading && !filtered.length ? (
-    <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.lg }}>
-      <EmptyState
-        title={copy('ไม่พบวัตถุดิบ', 'No ingredients found')}
-        detail={ingredients.length ? copy('ลองเปลี่ยนคำค้น สถานะ หรือหมวดวัตถุดิบ', 'Try changing the search term, status, or category.') : copy('เพิ่มวัตถุดิบรายการแรกเพื่อเริ่มติดตามสต็อก', 'Add your first ingredient to start tracking stock.')}
-      />
-    </View>
-  ) : null;
-
-  const ingredientList = tabletWorkspace ? (
-    <Surface style={{ width: '100%', gap: 0, padding: 0, overflow: 'hidden' }}>
-      <View style={{ padding: spacing.lg }}>
-        <SectionHeader title={copy('รายการวัตถุดิบ', 'Ingredients')} detail={copy(`${filtered.length.toLocaleString('th-TH')} รายการ`, `${filtered.length.toLocaleString('en-US')} items`)} />
-      </View>
-      <View>{ingredientRows}</View>
-      {emptyIngredients}
-    </Surface>
-  ) : (
-    <View style={{ width: '100%', gap: spacing.sm }}>
-      <EdgeSectionHeader title={copy('รายการวัตถุดิบ', 'Ingredients')} detail={copy(`${filtered.length.toLocaleString('th-TH')} รายการ`, `${filtered.length.toLocaleString('en-US')} items`)} />
-      <EdgeSection>
-        {ingredientRows}
-        {emptyIngredients}
-      </EdgeSection>
-    </View>
-  );
+  const dockBottom = Math.max(insets.bottom, 12) + 6 + 54 + 22;
 
   return (
-    <AppScreen
-      title={copy('คลังวัตถุดิบ', 'Inventory')}
-      subtitle={copy(`${ingredients.length.toLocaleString('th-TH')} รายการ · ${(low + out).toLocaleString('th-TH')} รายการต้องตรวจสอบ`, `${ingredients.length.toLocaleString('en-US')} items · ${(low + out).toLocaleString('en-US')} need attention`)}
-      topLevel={false}
-      refreshControl={<AppRefreshControl onRefresh={load} />}
-      action={canManage && !selecting ? <Button compact icon="add-outline" label={copy('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={() => router.push('/inventory/item' as never)} /> : undefined}
-    >
-      {error ? <Feedback title={copy('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
-      <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
-        <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.65 : undefined, gap: spacing.lg }}>
-          {!tabletWorkspace ? summaryPanel : null}
-          {!tabletWorkspace ? filterPanel : null}
-          {selectionBar}
-          {ingredientList}
-        </View>
-        {tabletWorkspace ? (
-          <View style={{ minWidth: 0, flex: 0.9, gap: spacing.lg }}>
-            {summaryPanel}
-            {filterPanel}
+    <View style={{ flex: 1, backgroundColor: palette.canvas }}>
+      {selecting ? (
+        <FloatingHeader
+          centered
+          backIcon="close"
+          backLabel={t('ออกจากการเลือก', 'Leave selection')}
+          onBack={leaveSelect}
+          title={selected.size ? t(`เลือก ${selected.size} รายการ`, `${selected.size} selected`) : t('เลือกรายการ', 'Select items')}
+          trailing={<HeaderTextButton label={allSelected ? t('ไม่เลือก', 'None') : t('เลือกทั้งหมด', 'All')} onPress={toggleAll} />}
+          rail={rail}
+        />
+      ) : (
+        <FloatingHeader
+          backLabel={t('ย้อนกลับ', 'Back')}
+          onBack={() => router.back()}
+          title={t('คลังวัตถุดิบ', 'Inventory')}
+          subtitle={t(`${totals.all.toLocaleString(locale)} รายการ · ${totals.needsOrder.toLocaleString(locale)} ต้องตรวจสอบ`, `${totals.all.toLocaleString(locale)} items · ${totals.needsOrder.toLocaleString(locale)} need attention`)}
+          trailing={canManage ? <GlassButton icon="ellipsis-horizontal" label={t('จัดการคลัง', 'Manage inventory')} onPress={() => setSheet({ kind: 'manage' })} /> : undefined}
+          rail={rail}
+        />
+      )}
+
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true), paddingHorizontal: 12, paddingBottom: dockBottom + 12, gap: 10 }}
+      >
+        {!selecting ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อ, SKU หรือหมวด', 'Search name, SKU or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
+            <View>
+              <SquareButton icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
+              {filtersActive ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}
+            </View>
           </View>
         ) : null}
-      </View>
-    </AppScreen>
+
+        {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
+        {notice ? <Feedback title={notice} tone="success" /> : null}
+
+        {!selecting && !search && status === 'all' ? <TotalsCard value={totals.value} needsOrder={totals.needsOrder} language={language} /> : null}
+
+        {loading && !ingredients.length ? (
+          <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View>
+        ) : null}
+
+        {visible.map((item) => {
+          const card = (
+            <IngredientCard
+              item={item}
+              language={language}
+              locale={locale}
+              selecting={selecting}
+              selected={selected.has(item.ID)}
+              canManage={canManage}
+              onPress={() => (selecting ? toggle(item.ID) : router.push({ pathname: '/inventory/detail' as never, params: { id: String(item.ID) } } as never))}
+              onRestock={() => setSheet({ kind: 'restock', item })}
+              onMore={() => setSheet({ kind: 'row', item })}
+            />
+          );
+          if (!canManage || selecting) return <View key={item.ID}>{card}</View>;
+          return (
+            <SwipeRow key={item.ID} id={String(item.ID)} background={palette.canvas} deleteLabel={t(`ลบ ${item.name}`, `Delete ${item.name}`)} onDelete={() => confirmDelete(item)} onWillOpen={onRowWillOpen}>
+              {card}
+            </SwipeRow>
+          );
+        })}
+
+        {!loading && !visible.length ? (
+          <EmptyState
+            title={t('ไม่พบวัตถุดิบ', 'No ingredients found')}
+            detail={ingredients.length ? t('ลองเปลี่ยนคำค้น สถานะ หรือหมวด', 'Try another search, status or category.') : t('เพิ่มวัตถุดิบรายการแรกเพื่อเริ่มติดตามสต็อก', 'Add your first ingredient to start tracking stock.')}
+          />
+        ) : null}
+      </ScrollView>
+
+      {canManage ? (
+        <Dock>
+          {selecting ? (
+            <>
+              <DockButton secondary label={t('ปรับยอด', 'Set count')} onPress={() => setSheet({ kind: 'batch', mode: 'count' })} disabled={!selected.size} />
+              <DockButton label={selected.size ? t(`เติมสต็อก ${selected.size} รายการ`, `Restock ${selected.size}`) : t('เติมสต็อก', 'Restock')} onPress={() => setSheet({ kind: 'batch', mode: 'restock' })} disabled={!selected.size} />
+            </>
+          ) : (
+            <DockButton icon="add" label={t('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={() => router.push('/inventory/item' as never)} />
+          )}
+        </Dock>
+      ) : null}
+
+      {/* ---- row menu ---- */}
+      <BottomSheet open={sheet.kind === 'row'} onClose={close} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
+        {sheet.kind === 'row' ? (
+          <>
+            <SheetTitle title={sheet.item.name} subtitle={t(`คงเหลือ ${fmt(sheet.item.stock, locale)} ${sheet.item.unit}`, `${fmt(sheet.item.stock, locale)} ${sheet.item.unit} on hand`)} />
+            <SheetAction icon="document-text-outline" label={t('ดูรายละเอียดและประวัติ', 'Details and history')} onPress={() => { close(); router.push({ pathname: '/inventory/detail' as never, params: { id: String(sheet.item.ID) } } as never); }} />
+            <SheetAction icon="add-circle-outline" label={t('เติมสต็อก', 'Restock')} onPress={() => setSheet({ kind: 'restock', item: sheet.item })} />
+            <SheetAction icon="calculator-outline" label={t('ปรับยอด (นับจริง)', 'Set counted quantity')} onPress={() => setSheet({ kind: 'count', item: sheet.item })} />
+            <SheetAction icon="create-outline" label={t('แก้ไขข้อมูลวัตถุดิบ', 'Edit ingredient')} onPress={() => { close(); router.push({ pathname: '/inventory/item' as never, params: { id: String(sheet.item.ID) } } as never); }} />
+            <SheetAction icon="trash-outline" label={t('ลบวัตถุดิบ', 'Delete ingredient')} danger divided onPress={() => { const item = sheet.item; close(); setTimeout(() => confirmDelete(item), 380); }} />
+          </>
+        ) : null}
+      </BottomSheet>
+
+      <RestockSheet
+        item={sheet.kind === 'restock' ? sheet.item : null}
+        open={sheet.kind === 'restock'}
+        onClose={close}
+        onSubmit={(quantity) => { if (sheet.kind === 'restock') void restock(sheet.item, quantity); }}
+        busy={busy}
+        language={language}
+        locale={locale}
+      />
+      <CountSheet
+        item={sheet.kind === 'count' ? sheet.item : null}
+        open={sheet.kind === 'count'}
+        onClose={close}
+        onSubmit={(payload) => { if (sheet.kind === 'count') void count(sheet.item, payload); }}
+        busy={busy}
+        language={language}
+        locale={locale}
+      />
+
+      {/* ---- filter ---- */}
+      <BottomSheet open={sheet.kind === 'filter'} onClose={close} heightFraction={0.66} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('ตัวกรอง', 'Filter')} />
+        <SheetSection title={t('หมวดหมู่', 'Category')}>
+          <ChoiceChip label={t('ทุกหมวด', 'All categories')} on={draft.category === 'all'} onPress={() => setDraft((d) => ({ ...d, category: 'all' }))} />
+          {categories.filter((row) => row.is_active).map((row) => (
+            <ChoiceChip key={row.ID} label={row.name} on={draft.category === String(row.ID)} onPress={() => setDraft((d) => ({ ...d, category: String(row.ID) }))} />
+          ))}
+          <ChoiceChip label={t('ไม่มีหมวด', 'Uncategorised')} on={draft.category === 'none'} onPress={() => setDraft((d) => ({ ...d, category: 'none' }))} />
+        </SheetSection>
+        <SheetSection title={t('เรียงตาม', 'Sort by')}>
+          {([
+            ['urgent', t('ด่วนก่อน', 'Urgent first')],
+            ['recent', t('ล่าสุด', 'Recently moved')],
+            ['name', t('ชื่อ ก-ฮ', 'Name A–Z')],
+            ['value', t('มูลค่าสูงสุด', 'Highest value')],
+          ] as Array<[SortKey, string]>).map(([key, label]) => (
+            <ChoiceChip key={key} label={label} on={draft.sort === key} onPress={() => setDraft((d) => ({ ...d, sort: key }))} />
+          ))}
+        </SheetSection>
+        <SheetFooter>
+          <SheetButton secondary label={t('ล้างตัวกรอง', 'Clear')} onPress={() => setDraft({ category: 'all', sort: 'urgent' })} />
+          <SheetButton label={t(`ดูผลลัพธ์ · ${draftCount}`, `Show ${draftCount}`)} onPress={() => { setCategory(draft.category); setSort(draft.sort); close(); }} />
+        </SheetFooter>
+      </BottomSheet>
+
+      {/* ---- manage ---- */}
+      <BottomSheet open={sheet.kind === 'manage'} onClose={close} heightFraction={0.44} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('จัดการคลัง', 'Manage inventory')} />
+        <SheetAction icon="duplicate-outline" label={t('เพิ่มหลายรายการ', 'Add several at once')} onPress={() => { close(); router.push('/inventory/bulk-add' as never); }} />
+        <SheetAction icon="checkmark-circle-outline" label={t('เลือกหลายรายการ', 'Select several')} onPress={() => { close(); setSelecting(true); }} />
+        <SheetAction icon="folder-open-outline" label={t('จัดการหมวดหมู่', 'Manage categories')} onPress={() => { close(); router.push('/inventory/categories' as never); }} />
+      </BottomSheet>
+
+      <BatchSheet
+        mode={sheet.kind === 'batch' ? sheet.mode : null}
+        rows={selectedRows}
+        onClose={close}
+        language={language}
+        locale={locale}
+        onDone={(patched, failed) => {
+          patched.forEach(patchItem);
+          close();
+          if (failed.length) {
+            Alert.alert(t('บันทึกไม่ครบ', 'Some rows failed'), failed.join('\n'));
+          } else {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setNotice(t(`บันทึก ${patched.length} รายการแล้ว`, `Saved ${patched.length} rows`));
+            leaveSelect();
+          }
+        }}
+      />
+    </View>
+  );
+}
+
+/**
+ * One number per selected row, then one save. Nothing is sent until the
+ * person has seen every figure, because a restock also books an expense.
+ */
+function BatchSheet({
+  mode,
+  rows,
+  onClose,
+  onDone,
+  language,
+  locale,
+}: {
+  mode: 'restock' | 'count' | null;
+  rows: Ingredient[];
+  onClose: () => void;
+  onDone: (patched: Ingredient[], failed: string[]) => void;
+  language: 'th' | 'en';
+  locale: string;
+}) {
+  const t = (th: string, en: string) => (language === 'th' ? th : en);
+  const [amounts, setAmounts] = useState<Record<number, number>>({});
+  const [busy, setBusy] = useState(false);
+  const open = mode !== null;
+
+  useEffect(() => {
+    if (!open) return;
+    const next: Record<number, number> = {};
+    for (const row of rows) {
+      next[row.ID] = mode === 'restock' ? (suggestedRestock(row) || restockStep(row)) : Number(row.stock);
+    }
+    setAmounts(next);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = async () => {
+    if (!mode || busy) return;
+    setBusy(true);
+    const patched: Ingredient[] = [];
+    const failed: string[] = [];
+    for (const row of rows) {
+      const amount = amounts[row.ID] ?? 0;
+      const payload = mode === 'restock'
+        ? (amount > 0 ? { type: 'in' as const, quantity: amount } : null)
+        : countPayload(row, amount);
+      if (!payload) continue;
+      try {
+        patched.push(await adjustStock(row.ID, payload));
+      } catch (err) {
+        failed.push(`${row.name}: ${err instanceof Error ? err.message : t('ไม่สำเร็จ', 'failed')}`);
+      }
+    }
+    setBusy(false);
+    onDone(patched, failed);
+  };
+
+  const cost = mode === 'restock' ? rows.reduce((sum, row) => sum + Number(row.cost_per_unit) * (amounts[row.ID] ?? 0), 0) : 0;
+
+  return (
+    <BottomSheet open={open} onClose={onClose} heightFraction={0.8} label={t('ปิด', 'Close')} showClose>
+      <SheetTitle
+        title={mode === 'count' ? t('ปรับยอดหลายรายการ', 'Set several counts') : t('เติมสต็อกหลายรายการ', 'Restock several')}
+        subtitle={mode === 'count' ? t('ใส่ยอดที่นับได้จริงทีละรายการ', 'Enter what you counted, row by row') : t('ปรับจำนวนได้ทีละรายการก่อนบันทึก', 'Adjust each amount before saving')}
+      />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
+        {rows.map((row) => (
+          <View key={row.ID} style={{ marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 16, gap: 8 }}>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{row.name}</Text>
+              <Text style={{ fontSize: 12, color: palette.muted, fontVariant: ['tabular-nums'] }}>{t(`ตอนนี้ ${fmt(row.stock, locale)} ${row.unit}`, `now ${fmt(row.stock, locale)} ${row.unit}`)}</Text>
+            </View>
+            <Stepper value={amounts[row.ID] ?? 0} step={restockStep(row)} unit={row.unit} onChange={(value) => setAmounts((prev) => ({ ...prev, [row.ID]: value }))} />
+          </View>
+        ))}
+        {cost > 0 ? <KeyValue label={t('จะบันทึกรายจ่ายรวม', 'Total expense recorded')} value={`฿${fmt(cost, locale, 0)}`} /> : null}
+      </ScrollView>
+      <SheetFooter>
+        <SheetButton label={busy ? t('กำลังบันทึก…', 'Saving…') : t(`บันทึก ${rows.length} รายการ`, `Save ${rows.length} rows`)} onPress={submit} disabled={busy || !rows.length} />
+      </SheetFooter>
+    </BottomSheet>
   );
 }
