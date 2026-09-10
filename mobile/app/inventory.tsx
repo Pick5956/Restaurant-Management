@@ -228,7 +228,7 @@ export default function InventoryScreen() {
 
   const bar = (
     <>
-      <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อ, SKU หรือหมวด', 'Search name, SKU or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
+      <SearchCapsule value={search} onChangeText={setSearch} placeholder={t('ค้นหาชื่อหรือหมวด', 'Search name or category')} clearLabel={t('ล้างคำค้นหา', 'Clear search')} />
       <View>
         <SquareButton size={SEARCH_HEIGHT} icon="options-outline" label={t('ตัวกรองและการเรียง', 'Filter and sort')} onPress={() => { setDraft({ category, sort }); setSheet({ kind: 'filter' }); }} />
         {filtersActive ? <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary }} /> : null}

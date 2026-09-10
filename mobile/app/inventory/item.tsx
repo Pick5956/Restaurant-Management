@@ -47,6 +47,8 @@ export default function InventoryItemScreen() {
 
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
   const [name, setName] = useState('');
+  // SKU, image and yield have no rows any more — the owner dropped them — but
+  // the API still carries them, so whatever the record had goes back as it was.
   const [sku, setSku] = useState('');
   const [categoryId, setCategoryId] = useState('none');
   const [imageUrl, setImageUrl] = useState('');
@@ -179,7 +181,24 @@ export default function InventoryItemScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.canvas }}>
-      <FloatingHeader centered title={title} backLabel={t('ย้อนกลับ', 'Back')} onBack={() => router.back()} />
+      <FloatingHeader
+        centered
+        title={title}
+        backLabel={t('ย้อนกลับ', 'Back')}
+        onBack={() => router.back()}
+        trailing={editing && canManage && !loading ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('ลบวัตถุดิบ', 'Delete ingredient')}
+            disabled={saving}
+            onPress={remove}
+            hitSlop={6}
+            style={({ pressed }) => ({ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.danger, opacity: pressed ? 0.85 : 1, shadowColor: '#3d2b1f', shadowOpacity: 0.24, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 })}
+          >
+            <AppIcon name="trash-outline" size={21} color="#ffffff" />
+          </Pressable>
+        ) : undefined}
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -195,9 +214,6 @@ export default function InventoryItemScreen() {
                 <FieldRow label={t('ชื่อ', 'Name')} first>
                   <Field value={name} onChangeText={setName} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} readOnly={readOnly} />
                 </FieldRow>
-                <FieldRow label="SKU">
-                  <Field value={sku} onChangeText={setSku} placeholder={t('ไม่บังคับ', 'Optional')} readOnly={readOnly} autoCapitalize="characters" />
-                </FieldRow>
               </Group>
 
               <Group title={t('หมวดและหน่วย', 'Category and unit')}>
@@ -207,7 +223,7 @@ export default function InventoryItemScreen() {
 
               <Group
                 title={t('ต้นทุนและสต็อก', 'Cost and stock')}
-                footer={t('ต่ำกว่าจุดเตือนจะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดกลางหลอดของรายการนี้', 'Below the reorder level the item shows as "Low" and the bar\'s midpoint marks it.')}
+                footer={t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดกลางหลอดของรายการนี้', 'Below the reorder level the item shows as "Low" and the bar\'s midpoint marks it.')}
               >
                 <FieldRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
                   <Field value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
@@ -217,11 +233,8 @@ export default function InventoryItemScreen() {
                     <Field value={stock} onChangeText={setStock} numeric suffix={unit} readOnly={readOnly} />
                   </FieldRow>
                 ) : null}
-                <FieldRow label={t('จุดเตือนขั้นต่ำ', 'Reorder level')}>
+                <FieldRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
                   <Field value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
-                </FieldRow>
-                <FieldRow label={t('ผลได้หลังเตรียม', 'Yield')}>
-                  <Field value={yieldPercent} onChangeText={setYieldPercent} numeric suffix="%" readOnly={readOnly} />
                 </FieldRow>
               </Group>
 
@@ -229,19 +242,6 @@ export default function InventoryItemScreen() {
                 <PickRow label={t('วิธีเก็บ', 'Kept')} value={storageName} first onPress={readOnly ? undefined : () => setPicker('storage')} />
               </Group>
 
-              <Group title={t('รูปภาพ', 'Image')}>
-                <FieldRow label="URL" first>
-                  <Field value={imageUrl} onChangeText={setImageUrl} placeholder={t('ไม่บังคับ', 'Optional')} readOnly={readOnly} autoCapitalize="none" keyboardType="url" />
-                </FieldRow>
-              </Group>
-
-              {editing && canManage ? (
-                <Group>
-                  <Pressable accessibilityRole="button" disabled={saving} onPress={remove} style={({ pressed }) => ({ minHeight: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? palette.dangerSoft : 'transparent' })}>
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: palette.danger }}>{t('ลบวัตถุดิบ', 'Delete ingredient')}</Text>
-                  </Pressable>
-                </Group>
-              ) : null}
             </>
           ) : null}
         </ScrollView>
@@ -315,7 +315,6 @@ function Field({
   suffix,
   readOnly,
   autoCapitalize,
-  keyboardType,
 }: {
   value: string;
   onChangeText: (value: string) => void;
@@ -325,7 +324,6 @@ function Field({
   suffix?: string;
   readOnly?: boolean;
   autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
-  keyboardType?: 'url';
 }) {
   if (readOnly) {
     return (
@@ -342,7 +340,7 @@ function Field({
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={palette.placeholder}
-        keyboardType={numeric ? 'decimal-pad' : keyboardType}
+        keyboardType={numeric ? 'decimal-pad' : undefined}
         autoCapitalize={autoCapitalize ?? (numeric ? 'none' : 'sentences')}
         selectTextOnFocus={numeric}
         style={{ flex: 1, minWidth: 0, textAlign: 'right', fontSize: 15.5, color: palette.textStrong, paddingVertical: 0, fontVariant: numeric ? ['tabular-nums'] : undefined }}
