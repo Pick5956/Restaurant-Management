@@ -1,7 +1,8 @@
 import { GlassView } from 'expo-glass-effect';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, PanResponder, Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomSheet, GlassButton, GlassHeaderPane, GlassPanel, LIQUID_GLASS } from '@/src/components/ai/chrome';
@@ -121,7 +122,20 @@ export function FloatingHeader({
   );
 }
 
-/** The three-way status rail. On the rail the chosen cell is the only bright thing. */
+/**
+ * The three-way status rail. The chosen cell is a black thumb that moves, not
+ * a colour that jumps: tap another cell and the list changes at once while the
+ * thumb sets off a beat later and glides over; put a finger on it and it
+ * follows the finger, then settles on the nearest cell when let go.
+ *
+ * The white labels are a second copy of the row, clipped inside the thumb and
+ * shifted the opposite way, so a label turns white exactly as the thumb passes
+ * over it — no crossfade to time, nothing to get out of step.
+ */
+const RAIL_PAD = 4;
+const RAIL_GAP = 4;
+const THUMB_RADIUS = 12;
+
 export function Segmented<T extends string>({
   value,
   options,
@@ -131,36 +145,112 @@ export function Segmented<T extends string>({
   options: Array<{ value: T; label: string; count?: number }>;
   onChange: (value: T) => void;
 }) {
+  const [width, setWidth] = useState(0);
+  const count = options.length;
+  const cell = width > 0 ? (width - RAIL_PAD * 2 - RAIL_GAP * (count - 1)) / count : 0;
+  const step = cell + RAIL_GAP;
+  const maxX = step * (count - 1);
+  const index = Math.max(0, options.findIndex((option) => option.value === value));
+
+  const x = useRef(new Animated.Value(0)).current;
+  // Where the thumb is right now, read off the native value so a drag can
+  // pick it up mid-glide.
+  const at = useRef(0);
+  useEffect(() => {
+    const id = x.addListener(({ value: current }) => { at.current = current; });
+    return () => x.removeListener(id);
+  }, [x]);
+  const dragging = useRef(false);
+  const grabbed = useRef(0);
+  // The PanResponder is built once; it reads the live figures through this.
+  const live = useRef({ index, step, maxX, options, onChange });
+  live.current = { index, step, maxX, options, onChange };
+
+  const glide = (to: number) => Animated.spring(x, { toValue: to, useNativeDriver: true, damping: 22, stiffness: 190, mass: 0.9 }).start();
+
+  // A tap changes the list at once; the thumb leaves a beat later. Moving it
+  // in the same frame as the tap read as a warp.
+  useEffect(() => {
+    if (!step || dragging.current) return;
+    const timer = setTimeout(() => glide(index * step), 60);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, step]);
+
+  const settle = () => {
+    dragging.current = false;
+    const { step: s, maxX: m, options: rows, onChange: change, index: was } = live.current;
+    const target = s ? Math.round(Math.min(m, Math.max(0, at.current)) / s) : was;
+    glide(target * s);
+    if (target !== was) {
+      void Haptics.selectionAsync();
+      change(rows[target].value);
+    }
+  };
+
+  const pan = useRef(
+    PanResponder.create({
+      // Taps belong to the cells. A sideways move takes the touch off whichever
+      // cell it started on and hands it to the thumb.
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      onPanResponderGrant: () => {
+        dragging.current = true;
+        grabbed.current = at.current;
+        x.stopAnimation();
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const { maxX: m } = live.current;
+        x.setValue(Math.min(m, Math.max(0, grabbed.current + gesture.dx)));
+      },
+      onPanResponderRelease: settle,
+      onPanResponderTerminate: settle,
+    }),
+  ).current;
+
+  const labelOf = (option: { label: string; count?: number }, on: boolean) => (
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+      <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? '#FFFFFF' : palette.muted }}>{option.label}</Text>
+      {option.count !== undefined ? (
+        <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? 'rgba(255,255,255,0.8)' : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
+      ) : null}
+    </View>
+  );
+
   return (
-    <View style={{ flexDirection: 'row', gap: 4, padding: 4, borderRadius: 16, height: RAIL_HEIGHT, backgroundColor: LIQUID_GLASS ? 'rgba(255,237,213,0.55)' : palette.surfaceStrong }}>
-      {options.map((option) => {
-        const on = option.value === value;
-        const inner = (
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? '#FFFFFF' : palette.muted }}>{option.label}</Text>
-            {option.count !== undefined ? (
-              <Text style={{ fontSize: 13.5, fontWeight: '600', color: on ? 'rgba(255,255,255,0.8)' : palette.placeholder, fontVariant: ['tabular-nums'] }}>{option.count}</Text>
-            ) : null}
-          </View>
-        );
-        return (
+    <View
+      {...pan.panHandlers}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={{ height: RAIL_HEIGHT, padding: RAIL_PAD, borderRadius: 16, backgroundColor: LIQUID_GLASS ? 'rgba(255,237,213,0.55)' : palette.surfaceStrong }}
+    >
+      <View style={{ flex: 1, flexDirection: 'row', gap: RAIL_GAP }}>
+        {options.map((option) => (
           <Pressable
             key={option.value}
             accessibilityRole="tab"
-            accessibilityState={{ selected: on }}
+            accessibilityState={{ selected: option.value === value }}
             onPress={() => onChange(option.value)}
-            style={{ flex: 1 }}
+            style={{ flex: 1, flexDirection: 'row' }}
           >
-            {on ? (
-              <View style={{ flex: 1, borderRadius: 12, backgroundColor: palette.textStrong, flexDirection: 'row', shadowColor: '#3d2b1f', shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
-                {inner}
-              </View>
-            ) : (
-              <View style={{ flex: 1, flexDirection: 'row' }}>{inner}</View>
-            )}
+            {labelOf(option, false)}
           </Pressable>
-        );
-      })}
+        ))}
+      </View>
+      {cell > 0 ? (
+        // Shadow on the outer view, clip on the inner: one view cannot do both on iOS.
+        <Animated.View
+          pointerEvents="none"
+          style={{ position: 'absolute', top: RAIL_PAD, left: RAIL_PAD, width: cell, height: RAIL_HEIGHT - RAIL_PAD * 2, borderRadius: THUMB_RADIUS, transform: [{ translateX: x }], shadowColor: '#3d2b1f', shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 }}
+        >
+          <View style={{ flex: 1, borderRadius: THUMB_RADIUS, backgroundColor: palette.textStrong, overflow: 'hidden' }}>
+            <Animated.View style={{ flexDirection: 'row', gap: RAIL_GAP, width: width - RAIL_PAD * 2, height: '100%', transform: [{ translateX: Animated.multiply(x, -1) }] }}>
+              {options.map((option) => (
+                <View key={option.value} style={{ width: cell, flexDirection: 'row' }}>{labelOf(option, true)}</View>
+              ))}
+            </Animated.View>
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
