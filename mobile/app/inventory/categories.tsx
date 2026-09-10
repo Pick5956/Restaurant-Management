@@ -190,8 +190,6 @@ export default function IngredientCategoriesScreen() {
                       paddingLeft: 14,
                       paddingRight: 12,
                       gap: 12,
-                      borderTopWidth: index ? 1 : 0,
-                      borderTopColor: palette.divider,
                       backgroundColor: pressed ? palette.surfaceSubtle : palette.surface,
                     })}
                   >
@@ -223,16 +221,17 @@ export default function IngredientCategoriesScreen() {
                 // An open row must not be renamed by the tap that closes it, so
                 // the swipe wraps the row rather than the other way round.
                 return (
-                  <SwipeRow
-                    key={item.ID}
-                    id={String(item.ID)}
-                    background={palette.surface}
-                    deleteLabel={t(`ลบหมวด ${item.name}`, `Delete ${item.name}`)}
-                    onDelete={() => confirmDelete(item)}
-                    onWillOpen={onRowWillOpen}
-                  >
-                    {row}
-                  </SwipeRow>
+                  <View key={item.ID} style={{ borderTopWidth: index ? 1 : 0, borderTopColor: palette.divider }}>
+                    <SwipeRow
+                      id={String(item.ID)}
+                      background={palette.surface}
+                      deleteLabel={t(`ลบหมวด ${item.name}`, `Delete ${item.name}`)}
+                      onDelete={() => confirmDelete(item)}
+                      onWillOpen={onRowWillOpen}
+                    >
+                      {row}
+                    </SwipeRow>
+                  </View>
                 );
               })}
 
