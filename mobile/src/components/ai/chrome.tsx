@@ -22,6 +22,10 @@ import { ai } from './theme';
 // the screen never asks which platform it is on.
 export const LIQUID_GLASS = isLiquidGlassAvailable();
 
+// How long a freshly mounted glass view takes to show its material. Measured
+// by eye on an iPhone: a square shadow was visible for about a second.
+const GLASS_SETTLE_MS = 1100;
+
 /**
  * A panel in the same material as the buttons: real glass on iOS 26, the
  * frosted white surface everywhere else. `style` is the shape both share;
@@ -57,7 +61,6 @@ export function GlassButton({
   dot,
   active,
   size = 46,
-  onFlat,
 }: {
   icon: AppIconName;
   label: string;
@@ -67,47 +70,31 @@ export function GlassButton({
   dot?: boolean;
   active?: boolean;
   size?: number;
-  /**
-   * The colour of the flat surface this button sits on, when it sits on one.
-   *
-   * iOS draws a view's shadow from the view's rendered shape, and the glass
-   * material takes most of a second to appear after the view mounts — a button
-   * that arrives mid-animation (the back button as a settings page slides in)
-   * wore a square shadow the whole time. With an opaque background iOS uses
-   * the corner radius instead and the shadow is round from the first frame,
-   * so on a flat surface the shadow goes on an opaque disc of that surface's
-   * own colour, tucked under the glass where it cannot be seen. Over anything
-   * that is not flat — the chat, the orb — the disc would show, so it is
-   * opt-in and those buttons keep the slower path.
-   */
-  onFlat?: string;
 }) {
   const icon_ = <AppIcon name={icon} size={size * 0.46} color={active ? ai.deep : ai.ink} />;
-  // The shadow waits for the glass. iOS draws a view's shadow from its actual
-  // shape, and the glass module only builds its material in the first layout
-  // pass — until then the view is a plain rectangle, so a button that mounts
-  // mid-animation (the back button as a settings page slides in) flashed a
-  // square shadow for a frame or two before the round one took over. Holding
-  // the shadow back until the first layout has been reported avoids the flash;
-  // without glass there is nothing to wait for.
+  // The shadow waits for the glass. iOS draws a view's shadow from the shape
+  // it has actually rendered, and the glass material takes most of a second
+  // to appear after the view mounts — until then the view is a plain
+  // rectangle, so a button arriving mid-animation (the back button as a
+  // settings page slides in) wore a square shadow for that whole second.
+  //
+  // An opaque disc under the glass would give iOS a round shadow at once, but
+  // it also turns the button into a flat disc, and the owner wants the real
+  // glass everywhere. So instead the shadow simply stays off until the glass
+  // has had its second. A soft shadow arriving late is invisible; a square one
+  // arriving early was not. Without glass there is nothing to wait for.
   const [shadowReady, setShadowReady] = useState(!LIQUID_GLASS);
-  const onFirstLayout = () => {
+  useEffect(() => {
     if (shadowReady) return;
-    requestAnimationFrame(() => setShadowReady(true));
-  };
-  const shadow = {
-    shadowColor: '#3d2b1f',
-    shadowOpacity: 0.24,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 3 },
-  };
+    const timer = setTimeout(() => setShadowReady(true), GLASS_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [shadowReady]);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={badge ? `${label} ${badge}` : label}
       hitSlop={8}
       onPress={onPress}
-      onLayout={onFirstLayout}
       style={({ pressed }) => ({
         width: size,
         height: size,
@@ -115,17 +102,13 @@ export function GlassButton({
         transform: [{ translateY: pressed ? -1 : 0 }],
         opacity: pressed && LIQUID_GLASS ? 0.85 : 1,
         // Whatever is behind the header is blurred, so the button needs its own
-        // edge to read as an object rather than part of the haze. On a flat
-        // surface the disc below carries it instead (see onFlat).
-        ...(onFlat ? {} : { ...shadow, shadowOpacity: shadowReady ? shadow.shadowOpacity : 0 }),
+        // edge to read as an object rather than part of the haze.
+        shadowColor: '#3d2b1f',
+        shadowOpacity: shadowReady ? 0.24 : 0,
+        shadowRadius: 9,
+        shadowOffset: { width: 0, height: 3 },
       })}
     >
-      {onFlat && LIQUID_GLASS ? (
-        <View
-          pointerEvents="none"
-          style={{ position: 'absolute', top: 0, left: 0, width: size, height: size, borderRadius: size / 2, backgroundColor: onFlat, ...shadow }}
-        />
-      ) : null}
       {LIQUID_GLASS ? (
         <GlassView
           glassEffectStyle="regular"
