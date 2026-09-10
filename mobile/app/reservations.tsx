@@ -2,18 +2,17 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
-import { listReservations } from '@/src/api/reservation';
+import { listReservations, resolveReservation } from '@/src/api/reservation';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import {
+  Button,
   ChipGroup,
   EdgeRow,
   EdgeSection,
-  EdgeSectionHeader,
   EmptyState,
   Feedback,
-  SectionHeader,
   StatusBadge,
   Surface,
 } from '@/src/components/ui';
@@ -59,7 +58,9 @@ export default function ReservationsScreen() {
   const [counts, setCounts] = useState<Partial<Record<ReservationStatus, number>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
   const requestGenerationRef = useRef(createRequestGeneration());
+  const canResolve = can(activeMembership, 'manage_table') || can(activeMembership, 'take_order');
 
   const load = useCallback(async () => {
     if (!canView) {
@@ -93,6 +94,24 @@ export default function ReservationsScreen() {
     setLoading(false);
   }, [canView, copy, filter]);
 
+  // The only way to close a booking that never held its table. Without it a
+  // scheduled reservation stays `active` for ever, whether the guests came or
+  // not, and the list fills with rows nobody can act on.
+  const resolve = useCallback(async (reservation: Reservation, status: 'seated' | 'cancelled') => {
+    setResolvingId(reservation.ID);
+    setError(null);
+    try {
+      await resolveReservation(reservation.ID, status);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error
+        ? err.message
+        : copy('ปิดรายการจองไม่สำเร็จ', 'Could not close the reservation'));
+    } finally {
+      setResolvingId(null);
+    }
+  }, [copy, load]);
+
   useFocusEffect(useCallback(() => {
     void load();
     return () => {
@@ -102,7 +121,7 @@ export default function ReservationsScreen() {
 
   if (!canView) {
     return (
-      <AppScreen title={copy('ประวัติการจองโต๊ะ', 'Reservation history')} topLevel={false}>
+      <AppScreen title={copy('ประวัติการจองโต๊ะ', 'Reservation history')} centerTitle topLevel={false}>
         <EmptyState
           title={copy('ไม่มีสิทธิ์ดูประวัติการจอง', 'No permission to view reservations')}
           detail={copy(
@@ -132,23 +151,19 @@ export default function ReservationsScreen() {
     { label: copy(`ยกเลิก ${(counts.cancelled || 0).toLocaleString('th-TH')}`, `Cancelled ${(counts.cancelled || 0).toLocaleString('en-US')}`), value: 'cancelled' },
   ];
   const tabletLayout = width >= breakpoints.tablet;
-  const sectionTitle = filter === 'all' ? copy('รายการจองทั้งหมด', 'All reservations') : statusCopy[filter];
-  const sectionDetail = copy(
-    `แสดง ${reservations.length.toLocaleString('th-TH')} รายการ`,
-    `Showing ${reservations.length.toLocaleString('en-US')} reservations`,
-  );
 
   return (
     <AppScreen
       title={copy('ประวัติการจองโต๊ะ', 'Reservation history')}
-      subtitle={copy(
-        'รายการจอง รับลูกค้า และยกเลิก',
-        'Bookings, seated guests and cancellations',
-      )}
+      centerTitle
       topLevel={false}
       refreshControl={<AppRefreshControl onRefresh={load} />}
+      // The list runs to every booking the restaurant has ever taken, so the
+      // filter that decides what is in it has to stay reachable from the bottom
+      // of it.
+      stickyHeading
+      stickyContent={<ChipGroup value={filter} onChange={setFilter} options={filterOptions} scrollable />}
     >
-      <ChipGroup value={filter} onChange={setFilter} options={filterOptions} scrollable />
       {error ? (
         <Feedback
           title={copy('โหลดประวัติการจองไม่ได้', 'Could not load reservation history')}
@@ -158,7 +173,6 @@ export default function ReservationsScreen() {
       ) : null}
       {tabletLayout ? (
         <Surface>
-          <SectionHeader title={sectionTitle} detail={sectionDetail} />
           {loading && !reservations.length ? (
             <EmptyState title={copy('กำลังโหลดประวัติการจอง', 'Loading reservation history')} />
           ) : reservations.length ? (
@@ -192,8 +206,23 @@ export default function ReservationsScreen() {
                   </View>
                   <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
                     {copy('เบอร์โทร', 'Phone')}: {reservation.phone || '−'}
+                    {reservation.guest_count ? ` · ${copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`)}` : ''}
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg }}>
+                    {/* Only booked-for-later reservations carry a time. A hold
+                        has none by design, and printing an empty field for it
+                        would read as missing data rather than a different kind
+                        of booking. */}
+                    {reservation.reserved_for ? (
+                      <View style={{ minWidth: 130, flex: 1, gap: 2 }}>
+                        <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
+                          {copy('นัดเวลา', 'Arriving')}
+                        </Text>
+                        <Text selectable style={[typeScale.caption, { fontWeight: '700' }]}>
+                          {formatDateTime(reservation.reserved_for, language)}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View style={{ minWidth: 130, flex: 1, gap: 2 }}>
                       <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
                         {copy('จองเมื่อ', 'Reserved at')}
@@ -211,6 +240,26 @@ export default function ReservationsScreen() {
                       </Text>
                     </View>
                   </View>
+                  {reservation.status === 'active' && canResolve ? (
+                    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                      <Button
+                        compact
+                        label={copy('รับลูกค้าแล้ว', 'Guests arrived')}
+                        onPress={() => { void resolve(reservation, 'seated'); }}
+                        loading={resolvingId === reservation.ID}
+                        style={{ flex: 1 }}
+                        variant="secondary"
+                      />
+                      <Button
+                        compact
+                        label={copy('ยกเลิก', 'Cancel')}
+                        onPress={() => { void resolve(reservation, 'cancelled'); }}
+                        loading={resolvingId === reservation.ID}
+                        style={{ flex: 1 }}
+                        variant="secondary"
+                      />
+                    </View>
+                  ) : null}
                 </View>
               ))}
             </View>
@@ -223,7 +272,6 @@ export default function ReservationsScreen() {
         </Surface>
       ) : (
         <View style={{ gap: spacing.md }}>
-          <EdgeSectionHeader title={sectionTitle} detail={sectionDetail} />
           <EdgeSection>
             {loading && !reservations.length ? (
               <View style={{ paddingHorizontal: spacing.lg }}>
@@ -236,10 +284,15 @@ export default function ReservationsScreen() {
                 || copy('ไม่ระบุโต๊ะ', 'Unknown table');
               const guestName = reservation.name || copy('ไม่ระบุชื่อ', 'No guest name');
               const detail = [
-                `${guestName} · ${copy('เบอร์โทร', 'Phone')}: ${reservation.phone || '−'}`,
+                `${guestName} · ${copy('เบอร์โทร', 'Phone')}: ${reservation.phone || '−'}${reservation.guest_count ? ` · ${copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`)}` : ''}`,
+                // Only a scheduled booking has a time to arrive at; a hold does not.
+                ...(reservation.reserved_for
+                  ? [`${copy('นัดเวลา', 'Arriving')}: ${formatDateTime(reservation.reserved_for, language)}`]
+                  : []),
                 `${copy('จองเมื่อ', 'Reserved at')}: ${formatDateTime(reservation.CreatedAt, language)}`,
                 `${copy('ปิดรายการเมื่อ', 'Closed at')}: ${formatDateTime(reservation.resolved_at, language)}`,
               ].join('\n');
+              const isActive = reservation.status === 'active' && canResolve;
 
               return (
                 <EdgeRow
@@ -248,7 +301,32 @@ export default function ReservationsScreen() {
                   detail={detail}
                   icon="calendar-outline"
                   style={{ minHeight: 104 }}
-                  trailing={<StatusBadge label={statusCopy[reservation.status]} tone={statusTone[reservation.status]} />}
+                  // Stacked, not side by side. `EdgeRow`'s trailing slot has no
+                  // flex, so it never shrinks and the title/detail column absorbs
+                  // every pixel it takes. Two Thai labels in a row came to about
+                  // 180dp of a 360dp phone, which left the booking's own name,
+                  // phone and arrival time as a ~90dp ribbon of ellipsis — the
+                  // details the staff member needs in order to know which booking
+                  // they are about to accept. Stacking halves the width and still
+                  // fits the row's 104dp height.
+                  trailing={isActive ? (
+                    <View style={{ alignItems: 'stretch', gap: spacing.sm }}>
+                      <Button
+                        compact
+                        label={copy('รับลูกค้าแล้ว', 'Guests arrived')}
+                        onPress={() => { void resolve(reservation, 'seated'); }}
+                        loading={resolvingId === reservation.ID}
+                        variant="secondary"
+                      />
+                      <Button
+                        compact
+                        label={copy('ยกเลิก', 'Cancel')}
+                        onPress={() => { void resolve(reservation, 'cancelled'); }}
+                        loading={resolvingId === reservation.ID}
+                        variant="secondary"
+                      />
+                    </View>
+                  ) : <StatusBadge label={statusCopy[reservation.status]} tone={statusTone[reservation.status]} />}
                 />
               );
             }) : (

@@ -2,9 +2,11 @@ import { apiRequest } from './client';
 import {
   buildReservationActionPath,
   buildReservationListPath,
+  buildReservationResolvePath,
   type ReservationListQuery,
 } from '@/src/lib/reservation-query';
 import type {
+  Reservation,
   ReservationListResponse,
   ReserveTableInput,
 } from '@/src/types/reservation';
@@ -24,5 +26,13 @@ export function reserveTable(tableId: number, data: ReserveTableInput) {
 export function cancelReservation(tableId: number) {
   return apiRequest<RestaurantTable>(buildReservationActionPath(tableId, 'cancel'), {
     method: 'POST',
+  });
+}
+
+/** Closes one booking as seated or cancelled, whichever kind it is. */
+export function resolveReservation(reservationId: number, status: 'seated' | 'cancelled') {
+  return apiRequest<Reservation>(buildReservationResolvePath(reservationId), {
+    method: 'POST',
+    body: JSON.stringify({ status }),
   });
 }

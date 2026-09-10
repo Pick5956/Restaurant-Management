@@ -1,6 +1,10 @@
 package entity
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 const (
 	TableStatusFree     = "free"
@@ -22,6 +26,13 @@ type RestaurantTable struct {
 	CustomerToken    string `json:"customer_token" gorm:"size:64;uniqueIndex"`
 	ReservationName  string `json:"reservation_name" gorm:"size:80"`
 	ReservationPhone string `json:"reservation_phone" gorm:"size:32"`
+
+	// The next booking this table has coming, attached on list reads and never
+	// stored (`gorm:"-"`). It exists so the floor sees "จอง 16:00" on the table
+	// card itself: a scheduled booking does not take the table out of service,
+	// so without this reminder the only clue it exists is on another screen.
+	UpcomingReservationAt   *time.Time `json:"upcoming_reservation_at,omitempty" gorm:"-"`
+	UpcomingReservationName string     `json:"upcoming_reservation_name,omitempty" gorm:"-"`
 
 	Restaurant *Restaurant `json:"restaurant,omitempty" gorm:"foreignKey:RestaurantID"`
 	TableZone  *TableZone  `json:"table_zone,omitempty" gorm:"foreignKey:ZoneID"`

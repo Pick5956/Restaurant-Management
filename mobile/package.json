@@ -8,6 +8,7 @@
     "@react-native-masked-view/masked-view": "0.3.2",
     "expo": "~57.0.20",
     "expo-audio": "~57.0.4",
+    "expo-blur": "~57.0.2",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
     "expo-file-system": "~57.0.6",
@@ -25,15 +26,13 @@
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-nitro-google-signin": "^2.1.0",
     "react-native-nitro-modules": "^0.37.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
-    "react-native-view-shot": "5.1.0",
-    "react-native-web": "~0.21.0"
+    "react-native-view-shot": "5.1.0"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.0",
@@ -49,8 +48,7 @@
     "build:android:development": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-android-development.ps1",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web",
-    "test": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/lib/ai-actions.test.mjs src/lib/ai-chat.test.mjs src/lib/ai-conversation.test.mjs src/lib/ai-response.test.mjs src/lib/app-font.test.mjs src/lib/app-shell-runtime.test.mjs src/lib/auth-state.test.mjs src/lib/auth-validation.test.mjs src/lib/brand-assets.test.mjs src/lib/display-preferences.test.mjs src/lib/format.test.mjs src/lib/google-sign-in-flow.test.mjs src/lib/home-dashboard.test.mjs src/lib/inventory-form.test.mjs src/lib/kitchen-workflow.test.mjs src/lib/menu-editor.test.mjs src/lib/navigation-runtime.test.mjs src/lib/order-detail-runtime.test.mjs src/lib/orientation-lock.test.mjs src/lib/order-query.test.mjs src/lib/order-workflow.test.mjs src/lib/permission-parity.test.mjs src/lib/printer.test.mjs src/lib/public-web-url.test.mjs src/lib/receipt.test.mjs src/lib/registration-flow.test.mjs src/lib/report-query.test.mjs src/lib/restaurant-settings.test.mjs src/lib/restaurant-types.test.mjs src/lib/session-runtime.test.mjs src/lib/staff-workflow.test.mjs src/lib/table-workflow.test.mjs src/lib/toast-runtime.test.mjs src/lib/work-mode.test.mjs src/storage/session-store.web.test.mjs",
+    "test": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/lib/ai-actions.test.mjs src/lib/ai-chat.test.mjs src/lib/ai-conversation.test.mjs src/lib/ai-response.test.mjs src/lib/app-font.test.mjs src/lib/app-shell-runtime.test.mjs src/lib/auth-state.test.mjs src/lib/auth-validation.test.mjs src/lib/brand-assets.test.mjs src/lib/display-preferences.test.mjs src/lib/format.test.mjs src/lib/google-sign-in-flow.test.mjs src/lib/home-dashboard.test.mjs src/lib/inventory-form.test.mjs src/lib/kitchen-workflow.test.mjs src/lib/menu-editor.test.mjs src/lib/navigation-runtime.test.mjs src/lib/order-detail-runtime.test.mjs src/lib/orientation-lock.test.mjs src/lib/order-query.test.mjs src/lib/order-workflow.test.mjs src/lib/permission-parity.test.mjs src/lib/printer.test.mjs src/lib/public-web-url.test.mjs src/lib/receipt.test.mjs src/lib/registration-flow.test.mjs src/lib/report-query.test.mjs src/lib/reservation-schedule.test.mjs src/lib/restaurant-settings.test.mjs src/lib/restaurant-types.test.mjs src/lib/session-runtime.test.mjs src/lib/staff-workflow.test.mjs src/lib/table-tile-tone.test.mjs src/lib/table-workflow.test.mjs src/lib/toast-runtime.test.mjs src/lib/work-mode.test.mjs",
     "typecheck": "tsc --noEmit",
     "tunnel:backend": "powershell -ExecutionPolicy Bypass -File ./scripts/start-backend-tunnel.ps1"
   },

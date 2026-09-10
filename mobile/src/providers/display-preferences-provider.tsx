@@ -23,6 +23,7 @@ interface DisplayPreferencesContextValue extends DisplayPreferences {
   ready: boolean;
   persistenceStatus: 'loading' | 'saving' | 'saved' | 'memory-only';
   setLanguage: (language: DisplayLanguage) => void;
+  setCompactTables: (compactTables: boolean) => void;
   copy: (thai: string, english: string) => string;
 }
 
@@ -87,16 +88,24 @@ export function DisplayPreferencesProvider({
     [preferences, update],
   );
 
+  const setCompactTables = useCallback(
+    (compactTables: boolean) => {
+      update({ ...preferences, compactTables });
+    },
+    [preferences, update],
+  );
+
   const value = useMemo<DisplayPreferencesContextValue>(
     () => ({
       ...preferences,
       ready,
       persistenceStatus,
       setLanguage,
+      setCompactTables,
       copy: (thai, english) =>
         preferences.language === 'th' ? thai : english,
     }),
-    [persistenceStatus, preferences, ready, setLanguage],
+    [persistenceStatus, preferences, ready, setCompactTables, setLanguage],
   );
 
   return (

@@ -30,9 +30,9 @@ func reservationIntegrationDB(t *testing.T) *gorm.DB {
 		t.Skip("set RESERVATION_DB_TEST_ENABLED=1 to run PostgreSQL reservation transaction tests")
 	}
 
-	_ = godotenv.Load(filepath.Join("..", "..", ".env"))
+	loadReservationDBSettings()
 	for _, key := range []string{"DB_HOST", "DB_USER", "DB_NAME"} {
-		if strings.TrimSpace(os.Getenv(key)) == "" {
+		if strings.TrimSpace(reservationDBSetting(key)) == "" {
 			t.Skipf("reservation database tests enabled, but %s is not configured", key)
 		}
 	}
@@ -64,21 +64,54 @@ func reservationIntegrationDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// loadReservationDBSettings reads .env into a private map instead of into the
+// process environment.
+//
+// `godotenv.Load` used to be called here, which published every key in that file
+// — including the AI provider keys — to the whole test binary. Tests that assert
+// the app behaves correctly with no provider configured then saw one, and since
+// they run with t.Parallel() alongside these, whether they passed depended on
+// scheduling. Nothing outside this file needs those values, so nothing outside
+// this file gets them.
+func loadReservationDBSettings() {
+	reservationDBSettingsOnce.Do(func() {
+		values, err := godotenv.Read(filepath.Join("..", "..", ".env"))
+		if err != nil {
+			return
+		}
+		reservationDBSettings = values
+	})
+}
+
+// reservationDBSetting prefers a real environment variable so CI can override
+// the file, and falls back to what .env carried.
+func reservationDBSetting(key string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(reservationDBSettings[key])
+}
+
+var (
+	reservationDBSettingsOnce sync.Once
+	reservationDBSettings     map[string]string
+)
+
 func openReservationTestDB(t *testing.T, searchPath string) *gorm.DB {
 	t.Helper()
-	port := strings.TrimSpace(os.Getenv("DB_PORT"))
+	port := reservationDBSetting("DB_PORT")
 	if port == "" {
 		port = "5432"
 	}
-	sslMode := strings.TrimSpace(os.Getenv("DB_SSLMODE"))
+	sslMode := reservationDBSetting("DB_SSLMODE")
 	if sslMode == "" {
 		sslMode = "disable"
 	}
 	dsn := &url.URL{
 		Scheme: "postgresql",
-		User:   url.UserPassword(os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD")),
-		Host:   net.JoinHostPort(os.Getenv("DB_HOST"), port),
-		Path:   os.Getenv("DB_NAME"),
+		User:   url.UserPassword(reservationDBSetting("DB_USER"), reservationDBSetting("DB_PASSWORD")),
+		Host:   net.JoinHostPort(reservationDBSetting("DB_HOST"), port),
+		Path:   reservationDBSetting("DB_NAME"),
 	}
 	query := dsn.Query()
 	query.Set("sslmode", sslMode)
@@ -224,6 +257,8 @@ func TestLegacyTableStatusCannotSeatReservationWithoutOpeningOrder(t *testing.T)
 		table.ID,
 		"0812345678",
 		"Arriving guest",
+		2,
+		nil,
 	); err != nil {
 		t.Fatalf("reserve table: %v", err)
 	}
@@ -335,6 +370,8 @@ func TestReserveTableReusesStaleActiveReservation(t *testing.T) {
 		table.ID,
 		"0812345678",
 		"Current guest",
+		2,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("reserve table with stale active lifecycle: %v", err)
@@ -436,6 +473,8 @@ func TestTableMetadataUpdatePreservesExistingLifecycleStatuses(t *testing.T) {
 		reservedTable.ID,
 		"0812345678",
 		"Reserved guest",
+		2,
+		nil,
 	); err != nil {
 		t.Fatalf("reserve table: %v", err)
 	}
@@ -487,6 +526,8 @@ func TestDeleteTableRejectsActiveReservation(t *testing.T) {
 		table.ID,
 		"0812345678",
 		"Waiting guest",
+		2,
+		nil,
 	); err != nil {
 		t.Fatalf("reserve table: %v", err)
 	}
@@ -550,6 +591,8 @@ func TestReservationSeatingSerializesConcurrentOrderOpen(t *testing.T) {
 		table.ID,
 		"0812345678",
 		"Arriving guest",
+		2,
+		nil,
 	); err != nil {
 		t.Fatalf("reserve table: %v", err)
 	}

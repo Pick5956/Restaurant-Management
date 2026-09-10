@@ -219,6 +219,10 @@ export const Composer = forwardRef<NativeTextInput, {
     <TextInput
       ref={ref}
       accessibilityLabel={t('คำถามสำหรับผู้ช่วย', 'Question for the assistant')}
+      // This composer is pinned to the bottom of a KeyboardAvoidingView, so it
+      // already sits directly on the keyboard with its own send button. A Done bar
+      // would slide in underneath it: two bars, the useful one further away.
+      omitKeyboardDoneBar
       multiline
       maxLength={800}
       value={value}

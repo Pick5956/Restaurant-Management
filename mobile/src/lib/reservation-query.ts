@@ -27,3 +27,11 @@ export function buildReservationActionPath(tableId: number, action: 'reserve' | 
   const suffix = action === 'cancel' ? 'cancel-reservation' : 'reserve';
   return `/api/v1/tables/${tableId}/${suffix}`;
 }
+
+/**
+ * Keyed by the booking, not by its table. The paths above only reach a booking
+ * that holds its table, which a scheduled booking never does.
+ */
+export function buildReservationResolvePath(reservationId: number) {
+  return `/api/v1/reservations/${reservationId}/resolve`;
+}

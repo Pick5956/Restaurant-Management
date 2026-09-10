@@ -253,7 +253,15 @@ test('editable order taking uses routed review surfaces at every width', async (
 
   assert.doesNotMatch(detailSource, /\bsplitWorkspace\b/);
   assert.doesNotMatch(detailSource, /width:\s*'40%'/);
-  assert.match(detailSource, /<OrderSummaryAction\b[\s\S]*?\/order\/summary/);
+  // The item count opens the bill, which is now the order summary too: the
+  // separate /order/summary screen was removed rather than kept as a stop on
+  // the way to the same information.
+  assert.match(detailSource, /<OrderSummaryAction\b[\s\S]*?\/order\/bill/);
+  assert.doesNotMatch(detailSource, /\/order\/summary/);
   assert.match(detailSource, /<CurrentRoundBasket\b[\s\S]*?\/order\/current-round/);
-  assert.match(detailSource, /footer=\{currentRoundBasket \|\| actionDock\}/);
+  // The footer carries the current-round basket and nothing else. The billing
+  // dock that used to sit beside it moved to the bill screen, so a reappearance
+  // of `actionDock` here means the bottom bar has crept back over the menu grid.
+  assert.match(detailSource, /footer=\{currentRoundBasket\}/);
+  assert.doesNotMatch(detailSource, /\bactionDock\b/);
 });

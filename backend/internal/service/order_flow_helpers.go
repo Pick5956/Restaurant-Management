@@ -315,12 +315,9 @@ func releaseTableIfNoOpenOrder(tx *repository.OrderRepository, restaurantID uint
 	if hasOpen {
 		return nil
 	}
-	table, err := tx.FindTable(restaurantID, id)
-	if err != nil {
-		return err
-	}
-	table.Status = entity.TableStatusFree
-	return tx.SaveTable(table)
+	// One column, not the whole row. See ReleaseTableStatus: reading the table and
+	// saving it back reverted any edit made to it in between.
+	return tx.ReleaseTableStatus(restaurantID, id)
 }
 
 func isTerminalOrder(status string) bool {

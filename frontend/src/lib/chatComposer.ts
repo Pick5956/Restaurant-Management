@@ -80,9 +80,16 @@ export function useAutoGrowTextarea(value: string) {
 
   // An emptied field collapses back, and so does the expanded state: leaving it
   // open after sending would cover the answer that just arrived.
-  useLayoutEffect(() => {
+  //
+  // Adjusted during render rather than in an effect. An effect would render the
+  // expanded composer once, then immediately render it again collapsed - the
+  // flash React documents this pattern to avoid, and what
+  // `react-hooks/set-state-in-effect` is pointing at.
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    setLastValue(value);
     if (value === "") setExpanded(false);
-  }, [value]);
+  }
 
   return { ref, expanded, setExpanded, canExpand };
 }

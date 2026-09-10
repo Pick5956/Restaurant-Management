@@ -7,11 +7,14 @@ import { listTables } from '@/src/api/table';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
+import { CompactTableTile } from '@/src/components/compact-table-tile';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
-import { Button, ChipGroup, EmptyState, Feedback, SearchField, SectionHeader } from '@/src/components/ui';
+import { Button, EmptyState, Feedback, IconButton, SearchField, SectionHeader, Select } from '@/src/components/ui';
 import { money, tableStatusLabel } from '@/src/lib/format';
 import { can } from '@/src/lib/rbac';
 import { createRequestGeneration, shouldStartRequest } from '@/src/lib/request-generation';
+import { reservationReminder } from '@/src/lib/reservation-schedule';
+import { tableTileStatus } from '@/src/lib/table-tile-tone';
 import { canViewReservationHistory, tableEntryAction } from '@/src/lib/table-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -24,7 +27,9 @@ const activeOrderStatuses = ['open', 'sent_to_kitchen', 'cooking', 'ready', 'ser
 export default function TablesScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
-  const { copy, language } = useDisplayPreferences();
+  // Kept in the stored preferences, not screen state: the choice outlives the
+  // screen, and re-picking it after every app start is a chore.
+  const { copy, language, compactTables: compactView, setCompactTables } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
   const canManageTables = can(activeMembership, 'manage_table');
   const canViewHistory = canViewReservationHistory(
@@ -35,6 +40,8 @@ export default function TablesScreen() {
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState('');
+  // The magnifier hands the filter row over to the field; scrolling hands it back.
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedZone, setSelectedZone] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +134,9 @@ export default function TablesScreen() {
     if (selectedZone !== 'all' && !zones.some((zone) => zone.value === selectedZone)) setSelectedZone('all');
   }, [selectedZone, zones]);
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  // One instant for the whole grid rather than a fresh Date per table, so every
+  // card decides "is this booking today" against the same moment.
+  const now = new Date();
 
   function open(table: RestaurantTable) {
     setNotice(null);
@@ -142,37 +152,123 @@ export default function TablesScreen() {
     router.push({ pathname: '/order/new' as never, params: { tableId: String(table.ID) } } as never);
   }
 
+  // The secondary actions live in the header as icons rather than in the filter
+  // row, which belongs to the zone picker and the magnifier. Each carries its
+  // label for screen readers, the only name an icon-only control has.
+  const headerActions = [
+    // The icon shows the density being switched TO, not the one in use: a
+    // toggle that shows its current state gives you nothing to predict from.
+    <IconButton
+      key="density"
+      accessibilityLabel={compactView ? copy('มุมมองแบบเต็ม', 'Detailed view') : copy('มุมมองแบบย่อ', 'Compact view')}
+      icon={compactView ? 'grid-outline' : 'apps-outline'}
+      onPress={() => setCompactTables(!compactView)}
+    />,
+    canTakeOrder ? <IconButton key="takeaway" accessibilityLabel={copy('ซื้อกลับบ้าน', 'Takeaway')} icon="bag-handle-outline" onPress={() => router.push({ pathname: '/order/new' as never, params: { type: 'takeaway' } } as never)} /> : null,
+    // Neither glyph names this screen on its own: a bare clock reads as
+    // "something about time", and the clipboard that replaced it reads as "a
+    // list" without saying a list of what. The clock rides the clipboard as a
+    // badge so the pair says "the list of bookings", which is what is behind it.
+    canViewHistory ? <IconButton key="history" accessibilityLabel={copy('ประวัติการจองโต๊ะ', 'Reservation history')} badgeIcon="time-outline" icon="clipboard-outline" onPress={() => router.push('/reservations' as never)} /> : null,
+  ].filter(Boolean);
+
+  // The order screen's filter bar, to the letter. Pinned under the heading, one
+  // row rather than two: the zone picker and a magnifier share it, and the
+  // search field takes the picker's place only while it is being used. The row
+  // of zone chips this replaced cost a whole line permanently, and both it and
+  // the search box used to scroll away with the first zone.
+  const zoneFilterBar = zones.length > 1 ? (
+    <>
+      {searchOpen ? (
+        // No close button. Scrolling the map is what ends the search, which is
+        // the gesture already being made to look at the results — a dedicated
+        // dismiss control would only be in the way of the field it sits beside.
+        <SearchField
+          accessibilityLabel={copy('ค้นหาโต๊ะ โซน หรือแท็ก', 'Search tables, zones, or tags')}
+          autoFocus
+          clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
+          value={search}
+          onChangeText={setSearch}
+          placeholder={copy('ค้นหาโต๊ะ', 'Search tables')}
+        />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <View style={{ minWidth: 0, flex: 1 }}>
+            <Select
+              value={selectedZone}
+              onChange={setSelectedZone}
+              options={[{ label: copy('ทุกโซน', 'All zones'), value: 'all' }, ...zones]}
+            />
+          </View>
+          <IconButton
+            accessibilityLabel={copy('ค้นหาโต๊ะ', 'Search tables')}
+            icon="search-outline"
+            onPress={() => setSearchOpen(true)}
+          />
+        </View>
+      )}
+    </>
+  ) : (
+    // With one zone there is nothing to pick, and a dropdown holding a single
+    // dead option is worse than no dropdown. The row gives its width back to the
+    // search field, which is then the only thing the bar is for.
+    <SearchField
+      accessibilityLabel={copy('ค้นหาโต๊ะ โซน หรือแท็ก', 'Search tables, zones, or tags')}
+      clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
+      value={search}
+      onChangeText={setSearch}
+      placeholder={copy('ค้นหาโต๊ะ', 'Search tables')}
+    />
+  );
+
   return (
-    <AppScreen title={copy('รับออเดอร์', 'Order taking')} subtitle={copy(`${tables.length.toLocaleString('th-TH')} โต๊ะ · ${activeOrderByTable.size.toLocaleString('th-TH')} โต๊ะกำลังใช้งาน`, `${tables.length.toLocaleString('en-US')} tables · ${activeOrderByTable.size.toLocaleString('en-US')} in use`)} topLevel refreshControl={<AppRefreshControl onRefresh={load} />} action={canTakeOrder ? <Button compact icon="bag-handle-outline" variant="secondary" label={copy('ซื้อกลับบ้าน', 'Takeaway')} onPress={() => router.push({ pathname: '/order/new' as never, params: { type: 'takeaway' } } as never)} /> : undefined}>
+    // The heading is the one number the floor is actually reading. The screen's
+    // own name went with the total table count: the dock below already says
+    // which screen this is, and a title that never changes is a line spent on
+    // something nobody looks at twice.
+    <AppScreen
+      title={copy(`${activeOrderByTable.size.toLocaleString('th-TH')} โต๊ะกำลังใช้งาน`, `${activeOrderByTable.size.toLocaleString('en-US')} tables in use`)}
+      topLevel
+      refreshControl={<AppRefreshControl onRefresh={load} />}
+      // The same pinned header the order screen uses. The table map runs several
+      // zones long, and both the things you steer it with — the search and the
+      // zone picker — used to scroll away with the first zone, leaving no way to
+      // reach the last one except more scrolling.
+      stickyHeading
+      stickyContent={zoneFilterBar}
+      // Scrolling the map closes the search and hands the row back to the zone
+      // picker. Any typed keyword is cleared with it, so the grid can never stay
+      // filtered by a search box that is no longer on screen.
+      onScrollStart={() => {
+        if (!searchOpen) return;
+        setSearch('');
+        setSearchOpen(false);
+      }}
+      action={headerActions.length ? <View style={{ flexDirection: 'row', gap: spacing.sm }}>{headerActions}</View> : undefined}
+    >
       {error ? <Feedback title={copy('โหลดผังโต๊ะไม่ได้', 'Could not load the table map')} detail={error} tone="danger" /> : null}
       {notice ? <Feedback title={copy('ยังเปิดโต๊ะนี้ไม่ได้', 'This table cannot be opened yet')} detail={notice} tone="warning" /> : null}
       {!canTakeOrder ? <Feedback title={copy('ไม่มีสิทธิ์รับออเดอร์', 'No order-taking permission')} detail={copy('เลือกโหมดงานอื่นที่บัญชีนี้ได้รับอนุญาตจากเมนูด้านล่าง', 'Choose another work mode allowed for this account from the menu below.')} tone="info" /> : null}
-      <View style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <View style={{ minWidth: 0, flex: 1 }}>
-            <SearchField accessibilityLabel={copy('ค้นหาโต๊ะ โซน หรือแท็ก', 'Search tables, zones, or tags')} clearLabel={copy('ล้างคำค้นหา', 'Clear search')} value={search} onChangeText={setSearch} placeholder={copy('ค้นหาโต๊ะ', 'Search tables')} />
-          </View>
-          {canTakeOrder ? <Button compact icon="calendar-outline" variant="secondary" label={copy('จองโต๊ะ', 'Reserve')} onPress={() => router.push('/table-reservation' as never)} /> : null}
-          {canViewHistory ? <Button compact icon="time-outline" variant="secondary" label={copy('ประวัติจอง', 'History')} onPress={() => router.push('/reservations' as never)} /> : null}
-        </View>
-        {zones.length > 1 ? (
-          <ChipGroup
-            label={copy('เลือกโซน', 'Select zone')}
-            scrollable
-            value={selectedZone}
-            onChange={setSelectedZone}
-            options={[
-              { label: copy('ทุกโซน', 'All zones'), value: 'all' },
-              ...zones,
-            ]}
-          />
-        ) : null}
-      </View>
       <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.xl }}>
         <View style={{ minWidth: 0, flex: 1, gap: spacing.xl }}>
-          {groups.map((group) => (
+          {groups.map((group) => {
+            // Free out of total, not the total alone. "12 โต๊ะ" is a fact about
+            // the restaurant that never changes during service; how many of them
+            // can take someone right now is the question being asked of this
+            // screen. Counted the same way the tiles are painted, so the number
+            // and the green cards under it can never disagree.
+            const freeCount = group.tables.filter(
+              (table) => tableTileStatus(table.status, activeOrderByTable.has(table.ID)) === 'free',
+            ).length;
+            return (
             <View key={group.key} style={{ gap: spacing.md }}>
-              <SectionHeader title={group.label} detail={copy(`${group.tables.length.toLocaleString('th-TH')} โต๊ะ`, `${group.tables.length.toLocaleString('en-US')} tables`)} />
+              <SectionHeader
+                title={group.label}
+                inlineDetail={copy(
+                  `ว่าง ${freeCount.toLocaleString('th-TH')} จาก ${group.tables.length.toLocaleString('th-TH')}`,
+                  `${freeCount.toLocaleString('en-US')} of ${group.tables.length.toLocaleString('en-US')} free`,
+                )}
+              />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
                 {group.tables.map((table) => {
                   const order = activeOrderByTable.get(table.ID);
@@ -180,24 +276,55 @@ export default function TablesScreen() {
                   // matching web POS. On the floor green means "free", so tinting a
                   // busy table green misreads at a glance, which is the whole job of
                   // this tile.
-                  const tone = order ? 'warning' : table.status === 'reserved' ? 'info' : table.status === 'inactive' ? 'neutral' : 'success';
-                  const tint = statusTone(tone);
                   const statusLabel = order
                     ? copy('กำลังใช้งาน', 'In use')
                     : tableStatusLabel(table.status, language);
+                  const reminder = reservationReminder(table.upcoming_reservation_at, now, language);
+                  const accessibilityLabel = copy(
+                    `โต๊ะ ${table.display_label || table.table_number}, ${order ? 'กำลังใช้งาน' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
+                    `Table ${table.display_label || table.table_number}, ${order ? 'in use' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
+                  );
+                  if (compactView) {
+                    // Three to a row, and only what tells the floor whether it can
+                    // seat someone: which table, and whether it is taken. The
+                    // booking reminder stays because losing it is the difference
+                    // between a warning and no warning, but the guest count, order
+                    // number and running total are all detail for a screen you have
+                    // already decided to open.
+                    return (
+                      <CompactTableTile
+                        accessibilityLabel={accessibilityLabel}
+                        flexBasis={tabletWorkspace ? 116 : 'auto'}
+                        flexGrow={tabletWorkspace ? 1 : 0}
+                        key={table.ID}
+                        label={table.display_label || table.table_number}
+                        language={language}
+                        maxWidth={tabletWorkspace ? 160 : undefined}
+                        minWidth={tabletWorkspace ? 108 : 0}
+                        onPress={() => open(table)}
+                        status={tableTileStatus(table.status, Boolean(order))}
+                        statusLabel={statusLabel}
+                        upcomingReservationAt={table.upcoming_reservation_at}
+                        width={tabletWorkspace ? undefined : '31%'}
+                      />
+                    );
+                  }
+                  // The detailed card, unchanged. It is the only reader of
+                  // statusTone here — the compact tile carries its own map, so
+                  // repainting one view could never repaint the other.
+                  const tone = order ? 'warning' : table.status === 'reserved' ? 'info' : table.status === 'inactive' ? 'neutral' : 'success';
+                  const tint = statusTone(tone);
                   return (
                     <Pressable
-                      accessibilityLabel={copy(
-                        `โต๊ะ ${table.display_label || table.table_number}, ${order ? 'กำลังใช้งาน' : tableStatusLabel(table.status, language)}`,
-                        `Table ${table.display_label || table.table_number}, ${order ? 'in use' : tableStatusLabel(table.status, language)}`,
-                      )}
+                      accessibilityLabel={accessibilityLabel}
                       accessibilityRole="button"
                       key={table.ID}
                       onPress={() => open(table)}
                       // Phones get an exact two-column grid; tablets may grow to fill a
                       // row but are capped, so one card left over on the last row keeps
                       // the size of every other card instead of spanning the workspace.
-                      style={({ pressed }) => ({ width: tabletWorkspace ? undefined : '48%', minWidth: tabletWorkspace ? 164 : 0, maxWidth: tabletWorkspace ? 260 : undefined, minHeight: 148, flexGrow: tabletWorkspace ? 1 : 0, flexBasis: tabletWorkspace ? 176 : 'auto', gap: spacing.sm, borderWidth: 1, borderColor: tint.borderColor, borderRadius: radius.md, backgroundColor: tint.backgroundColor, padding: spacing.md, opacity: pressed ? 0.72 : 1, transform: [{ translateY: pressed ? 1 : 0 }] })}
+                      //
+                      style={({ pressed }) => ({ width: tabletWorkspace ? undefined : '48%', minWidth: tabletWorkspace ? 164 : 0, maxWidth: tabletWorkspace ? 260 : undefined, minHeight: 148, flexGrow: tabletWorkspace ? 1 : 0, flexBasis: tabletWorkspace ? 176 : 'auto', gap: spacing.sm, borderWidth: 1, borderColor: tint.backgroundColor, borderRadius: radius.md, backgroundColor: tint.backgroundColor, padding: spacing.md, opacity: pressed ? 0.72 : 1, transform: [{ translateY: pressed ? 1 : 0 }] })}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                         <Text selectable numberOfLines={1} style={{ minWidth: 0, flex: 1, color: tint.color, fontSize: 23, fontWeight: '800', lineHeight: 30 }}>{table.display_label || table.table_number}</Text>
@@ -207,10 +334,23 @@ export default function TablesScreen() {
                         <View style={{ width: 8, height: 8, borderRadius: radius.full, backgroundColor: tint.color }} />
                         <Text selectable numberOfLines={1} style={[typeScale.caption, { minWidth: 0, flex: 1, color: tint.color, fontWeight: '700' }]}>{statusLabel}</Text>
                       </View>
-                      <Text selectable numberOfLines={2} style={[typeScale.caption, { color: palette.muted }]}>{order
-                        ? copy(`${order.customer_count.toLocaleString('th-TH')} คน`, `${order.customer_count.toLocaleString('en-US')} guests`)
-                        : copy(`${table.capacity.toLocaleString('th-TH')} ที่นั่ง`, `${table.capacity.toLocaleString('en-US')} seats`)}
-                      {table.tags?.length ? ` · ${table.tags.map((tag) => tag.name).join(', ')}` : ''}</Text>
+                      {/* The booking shares the seats line rather than taking one
+                          of its own. A line of its own grew the card, and because
+                          a wrapped row stretches to its tallest tile that pushed
+                          every card beside it out with empty space. Tags give way
+                          to it: a table someone is coming for outranks decoration. */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                        <Text selectable numberOfLines={1} style={[typeScale.caption, { minWidth: 0, flex: 1, color: palette.muted }]}>{order
+                          ? copy(`${order.customer_count.toLocaleString('th-TH')} คน`, `${order.customer_count.toLocaleString('en-US')} guests`)
+                          : copy(`${table.capacity.toLocaleString('th-TH')} ที่นั่ง`, `${table.capacity.toLocaleString('en-US')} seats`)}
+                        {!reminder && table.tags?.length ? ` · ${table.tags.map((tag) => tag.name).join(', ')}` : ''}</Text>
+                        {reminder ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                            <AppIcon color={palette.info} name="time-outline" size={13} />
+                            <Text selectable numberOfLines={1} style={[typeScale.caption, { color: palette.info, fontWeight: '700' }]}>{reminder}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <View style={{ flex: 1 }} />
                       {order ? (
                         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
@@ -227,7 +367,8 @@ export default function TablesScreen() {
                 })}
               </View>
             </View>
-          ))}
+            );
+          })}
         </View>
       </View>
       {!loading && !groups.length ? <EmptyState title={copy('ไม่พบโต๊ะ', 'No tables found')} detail={tables.length ? copy('ลองเปลี่ยนคำค้น', 'Try a different search.') : canManageTables ? copy('สร้างโต๊ะในหน้าจัดการโต๊ะก่อนรับออเดอร์', 'Create tables in Table management before taking orders.') : copy('ร้านนี้ยังไม่มีโต๊ะที่พร้อมรับออเดอร์', 'This restaurant has no tables ready for orders yet.')} action={canManageTables ? <Button label={copy('ไปหน้าจัดการโต๊ะ', 'Open Table management')} onPress={() => router.push('/table-management')} /> : undefined} /> : null}

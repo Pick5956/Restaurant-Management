@@ -8,7 +8,7 @@ import { addOrderItem, getBill, payOrder, updateOrderItemStatus } from '@/src/ap
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
-import { ActionDock, Button, ChipGroup, Divider, EmptyState, Feedback, SearchField, SectionHeader, Select, StatusBadge, Surface, TextField } from '@/src/components/ui';
+import { ActionDock, Button, Divider, EmptyState, Feedback, RadioGroup, SearchField, SectionHeader, Select, StatusBadge, TextField } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
 import { selectOrderItemImage } from '@/src/lib/order-detail-runtime';
 import {
@@ -45,6 +45,15 @@ function hasRequiredOptions(item: MenuItem) {
   );
 }
 
+/**
+ * The bill screen groups without drawing boxes. A card border here costs the
+ * item rows a chunk of width on both sides for no gain: a bill is one continuous
+ * document, and its parts are already separated by their headings.
+ */
+function Panel({ children }: { children: React.ReactNode }) {
+  return <View style={{ gap: spacing.md }}>{children}</View>;
+}
+
 export default function BillScreen() {
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -58,6 +67,11 @@ export default function BillScreen() {
   const canViewOrders = can(activeMembership, 'view_orders');
   const canAccessBill = canViewOrders || canTakeOrder || canPay;
   const [bill, setBill] = useState<Bill | null>(null);
+  // Set when a post-mutation re-read fails, so the totals on screen are known to
+  // be behind the server. `pay()` sends `bill.grand_total` as the amount received
+  // for a cash payment, so paying from a stale bill records money that was never
+  // taken and change that was never given.
+  const [billStale, setBillStale] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState('all');
@@ -145,7 +159,9 @@ export default function BillScreen() {
     setMessage(successMessage);
     try {
       setBill(await getBill(orderId));
+      setBillStale(false);
     } catch (err) {
+      setBillStale(true);
       setError(err instanceof Error
         ? copy(`${successMessage} แต่โหลดบิลล่าสุดไม่สำเร็จ: ${err.message}`, `${successMessage}, but the latest bill could not be loaded: ${err.message}`)
         : copy(`${successMessage} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${successMessage}, but the latest bill could not be loaded`));
@@ -257,7 +273,7 @@ export default function BillScreen() {
 
   if (!canAccessBill) {
     return (
-      <AppScreen title={copy('บิลและการชำระเงิน', 'Bill and payment')} topLevel={false}>
+      <AppScreen title={copy('สรุปคำสั่งซื้อ', 'Order summary')} topLevel={false}>
         <EmptyState
           title={copy('ไม่มีสิทธิ์ดูบิล', 'No permission to view bills')}
           detail={copy('ต้องมีสิทธิ์รับออเดอร์ ดูออเดอร์ หรือรับชำระเงิน', 'The take_order, view_orders, or take_payment permission is required.')}
@@ -268,7 +284,7 @@ export default function BillScreen() {
 
   if (!validOrderId) {
     return (
-      <AppScreen title={copy('บิลและการชำระเงิน', 'Bill and payment')} topLevel={false}>
+      <AppScreen title={copy('สรุปคำสั่งซื้อ', 'Order summary')} topLevel={false}>
         <EmptyState
           title={copy('ไม่พบบิลนี้', 'Bill not found')}
           detail={copy('รหัสออเดอร์ไม่ถูกต้อง กรุณากลับไปเลือกรายการใหม่', 'The order ID is invalid. Go back and choose an order again.')}
@@ -280,19 +296,19 @@ export default function BillScreen() {
   if (!bill) {
     return (
       <AppScreen
-        title={copy('บิลและการชำระเงิน', 'Bill and payment')}
+        title={copy('สรุปคำสั่งซื้อ', 'Order summary')}
         subtitle={loading ? copy('กำลังโหลดบิล', 'Loading bill') : copy('ไม่พบบิล', 'Bill unavailable')}
         topLevel={false}
       >
         {error ? (
           <Feedback title={copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill')} detail={error} tone="danger" />
         ) : loading ? (
-          <Surface>
+          <Panel>
             <EmptyState
               title={copy('กำลังเตรียมบิล', 'Preparing the bill')}
               detail={copy('ระบบกำลังตรวจรายการและยอดล่าสุด', 'Checking the latest items and totals.')}
             />
-          </Surface>
+          </Panel>
         ) : (
           <EmptyState
             title={copy('ไม่พบบิลนี้', 'Bill not found')}
@@ -341,13 +357,13 @@ export default function BillScreen() {
       label={copy('ยืนยันรับชำระเงิน', 'Confirm payment')}
       onPress={pay}
       loading={saving}
-      disabled={!paymentReady || editing || (method === 'promptpay_qr' && !bill.promptpay_qr_image)}
+      disabled={!paymentReady || editing || billStale || (method === 'promptpay_qr' && !bill.promptpay_qr_image)}
     />
   );
   const exitAction = <Button icon="arrow-back" label={exitLabel} onPress={exitBill} />;
 
   const billItemsPanel = (
-    <Surface>
+    <Panel>
       <SectionHeader
         title={bill.order.table?.display_label || (bill.order.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : bill.order.order_number)}
         detail={copy(
@@ -472,11 +488,11 @@ export default function BillScreen() {
           }}
         />
       ) : null}
-    </Surface>
+    </Panel>
   );
 
   const addServedItemPanel = adding && editing && canEditBill ? (
-    <Surface>
+    <Panel>
       <SectionHeader
         title={copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add a served item')}
         detail={copy('รายการนี้จะไม่ส่งเข้าครัวและจะพร้อมคิดเงินทันที', 'This item skips the kitchen and is immediately ready for payment.')}
@@ -553,38 +569,28 @@ export default function BillScreen() {
           detail={copy('ลองเปลี่ยนหมวดหรือคำค้น', 'Try another category or search.')}
         />
       ) : null}
-    </Surface>
+    </Panel>
   ) : null;
 
-  const billSummaryPanel = (
-    <Surface>
-      <SectionHeader
-        title={copy('สรุปยอด', 'Bill summary')}
-        detail={copy('ตรวจยอดทั้งหมดก่อนเลือกวิธีชำระ', 'Review the full amount before choosing a payment method.')}
-      />
+  // Only worth a card when it breaks the total into parts. With no discount,
+  // service charge or VAT the single row IS the total, and the footer already
+  // states that — printing it twice is how the same figure ended up on screen
+  // four times over.
+  const billSummaryPanel = summaryRows.length > 1 ? (
+    <Panel>
+      <SectionHeader title={copy('สรุปยอด', 'Bill summary')} />
       {summaryRows.map(([label, value]) => (
         <View key={label} style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.md }}>
           <Text selectable style={[typeScale.body, { flex: 1, color: palette.muted }]}>{label}</Text>
           <Text selectable style={typeScale.cardTitle}>{value}</Text>
         </View>
       ))}
-      <View style={{ gap: spacing.xs, borderTopWidth: 1, borderTopColor: palette.border, paddingTop: spacing.lg }}>
-        <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดสุทธิ', 'Grand total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 30, lineHeight: 38 }]}>{money(bill.grand_total, language)}</Text>
-      </View>
-    </Surface>
-  );
+    </Panel>
+  ) : null;
 
   const paymentPanel = paymentStage === 'due' && canPay ? (
-    <Surface>
-      <SectionHeader
-        title={copy('วิธีชำระเงิน', 'Payment method')}
-        detail={copy('เลือกวิธีรับเงิน แล้วตรวจยอดคงเหลือก่อนยืนยัน', 'Choose how to collect payment, then check the amount due.')}
-      />
-      <View style={{ gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: palette.border, paddingBottom: spacing.lg }}>
-        <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดคงเหลือ', 'Amount due')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 32, lineHeight: 40 }]}>{money(bill.grand_total, language)}</Text>
-      </View>
+    <Panel>
+      <SectionHeader title={copy('วิธีชำระเงิน', 'Payment method')} />
       {undelivered.length > 0 ? (
         <Feedback
           title={copy('ยังมีรายการที่ครัวทำไม่เสร็จ', 'Some items are still being prepared')}
@@ -592,20 +598,20 @@ export default function BillScreen() {
           tone="warning"
         />
       ) : null}
-      <ChipGroup
-        label={copy('เลือกวิธีรับเงิน', 'Choose payment method')}
+      <RadioGroup
         value={method}
         onChange={setMethod}
         options={[
           { label: copy('เงินสด', 'Cash'), value: 'cash' },
-          { label: 'PromptPay QR', value: 'promptpay_qr' },
+          // Says why it cannot be picked on the row itself. Previously the
+          // option looked available and the reason only appeared after choosing
+          // it, which is late: the restaurant has to go and set the QR up.
+          bill.promptpay_qr_image
+            ? { label: 'PromptPay QR', value: 'promptpay_qr' as const }
+            : { label: copy('PromptPay QR — ไม่พร้อมใช้งาน', 'PromptPay QR — unavailable'), value: 'promptpay_qr' as const, disabled: true },
         ]}
       />
-      {method === 'cash' ? (
-        <Text selectable style={[typeScale.body, { color: palette.muted }]}>
-          {copy('รับเงินสดตามยอดคงเหลือที่แสดงด้านบน', 'Collect the exact amount due shown above in cash.')}
-        </Text>
-      ) : (
+      {method === 'cash' ? null : (
         <View style={{ alignItems: 'center', gap: spacing.md }}>
           {bill.promptpay_qr_image ? (
             <Image
@@ -626,9 +632,9 @@ export default function BillScreen() {
         </View>
       )}
       {splitWorkspace ? confirmPaymentAction : null}
-    </Surface>
+    </Panel>
   ) : paymentStage === 'paid' ? (
-    <Surface style={{ borderColor: palette.success }}>
+    <Panel>
       <SectionHeader
         title={copy('ชำระเงินเรียบร้อย', 'Payment complete')}
         detail={copy('ออเดอร์ปิดแล้ว พิมพ์ใบเสร็จให้ลูกค้า หรือกลับไปทำรายการถัดไป', 'The order is closed. Print the receipt or continue to the next task.')}
@@ -648,9 +654,9 @@ export default function BillScreen() {
         />
       ) : null}
       {splitWorkspace ? exitAction : null}
-    </Surface>
+    </Panel>
   ) : (
-    <Surface>
+    <Panel>
       <SectionHeader title={copy('สถานะการชำระเงิน', 'Payment status')} />
       <View style={{ gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: palette.border, paddingBottom: spacing.lg }}>
         <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดคงเหลือ', 'Amount due')}</Text>
@@ -661,20 +667,26 @@ export default function BillScreen() {
         detail={copy('กรุณาให้แคชเชียร์หรือผู้จัดการดำเนินการต่อ', 'Ask a cashier or manager to continue.')}
         tone="info"
       />
-    </Surface>
+    </Panel>
   );
 
+  // The one place the total is stated on this screen, so it gets a line to
+  // itself with the action full width beneath, rather than the two sharing a row.
   const phoneFooter = !splitWorkspace && paymentStage === 'due' && canPay && !editing ? (
-    <ActionDock label={copy('ยอดคงเหลือ', 'Amount due')} value={money(bill.grand_total, language)}>
+    <View style={{ gap: spacing.md, borderTopWidth: 1, borderTopColor: palette.border, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md }}>
+        <Text selectable style={[typeScale.body, { color: palette.text, fontWeight: '400' }]}>{copy('รวมทั้งหมด', 'Total')}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '700' }]}>{money(bill.grand_total, language)}</Text>
+      </View>
       {confirmPaymentAction}
-    </ActionDock>
+    </View>
   ) : !splitWorkspace && paymentStage === 'paid' ? (
     <ActionDock>{exitAction}</ActionDock>
   ) : undefined;
 
   return (
     <AppScreen
-      title={copy('บิลและการชำระเงิน', 'Bill and payment')}
+      title={copy('สรุปคำสั่งซื้อ', 'Order summary')}
       subtitle={bill.order.order_number}
       topLevel={false}
       contentMaxWidth={splitWorkspace ? 1240 : 720}

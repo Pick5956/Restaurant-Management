@@ -90,7 +90,13 @@ test('iPad order taking gives the full workspace to the table grid without chang
   const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /\battentionTables\b|โต๊ะที่ต้องดูต่อ|Tables in progress/);
-  assert.equal(source.match(/onPress=\{\(\) => open\(table\)\}/g)?.length, 1);
+  // Every table comes from one walk over one list. The density toggle renders
+  // two tile shapes from inside that walk and returns early for the compact
+  // one, so a table can still only appear once; a second `.map` over the tables
+  // would mean it is being drawn in two places again, which is the pile-up this
+  // test was written to stop.
+  assert.equal(source.match(/group\.tables\.map\(/g)?.length, 1);
+  assert.equal(source.match(/onPress=\{\(\) => open\(table\)\}/g)?.length, 2);
   assert.match(source, /width:\s*tabletWorkspace \? undefined : '48%'/);
   assert.match(source, /minWidth:\s*tabletWorkspace \? 164 : 0/);
   assert.match(source, /flexBasis:\s*tabletWorkspace \? 176 : 'auto'/);

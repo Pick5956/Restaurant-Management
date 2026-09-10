@@ -40,6 +40,7 @@ func SetupMenuTableRoutes(v1 *gin.RouterGroup) {
 	v1.DELETE("/tables/:id", tableCtrl.DeleteTable)
 
 	v1.GET("/reservations", reservationCtrl.ListReservations)
+	v1.POST("/reservations/:id/resolve", reservationCtrl.ResolveReservation)
 
 	v1.GET("/table-zones", tableCtrl.ListZones)
 	v1.POST("/table-zones", tableCtrl.CreateZone)

@@ -408,7 +408,7 @@ export default function RoleEditorScreen() {
       subtitle={heading.subtitle}
       topLevel={false}
       footer={!tabletWorkspace ? (
-        <ActionDock showTopBorder={false}>
+        <ActionDock separated={false}>
           <Button
             icon="checkmark"
             label={editing ? copy('บันทึกบทบาท', 'Save role') : copy('เพิ่มบทบาท', 'Add role')}

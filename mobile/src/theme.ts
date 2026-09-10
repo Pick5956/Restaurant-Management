@@ -25,39 +25,70 @@ export const breakpoints = {
 
 export const radius = {
   sm: 4,
-  md: 6,
+  // 12 to match `rounded-xl` on the web POS header, which is the reference for
+  // how controls are shaped across both platforms.
+  md: 12,
   full: 999,
 } as const;
 
+/**
+ * The lift under an interactive control. Same shape as the web POS header —
+ * two layers at zero offset, so it reads as a soft glow rather than a shadow
+ * cast downward — but NOT the same values, and that difference is deliberate.
+ *
+ * The web draws `rgba(15,23,42,.04/.06)` (cool slate) over a `slate-100` page
+ * with pale borders. Here the canvas is warm cream `#FFF7ED` and controls carry
+ * a solid `#C77948` border. At those opacities the shadow lands within ~13/255
+ * of the canvas while the border sits ~126/255 away from it: the border is an
+ * order of magnitude louder and the shadow is simply not perceptible.
+ *
+ * So the colour is the warm dark this app already uses for shadows elsewhere,
+ * and the opacity is lifted. At its darkest the wide layer now lands ~22/255
+ * from the canvas: the web's value read ~12 and was invisible, ~33 read as
+ * heavy. Tune here and nowhere else; a small y-offset is the next dial if more
+ * lift is wanted without more weight.
+ *
+ * `boxShadow` needs React Native 0.76+; this app is on 0.86.
+ */
+export const controlShadow = {
+  boxShadow:
+    '0 0 2px rgba(61, 43, 31, 0.07), 0 0 16px rgba(61, 43, 31, 0.11)',
+} as const;
+
+// Line heights are sized for Thai, not Latin. Thai stacks tone marks above the
+// consonant and sara below it, so a ratio that looks generous in English clips
+// the marks here: React Native crops whatever falls outside the line box, and
+// the loss is silent. 1.5-1.6x is the floor; anything tighter ate the tone mark
+// on words like "น้ำมะนาวโซดา".
 export const typeScale = StyleSheet.create({
   hero: {
     color: palette.textStrong,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
-    lineHeight: 31,
+    lineHeight: 28,
     letterSpacing: -0.3,
   },
   title: {
     color: palette.textStrong,
     fontSize: 18,
     fontWeight: '700',
-    lineHeight: 25,
+    lineHeight: 28,
   },
   cardTitle: {
     color: palette.text,
     fontSize: 15,
     fontWeight: '700',
-    lineHeight: 21,
+    lineHeight: 23,
   },
   body: {
     color: palette.text,
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 22,
   },
   caption: {
     color: palette.text,
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 20,
   },
   number: {
     color: palette.textStrong,

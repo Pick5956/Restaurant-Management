@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 24
+	CurrentSchemaVersion int64 = 27
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -466,6 +466,89 @@ func schemaMigrationPlan() []SchemaMigration {
 						CHECK (action_type IN ('adjust_ingredient_stock','set_ingredient_min_stock','set_ingredient_cost','create_ingredient','set_menu_availability','create_expense','set_menu_price','create_menu_item'))`,
 				).Error; err != nil {
 					return fmt.Errorf("recreate AI action type constraint: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 25,
+			Name:    "reservation_reserved_for",
+			Up: func(ctx *MigrationContext) error {
+				// Additive and nullable on purpose: every reservation written
+				// before this migration was a hold-the-table-now booking, and a
+				// null `reserved_for` is exactly how that is spelled afterwards.
+				// Nothing has to be backfilled and no existing row changes meaning.
+				for _, statement := range []string{
+					`ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reserved_for TIMESTAMPTZ`,
+					`CREATE INDEX IF NOT EXISTS idx_reservations_reserved_for ON reservations (restaurant_id, reserved_for)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add reservation booking time: %w", err)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 26,
+			Name:    "reservation_guest_count",
+			Up: func(ctx *MigrationContext) error {
+				// NOT NULL with a default so existing rows land on 1 rather than
+				// null: a booking made before this column existed had a party
+				// size, it just was not written down, and 1 is the honest floor.
+				// The CHECK is added after the backfill for the same reason.
+				for _, statement := range []string{
+					`ALTER TABLE reservations ADD COLUMN IF NOT EXISTS guest_count BIGINT NOT NULL DEFAULT 1`,
+					`UPDATE reservations SET guest_count = 1 WHERE guest_count IS NULL OR guest_count < 1`,
+					`ALTER TABLE reservations DROP CONSTRAINT IF EXISTS chk_reservations_guest_count_positive`,
+					`ALTER TABLE reservations ADD CONSTRAINT chk_reservations_guest_count_positive CHECK (guest_count > 0)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add reservation guest count: %w", err)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 27,
+			Name:    "reservation_one_active_slot",
+			Up: func(ctx *MigrationContext) error {
+				// The backfill is not optional. Until now nothing stopped the same
+				// booking being filed twice, so live databases already hold
+				// duplicates — and CREATE UNIQUE INDEX on those fails, which would
+				// take the backend down on boot rather than at deploy time.
+				//
+				// The oldest row of each group survives because it is the one the
+				// staff saw succeed; the later copies are the accidental repeats.
+				// They are cancelled rather than deleted so the history screen can
+				// still show what happened, which is the whole point of this table.
+				//
+				// Holds are excluded throughout: `reserved_for IS NULL` rows are
+				// the table's current hold, at most one of which is meaningful, and
+				// reconcileActiveReservationsForUpdate already owns that case.
+				for _, statement := range []string{
+					`UPDATE reservations AS duplicate
+					    SET status = 'cancelled', resolved_at = NOW(), updated_at = NOW()
+					  WHERE duplicate.status = 'active'
+					    AND duplicate.reserved_for IS NOT NULL
+					    AND duplicate.deleted_at IS NULL
+					    AND EXISTS (
+					        SELECT 1 FROM reservations AS kept
+					         WHERE kept.restaurant_id = duplicate.restaurant_id
+					           AND kept.table_id = duplicate.table_id
+					           AND kept.reserved_for = duplicate.reserved_for
+					           AND kept.status = 'active'
+					           AND kept.deleted_at IS NULL
+					           AND kept.id < duplicate.id
+					    )`,
+					`CREATE UNIQUE INDEX IF NOT EXISTS idx_reservations_one_active_slot
+					     ON reservations (restaurant_id, table_id, reserved_for)
+					  WHERE reserved_for IS NOT NULL AND status = 'active' AND deleted_at IS NULL`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("enforce one active reservation per slot: %w", err)
+					}
 				}
 				return nil
 			},

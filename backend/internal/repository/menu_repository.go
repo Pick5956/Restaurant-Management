@@ -76,8 +76,20 @@ func (r *MenuRepository) UpdateCategory(category *entity.Category) error {
 	return r.db.Save(category).Error
 }
 
+// DeleteCategory hard-deletes the row (Unscoped) so its (restaurant, name)
+// unique slot is freed and the same name can be created again later.
+//
+// `idx_category_restaurant_name` is a plain unique index, not a partial one, so
+// it goes on holding the name of a soft-deleted row — a category deleted by
+// mistake could never be recreated, and the owner would get "category already
+// exists" for a name nothing on screen uses. The caller has already refused to
+// delete a category any menu item still references, so there is nothing left
+// pointing at this row. Same fix, same reason, as
+// IngredientRepository.DeleteCategory.
 func (r *MenuRepository) DeleteCategory(category *entity.Category) error {
-	return r.db.Delete(category).Error
+	return r.db.Unscoped().
+		Where("restaurant_id = ? AND id = ?", category.RestaurantID, category.ID).
+		Delete(&entity.Category{}).Error
 }
 
 func (r *MenuRepository) CategoryInUse(restaurantID, categoryID uint) (bool, error) {

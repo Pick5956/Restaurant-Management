@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, TextInput, useWindowDimensions, View } from 'react-native';
+import { Alert, useWindowDimensions, View } from 'react-native';
 
 import { createIngredientCategory, deleteIngredientCategory, listIngredientCategories, updateIngredientCategory } from '@/src/api/ingredient';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
+import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { Button, Divider, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, SectionHeader, Surface, TextField } from '@/src/components/ui';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';

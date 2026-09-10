@@ -41,7 +41,10 @@ func tableFromRequest(repo *repository.TableRepository, restaurantID uint, req *
 	if err != nil {
 		return nil, nil, err
 	}
-	label := tableLabel(zone, next)
+	next, label, err := nextFreeTableLabel(repo, restaurantID, zone, next)
+	if err != nil {
+		return nil, nil, err
+	}
 	customerToken, err := GenerateCustomerTableToken()
 	if err != nil {
 		return nil, nil, err
@@ -74,6 +77,38 @@ func isValidReservationPhone(phone string) bool {
 		}
 	}
 	return digits >= 9
+}
+
+// reservationPhoneDigits reduces a phone to what identifies the guest, so the
+// separators a staffer happens to type are not part of the comparison.
+func reservationPhoneDigits(phone string) string {
+	digits := make([]rune, 0, len(phone))
+	for _, char := range phone {
+		if char >= '0' && char <= '9' {
+			digits = append(digits, char)
+		}
+	}
+	return string(digits)
+}
+
+// sameReservationPhone decides whether two bookings are for the same guest.
+// `081-234-5678` and `0812345678` are one person; treating them as two is how a
+// duplicate slips through the guard that is meant to catch it.
+func sameReservationPhone(left, right string) bool {
+	return reservationPhoneDigits(left) == reservationPhoneDigits(right)
+}
+
+// normalizeReservationGuestCount keeps the column's CHECK satisfiable from any
+// caller. Zero is what an older client that does not send the field looks like,
+// and it means "not stated", not "nobody".
+func normalizeReservationGuestCount(guestCount int) int {
+	if guestCount < 1 {
+		return 1
+	}
+	if guestCount > 9999 {
+		return 9999
+	}
+	return guestCount
 }
 
 func validateTableCanBeReserved(status string) error {
@@ -160,6 +195,40 @@ func zoneContext(repo *repository.TableRepository, restaurantID uint, zoneID *ui
 		return nil, nil, errors.New("table zone not found")
 	}
 	return zone, &zone.ID, nil
+}
+
+// nextFreeTableLabel advances the zone's sequence past any label the restaurant
+// is already using, and returns the sequence and label to create with.
+//
+// Sequences are per zone but `table_number` is unique per restaurant, so two
+// zones reach the same label independently: zone-less tables are `T<n>` and a
+// zone whose prefix is "T" is `T%02d`, identical from 10 upwards. The insert
+// then fails on the unique index and the owner is told the table already exists
+// while looking at a screen where no such table is visible — with no way to get
+// past it, because the sequence never moves.
+//
+// Bounded: if this many consecutive labels are taken, something is wrong and an
+// honest error beats spinning.
+const maxTableLabelProbes = 500
+
+func nextFreeTableLabel(
+	repo *repository.TableRepository,
+	restaurantID uint,
+	zone *entity.TableZone,
+	sequence int,
+) (int, string, error) {
+	for attempt := 0; attempt < maxTableLabelProbes; attempt++ {
+		label := tableLabel(zone, sequence)
+		taken, err := repo.TableNumberTaken(restaurantID, label)
+		if err != nil {
+			return 0, "", err
+		}
+		if !taken {
+			return sequence, label, nil
+		}
+		sequence++
+	}
+	return 0, "", errors.New("could not find an unused table number")
 }
 
 func tableLabel(zone *entity.TableZone, sequence int) string {

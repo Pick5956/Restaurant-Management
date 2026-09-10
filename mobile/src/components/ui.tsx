@@ -1,11 +1,60 @@
+import { GlassView } from 'expo-glass-effect';
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
-import { breakpoints, palette, radius, spacing, statusTone, typeScale } from '@/src/theme';
+import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
+import { breakpoints, controlShadow, palette, radius, spacing, statusTone, typeScale } from '@/src/theme';
+
+/**
+ * The assistant screen's material as a background layer: real Liquid Glass on
+ * iOS 26, its translucent-white stand-in everywhere else.
+ *
+ * The fallback is not optional. This is a *background* — ship the GlassView
+ * alone and every Android device and every iPhone below iOS 26 renders the
+ * control's label on nothing at all. One implementation here so that can only be
+ * got wrong once.
+ */
+export function GlassLayer({
+  style,
+  tint = 'rgba(255, 255, 255, 0.42)',
+  fallback = 'rgba(255, 255, 255, 0.82)',
+  fallbackBorder = 'rgba(255, 255, 255, 0.9)',
+  children,
+}: {
+  style: ViewStyle;
+  /** What the glass is tinted with on iOS 26. */
+  tint?: string;
+  /** The opaque-ish stand-in painted everywhere else. Keep it the same colour. */
+  fallback?: string;
+  /**
+   * The fallback's edge. White by default, which reads as no edge at all — fine
+   * on a control whose fill already separates it from the surface behind, and
+   * not fine on a pale one, where it is the only thing giving the control a
+   * boundary to see.
+   */
+  fallbackBorder?: string;
+  children?: React.ReactNode;
+}) {
+  if (LIQUID_GLASS) {
+    return (
+      // These surfaces are light-only, so the glass must not follow a dark system
+      // theme. A fixed tint, never a state colour changed at runtime: the native
+      // view goes on wearing the old one if it changes.
+      <GlassView glassEffectStyle="regular" isInteractive colorScheme="light" tintColor={tint} style={style}>
+        {children}
+      </GlassView>
+    );
+  }
+  return (
+    <View style={[style, { borderWidth: 1, borderColor: fallbackBorder, backgroundColor: fallback }]}>
+      {children}
+    </View>
+  );
+}
 
 export function Button({
   label,
@@ -20,7 +69,12 @@ export function Button({
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  /** `glass` is the assistant screen's material carrying a primary action: a
+   *  pale wash of the brand orange with the orange itself as the label. Chosen
+   *  over a solid fill deliberately — see the note on the tint below for the two
+   *  things that pale fill then has to be given so it still reads as a control
+   *  off iOS 26, where there is no material to help it. */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'glass';
   disabled?: boolean;
   loading?: boolean;
   compact?: boolean;
@@ -28,8 +82,60 @@ export function Button({
   leading?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  const isGlass = variant === 'glass';
   const backgroundColor = variant === 'primary' ? palette.primary : variant === 'danger' ? palette.danger : variant === 'ghost' ? 'transparent' : palette.surface;
-  const color = variant === 'primary' || variant === 'danger' ? palette.primaryText : variant === 'ghost' ? palette.muted : palette.text;
+  const color = variant === 'primary' || variant === 'danger' ? palette.primaryText : variant === 'ghost' ? palette.muted : isGlass ? palette.primaryInk : palette.text;
+  const body = (
+    <>
+      {loading
+        ? <ActivityIndicator color={color} size="small" />
+        : leading || (icon ? <AppIcon color={color} name={icon} size={19} /> : null)}
+      <Text style={{ color, fontSize: 14, fontWeight: '700' }}>{label}</Text>
+    </>
+  );
+  if (isGlass) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
+        disabled={disabled || loading}
+        onPress={onPress}
+        style={({ pressed }) => [
+          {
+            borderRadius: radius.md,
+            ...controlShadow,
+            opacity: disabled || loading ? 0.48 : pressed ? 0.78 : 1,
+            transform: [{ scale: pressed ? 0.985 : 1 }],
+          },
+          style,
+        ]}
+      >
+        <GlassLayer
+          style={{
+            minHeight: compact ? 44 : 52,
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+            gap: spacing.sm,
+            borderRadius: radius.md,
+            paddingHorizontal: compact ? spacing.md : spacing.lg,
+          }}
+          // A pale wash of the brand orange, chosen by the owner over a solid
+          // fill. Off iOS 26 this value is the button's whole background, so the
+          // two things a flat pale fill cannot supply on its own are supplied
+          // here: `primaryInk` instead of `primary` for the label, which lifts it
+          // from 4.43:1 to 5.34:1 and over AA, and a real border, because the
+          // fill sits 1.14:1 against the dock and the control would otherwise
+          // have no visible edge at all.
+          tint={palette.primaryWash}
+          fallback={palette.primaryWash}
+          fallbackBorder={palette.controlBorder}
+        >
+          {body}
+        </GlassLayer>
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"
@@ -48,16 +154,109 @@ export function Button({
           borderRadius: radius.md,
           backgroundColor,
           paddingHorizontal: compact ? spacing.md : spacing.lg,
+          // A ghost button has no surface of its own, so a lift under it would
+          // read as a floating rectangle with nothing in it.
+          ...(variant === 'ghost' ? null : controlShadow),
           opacity: disabled || loading ? 0.48 : pressed ? 0.78 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
         style,
       ]}
     >
-      {loading
-        ? <ActivityIndicator color={color} size="small" />
-        : leading || (icon ? <AppIcon color={color} name={icon} size={19} /> : null)}
-      <Text style={{ color, fontSize: 14, fontWeight: '700' }}>{label}</Text>
+      {body}
+    </Pressable>
+  );
+}
+
+/**
+ * An action reduced to its icon, for the top-right of a screen header where a
+ * labelled button would crowd out the title. `accessibilityLabel` is required
+ * rather than optional: with the text gone it is the only name the control has.
+ */
+export function IconButton({
+  icon,
+  badgeIcon,
+  accessibilityLabel,
+  onPress,
+  disabled,
+  variant = 'secondary',
+  size = 44,
+}: {
+  icon: AppIconName;
+  /**
+   * A second, smaller glyph tucked into the lower-trailing corner, for a control
+   * that one icon cannot name on its own. The reservation-history button is the
+   * case it exists for: a clipboard alone says "a list", a clock alone says
+   * "something about time", and neither says "the list of bookings" — together
+   * they do.
+   */
+  badgeIcon?: AppIconName;
+  accessibilityLabel: string;
+  onPress: () => void;
+  disabled?: boolean;
+  /**
+   * `glass` is the assistant screen's material: real Liquid Glass on iOS 26 and
+   * its translucent-white fallback everywhere else. It carries no colour of its
+   * own — the glyph keeps whatever ink the surface it sits on calls for.
+   */
+  variant?: 'primary' | 'secondary' | 'glass';
+  /** Diameter. 44 is the minimum comfortable tap target and the default. */
+  size?: number;
+}) {
+  const isPrimary = variant === 'primary';
+  const isGlass = variant === 'glass';
+  const iconColor = isPrimary ? palette.primaryText : palette.text;
+  const circle = {
+    width: size,
+    height: size,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: radius.full,
+  };
+  const face = (
+    <>
+      <AppIcon color={iconColor} name={icon} size={Math.round(size * 0.45)} />
+      {badgeIcon ? (
+        // Offset past the main glyph's corner and ringed in the button's own
+        // fill, so the two icons read as two objects rather than as one smudged
+        // shape at 20pt.
+        <View
+          style={{
+            position: 'absolute',
+            right: 7,
+            bottom: 7,
+            borderRadius: radius.full,
+            backgroundColor: isPrimary ? palette.primary : palette.surface,
+            padding: 1,
+          }}
+        >
+          <AppIcon color={iconColor} name={badgeIcon} size={12} />
+        </View>
+      ) : null}
+    </>
+  );
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => (isGlass
+        // The glass carries the shape, so the shadow goes on the wrapper: a lift
+        // and a clip on one view is what eats the shadow on Android.
+        ? { ...circle, ...controlShadow, opacity: disabled ? 0.48 : pressed ? 0.78 : 1 }
+        : {
+          ...circle,
+          borderWidth: 1,
+          borderColor: isPrimary ? palette.primary : palette.borderStrong,
+          backgroundColor: isPrimary ? palette.primary : palette.surface,
+          ...controlShadow,
+          opacity: disabled ? 0.48 : pressed ? 0.78 : 1,
+        })}
+    >
+      {isGlass ? <GlassLayer style={circle}>{face}</GlassLayer> : face}
     </Pressable>
   );
 }
@@ -248,13 +447,37 @@ export function EdgeRow({
   );
 }
 
-export function SectionHeader({ title, detail, action }: { title: string; detail?: string; action?: React.ReactNode }) {
+export function SectionHeader({
+  title,
+  detail,
+  inlineDetail,
+  action,
+}: {
+  title: string;
+  detail?: string;
+  /**
+   * A count that belongs beside the heading rather than under it. `detail` takes
+   * a line of its own, which on a screen that is mostly headings costs a line per
+   * section for something read in a glance.
+   */
+  inlineDetail?: string;
+  action?: React.ReactNode;
+}) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-      <View style={{ flex: 1, gap: spacing.xs }}>
+    <View style={{ flexDirection: 'row', alignItems: inlineDetail && !detail ? 'center' : 'flex-start', gap: spacing.md }}>
+      <View style={{ minWidth: 0, flex: 1, gap: spacing.xs }}>
         <Text selectable style={typeScale.title}>{title}</Text>
         {detail ? <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{detail}</Text> : null}
       </View>
+      {inlineDetail ? (
+        <Text
+          numberOfLines={1}
+          selectable
+          style={[typeScale.caption, { flexShrink: 0, color: palette.textStrong, fontWeight: '700' }]}
+        >
+          {inlineDetail}
+        </Text>
+      ) : null}
       {action}
     </View>
   );
@@ -284,9 +507,14 @@ export function TextField({
   icon,
   multiline,
   maxLength,
+  minHeight,
   error,
+  onFocus,
+  onBlur,
 }: {
-  label: string;
+  /** Omit when a section heading beside the field already names it — printing
+   *  both puts the same words on screen twice. */
+  label?: string;
   value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
@@ -301,15 +529,24 @@ export function TextField({
   /** Hard cap on typed characters. Mirror the backend `binding:"max=N"` for the
    *  field so the keyboard stops before the API rejects the request. */
   maxLength?: number;
+  /** Starting height for a multiline field. The default reserves three lines,
+   *  which is generous for a note that is usually a few words. */
+  minHeight?: number;
   error?: string | null;
+  /** For a screen that has to react to the keyboard opening on this field —
+   *  scrolling it clear, say. The field's own focus styling is handled here
+   *  either way. */
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [focused, setFocused] = useState(false);
   const canReveal = Boolean(secureTextEntry && revealLabel && hideLabel);
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
-      <View style={{ justifyContent: multiline ? 'flex-start' : 'center' }}>
+      {label ? <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '600' }}>{label}</Text> : null}
+      {/* Shadow on the wrapper, not the input — see SearchField for why. */}
+      <View style={{ justifyContent: multiline ? 'flex-start' : 'center', borderRadius: radius.md, ...controlShadow }}>
         {icon ? (
           <View
             style={{
@@ -333,18 +570,24 @@ export function TextField({
           autoComplete={autoComplete}
           autoCapitalize={keyboardType === 'email-address' || secureTextEntry ? 'none' : 'sentences'}
           autoCorrect={keyboardType !== 'email-address' && !secureTextEntry}
+          // The app has no dark theme, so on a phone set to dark the system was
+          // pairing our cream surfaces with a charcoal keyboard — and anything we
+          // draw in the accessory bar above it then reads as a foreign panel
+          // rather than part of the keyboard. Pinning the appearance is what lets
+          // that bar pass for the system's own.
+          keyboardAppearance="light"
           keyboardType={keyboardType}
           maxLength={maxLength}
           multiline={multiline}
           onChangeText={onChangeText}
-          onBlur={() => setFocused(false)}
-          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onBlur?.(); }}
+          onFocus={() => { setFocused(true); onFocus?.(); }}
           placeholder={placeholder}
           placeholderTextColor={palette.placeholder}
           secureTextEntry={Boolean(secureTextEntry && !revealed)}
           textContentType={textContentType}
           style={{
-            minHeight: multiline ? 104 : 54,
+            minHeight: minHeight ?? (multiline ? 104 : 54),
             borderWidth: 1,
             borderColor: error ? palette.danger : focused ? palette.primary : palette.controlBorder,
             borderRadius: radius.md,
@@ -375,16 +618,24 @@ export function SearchField({
   placeholder,
   accessibilityLabel,
   clearLabel = 'Clear search',
+  autoFocus,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   placeholder: string;
   accessibilityLabel: string;
   clearLabel?: string;
+  /** For a field that appears on demand: without it the caller has to tap the
+   *  magnifier and then the field it just summoned. */
+  autoFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={{ justifyContent: 'center' }}>
+    // The lift sits on this wrapper, not on the TextInput: Android's ReactEditText
+    // applies background, border and radius from the style but not box shadow, so
+    // a shadow set on the input itself renders on iOS and silently vanishes on
+    // Android. The radius here has to match the input so the glow follows its shape.
+    <View style={{ justifyContent: 'center', borderRadius: radius.md, ...controlShadow }}>
       <View style={{ position: 'absolute', left: spacing.md, zIndex: 1, pointerEvents: 'none' }}>
         <AppIcon color={focused ? palette.textStrong : palette.muted} name="search-outline" size={19} />
       </View>
@@ -392,11 +643,15 @@ export function SearchField({
         accessibilityLabel={accessibilityLabel}
         autoCapitalize="none"
         autoCorrect={false}
+        autoFocus={autoFocus}
         onBlur={() => setFocused(false)}
         onChangeText={onChangeText}
         onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={palette.placeholder}
+        // The return key reads Search and dismisses on its own, so a Done bar over
+        // it would be the same action offered twice.
+        omitKeyboardDoneBar
         returnKeyType="search"
         style={{
           minHeight: 52,
@@ -434,10 +689,53 @@ export function SearchField({
   );
 }
 
-export function ChipGroup<T extends string | number>({ label, value, options, onChange, scrollable = false }: { label?: string; value: T; options: Array<{ label: string; value: T }>; onChange: (value: T) => void; scrollable?: boolean }) {
+/**
+ * `fill` splits the row evenly between the chips instead of sizing each to its
+ * own text, for the case where the group is the whole width of a screen and
+ * content-sized chips would leave dead space to their right. It has no effect
+ * with `scrollable`, where the row is wider than the viewport by design.
+ */
+export function ChipGroup<T extends string | number>({ label, value, options, onChange, scrollable = false, fill = false, glass = false }: { label?: string; value: T; options: Array<{ label: string; value: T }>; onChange: (value: T) => void; scrollable?: boolean; fill?: boolean;
+  /** Render the unchosen chips in the assistant screen's glass. The chosen one
+   *  keeps its solid orange fill: glass on both would leave the row with no
+   *  answer to "which of these is on", which is the only thing a chip row is
+   *  for. Opt-in, because most chip rows in the app sit on a plain surface where
+   *  a translucent material has nothing to be translucent over. */
+  glass?: boolean }) {
   const tabSwipeExclusionHandlers = useTabSwipeExclusionHandlers();
   const controls = options.map((option) => {
     const selected = option.value === value;
+    const shape = {
+      minHeight: 44,
+      justifyContent: 'center' as const,
+      alignItems: fill && !scrollable ? ('center' as const) : undefined,
+      flex: fill && !scrollable ? 1 : undefined,
+      minWidth: fill && !scrollable ? 0 : undefined,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+    };
+    const text = (
+      <Text numberOfLines={fill && !scrollable ? 1 : undefined} style={{ color: selected ? palette.primaryText : palette.text, fontSize: 13, fontWeight: '700' }}>{option.label}</Text>
+    );
+    if (glass && !selected) {
+      return (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected }}
+          key={String(option.value)}
+          onPress={() => onChange(option.value)}
+          style={({ pressed }) => ({
+            flex: fill && !scrollable ? 1 : undefined,
+            minWidth: fill && !scrollable ? 0 : undefined,
+            borderRadius: radius.md,
+            ...controlShadow,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <GlassLayer style={shape}>{text}</GlassLayer>
+        </Pressable>
+      );
+    }
     return (
       <Pressable
         accessibilityRole="button"
@@ -445,17 +743,15 @@ export function ChipGroup<T extends string | number>({ label, value, options, on
         key={String(option.value)}
         onPress={() => onChange(option.value)}
         style={({ pressed }) => ({
-          minHeight: 44,
-          justifyContent: 'center',
+          ...shape,
           borderWidth: 1,
           borderColor: selected ? palette.primary : palette.borderStrong,
-          borderRadius: radius.md,
           backgroundColor: selected ? palette.primary : palette.surface,
-          paddingHorizontal: spacing.md,
+          ...controlShadow,
           opacity: pressed ? 0.72 : 1,
         })}
       >
-        <Text style={{ color: selected ? palette.primaryText : palette.text, fontSize: 13, fontWeight: '700' }}>{option.label}</Text>
+        {text}
       </Pressable>
     );
   });
@@ -474,7 +770,7 @@ export function ChipGroup<T extends string | number>({ label, value, options, on
           {controls}
         </ScrollView>
       ) : (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>{controls}</View>
+        <View style={{ flexDirection: 'row', flexWrap: fill ? 'nowrap' : 'wrap', gap: spacing.sm }}>{controls}</View>
       )}
     </View>
   );
@@ -526,6 +822,7 @@ export function Select<T extends string | number>({
           borderRadius: radius.md,
           backgroundColor: palette.surface,
           paddingHorizontal: spacing.md,
+          ...controlShadow,
           opacity: disabled ? 0.6 : pressed ? 0.72 : 1,
         })}
       >
@@ -567,7 +864,10 @@ export function Select<T extends string | number>({
               borderTopLeftRadius: radius.md,
               borderTopRightRadius: radius.md,
               backgroundColor: palette.surface,
-              paddingBottom: spacing.xl,
+              // Clears the home indicator. At spacing.xl the last row sat right
+              // on the gesture bar, which both looks cramped and is where the
+              // system swallows the tap.
+              paddingBottom: spacing.xxxl + spacing.md,
             }}
           >
             {label ? (
@@ -576,9 +876,10 @@ export function Select<T extends string | number>({
               </View>
             ) : null}
             <ScrollView keyboardShouldPersistTaps="handled">
-              {options.map((option) => {
+              {options.map((option, index) => {
                 const isSelected = option.value === value;
                 return (
+                  <View key={String(option.value)}>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected }}
@@ -610,12 +911,74 @@ export function Select<T extends string | number>({
                     </Text>
                     {isSelected ? <AppIcon color={palette.primary} name="checkmark" size={20} /> : null}
                   </Pressable>
+                  {/* Inset hairline, and none after the last row. Drawn as its
+                      own view rather than a bottom border so it can stop short
+                      of both edges instead of walling the sheet off. */}
+                  {index === options.length - 1 ? null : (
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: palette.divider, marginHorizontal: spacing.lg }} />
+                  )}
+                  </View>
                 );
               })}
             </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
+    </View>
+  );
+}
+
+/**
+ * One choice per line with the state on the right, for a decision worth reading
+ * before making — a payment method, say. Chips put the options side by side and
+ * ask you to compare them at a glance; a stacked list asks you to read them.
+ */
+export function RadioGroup<T extends string | number>({ label, value, options, onChange }: { label?: string; value: T; options: Array<{ label: string; value: T; disabled?: boolean }>; onChange: (value: T) => void }) {
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {label ? <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '700' }}>{label}</Text> : null}
+      <View style={{ borderWidth: 1, borderColor: palette.controlBorder, borderRadius: radius.md, backgroundColor: palette.surface, overflow: 'hidden' }}>
+        {options.map((option, index) => {
+          const selected = option.value === value;
+          return (
+            <View key={String(option.value)}>
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected, disabled: Boolean(option.disabled) }}
+              disabled={option.disabled}
+              onPress={() => onChange(option.value)}
+              style={({ pressed }) => ({
+                minHeight: 52,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.md,
+                paddingHorizontal: spacing.md,
+                backgroundColor: pressed ? palette.surfaceSubtle : 'transparent',
+                opacity: option.disabled ? 0.48 : 1,
+              })}
+            >
+              <Text numberOfLines={1} style={{ minWidth: 0, flex: 1, color: palette.text, fontSize: 15, fontWeight: selected ? '700' : '500' }}>{option.label}</Text>
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 2,
+                  borderColor: selected ? palette.primary : palette.borderStrong,
+                  borderRadius: radius.full,
+                }}
+              >
+                {selected ? <View style={{ width: 11, height: 11, borderRadius: radius.full, backgroundColor: palette.primary }} /> : null}
+              </View>
+            </Pressable>
+            {index === options.length - 1 ? null : (
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: palette.divider, marginHorizontal: spacing.md }} />
+            )}
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -652,15 +1015,29 @@ export function ActionDock({
   label,
   value,
   children,
-  showTopBorder = true,
+  separated = true,
 }: {
   label?: string;
   value?: string;
   children: React.ReactNode;
-  showTopBorder?: boolean;
+  /** Lift the dock off the content it sits over. Turn it off on a screen that
+   *  already ends in its own divider, so the two do not stack. */
+  separated?: boolean;
 }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: showTopBorder ? 1 : 0, borderTopColor: palette.border, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+    // A shadow cast upward rather than a hairline. A line reads as the end of
+    // the content; a shadow reads as a bar resting on top of it, which is what
+    // this is — the list carries on scrolling underneath. `boxShadow` rather
+    // than `elevation` because elevation has no direction on Android and would
+    // put the lift on the wrong side.
+    //
+    // The −6px SPREAD is what keeps it to the top edge. Without it the blur
+    // spreads on all four sides, and the part that falls below the dock paints a
+    // dark band across the safe-area strip underneath — which reads as a gap
+    // between the dock and the bottom of the screen even though the two are one
+    // continuous surface. Negative spread shrinks the shadow inside the dock
+    // first, so only the part the offset pushes upward ever escapes it.
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, boxShadow: separated ? '0 -6px 16px -6px rgba(61, 43, 31, 0.18)' : undefined, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       {label || value ? (
         <View style={{ minWidth: 0, flex: 1, gap: 1 }}>
           {label ? <Text style={[typeScale.caption, { color: palette.muted }]}>{label}</Text> : null}

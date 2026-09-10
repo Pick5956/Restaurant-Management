@@ -130,6 +130,24 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// item), on the plan table that migration 16 owns outside the frozen
 		// registry, so the fingerprint is unchanged.
 		24: "ef33ae90b3371c6091807765f0c1e1bf9db93df2790fb7ca0b58e373ad2abd80",
+		// Version 25 adds reserved_for to Reservation, which IS in the frozen
+		// registry, so the fingerprint advances with it. The hash then moved a
+		// second time for RestaurantTable's UpcomingReservationAt/Name: those are
+		// `gorm:"-"`, so they add no column and need no migration, but this
+		// fingerprint hashes every field including ignored ones — the same
+		// read-time-field case reviewed at version 19. Reviewed and accepted on
+		// that basis: no schema version was spent on them, because nothing in
+		// the database changed for them.
+		25: "58517db8965b8fd1d0b59b2104626da699d9f7a7dd25ac39cf921239e937ae1c",
+		// Version 26 adds guest_count to Reservation, again inside the frozen
+		// registry, so the fingerprint advances with the column.
+		26: "381840175afa65b561866fd5d184fea3913b6fa794d6380b282dfbf03c70eee9",
+		// Version 27 adds no column. It puts a partial unique index across
+		// Reservation's (restaurant_id, table_id, reserved_for) so one table
+		// cannot hold two active bookings for the same instant, and the index
+		// tags live on fields in the frozen registry, so the fingerprint advances
+		// even though the only DDL is CREATE UNIQUE INDEX plus its backfill.
+		27: "359a653ff6994b5a81b9f8678f0d97a9114a4bcc57a254637a0952a38841fe63",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {

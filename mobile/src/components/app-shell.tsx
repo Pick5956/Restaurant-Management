@@ -99,6 +99,33 @@ export function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/**
+ * A handle on AppScreen's scroll view, for the rare screen that has to move it
+ * itself.
+ *
+ * `automaticallyAdjustKeyboardInsets` only promises the *caret* clears the
+ * keyboard: iOS measures the selection rect, not the field
+ * (`RCTTextInputComponentView.reactUpdateResponderOffsetForScrollView`). On a
+ * single-line input those are the same thing. On a three-line note box the caret
+ * sits on the first line, so iOS is satisfied while two thirds of the box — and
+ * whatever follows it — stay behind the keyboard.
+ *
+ * Handed out through a ref prop rather than context, because the screen that
+ * needs it renders `<AppScreen>` — it is the shell's PARENT, so a provider
+ * inside the shell is invisible to it and every read comes back null.
+ */
+export type AppScreenScrollControl = {
+  /** Scroll to an absolute content offset. Negative values clamp to the top. */
+  scrollTo: (y: number, animated?: boolean) => void;
+  /** Where the view is right now, so a caller can turn a measurement taken in
+   *  window space into an absolute destination. Deliberately not a `scrollBy`:
+   *  a delta is resolved against the offset at the moment it is APPLIED, and the
+   *  keyboard moves this view underneath us — pairing a stale measurement with a
+   *  fresh offset overshoots. Reading both at the same instant and sending an
+   *  absolute target cannot drift, whatever else is scrolling at the time. */
+  getOffset: () => number;
+};
+
 type NavigationMode = 'rail' | 'expanded';
 
 function NavigationButton({
@@ -439,16 +466,21 @@ function ScreenHeading({
   subtitle,
   action,
   showBack = false,
+  centerTitle = false,
 }: {
   title: string;
   titleContent?: React.ReactNode;
   subtitle?: string;
   action?: React.ReactNode;
   showBack?: boolean;
+  centerTitle?: boolean;
 }) {
   const { copy } = useDisplayPreferences();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+    // With a subtitle the text block is tall enough that top-alignment reads
+    // correctly. Without one it is a single line against a 44px back button,
+    // and top-aligning leaves the chevron sitting 8px below the title.
+    <View style={{ flexDirection: 'row', alignItems: subtitle ? 'flex-start' : 'center', gap: spacing.md }}>
       {showBack ? (
         <Pressable
           accessibilityLabel={copy('ย้อนกลับ', 'Go back')}
@@ -466,15 +498,27 @@ function ScreenHeading({
           <AppIcon color={palette.textStrong} name="chevron-back-outline" size={30} />
         </Pressable>
       ) : null}
-      <View style={{ minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-        <View style={{ minWidth: 0, flex: 1, gap: spacing.xs }}>
+      {/* A single-line title against 44pt action buttons has to centre on them.
+          Top-aligning it leaves the text sitting in the corner while the buttons
+          sit in the middle of the row, which reads as the heading having floated
+          up and drifted out to the left. With a subtitle the text block is the
+          taller of the two and top alignment is correct again. */}
+      <View style={{ minWidth: 0, flex: 1, flexDirection: 'row', alignItems: subtitle ? 'flex-start' : 'center', gap: spacing.md }}>
+        {/* No gap: the two lines belong to each other, and the leading built
+            into each line already separates them. */}
+        <View style={{ minWidth: 0, flex: 1 }}>
           {titleContent ?? (
-            <Text accessibilityRole="header" selectable style={typeScale.hero}>{title}</Text>
+            <Text accessibilityRole="header" selectable style={[typeScale.hero, centerTitle ? { textAlign: 'center' } : null]}>{title}</Text>
           )}
-          {subtitle ? <Text selectable style={[typeScale.body, { color: palette.muted }]}>{subtitle}</Text> : null}
+          {subtitle ? <Text selectable style={[typeScale.body, { color: palette.muted }, centerTitle ? { textAlign: 'center' } : null]}>{subtitle}</Text> : null}
         </View>
-        {action ? <View style={{ paddingTop: 1 }}>{action}</View> : null}
+        {action ? <View style={subtitle ? { paddingTop: 1 } : undefined}>{action}</View> : null}
       </View>
+      {/* Centring text inside a row that starts with a 44px back control leaves
+          the title 44px right of the screen's centre line. This mirrors that
+          width on the trailing side so the centre is the real one. An `action`
+          already balances the row, so it takes the place of the spacer. */}
+      {centerTitle && showBack && !action ? <View style={{ width: 44 }} /> : null}
     </View>
   );
 }
@@ -492,6 +536,13 @@ export function AppScreen({
   footer,
   contentStyle,
   contentMaxWidth,
+  stickyHeading = false,
+  stickyContent,
+  onScrollStart,
+  centerTitle = false,
+  immersive = false,
+  floatingLeading,
+  scrollControlRef,
 }: {
   title: string;
   titleContent?: React.ReactNode;
@@ -505,6 +556,37 @@ export function AppScreen({
   footer?: React.ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
   contentMaxWidth?: number;
+  /** Keep the title, back control and header action pinned while the content
+   *  scrolls under them. Opt-in: it costs permanent vertical space, which is
+   *  only worth paying on a screen long enough to lose your place in. */
+  stickyHeading?: boolean;
+  /** Controls that stay pinned under the heading — filters a long list is read
+   *  through, which are useless once they have scrolled away. Needs
+   *  `stickyHeading`, since it renders inside that same pinned block. */
+  stickyContent?: React.ReactNode;
+  /** Fires when the reader starts dragging the content. Deliberately the drag,
+   *  not every scroll event: focusing a field can scroll the view on its own,
+   *  and a screen that reacts to that would undo what the reader just opened. */
+  onScrollStart?: () => void;
+  /** Give the whole screen to the content: no heading row, and nothing reserved
+   *  for the status bar, so the first thing in `children` starts at the very top
+   *  edge of the display. For a screen led by a full-bleed image, which then has
+   *  to supply its own back control positioned over it — there is no header row
+   *  left to put one in. */
+  immersive?: boolean;
+  /** A control pinned to the screen's top-left corner, above everything and
+   *  outside the scroll view, so it stays put while the content moves under it.
+   *  For an `immersive` screen, which has no header row to hold a back button —
+   *  putting one inside the content instead would scroll away with the image and
+   *  leave no way out of the screen. */
+  floatingLeading?: React.ReactNode;
+  /** Sit the title on the screen's centre line instead of hard left. Opt-in:
+   *  a left-aligned title is the app's default and reads faster in a stack of
+   *  content, so this is for screens that are a single self-contained record. */
+  centerTitle?: boolean;
+  /** Filled with a handle on the scroll view so the screen can move it itself.
+   *  See AppScreenScrollControl for the one thing that needs this. */
+  scrollControlRef?: React.MutableRefObject<AppScreenScrollControl | null>;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -522,6 +604,11 @@ export function AppScreen({
     + PHONE_DOCK_TOP_GUTTER
     + phoneDockBottomGap(insets.bottom)
     + spacing.lg;
+  const scrollRef = useRef<ScrollView>(null);
+  // Read back by `scrollBy`. RN offers no way to ask a ScrollView where it is,
+  // and every alternative for "move this field up by exactly its overlap" needs
+  // the number anyway.
+  const contentOffsetRef = useRef(0);
   const phoneNavigationItems = useMemo(
     () => primaryNavigation.filter((item) => isAllowed(item, activeMembership)),
     [activeMembership],
@@ -609,6 +696,20 @@ export function AppScreen({
       navigationLocked.current = false;
     });
   }, [activeTabIndex, contentOpacity, contentTranslateX, markerPosition, reducedMotion, useNativeDriver]);
+
+  useEffect(() => {
+    if (!scrollControlRef) return undefined;
+    const scrollTo = (y: number, animated = true) => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y), animated });
+    };
+    scrollControlRef.current = {
+      scrollTo,
+      getOffset: () => contentOffsetRef.current,
+    };
+    return () => {
+      scrollControlRef.current = null;
+    };
+  }, [scrollControlRef]);
 
   const setNestedHorizontalGestureActive = useCallback((active: boolean) => {
     nestedHorizontalGestureActive.current = active;
@@ -774,6 +875,7 @@ export function AppScreen({
       {beforeHeading}
       <ScreenHeading
         action={action}
+        centerTitle={centerTitle}
         showBack={!topLevel}
         subtitle={subtitle}
         title={title}
@@ -781,22 +883,78 @@ export function AppScreen({
       />
     </MotionReveal>
   );
+  const pinnedHeading = scroll && stickyHeading ? (
+    <View
+      style={{
+        alignItems: 'center',
+        paddingHorizontal: horizontalPadding,
+        paddingTop: spacing.lg,
+        paddingBottom: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: palette.border,
+        backgroundColor: screenBackground,
+      }}
+    >
+      <View style={{ width: '100%', maxWidth, gap: spacing.md }}>
+        {heading}
+        {stickyContent}
+      </View>
+    </View>
+  ) : null;
   const main = scroll ? (
     <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: spacing.lg, paddingBottom: topLevel && !isTablet ? phoneDockClearance : spacing.xxxl }}
+      // `automatic` lets iOS inset the scroll content by the safe area on its
+      // own — which is right everywhere else, and is exactly what leaves a band
+      // of empty canvas above an immersive screen's first element. The whole
+      // point of immersive is that the content starts at the top of the display,
+      // so here the shell owns the inset and iOS must keep its hands off.
+      contentInsetAdjustmentBehavior={immersive ? 'never' : 'automatic'}
+      // Every form in this app lives inside AppScreen, and the shell handled the
+      // keyboard nowhere: focus a field low on the page and the keyboard covered
+      // the very box being typed into. Only the auth and assistant screens ever
+      // dealt with it, each with its own KeyboardAvoidingView.
+      //
+      // This is the whole of it. An earlier version also padded the content by
+      // the keyboard's height, which double-counts: iOS is already adding that
+      // same height as a bottom contentInset here, so the page gained two
+      // keyboards' worth of slack and could be dragged up into a screenful of
+      // empty canvas. A field that needs more than the caret visible asks for it
+      // through `scrollControlRef`.
+      automaticallyAdjustKeyboardInsets
+      // An immersive screen is led by an image flush to the top of the display,
+      // and the rubber band drags it away to show a band of bare canvas. This is
+      // a real hard stop rather than a clamp: an earlier version left `bounces`
+      // on and snapped a negative offset back to 0 in `onScroll`, which is a
+      // frame late by construction — the page visibly jumped every time it was
+      // pulled, and read as exactly what it was.
+      //
+      // It costs the rubber band in both directions, which on a page shorter than
+      // the display is all the movement the screen has. That is now the intended
+      // feel: the page is solid, and the one case that genuinely needed to move —
+      // clearing the keyboard — is driven from `scrollControlRef` instead of left
+      // to the reader's thumb.
+      bounces={!immersive}
+      overScrollMode={immersive ? 'never' : 'auto'}
+      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: immersive ? 0 : spacing.lg, paddingBottom: topLevel && !isTablet ? phoneDockClearance : spacing.xxxl }}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       onMomentumScrollBegin={reportVerticalScrollNow}
       onMomentumScrollEnd={reportVerticalScrollNow}
-      onScroll={reportVerticalScrollNow}
-      onScrollBeginDrag={reportVerticalScrollNow}
+      onScroll={(event) => {
+        contentOffsetRef.current = event.nativeEvent.contentOffset.y;
+        reportVerticalScrollNow();
+      }}
+      onScrollBeginDrag={() => {
+        reportVerticalScrollNow();
+        onScrollStart?.();
+      }}
       onScrollEndDrag={reportVerticalScrollNow}
+      ref={scrollRef}
       refreshControl={refreshControl}
       scrollEventThrottle={32}
     >
       <View style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle]}>
-        {heading}
+        {stickyHeading || immersive ? null : heading}
         {children}
       </View>
     </ScrollView>
@@ -819,12 +977,27 @@ export function AppScreen({
         transform: [{ translateX: contentTranslateX }],
       }}
     >
-      <SafeAreaView
-        edges={isTablet ? ['top', 'right'] : ['top', 'left', 'right']}
-        style={{ backgroundColor: screenBackground }}
-      />
+      {immersive ? null : (
+        <SafeAreaView
+          edges={isTablet ? ['top', 'right'] : ['top', 'left', 'right']}
+          style={{ backgroundColor: screenBackground }}
+        />
+      )}
+      {pinnedHeading}
       {main}
       {footer ? <SafeAreaView edges={isTablet ? ['right', 'bottom'] : ['left', 'right', 'bottom']} style={{ backgroundColor: palette.surface }}>{footer}</SafeAreaView> : null}
+      {/* Outside the scroll view AND outside the keyboard avoider: the content
+          moves under it and it stays where it is. Inside the scroll view it
+          would scroll off with the first screenful and take the only way back
+          with it; inside the avoider it would shift when a keyboard opened. */}
+      {floatingLeading ? (
+        <View
+          pointerEvents="box-none"
+          style={{ position: 'absolute', top: insets.top, left: horizontalPadding, zIndex: 10 }}
+        >
+          {floatingLeading}
+        </View>
+      ) : null}
     </Animated.View>
   );
 

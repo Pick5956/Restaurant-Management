@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
 import { listExpenses } from '@/src/api/expense';
@@ -8,6 +8,7 @@ import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { Button, ChipGroup, EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, SectionHeader, Surface } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
 import { can } from '@/src/lib/rbac';
+import { createRequestGeneration } from '@/src/lib/request-generation';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
@@ -39,6 +40,7 @@ export default function ExpensesScreen() {
 
   const [monthOffset, setMonthOffset] = useState(0);
   const [category, setCategory] = useState<ExpenseCategory | 'all'>('all');
+  const requestGenerationRef = useRef(createRequestGeneration());
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [totals, setTotals] = useState<ExpenseCategoryTotal[]>([]);
   const [grandTotal, setGrandTotal] = useState(0);
@@ -57,25 +59,37 @@ export default function ExpensesScreen() {
     until: iso(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1)),
   }), [monthDate]);
 
+  // The month and the category are both server-side filters, so changing either
+  // fires a new request while the previous one may still be in flight. Without a
+  // generation guard the slower answer wins whichever order they were asked in,
+  // and the screen shows one month's expenses under another month's heading.
   const load = useCallback(async () => {
     if (!canView) { setLoading(false); return; }
+    const request = requestGenerationRef.current.begin();
     setLoading(true);
     setError(null);
     try {
       const response = await listExpenses({ from: range.from, until: range.until, category: category === 'all' ? undefined : category });
+      if (!requestGenerationRef.current.isCurrent(request)) return;
       setExpenses(response.expenses || []);
       setTotals(response.categories || []);
       setGrandTotal(response.total || 0);
       setEntries(response.entries || 0);
       setHasMore(Boolean(response.has_more));
     } catch (err) {
+      if (!requestGenerationRef.current.isCurrent(request)) return;
       setError(err instanceof Error ? err.message : copy('โหลดค่าใช้จ่ายไม่สำเร็จ', 'Could not load expenses.'));
     } finally {
-      setLoading(false);
+      if (requestGenerationRef.current.isCurrent(request)) setLoading(false);
     }
   }, [canView, category, copy, range.from, range.until]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => {
+      requestGenerationRef.current.invalidate();
+    };
+  }, [load]));
 
   if (!canView) {
     return (

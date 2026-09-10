@@ -26,7 +26,12 @@ test('Expo branding uses the Dishy launcher, adaptive, splash, and favicon asset
     foregroundImage: './assets/images/android-icon-foreground.png',
     monochromeImage: './assets/images/android-icon-monochrome.png',
   });
-  assert.equal(config.expo.web.favicon, './assets/images/favicon.png');
+  // No favicon is asserted because there is no web target: `platforms` is
+  // ios/android only and the `web` config block is gone, so the app is reachable
+  // from Expo Go and a build, never from a browser. A favicon reappearing here
+  // means web was switched back on.
+  assert.deepEqual(config.expo.platforms, ['ios', 'android']);
+  assert.equal(config.expo.web, undefined);
   assert.equal(splashPlugin[1].image, './assets/images/splash-icon.png');
   assert.equal(splashPlugin[1].imageWidth, 220);
   assert.equal(splashPlugin[1].backgroundColor, '#FFF7ED');

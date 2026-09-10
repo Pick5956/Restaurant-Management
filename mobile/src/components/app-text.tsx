@@ -9,6 +9,7 @@ import {
 import {
   resolveAppFontFamily,
   resolveAppFontWeight,
+  scaleFont,
 } from '@/src/lib/app-font';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette } from '@/src/theme';
@@ -22,11 +23,14 @@ export function AppText({ style, ...props }: TextProps) {
     flattened?.fontWeight,
     inheritedFontWeight,
   );
-  const fontSize =
-    typeof flattened?.fontSize === 'number' ? flattened.fontSize : 14;
+  // Every size in the app funnels through here, so this is the single point
+  // where the app-wide text scale is applied. See APP_FONT_SCALE.
+  const fontSize = scaleFont(
+    typeof flattened?.fontSize === 'number' ? flattened.fontSize : 14,
+  );
   const lineHeight =
     typeof flattened?.lineHeight === 'number'
-      ? flattened.lineHeight
+      ? scaleFont(flattened.lineHeight)
       : undefined;
 
   return (

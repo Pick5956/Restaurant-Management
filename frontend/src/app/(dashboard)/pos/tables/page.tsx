@@ -534,12 +534,14 @@ export default function PosTablesPage() {
           +
         </button>
       </div>
+      {/* Up and down rather than two sizes of up: overshooting is as common as
+          undershooting, and getting back down meant holding the minus button. */}
       <div className="mt-2 grid grid-cols-2 gap-2">
         <button type="button" onClick={() => setCustomerCount((current) => current + 5)} className="ui-press h-10 rounded-md border border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-800">
           +5
         </button>
-        <button type="button" onClick={() => setCustomerCount((current) => current + 10)} className="ui-press h-10 rounded-md border border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-800">
-          +10
+        <button type="button" onClick={() => setCustomerCount((current) => Math.max(1, current - 5))} className="ui-press h-10 rounded-md border border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-800">
+          −5
         </button>
       </div>
     </label>

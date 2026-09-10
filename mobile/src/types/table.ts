@@ -44,6 +44,11 @@ export interface RestaurantTable {
   customer_token?: string;
   reservation_phone?: string;
   reservation_name?: string;
+  /** The next booking due on this table, within an hour past and twelve hours
+   *  ahead. A scheduled booking does not take the table out of service, so this
+   *  is the only sign of it on the table map. */
+  upcoming_reservation_at?: string | null;
+  upcoming_reservation_name?: string | null;
   table_zone?: TableZone | null;
   tags?: TableTag[];
 }

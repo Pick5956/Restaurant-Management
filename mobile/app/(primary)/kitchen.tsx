@@ -102,8 +102,8 @@ const styles = StyleSheet.create({
   laneTitle: {
     color: palette.textStrong,
     fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '800',
+    lineHeight: 27,
+    fontWeight: '700',
   },
   laneCount: {
     color: palette.muted,
@@ -132,8 +132,8 @@ const styles = StyleSheet.create({
   ticketTitle: {
     color: palette.surface,
     fontSize: 24,
-    lineHeight: 29,
-    fontWeight: '900',
+    lineHeight: 36,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   ticketMeta: {
@@ -157,22 +157,22 @@ const styles = StyleSheet.create({
   timerValue: {
     color: palette.surface,
     fontSize: 22,
-    lineHeight: 27,
-    fontWeight: '900',
+    lineHeight: 33,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   timerUnit: {
     color: palette.surface,
     fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '800',
+    lineHeight: 17,
+    fontWeight: '700',
     opacity: 0.9,
   },
   timerUrgency: {
     color: palette.surface,
     fontSize: 10,
     lineHeight: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     opacity: 0.9,
   },
   item: {
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   quantityText: {
     color: palette.textStrong,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   itemTitle: {
@@ -213,8 +213,8 @@ const styles = StyleSheet.create({
     flex: 1,
     color: palette.textStrong,
     fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '800',
+    lineHeight: 24,
+    fontWeight: '700',
   },
   itemDetail: {
     color: palette.muted,

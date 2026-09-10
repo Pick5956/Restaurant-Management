@@ -4,11 +4,11 @@ import { useWindowDimensions, View } from 'react-native';
 
 import {
   cancelReservation,
+  listReservations,
   reserveTable,
 } from '@/src/api/reservation';
 import { createOrder } from '@/src/api/order';
 import { listTables } from '@/src/api/table';
-import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import {
@@ -23,10 +23,12 @@ import {
   TextField,
 } from '@/src/components/ui';
 import { can } from '@/src/lib/rbac';
+import { formatReservationClock } from '@/src/lib/reservation-schedule';
 import { reservationArrivalOrderInput } from '@/src/lib/table-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
+import type { Reservation } from '@/src/types/reservation';
 import type { RestaurantTable } from '@/src/types/table';
 
 function defaultGuestCount(table: RestaurantTable | null | undefined) {
@@ -36,7 +38,7 @@ function defaultGuestCount(table: RestaurantTable | null | undefined) {
 export default function TableReservationScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
   const { tableId: rawId } = useLocalSearchParams<{ tableId?: string }>();
@@ -48,6 +50,7 @@ export default function TableReservationScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [reservation, setReservation] = useState<Reservation | null>(null);
 
   useEffect(() => {
     if (!canTakeOrder) return;
@@ -68,6 +71,23 @@ export default function TableReservationScreen() {
           : copy('โหลดโต๊ะไม่สำเร็จ', 'Could not load tables'),
       ));
   }, [canTakeOrder, copy, rawId]);
+
+  // The table row carries the guest's name and phone but not when the booking
+  // was made or how many are coming — those live on the reservation. Failing to
+  // find it costs two fields on the card, never the screen, so this deliberately
+  // has no error branch.
+  useEffect(() => {
+    if (!canTakeOrder || !tableId) return;
+    listReservations({ status: 'active', limit: 100 })
+      .then((response) => {
+        const match = response.reservations.find((item) => item.table_id === tableId) || null;
+        setReservation(match);
+        // The party size the guest actually gave, in preference to a guess made
+        // from how many chairs the table has.
+        if (match?.guest_count) setGuestCount(String(match.guest_count));
+      })
+      .catch(() => setReservation(null));
+  }, [canTakeOrder, tableId]);
 
   const selected = tables.find((item) => item.ID === tableId) || null;
   const options = useMemo(
@@ -184,9 +204,6 @@ export default function TableReservationScreen() {
       title={isReserved
         ? copy('รายละเอียดการจอง', 'Reservation details')
         : copy('จองโต๊ะ', 'Table reservation')}
-      subtitle={isReserved
-        ? copy('ตรวจข้อมูลก่อนเปิดออเดอร์', 'Check the details before opening an order')
-        : copy('บันทึกชื่อและเบอร์โทรผู้จอง', 'Save the guest name and phone number')}
       topLevel={false}
       footer={!tabletWorkspace && !confirmCancel ? (
         <ActionDock>
@@ -208,40 +225,57 @@ export default function TableReservationScreen() {
       ) : null}
       <View style={{ flexDirection: tabletWorkspace && isReserved ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
       <Surface style={{ width: tabletWorkspace && isReserved ? undefined : '100%', minWidth: 0, flex: tabletWorkspace && isReserved ? 1.2 : undefined }}>
-        <SectionHeader title={copy('ข้อมูลการจอง', 'Reservation details')} />
-        <ChipGroup
-          label={copy('โต๊ะ', 'Table')}
-          value={tableId}
-          onChange={choose}
-          options={options}
-        />
+        {/* No table picker once a booking exists. You arrive here by tapping the
+            booked table, so offering every other table reads as though the screen
+            did not know which one you came from — and picking one here would
+            silently show you a different table's booking. */}
+        {isReserved ? null : (
+          <>
+            <SectionHeader title={copy('ข้อมูลการจอง', 'Reservation details')} />
+            <ChipGroup
+              label={copy('โต๊ะ', 'Table')}
+              value={tableId}
+              onChange={choose}
+              options={options}
+            />
+          </>
+        )}
         {isReserved ? (
           <>
-            <StatusBadge label={copy('กำลังจอง', 'Active reservation')} tone="info" />
-            <View style={{ gap: spacing.sm }}>
-              <View style={{ gap: 2 }}>
-                <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
-                  {copy('ชื่อผู้จอง', 'Guest name')}
-                </Text>
-                <Text selectable style={typeScale.cardTitle}>
-                  {name || copy('ไม่ระบุชื่อ', 'No guest name')}
-                </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <Text selectable numberOfLines={1} style={[typeScale.hero, { minWidth: 0, flex: 1 }]}>
+                {selected?.display_label || selected?.table_number || copy('โต๊ะ', 'Table')}
+              </Text>
+              <StatusBadge label={copy('กำลังจอง', 'Active reservation')} tone="info" />
+            </View>
+            {/* Four short facts in two rows rather than four stacked ones. The
+                guest count is read here, not typed: this screen answers "who is
+                this and how many", and the count is still adjustable on the
+                order itself once the guests are seated. */}
+            <View style={{ gap: spacing.md }}>
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ชื่อผู้จอง', 'Guest name')}</Text>
+                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{name || copy('ไม่ระบุชื่อ', 'No guest name')}</Text>
+                </View>
+                <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('เบอร์โทร', 'Phone')}</Text>
+                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{phone || '−'}</Text>
+                </View>
               </View>
-              <View style={{ gap: 2 }}>
-                <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
-                  {copy('เบอร์โทร', 'Phone')}
-                </Text>
-                <Text selectable style={typeScale.body}>{phone || '−'}</Text>
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('จำนวนลูกค้า', 'Guests')}</Text>
+                  <Text selectable style={typeScale.cardTitle}>{guestCount}</Text>
+                </View>
+                <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('เวลาที่จอง', 'Booked')}</Text>
+                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>
+                    {formatReservationClock(reservation?.reserved_for || reservation?.CreatedAt, language)}
+                  </Text>
+                </View>
               </View>
             </View>
-            <TextField
-              icon="people-outline"
-              label={copy('จำนวนลูกค้า', 'Guest count')}
-              value={guestCount}
-              onChangeText={setGuestCount}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
           </>
         ) : (
           <>
@@ -269,44 +303,28 @@ export default function TableReservationScreen() {
           </>
         )}
       </Surface>
+      {/* The "Seat guests" card is gone: it was a heading, a sentence and an icon
+          wrapped around a button that the footer already carries. What is left
+          is the one action the footer does not have. */}
       {isReserved ? (
-        <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined, gap: spacing.lg }}>
-          <Surface>
-            <SectionHeader
-              title={copy('รับลูกค้า', 'Seat guests')}
-              detail={copy('เปิดออเดอร์แล้วเลือกเมนูต่อ', 'Open the order, then choose menu items.')}
-              action={<AppIcon color={palette.muted} name="restaurant-outline" size={22} />}
-            />
-            {tabletWorkspace ? <Button
+        <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined, gap: spacing.sm }}>
+          {tabletWorkspace ? (
+            <Button
               icon="restaurant-outline"
               label={copy('รับลูกค้าและเปิดออเดอร์', 'Seat guests and open order')}
               onPress={() => { void acceptReservation(); }}
               loading={saving}
-            /> : null}
-          </Surface>
-          <Surface>
-            <SectionHeader
-              title={copy('ยกเลิกการจอง', 'Cancel reservation')}
-              detail={confirmCancel
-                ? copy(
-                  'แตะยืนยันอีกครั้ง โต๊ะจะกลับเป็นสถานะว่าง',
-                  'Confirm once more to return the table to available.',
-                )
-                : copy(
-                  'ใช้เมื่อลูกค้ายกเลิกหรือไม่มาตามนัด',
-                  'Use this when guests cancel or do not arrive.',
-                )}
             />
-            <Button
-              icon="close-circle-outline"
-              variant={confirmCancel ? 'danger' : 'secondary'}
-              label={confirmCancel
-                ? copy('ยืนยันยกเลิกการจอง', 'Confirm reservation cancellation')
-                : copy('ยกเลิกการจอง', 'Cancel reservation')}
-              onPress={() => { void cancel(); }}
-              loading={saving}
-            />
-          </Surface>
+          ) : null}
+          <Button
+            icon="close-circle-outline"
+            variant={confirmCancel ? 'danger' : 'secondary'}
+            label={confirmCancel
+              ? copy('ยืนยันยกเลิกการจอง', 'Confirm reservation cancellation')
+              : copy('ยกเลิกการจอง', 'Cancel reservation')}
+            onPress={() => { void cancel(); }}
+            loading={saving}
+          />
         </View>
       ) : null}
       </View>

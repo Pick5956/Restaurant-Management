@@ -1,9 +1,20 @@
 package service
 
 import (
+	"time"
+
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
 )
+
+// staleScheduledBookingAge is how long past its time a booking waits before the
+// system closes it as a no-show.
+//
+// Four hours, not one: a guest can be very late and still turn up, and a booking
+// closed under a party that is on its way is worse than one that lingers an
+// extra hour. Long enough to cover a whole service, short enough that the list
+// does not fill with last week.
+const staleScheduledBookingAge = 4 * time.Hour
 
 type ReservationService struct {
 	repo *repository.ReservationRepository
@@ -33,6 +44,14 @@ func (s *ReservationService) ListReservations(restaurantID uint, status string, 
 		status != entity.ReservationStatusSeated && status != entity.ReservationStatusCancelled {
 		status = ""
 	}
+
+	// Swept here rather than on a timer: this list is the only place stale
+	// bookings are ever looked at, so reading it is exactly when they need to be
+	// correct, and a single-process backend has no scheduler to hang a job on.
+	// Failing to sweep must not fail the read — the rows are still true, just
+	// with a few that should have closed themselves.
+	now := repository.BangkokNow()
+	_, _ = s.repo.ExpireStaleScheduled(restaurantID, now.Add(-staleScheduledBookingAge), now)
 
 	rows, err := s.repo.List(restaurantID, status, limit+1, offset)
 	if err != nil {

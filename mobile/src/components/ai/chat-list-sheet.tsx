@@ -413,6 +413,8 @@ export function ChatListSheet({
                     value={query}
                     onChangeText={setQuery}
                     autoFocus
+                    // Same as SearchField: the return key already reads Search.
+                    omitKeyboardDoneBar
                     returnKeyType="search"
                     placeholder={t('ค้นหา', 'Search')}
                     placeholderTextColor={ai.faded}

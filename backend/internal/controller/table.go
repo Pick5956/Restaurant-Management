@@ -2,6 +2,8 @@ package controller
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"Project-M/internal/repository"
 	"Project-M/internal/service"
@@ -139,12 +141,25 @@ func (ctrl *TableController) ReserveTable(c *gin.Context) {
 	var req struct {
 		ReservationName  string `json:"reservation_name"`
 		ReservationPhone string `json:"reservation_phone"`
+		// Omitted or empty means "hold the table now". Sent means a booking for
+		// that time, which leaves the table sellable until the guests arrive.
+		ReservedFor string `json:"reserved_for"`
+		GuestCount  int    `json:"guest_count"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondInvalidRequest(c)
 		return
 	}
-	table, err := ctrl.tableSvc.ReserveTable(restaurantID, userID, tableID, req.ReservationPhone, req.ReservationName)
+	var reservedFor *time.Time
+	if trimmed := strings.TrimSpace(req.ReservedFor); trimmed != "" {
+		parsed, err := time.Parse(time.RFC3339, trimmed)
+		if err != nil {
+			respondInvalidRequest(c)
+			return
+		}
+		reservedFor = &parsed
+	}
+	table, err := ctrl.tableSvc.ReserveTable(restaurantID, userID, tableID, req.ReservationPhone, req.ReservationName, req.GuestCount, reservedFor)
 	if err != nil {
 		respondAPIError(c, http.StatusBadRequest, err)
 		return

@@ -8,10 +8,9 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
-import { ActionDock, Button, Divider, EmptyState, Feedback, SearchField, SectionHeader, Select, StatusBadge, Surface } from '@/src/components/ui';
+import { Button, Divider, EmptyState, Feedback, GlassLayer, IconButton, SearchField, SectionHeader, Select, StatusBadge, Surface } from '@/src/components/ui';
 import { itemStatusLabel, money, orderStatusLabel } from '@/src/lib/format';
 import {
-  CURRENT_ROUND_BAR_COLORS,
   createOrderDetailRequestGuard,
   currentRoundPresentation,
   orderSummaryPresentation,
@@ -22,14 +21,13 @@ import {
 import {
   activeOrderItems,
   canCloseEmptyOrder,
-  canOpenOrderBill,
 } from '@/src/lib/order-workflow';
 import { orderDetailLoadResources } from '@/src/lib/permission-parity';
 import { createRequestGeneration } from '@/src/lib/request-generation';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
+import { breakpoints, controlShadow, palette, radius, spacing, typeScale } from '@/src/theme';
 import type { Category, MenuItem } from '@/src/types/menu';
 import type { Order, OrderItem } from '@/src/types/order';
 
@@ -96,35 +94,45 @@ function CurrentRoundBasket({
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
+        // The same shape and material as every other primary action: radius.md
+        // and the app's control lift, rather than this bar's own 8pt corner and
+        // hand-rolled drop shadow. It was the last control still styled to its
+        // own rules.
         style={({ pressed }) => ({
-          height: 56,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: spacing.lg,
-          borderWidth: 1,
-          borderColor: CURRENT_ROUND_BAR_COLORS.borderColor,
-          borderRadius: 8,
-          backgroundColor: CURRENT_ROUND_BAR_COLORS.backgroundColor,
-          paddingHorizontal: spacing.lg,
-          shadowColor: palette.shadow,
-          shadowOffset: { width: 0, height: 3 },
-          shadowOpacity: 0.18,
-          shadowRadius: 6,
-          elevation: 4,
+          borderRadius: radius.md,
+          ...controlShadow,
           opacity: disabled ? 0.5 : pressed ? 0.82 : 1,
           transform: [{ scale: pressed ? 0.992 : 1 }],
         })}
       >
+        <GlassLayer
+          style={{
+            height: 56,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: spacing.lg,
+            borderRadius: radius.md,
+            paddingHorizontal: spacing.lg,
+          }}
+          // The same pale wash and orange ink as the add-to-order button, so the
+          // two primary actions in this flow are one thing. `primaryInk`, not
+          // `primary`, because the brand orange as text on its own soft fill
+          // measures 4.43:1 — under AA.
+          tint={palette.primaryWash}
+          fallback={palette.primaryWash}
+          fallbackBorder={palette.controlBorder}
+        >
         <View style={{ minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <AppIcon color={CURRENT_ROUND_BAR_COLORS.foregroundColor} name="basket-outline" size={20} />
-          <Text numberOfLines={1} style={{ minWidth: 0, flex: 1, color: CURRENT_ROUND_BAR_COLORS.foregroundColor, fontSize: 14, fontWeight: '700' }}>
+          <AppIcon color={palette.primaryInk} name="basket-outline" size={20} />
+          <Text numberOfLines={1} style={{ minWidth: 0, flex: 1, color: palette.primaryInk, fontSize: 14, fontWeight: '700' }}>
             {label}
           </Text>
         </View>
-        <Text numberOfLines={1} style={{ color: CURRENT_ROUND_BAR_COLORS.foregroundColor, fontSize: 17, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+        <Text numberOfLines={1} style={{ color: palette.primaryInk, fontSize: 17, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
           {value}
         </Text>
+        </GlassLayer>
       </Pressable>
     </View>
   );
@@ -179,6 +187,7 @@ export default function OrderDetailScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState('all');
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -262,6 +271,22 @@ export default function OrderDetailScreen() {
       return categoryMatch && (!keyword || [item.name, item.description].some((value) => String(value || '').toLowerCase().includes(keyword)));
     });
   }, [categoryId, menuItems, search]);
+  // Grouped the way the table map groups by zone: a flat run of dishes gives no
+  // clue where one part of the menu ends and the next begins.
+  const menuGroups = useMemo(() => {
+    const nameById = new Map(categories.map((item) => [item.ID, item.name]));
+    const order: string[] = [];
+    const buckets = new Map<string, { label: string; items: typeof filteredMenu }>();
+    filteredMenu.forEach((item) => {
+      const key = String(item.category_id || 0);
+      if (!buckets.has(key)) {
+        buckets.set(key, { label: nameById.get(item.category_id) || copy('ไม่ระบุหมวด', 'Uncategorised'), items: [] });
+        order.push(key);
+      }
+      buckets.get(key)?.items.push(item);
+    });
+    return order.map((key) => buckets.get(key)).filter(Boolean) as Array<{ label: string; items: typeof filteredMenu }>;
+  }, [categories, copy, filteredMenu]);
   const locked = order?.status === 'completed' || order?.status === 'cancelled';
   const canCloseEmpty = canTakeOrder && canCloseEmptyOrder(order);
 
@@ -299,15 +324,7 @@ export default function OrderDetailScreen() {
     if (closed) router.replace('/tables');
   }
 
-  const canOpenBill = Boolean(
-    order
-    && canAccessOrder
-    && (order.payment_status === 'paid' || canOpenOrderBill(order.items)),
-  );
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
-  const primaryAction = canOpenBill
-    ? <Button label={order?.payment_status === 'paid' ? copy('ดูใบเสร็จ', 'View receipt') : canPay ? copy('ออกบิล / รับเงิน', 'Bill / Pay') : copy('ดูบิล', 'View bill')} onPress={() => router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never)} />
-    : null;
   const showCurrentRoundBasket = shouldShowCurrentRoundBasket({
     canTakeOrder,
     orderStatus: order?.status,
@@ -376,36 +393,60 @@ export default function OrderDetailScreen() {
         );
       })}
       {!activeItems.length ? <EmptyState title={copy('ยังไม่มีรายการอาหาร', 'No items yet')} detail={copy('เลือกเมนูเพื่อเริ่มออเดอร์', 'Choose a menu item to start the order.')} /> : null}
-      {!primaryAction ? (
-        <>
-          <Divider />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.xs }}>
-            <Text selectable style={[typeScale.body, { color: palette.muted }]}>{copy('ยอดรวมออเดอร์', 'Order total')}</Text>
-            <Text selectable style={[typeScale.number, { fontSize: 21 }]}>{money(order.grand_total, language)}</Text>
+      {/* Always shown now. This used to be hidden whenever the bottom bar was
+          carrying the total; that bar is gone, so nothing else states it here. */}
+      <Divider />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.xs }}>
+        <Text selectable style={[typeScale.body, { color: palette.muted }]}>{copy('ยอดรวมออเดอร์', 'Order total')}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 21 }]}>{money(order.grand_total, language)}</Text>
+      </View>
+    </>
+  ) : null;
+
+  // Pinned with the heading rather than scrolled with the grid: a filter that
+  // has scrolled off screen cannot be changed without scrolling back for it.
+  // One row, not two — the category picker and a magnifier share it, and the
+  // search field takes the picker's place only while it is being used.
+  const menuFilterBar = order && !locked && canTakeOrder ? (
+    <>
+      {searchOpen ? (
+        // No close button. Scrolling the menu is what ends the search, which is
+        // the gesture already being made to look at the results — a dedicated
+        // dismiss control would only be in the way of the field it sits beside.
+        <SearchField
+          accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
+          autoFocus
+          clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
+          value={search}
+          onChangeText={setSearch}
+          placeholder={copy('ค้นหาเมนู', 'Search menu')}
+        />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <View style={{ minWidth: 0, flex: 1 }}>
+            <Select
+              value={categoryId}
+              onChange={setCategoryId}
+              options={[{ label: copy('ทั้งหมด', 'All'), value: 'all' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))]}
+            />
           </View>
-        </>
-      ) : null}
+          <IconButton
+            accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
+            icon="search-outline"
+            onPress={() => setSearchOpen(true)}
+          />
+        </View>
+      )}
     </>
   ) : null;
 
   const menuWorkspace = order && !locked && canTakeOrder ? (
     <View style={{ gap: spacing.md }}>
-      <SectionHeader title={copy('เพิ่มเมนู', 'Add menu items')} detail={copy('แตะเมนูเพื่อเลือกตัวเลือก จำนวน และหมายเหตุ', 'Tap a menu item to choose options, quantity, and notes.')} />
-      <SearchField
-        accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
-        clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
-        value={search}
-        onChangeText={setSearch}
-        placeholder={copy('ค้นหาเมนู', 'Search menu')}
-      />
-      <Select
-        label={copy('หมวดหมู่', 'Category')}
-        value={categoryId}
-        onChange={setCategoryId}
-        options={[{ label: copy('ทั้งหมด', 'All'), value: 'all' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))]}
-      />
+      {menuGroups.map((group) => (
+      <View key={group.label} style={{ gap: spacing.md }}>
+      <SectionHeader title={group.label} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-        {filteredMenu.map((item) => {
+        {group.items.map((item) => {
           return (
             <Pressable
               accessibilityLabel={copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`)}
@@ -435,10 +476,14 @@ export default function OrderDetailScreen() {
                 imageUrl={item.image_url}
                 variant="card"
               />
-              <View style={{ gap: spacing.sm, paddingHorizontal: spacing.xs, paddingBottom: spacing.sm }}>
-                <Text selectable numberOfLines={2} style={[typeScale.cardTitle, { minHeight: 42 }]}>{item.name}</Text>
+              {/* No reserved height on the name: it forced a second empty line
+                  under every one-line dish, which is what pushed the price so
+                  far from it. Prices in a row can now sit at different heights,
+                  which is the trade for having name and price read as one pair. */}
+              <View style={{ gap: 2, paddingHorizontal: spacing.xs, paddingBottom: spacing.sm }}>
+                <Text selectable numberOfLines={2} style={[typeScale.cardTitle, { fontWeight: '600' }]}>{item.name}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <Text selectable style={[typeScale.number, { flex: 1 }]}>{money(item.price, language)}</Text>
+                  <Text selectable style={[typeScale.number, { flex: 1, fontSize: 15, fontWeight: '600' }]}>{money(item.price, language)}</Text>
                   {!item.is_available ? <StatusBadge label={copy('หมด', 'Sold out')} tone="danger" /> : null}
                 </View>
               </View>
@@ -446,6 +491,8 @@ export default function OrderDetailScreen() {
           );
         })}
       </View>
+      </View>
+      ))}
       {!filteredMenu.length ? <EmptyState title={copy('ไม่พบเมนู', 'No menu items found')} detail={copy('ลองเปลี่ยนหมวดหรือคำค้น', 'Try another category or search.')} /> : null}
     </View>
   ) : null;
@@ -453,14 +500,16 @@ export default function OrderDetailScreen() {
   function renderDestructiveActions() {
     const stackActions = width < 520;
     const actionStyle = stackActions ? { width: '100%' as const } : { flex: 1 };
-    const closeEmptyContent = canCloseEmpty ? (
-      <>
-        <SectionHeader title={copy('ปิดโต๊ะที่เปิดผิด', 'Close mistakenly opened table')} detail={confirmEmptyClose ? copy('แตะยืนยันอีกครั้งเพื่อคืนโต๊ะเป็นว่าง', 'Confirm once more to return the table to available.') : copy('ใช้ได้เมื่อออเดอร์ยังไม่มีรายการอาหาร', 'Available only while this order has no items.')} />
-        <View style={{ flexDirection: stackActions ? 'column' : 'row', gap: spacing.sm }}>{confirmEmptyClose ? <Button variant="secondary" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmEmptyClose(false)} style={actionStyle} /> : null}<Button variant={confirmEmptyClose ? 'danger' : 'secondary'} label={confirmEmptyClose ? copy('ยืนยันปิดโต๊ะ', 'Confirm table close') : copy('ปิดโต๊ะว่าง', 'Close empty table')} onPress={closeEmpty} loading={submitting} style={actionStyle} /></View>
-      </>
-    ) : null;
-    if (!closeEmptyContent) return null;
-    return <Surface style={{ borderColor: confirmEmptyClose ? palette.danger : palette.border }}>{closeEmptyContent}</Surface>;
+    // No heading and no explanation: the control only exists while the order is
+    // empty, which is exactly the moment "I opened the wrong table" happens, and
+    // the confirm step says what it does by changing its own label.
+    if (!canCloseEmpty) return null;
+    return (
+      <View style={{ flexDirection: stackActions ? 'column' : 'row', gap: spacing.sm }}>
+        {confirmEmptyClose ? <Button variant="secondary" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmEmptyClose(false)} style={actionStyle} /> : null}
+        <Button variant={confirmEmptyClose ? 'danger' : 'secondary'} label={confirmEmptyClose ? copy('ยืนยันปิดโต๊ะ', 'Confirm table close') : copy('ปิดโต๊ะว่าง', 'Close empty table')} onPress={closeEmpty} loading={submitting} style={actionStyle} />
+      </View>
+    );
   }
 
   if (!canAccessOrder) {
@@ -471,16 +520,9 @@ export default function OrderDetailScreen() {
     return <AppScreen title={copy('รายละเอียดออเดอร์', 'Order details')} topLevel={false}><EmptyState title={copy('ไม่พบออเดอร์นี้', 'Order not found')} detail={copy('รหัสออเดอร์ไม่ถูกต้อง กรุณากลับไปเลือกรายการใหม่', 'The order ID is invalid. Go back and choose an order again.')} /></AppScreen>;
   }
 
-  const actionDock = primaryAction && order ? (
-    <ActionDock
-      label={pending.length && canTakeOrder
-        ? copy(`${pendingQuantity.toLocaleString('th-TH')} รายการรอส่งครัว`, `${pendingQuantity.toLocaleString('en-US')} items pending`)
-        : copy('ยอดรวมออเดอร์', 'Order total')}
-      value={money(order.grand_total, language)}
-    >
-      {primaryAction}
-    </ActionDock>
-  ) : null;
+  // No billing bar across the bottom. It sat over the menu grid permanently for
+  // an action taken once per order, and it belongs with the order it settles:
+  // the item count in the header opens the summary, and the bill button is there.
   const currentRoundBasket = showCurrentRoundBasket ? (
     <CurrentRoundBasket
       accessibilityLabel={currentRoundCopy.openLabel}
@@ -497,13 +539,25 @@ export default function OrderDetailScreen() {
       subtitle={order ? `${order.order_number} · ${orderStatusLabel(order.status, language)}` : copy('กำลังโหลดออเดอร์', 'Loading order')}
       topLevel={false}
       refreshControl={refreshControl}
-      footer={currentRoundBasket || actionDock}
+      // The menu grid runs long; without pinning, which table you are ordering
+      // for and the item count both scroll out of sight.
+      stickyHeading
+      stickyContent={menuFilterBar}
+      // Scrolling the menu closes the search and hands the row back to the
+      // category picker. Any typed keyword is cleared with it, so the grid can
+      // never stay filtered by a search box that is no longer on screen.
+      onScrollStart={() => {
+        if (!searchOpen) return;
+        setSearch('');
+        setSearchOpen(false);
+      }}
+      footer={currentRoundBasket}
       action={order ? (
         <OrderSummaryAction
           accessibilityLabel={orderSummaryCopy.title}
           count={activeQuantity}
           label={copy('รายการ', 'Items')}
-          onPress={() => router.push({ pathname: '/order/summary' as never, params: { id: String(orderId) } } as never)}
+          onPress={() => router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never)}
         />
       ) : undefined}
     >
@@ -514,8 +568,11 @@ export default function OrderDetailScreen() {
         <>
           {!canTakeOrder || locked ? <Surface>{orderSummaryContent}</Surface> : null}
 
-          {menuWorkspace}
+          {/* Above the menu, not below it: an order opened by mistake is closed
+              straight away, and burying the control under the whole grid meant
+              scrolling past every dish to undo a two-second error. */}
           {renderDestructiveActions()}
+          {menuWorkspace}
         </>
       ) : null}
     </AppScreen>

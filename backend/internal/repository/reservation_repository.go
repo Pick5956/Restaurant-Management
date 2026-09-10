@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"Project-M/internal/entity"
 
 	"gorm.io/gorm"
@@ -26,6 +28,24 @@ func (r *ReservationRepository) List(restaurantID uint, status string, limit, of
 	}
 	err := query.Order("id desc").Limit(limit).Offset(offset).Find(&reservations).Error
 	return reservations, err
+}
+
+// ExpireStaleScheduled closes bookings whose time came and went with nobody
+// resolving them.
+//
+// Only scheduled bookings (`reserved_for` set) are swept. A hold is left alone
+// on purpose: it has taken a table out of service, and releasing that is a
+// change to the floor that belongs to a person, not a timer. Clearing one is a
+// two-tap job from the reservation list.
+func (r *ReservationRepository) ExpireStaleScheduled(restaurantID uint, cutoff time.Time, now time.Time) (int64, error) {
+	result := r.db.Model(&entity.Reservation{}).
+		Where("restaurant_id = ? AND status = ? AND reserved_for IS NOT NULL AND reserved_for < ?",
+			restaurantID, entity.ReservationStatusActive, cutoff).
+		Updates(map[string]any{
+			"status":      entity.ReservationStatusCancelled,
+			"resolved_at": now,
+		})
+	return result.RowsAffected, result.Error
 }
 
 func (r *ReservationRepository) CountByStatus(restaurantID uint) (map[string]int64, error) {

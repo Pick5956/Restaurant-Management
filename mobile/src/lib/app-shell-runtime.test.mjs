@@ -180,9 +180,15 @@ test('role editor animates local state changes without stacked boxes or extra ru
   assert.doesNotMatch(roleSource, /borderTopWidth: 1,/);
   assert.match(motionSource, /height: containerHeight/);
   assert.match(motionSource, /onLayout=\{\(event\) => \{/);
-  assert.match(uiSource, /showTopBorder = true/);
-  assert.match(uiSource, /borderTopWidth: showTopBorder \? 1 : 0/);
-  assert.match(roleSource, /<ActionDock showTopBorder=\{false\}>/);
+  // The dock separates itself from the content it sits over with an upward
+  // shadow, not a hairline: a line reads as the end of the content, a shadow
+  // reads as a bar resting on top of it, and the list really does keep scrolling
+  // underneath. A screen that already ends in its own divider opts out so the
+  // two do not stack — which is what the role editor does.
+  assert.match(uiSource, /separated = true/);
+  assert.match(uiSource, /boxShadow: separated \?/);
+  assert.doesNotMatch(uiSource, /borderTopWidth: separated/);
+  assert.match(roleSource, /<ActionDock separated=\{false\}>/);
 
   assert.match(shellSource, /titleContent\?: React\.ReactNode/);
   assert.match(shellSource, /titleContent \?\? \(/);
@@ -631,4 +637,120 @@ test('warm primary scenes clear busy state when focus cleanup invalidates a fore
     ordersSource,
     /requestIdRef\.current \+= 1;\s+setLoading\(false\);\s+setLoadingMore\(false\);/,
   );
+});
+
+test('every text field gets a Done bar, on an id that cannot be shared', async () => {
+  const [inputSource, barSource, itemSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'src', 'components', 'app-text-input.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'keyboard-done-bar.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8'),
+  ]);
+
+  // Fabric recycles component views. RCTViewComponentView.prepareForRecycle resets
+  // the event emitter, layout metrics and subviews but never `_props`, while
+  // RCTTextInputComponentView.prepareForRecycle explicitly nils the backing
+  // field's inputAccessoryViewID. updateProps then writes it back only
+  // `if (new != old)` - so an id shared between screens compares equal, the write
+  // is skipped, and the field carries no id at all. The bar's one-shot
+  // didMoveToWindow lookup finds nothing and gives up for good: it worked on the
+  // first screen and was silently gone on every screen after. A per-instance id
+  // can never compare equal.
+  assert.match(inputSource, /useId\(\)\.replace\(/);
+  assert.match(inputSource, /const accessoryId = inputAccessoryViewID \?\? `dishy-done-\$\{generatedId\}`/);
+  assert.doesNotMatch(inputSource, /const [A-Z_]+ = '[a-z-]*accessory[a-z-]*'/);
+
+  // And it has to mount a commit AFTER the field, for the same one-shot lookup:
+  // in the same commit the field may not be in the window yet. An effect cannot
+  // run until the commit that mounted it is done.
+  assert.match(inputSource, /useEffect\(\(\) => \{\s*\r?\n?\s*setBarMounted\(true\);\s*\r?\n?\s*\}, \[\]\);/);
+  const fieldAt = inputSource.indexOf('<NativeTextInput');
+  const barAt = inputSource.indexOf('<KeyboardDoneBar');
+  assert.ok(fieldAt > 0 && barAt > fieldAt, 'the bar must render after the field it names');
+  assert.match(inputSource, /ownsBar && barMounted \? <KeyboardDoneBar/);
+
+  // One bar, wired at the single chokepoint every field in the app goes through.
+  // No screen may keep a private copy - that is what left it on one screen only.
+  assert.doesNotMatch(itemSource, /InputAccessoryView/);
+
+  // Two kinds of field opt out, and both have to stay opted out.
+  //
+  // The assistant composer is pinned to the bottom of a KeyboardAvoidingView, so
+  // it already rides on the keyboard with its own send button - a Done bar slides
+  // in UNDER it, two stacked bars with the useful one pushed further away.
+  //
+  // A search field's return key already reads Search and dismisses on its own, so
+  // a Done bar over it offers the same action twice. Every search input in the app
+  // is one of these two files; the assertion below is what keeps that true.
+  assert.match(inputSource, /&& !omitKeyboardDoneBar;/);
+  const [composerSource, uiSource, chatListSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'src', 'components', 'ai', 'composer.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'ui.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'ai', 'chat-list-sheet.tsx'), 'utf8'),
+  ]);
+  assert.match(composerSource, /^\s*omitKeyboardDoneBar$/m);
+  for (const [name, src] of [['ui.tsx', uiSource], ['chat-list-sheet.tsx', chatListSource]]) {
+    for (const match of src.matchAll(/returnKeyType="search"/g)) {
+      const before = src.slice(Math.max(0, match.index - 400), match.index);
+      assert.match(before, /omitKeyboardDoneBar/, `search input in ${name} still carries a Done bar`);
+    }
+  }
+
+  // Keyboard chrome, not app chrome. The first attempt drew this in Kanit on a
+  // brand surface, which is what gave it away as hand-built. Comments are stripped
+  // so the prose naming these does not satisfy the assertions itself.
+  const bar = barSource.replaceAll(/\{?\/\*[\s\S]*?\*\/\}?/g, '');
+  assert.doesNotMatch(bar, /palette\.|AppText/);
+  assert.match(bar, /<Text style=\{\{ color: SYSTEM_BAR\.tint/);
+
+  // UIToolbar is backed by UIBlurEffectStyleSystemChromeMaterial, and a flat rgba
+  // stand-in is the one difference a person can still see. Nothing opaque may sit
+  // under it either - a fill tints it.
+  assert.match(bar, /<BlurView/);
+  assert.match(bar, /blurTint: 'systemChromeMaterialLight'/);
+  assert.match(bar, /blurIntensity: 100/);
+  assert.doesNotMatch(bar.slice(bar.indexOf('export function')), /backgroundColor/);
+
+  // The keyboard below is rounded and the bar is not, so each bottom corner leaves
+  // a wedge the page shows through. It is filled with the bar's own material by
+  // two squares hanging below it - which must be SIBLINGS of that material:
+  // ExpoBlurView sets clipsToBounds on itself, so a child is cut off at the edge
+  // and fills nothing.
+  assert.match(bar, /\[side\]: 0/);
+  assert.match(bar, /top: SYSTEM_BAR\.height,/);
+  assert.match(bar, /cornerFill: \d+/);
+  const materialAt = bar.indexOf('<BlurView');
+  const fillAt = bar.indexOf('<BlurView', materialAt + 1);
+  const closeAt = bar.indexOf('</BlurView>');
+  assert.ok(fillAt > 0, 'the corner fills must exist');
+  assert.ok(closeAt === -1 || closeAt > fillAt, 'the corner fills must not be nested in the bar material');
+});
+
+test('the shell leaves the keyboard inset to iOS and reveals a covered field by measuring it', async () => {
+  const source = await readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8');
+  const itemSource = await readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8');
+
+  // RCTScrollViewComponentView._keyboardWillChangeFrame already adds the keyboard
+  // as contentInset.bottom. Adding it a second time as content padding gave the
+  // page two keyboards of slack, and it could be dragged up into a screenful of
+  // empty canvas.
+  assert.match(source, /automaticallyAdjustKeyboardInsets/);
+  assert.doesNotMatch(source, /paddingBottom:[^\n]*[Kk]eyboard/);
+
+  // What that inset does NOT do is clear the field: it clears the caret, which on
+  // a multiline box sits on the first line and is already visible. The screen
+  // measures its own overlap instead.
+  assert.match(source, /getOffset: \(\) => contentOffsetRef\.current/);
+  assert.match(itemSource, /scrollControlRef=\{scrollControl\}/);
+  assert.match(itemSource, /measureInWindow\(/);
+  assert.match(itemSource, /scrollControl\.current\?\.scrollTo\(target\)/);
+
+  // One movement, not two. On `didShow` this ran only after the keyboard had
+  // finished animating, so iOS's own partial scroll played out first and this
+  // followed it as a visibly separate second nudge. And the destination is
+  // absolute, taken from an anchor measured at focus: a measurement taken while
+  // the keyboard is animating races iOS's scroll, and pairing it with the current
+  // offset double-counts however far iOS has already moved.
+  assert.match(itemSource, /'keyboardWillChangeFrame' : 'keyboardDidShow'/);
+  assert.doesNotMatch(itemSource, /addListener\('keyboardDidShow'/);
+  assert.match(itemSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - keyboardTop;/);
 });

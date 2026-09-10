@@ -94,6 +94,35 @@ func (r *OrderRepository) CountOrdersForDate(restaurantID uint, orderDate string
 	return count, err
 }
 
+// MaxOrderSequenceForDate returns the highest order number already used today,
+// counting soft-deleted rows.
+//
+// The day's sequence must NOT come from a count of live orders. Closing a table
+// that was opened but never ordered from soft-deletes its order, which drops the
+// live count below the highest number still in use — so the next order is handed
+// a number a live order already holds, the partial unique index rejects the
+// insert, the transaction rolls back, and the count stays wrong. Every attempt
+// after that collides identically, on every table and on takeaway too, until the
+// calendar date rolls over. Staff see "resource already exists" and have no way
+// through it.
+//
+// `Unscoped` so a soft-deleted row keeps its slot. Reusing it would be legal —
+// the unique index is partial on `deleted_at IS NULL` — but a number a customer
+// may already have seen on a printed slip should not come back on someone else's
+// order, and a sequence that only ever climbs is the one people can reason about.
+//
+// The regex guard keeps the cast safe: order numbers written by other paths
+// (voids use a `VOID-<nanos>` form) would otherwise break `::int`.
+func (r *OrderRepository) MaxOrderSequenceForDate(restaurantID uint, orderDate string) (int64, error) {
+	var max int64
+	err := r.db.Unscoped().
+		Model(&entity.Order{}).
+		Where("restaurant_id = ? AND order_date = ? AND order_number ~ ?", restaurantID, orderDate, `^[0-9]{8}-[0-9]+$`).
+		Select(`COALESCE(MAX(split_part(order_number, '-', 2)::int), 0)`).
+		Scan(&max).Error
+	return max, err
+}
+
 func (r *OrderRepository) CreateOrder(order *entity.Order) error {
 	return r.db.Create(order).Error
 }
@@ -570,6 +599,22 @@ func (r *OrderRepository) FindTableByCustomerTokenForUpdate(token string) (*enti
 
 func (r *OrderRepository) SaveTable(table *entity.RestaurantTable) error {
 	return r.db.Omit(clause.Associations).Save(table).Error
+}
+
+// ReleaseTableStatus frees a table by writing that one column and nothing else.
+//
+// The order flow used to read the table, set Status, and Save it — which writes
+// every column back, so an edit the owner made to the capacity, zone or label
+// between the read and the write was silently reverted. There is no row lock in
+// that path to prevent it, and adding one is not the fix: an order transaction
+// already holds the order row, while other paths take the table first
+// (FindOpenOrderByTableForUpdate), so a table lock here would close an ABBA
+// cycle. Touching a single column removes the lost update without taking any
+// new lock at all.
+func (r *OrderRepository) ReleaseTableStatus(restaurantID, tableID uint) error {
+	return r.db.Model(&entity.RestaurantTable{}).
+		Where("restaurant_id = ? AND id = ?", restaurantID, tableID).
+		Update("status", entity.TableStatusFree).Error
 }
 
 func hasKitchenQueueItems(items []entity.OrderItem) bool {

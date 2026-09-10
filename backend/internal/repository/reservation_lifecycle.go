@@ -11,14 +11,28 @@ import (
 )
 
 // reconcileActiveReservationsForUpdate requires the caller to hold the parent
-// table row lock first. It locks every active lifecycle row, keeps the newest
-// row as the canonical current reservation, and cancels older duplicates left
-// by the legacy non-atomic status flow.
+// table row lock first. It locks every active hold on the table, keeps the
+// newest row as the canonical current reservation, and cancels older duplicates
+// left by the legacy non-atomic status flow.
+//
+// `reserved_for IS NULL` is load-bearing, not a filter for tidiness. Every
+// caller of this asks one question — "what is holding this table right now?" —
+// and only a hold answers it. Scheduled bookings are the opposite case: one
+// table legitimately carries several of them across an evening, so without this
+// clause "keep the newest, cancel the rest" reads a 18:00 and a 20:30 booking on
+// the same table as corruption and silently cancels the 20:30 one. That fired on
+// every seat, hold and release of the table, so a booking could vanish between
+// being taken and the guests arriving, with a `cancelled` row as the only trace.
 func reconcileActiveReservationsForUpdate(db *gorm.DB, restaurantID, tableID uint) (*entity.Reservation, error) {
 	var active []entity.Reservation
 	if err := db.
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("restaurant_id = ? AND table_id = ? AND status = ?", restaurantID, tableID, entity.ReservationStatusActive).
+		Where(
+			"restaurant_id = ? AND table_id = ? AND status = ? AND reserved_for IS NULL",
+			restaurantID,
+			tableID,
+			entity.ReservationStatusActive,
+		).
 		Order("id desc").
 		Find(&active).Error; err != nil {
 		return nil, err
@@ -39,7 +53,7 @@ func reconcileActiveReservationsForUpdate(db *gorm.DB, restaurantID, tableID uin
 	resolvedAt := BangkokNow()
 	result := db.Model(&entity.Reservation{}).
 		Where(
-			"restaurant_id = ? AND table_id = ? AND status = ? AND id IN ?",
+			"restaurant_id = ? AND table_id = ? AND status = ? AND reserved_for IS NULL AND id IN ?",
 			restaurantID,
 			tableID,
 			entity.ReservationStatusActive,

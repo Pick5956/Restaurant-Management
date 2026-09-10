@@ -199,7 +199,12 @@ func (s *OrderService) OpenOrder(restaurantID, userID uint, req *OpenOrderReques
 		}
 		now := repository.BangkokNow()
 		orderDate := now.Format("2006-01-02")
-		count, err := tx.CountOrdersForDate(restaurantID, orderDate)
+		// The highest number used today, not a count of the live ones. See
+		// MaxOrderSequenceForDate: a count regresses when an empty table is
+		// closed, and hands the next order a number that is already taken.
+		// The advisory lock above is still required — it serialises the
+		// read-then-insert; this only makes the value it reads the truth.
+		sequence, err := tx.MaxOrderSequenceForDate(restaurantID, orderDate)
 		if err != nil {
 			return err
 		}
@@ -211,7 +216,7 @@ func (s *OrderService) OpenOrder(restaurantID, userID uint, req *OpenOrderReques
 			RestaurantID:  restaurantID,
 			TableID:       tableID,
 			OrderType:     orderType,
-			OrderNumber:   orderNumberForDate(now.Format("20060102"), int(count)+1),
+			OrderNumber:   orderNumberForDate(now.Format("20060102"), int(sequence)+1),
 			OrderDate:     orderDate,
 			StaffID:       userID,
 			CustomerCount: customerCount,

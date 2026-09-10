@@ -325,7 +325,7 @@ export default function InventoryScreen() {
   const selectionBar = selecting ? (
     <Surface style={{ padding: 0, overflow: 'hidden' }}>
       <ActionDock
-        showTopBorder={false}
+        separated={false}
         label={copy('เลือกแล้ว', 'Selected')}
         value={selectedIds.size.toLocaleString(locale)}
       >
