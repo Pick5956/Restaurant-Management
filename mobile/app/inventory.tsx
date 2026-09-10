@@ -364,7 +364,7 @@ export default function InventoryScreen() {
           {selecting ? (
             <>
               <DockButton secondary label={t('ปรับยอด', 'Set count')} onPress={() => setSheet({ kind: 'batch', mode: 'count' })} disabled={!selected.size} />
-              <DockButton label={selected.size ? t(`เติมสต็อก ${selected.size} รายการ`, `Restock ${selected.size}`) : t('เติมสต็อก', 'Restock')} onPress={() => setSheet({ kind: 'batch', mode: 'restock' })} disabled={!selected.size} />
+              <DockButton label={selected.size ? t(`เติม ${selected.size} รายการ`, `Restock ${selected.size}`) : t('เติมสต็อก', 'Restock')} onPress={() => setSheet({ kind: 'batch', mode: 'restock' })} disabled={!selected.size} />
             </>
           ) : (
             <DockButton icon="add" label={t('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={() => router.push('/inventory/item' as never)} />

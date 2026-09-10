@@ -123,10 +123,20 @@ export function FloatingHeader({
       <GlassHeaderPane top={insets.top} solidTo={solidTo} fade={HEADER_FADE} />
       <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, paddingTop: insets.top + HEADER_PAD_TOP, paddingHorizontal: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {centered ? (
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 96 }}>
+              <Text numberOfLines={1} style={{ fontSize: 18, fontWeight: '700', color: palette.textStrong, lineHeight: 24 }}>{title}</Text>
+              {subtitle ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>{subtitle}</Text> : null}
+            </View>
+          ) : null}
           <GlassButton icon={backIcon} label={backLabel} onPress={onBack} />
-          <View style={{ flex: 1, minWidth: 0, alignItems: centered ? 'center' : 'flex-start' }}>
-            <Text numberOfLines={1} style={{ fontSize: centered ? 18 : 24, fontWeight: '700', color: palette.textStrong, lineHeight: centered ? 24 : 30 }}>{title}</Text>
-            {subtitle ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>{subtitle}</Text> : null}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {!centered ? (
+              <>
+                <Text numberOfLines={1} style={{ fontSize: 24, fontWeight: '700', color: palette.textStrong, lineHeight: 30 }}>{title}</Text>
+                {subtitle ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>{subtitle}</Text> : null}
+              </>
+            ) : null}
           </View>
           {trailing ?? <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />}
         </View>
@@ -450,9 +460,9 @@ export function Dock({ children }: { children: ReactNode }) {
 
 export function DockButton({ label, icon, onPress, secondary, disabled }: { label: string; icon?: AppIconName; onPress: () => void; secondary?: boolean; disabled?: boolean }) {
   const inner = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 54 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 54, paddingHorizontal: 14 }}>
       {icon ? <AppIcon name={icon} size={20} color={secondary ? palette.textStrong : '#ffffff'} /> : null}
-      <Text style={{ fontSize: 16, fontWeight: '600', color: secondary ? palette.textStrong : '#ffffff' }}>{label}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ flexShrink: 1, fontSize: 16, fontWeight: '600', color: secondary ? palette.textStrong : '#ffffff' }}>{label}</Text>
     </View>
   );
   return (
