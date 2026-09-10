@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,7 +18,8 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { palette } from '@/src/theme';
 import type { IngredientCategory } from '@/src/types/ingredient';
 
-interface Draft {
+interface Row {
+  key: string;
   name: string;
   categoryId: string;
   unit: string;
@@ -28,17 +29,11 @@ interface Draft {
   storageType: string;
 }
 
-interface Queued extends Draft {
-  key: string;
-}
-
-const blank = (): Draft => ({ name: '', categoryId: 'none', unit: 'กก.', cost: '0', stock: '0', minStock: '0', storageType: 'room_temp' });
-
 /**
- * Several ingredients in one visit, entered one at a time: the same form as
- * the single-ingredient screen, and under it the ones already filled in,
- * waiting. "เพิ่มวัตถุดิบ" moves the form into the queue and clears it;
- * the dock saves the queue in one go.
+ * Several ingredients in one visit. The screen is a list of the ones drafted
+ * so far — empty, it is one button in the middle of the page — and tapping
+ * "เพิ่มวัตถุดิบ" makes a new one and opens it; tapping a row opens that one.
+ * The form is the single-ingredient form. The dock saves every row at once.
  */
 export default function BulkAddIngredientsScreen() {
   const insets = useSafeAreaInsets();
@@ -48,12 +43,12 @@ export default function BulkAddIngredientsScreen() {
   const canManage = can(activeMembership, 'manage_inventory');
 
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
-  const [draft, setDraft] = useState<Draft>(blank());
-  const [queue, setQueue] = useState<Queued[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
+  // The row open in the form, or none: the list.
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [picker, setPicker] = useState<'none' | 'category' | 'unit' | 'storage'>('none');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scroll = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!canManage) return;
@@ -66,7 +61,6 @@ export default function BulkAddIngredientsScreen() {
     () => [{ label: t('ไม่มีหมวด', 'Uncategorised'), value: 'none' }, ...categories.filter((row) => row.is_active).map((row) => ({ label: row.name, value: String(row.ID) }))],
     [categories, t],
   );
-  const unitOptions = useMemo(() => ingredientUnitOptions(draft.unit), [draft.unit]);
   const storageOptions = [
     { label: t('อุณหภูมิห้อง', 'Room temperature'), value: 'room_temp' },
     { label: t('แห้ง', 'Dry'), value: 'dry' },
@@ -74,40 +68,56 @@ export default function BulkAddIngredientsScreen() {
     { label: t('แช่แข็ง', 'Frozen'), value: 'frozen' },
   ];
   const labelOf = (options: Array<{ label: string; value: string }>, value: string) => options.find((row) => row.value === value)?.label ?? options[0].label;
-  const set = (patch: Partial<Draft>) => setDraft((prev) => ({ ...prev, ...patch }));
 
-  const draftReady = draft.name.trim().length > 0;
+  const open = openKey ? rows.find((row) => row.key === openKey) ?? null : null;
+  const unitOptions = useMemo(() => ingredientUnitOptions(open?.unit ?? 'กก.'), [open?.unit]);
+  const set = (patch: Partial<Row>) => {
+    if (!openKey) return;
+    setRows((prev) => prev.map((row) => (row.key === openKey ? { ...row, ...patch } : row)));
+  };
 
-  // The form becomes a queued row; the form is fresh again, keeping the unit
-  // and storage — the next ingredient off the same delivery is usually kept the
-  // same way and counted in the same unit.
-  const enqueue = () => {
-    if (!draftReady) { setError(t('กรอกชื่อวัตถุดิบก่อน', 'Enter the ingredient name first.')); return; }
+  // A new row starts the way the last one was kept and counted — the next
+  // ingredient off the same delivery usually is — and opens at once.
+  const add = () => {
+    const last = rows[rows.length - 1];
+    const row: Row = {
+      key: `${Date.now()}-${rows.length}`,
+      name: '',
+      categoryId: last?.categoryId ?? 'none',
+      unit: last?.unit ?? 'กก.',
+      cost: '0',
+      stock: '0',
+      minStock: '0',
+      storageType: last?.storageType ?? 'room_temp',
+    };
+    setRows((prev) => [...prev, row]);
+    setOpenKey(row.key);
     setError(null);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setQueue((prev) => [...prev, { ...draft, name: draft.name.trim(), key: `${Date.now()}-${prev.length}` }]);
-    setDraft({ ...blank(), unit: draft.unit, storageType: draft.storageType, categoryId: draft.categoryId });
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    scroll.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const dequeue = (key: string) => {
+  // Back to the list. A row left without a name was never an ingredient, so
+  // it goes rather than sitting in the list as a blank line.
+  const closeForm = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setQueue((prev) => prev.filter((row) => row.key !== key));
+    setRows((prev) => prev.map((row) => ({ ...row, name: row.name.trim() })).filter((row) => row.name.length > 0));
+    setOpenKey(null);
   };
 
-  // What the dock saves: the queue, plus the form if a name has been typed
-  // into it — nobody should lose the one they were in the middle of.
-  const pending = draftReady ? [...queue, { ...draft, key: 'draft' }] : queue;
+  const removeRow = (key: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setRows((prev) => prev.filter((row) => row.key !== key));
+    setOpenKey(null);
+  };
 
   async function saveAll() {
-    if (!canManage || saving || !pending.length) return;
+    const ready = rows.filter((row) => row.name.trim());
+    if (!canManage || saving || !ready.length) return;
     setSaving(true);
     setError(null);
     try {
       const results = await Promise.allSettled(
-        pending.map((row) => createIngredient(buildIngredientCreateInput({
-          name: row.name,
+        ready.map((row) => createIngredient(buildIngredientCreateInput({
+          name: row.name.trim(),
           sku: '',
           categoryId: row.categoryId,
           imageUrl: '',
@@ -119,12 +129,11 @@ export default function BulkAddIngredientsScreen() {
           storageType: row.storageType,
         }))),
       );
-      const failedRows = pending.filter((_, index) => results[index].status === 'rejected');
-      if (failedRows.length) {
-        // Only what failed stays on the screen, ready to try again.
-        setQueue(failedRows.filter((row) => row.key !== 'draft'));
-        if (!failedRows.some((row) => row.key === 'draft')) setDraft(blank());
-        setError(t(`บันทึกได้ ${pending.length - failedRows.length} รายการ ล้มเหลว ${failedRows.length} รายการ — ที่เหลือคือรายการที่ยังไม่ได้บันทึก`, `Saved ${pending.length - failedRows.length}, ${failedRows.length} failed — what is left is what did not save.`));
+      const failed = ready.filter((_, index) => results[index].status === 'rejected');
+      if (failed.length) {
+        // Only what failed stays, ready to try again — nothing to retype.
+        setRows(failed);
+        setError(t(`บันทึกได้ ${ready.length - failed.length} รายการ ล้มเหลว ${failed.length} รายการ — ที่เหลือคือรายการที่ยังไม่ได้บันทึก`, `Saved ${ready.length - failed.length}, ${failed.length} failed — what is left is what did not save.`));
         return;
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -145,114 +154,143 @@ export default function BulkAddIngredientsScreen() {
   }
 
   const dockBottom = Math.max(insets.bottom, 12) + 6 + 54 + 22;
+  const contentTop = headerContentTop(insets.top, false);
+  const addButton = (
+    <Pressable
+      accessibilityRole="button"
+      onPress={add}
+      style={({ pressed }) => ({ height: 54, paddingHorizontal: 26, borderRadius: 27, backgroundColor: palette.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.88 : 1, shadowColor: palette.primary, shadowOpacity: 0.32, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 })}
+    >
+      <AppIcon name="add" size={22} color="#ffffff" />
+      <Text style={{ fontSize: 16, fontWeight: '600', color: '#ffffff' }}>{t('เพิ่มวัตถุดิบ', 'Add ingredient')}</Text>
+    </Pressable>
+  );
 
+  // ---------------------------------------------------------------- the form
+  if (open) {
+    const index = rows.findIndex((row) => row.key === open.key) + 1;
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.canvas }}>
+        <FloatingHeader
+          centered
+          title={open.name.trim() || t(`รายการที่ ${index}`, `Item ${index}`)}
+          backLabel={t('กลับไปรายการ', 'Back to the list')}
+          onBack={closeForm}
+          trailing={(
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('เอารายการนี้ออก', 'Remove this item')}
+              onPress={() => removeRow(open.key)}
+              hitSlop={6}
+              style={({ pressed }) => ({ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.danger, opacity: pressed ? 0.85 : 1, shadowColor: '#3d2b1f', shadowOpacity: 0.24, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 })}
+            >
+              <AppIcon name="trash-outline" size={21} color="#ffffff" />
+            </Pressable>
+          )}
+        />
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingTop: contentTop, paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}>
+            <FormGroup>
+              <FormRow label={t('ชื่อ', 'Name')} first>
+                <FormField value={open.name} onChangeText={(name) => set({ name })} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} />
+              </FormRow>
+            </FormGroup>
+            <FormGroup title={t('หมวดและหน่วย', 'Category and unit')}>
+              <FormPickRow label={t('หมวด', 'Category')} value={labelOf(categoryOptions, open.categoryId)} first onPress={() => setPicker('category')} />
+              <FormPickRow label={t('หน่วยสต็อก', 'Stock unit')} value={open.unit} onPress={() => setPicker('unit')} />
+            </FormGroup>
+            <FormGroup title={t('ต้นทุนและสต็อก', 'Cost and stock')}>
+              <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
+                <FormField value={open.cost} onChangeText={(cost) => set({ cost })} numeric prefix="฿" suffix={`/ ${open.unit}`} />
+              </FormRow>
+              <FormRow label={t('สต็อกเริ่มต้น', 'Opening stock')}>
+                <FormField value={open.stock} onChangeText={(stock) => set({ stock })} numeric suffix={open.unit} />
+              </FormRow>
+              <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
+                <FormField value={open.minStock} onChangeText={(minStock) => set({ minStock })} numeric suffix={open.unit} />
+              </FormRow>
+            </FormGroup>
+            <FormGroup title={t('การจัดเก็บ', 'Storage')}>
+              <FormPickRow label={t('วิธีเก็บ', 'Kept')} value={labelOf(storageOptions, open.storageType)} first onPress={() => setPicker('storage')} />
+            </FormGroup>
+          </ScrollView>
+        </KeyboardAvoidingView>
+        <Dock>
+          <DockButton icon="checkmark" label={t('เสร็จ', 'Done')} onPress={closeForm} />
+        </Dock>
+
+        <BottomSheet open={picker === 'category'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
+          <SheetTitle title={t('หมวด', 'Category')} />
+          <SheetSection title={t('เลือกหนึ่งหมวด', 'Pick one')}>
+            {categoryOptions.map((option) => (
+              <ChoiceChip key={option.value} label={option.label} on={option.value === open.categoryId} onPress={() => { set({ categoryId: option.value }); setPicker('none'); }} />
+            ))}
+          </SheetSection>
+        </BottomSheet>
+        <BottomSheet open={picker === 'unit'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
+          <SheetTitle title={t('หน่วยสต็อก', 'Stock unit')} />
+          <SheetSection title={t('เลือกหนึ่งหน่วย', 'Pick one')}>
+            {unitOptions.map((option) => (
+              <ChoiceChip key={option} label={option} on={option === open.unit} onPress={() => { set({ unit: option }); setPicker('none'); }} />
+            ))}
+          </SheetSection>
+        </BottomSheet>
+        <BottomSheet open={picker === 'storage'} onClose={() => setPicker('none')} heightFraction={0.4} label={t('ปิด', 'Close')} showClose>
+          <SheetTitle title={t('การจัดเก็บ', 'Storage')} />
+          <SheetSection title={t('เก็บแบบไหน', 'Kept how')}>
+            {storageOptions.map((option) => (
+              <ChoiceChip key={option.value} label={option.label} on={option.value === open.storageType} onPress={() => { set({ storageType: option.value }); setPicker('none'); }} />
+            ))}
+          </SheetSection>
+        </BottomSheet>
+      </View>
+    );
+  }
+
+  // ---------------------------------------------------------------- the list
   return (
     <View style={{ flex: 1, backgroundColor: palette.canvas }}>
       <FloatingHeader centered title={t('เพิ่มหลายรายการ', 'Add several')} backLabel={t('ย้อนกลับ', 'Back')} onBack={() => router.back()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          ref={scroll}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}
-        >
+      {rows.length === 0 ? (
+        // One button, in the middle of an empty page.
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: contentTop, paddingBottom: dockBottom, paddingHorizontal: 32 }}>
+          {error ? <Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /> : null}
+          <AppIcon name="cube-outline" size={44} color={palette.border} />
+          <Text style={{ fontSize: 14.5, color: palette.muted, textAlign: 'center', lineHeight: 21 }}>{t('ยังไม่มีรายการ\nเพิ่มทีละรายการ แล้วบันทึกทั้งหมดทีเดียว', 'Nothing yet.\nAdd them one at a time, then save all at once.')}</Text>
+          {addButton}
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingTop: contentTop, paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}>
           {error ? <View style={{ marginBottom: 12 }}><Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /></View> : null}
-
-          <FormGroup>
-            <FormRow label={t('ชื่อ', 'Name')} first>
-              <FormField value={draft.name} onChangeText={(name) => set({ name })} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} />
-            </FormRow>
-          </FormGroup>
-
-          <FormGroup title={t('หมวดและหน่วย', 'Category and unit')}>
-            <FormPickRow label={t('หมวด', 'Category')} value={labelOf(categoryOptions, draft.categoryId)} first onPress={() => setPicker('category')} />
-            <FormPickRow label={t('หน่วยสต็อก', 'Stock unit')} value={draft.unit} onPress={() => setPicker('unit')} />
-          </FormGroup>
-
-          <FormGroup title={t('ต้นทุนและสต็อก', 'Cost and stock')}>
-            <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
-              <FormField value={draft.cost} onChangeText={(cost) => set({ cost })} numeric prefix="฿" suffix={`/ ${draft.unit}`} />
-            </FormRow>
-            <FormRow label={t('สต็อกเริ่มต้น', 'Opening stock')}>
-              <FormField value={draft.stock} onChangeText={(stock) => set({ stock })} numeric suffix={draft.unit} />
-            </FormRow>
-            <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
-              <FormField value={draft.minStock} onChangeText={(minStock) => set({ minStock })} numeric suffix={draft.unit} />
-            </FormRow>
-          </FormGroup>
-
-          <FormGroup title={t('การจัดเก็บ', 'Storage')}>
-            <FormPickRow label={t('วิธีเก็บ', 'Kept')} value={labelOf(storageOptions, draft.storageType)} first onPress={() => setPicker('storage')} />
-          </FormGroup>
-
-          {/* Into the queue. Secondary, because the dock's save is the act
-              that matters; this one only sets the next form up. */}
-          <Pressable
-            accessibilityRole="button"
-            onPress={enqueue}
-            style={({ pressed }) => ({ height: 50, borderRadius: 25, borderWidth: 1.5, borderColor: palette.primary, backgroundColor: pressed ? palette.surfaceStrong : palette.surface, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 26, opacity: draftReady ? 1 : 0.55 })}
-          >
-            <AppIcon name="add" size={20} color={palette.primaryInk} />
-            <Text style={{ fontSize: 15.5, fontWeight: '600', color: palette.primaryInk }}>{t('เพิ่มวัตถุดิบ', 'Add ingredient')}</Text>
-          </Pressable>
-
-          <FormGroup
-            title={queue.length ? t(`รอบันทึก · ${queue.length} รายการ`, `Waiting to save · ${queue.length}`) : t('รอบันทึก', 'Waiting to save')}
-            footer={queue.length ? undefined : t('กรอกด้านบนแล้วกด "เพิ่มวัตถุดิบ" รายการจะมาต่อแถวที่นี่ แล้วค่อยบันทึกทีเดียว', 'Fill the form and tap "Add ingredient"; it queues here, then everything saves at once.')}
-          >
-            {queue.length ? queue.map((row, index) => (
-              <View key={row.key} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 54, paddingLeft: 16, paddingRight: 8, gap: 10, borderTopWidth: index ? 1 : 0, borderTopColor: palette.divider }}>
+          <FormGroup title={t(`รายการ · ${rows.length}`, `Items · ${rows.length}`)}>
+            {rows.map((row, index) => (
+              <Pressable
+                key={row.key}
+                accessibilityRole="button"
+                accessibilityLabel={t(`แก้ไข ${row.name}`, `Edit ${row.name}`)}
+                onPress={() => setOpenKey(row.key)}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 58, paddingLeft: 16, paddingRight: 10, gap: 10, borderTopWidth: index ? 1 : 0, borderTopColor: palette.divider, backgroundColor: pressed ? palette.surfaceSubtle : 'transparent' })}
+              >
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text numberOfLines={1} style={{ fontSize: 15.5, fontWeight: '600', color: palette.textStrong }}>{row.name}</Text>
                   <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>
                     {labelOf(categoryOptions, row.categoryId)} · {fmt(row.stock, locale)} {row.unit} · ฿{fmt(row.cost, locale)}/{row.unit}
                   </Text>
                 </View>
-                <Pressable accessibilityRole="button" accessibilityLabel={t(`เอา ${row.name} ออก`, `Remove ${row.name}`)} onPress={() => dequeue(row.key)} hitSlop={8} style={({ pressed }) => ({ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-                  <AppIcon name="close-circle" size={22} color={palette.placeholder} />
-                </Pressable>
-              </View>
-            )) : (
-              <View style={{ minHeight: 54, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 14, color: palette.placeholder }}>{t('ยังไม่มีรายการ', 'Nothing queued yet')}</Text>
-              </View>
-            )}
+                <AppIcon name="chevron-forward" size={17} color={palette.placeholder} />
+              </Pressable>
+            ))}
           </FormGroup>
+          <View style={{ alignItems: 'center' }}>{addButton}</View>
         </ScrollView>
-      </KeyboardAvoidingView>
-
+      )}
       <Dock>
         <DockButton
-          label={saving ? t('กำลังบันทึก…', 'Saving…') : pending.length ? t(`บันทึก ${pending.length} รายการ`, `Save ${pending.length}`) : t('บันทึก', 'Save')}
+          label={saving ? t('กำลังบันทึก…', 'Saving…') : rows.length ? t(`บันทึกทุกรายการ · ${rows.length}`, `Save all · ${rows.length}`) : t('บันทึกทุกรายการ', 'Save all')}
           onPress={saveAll}
-          disabled={saving || !pending.length}
+          disabled={saving || !rows.length}
         />
       </Dock>
-
-      <BottomSheet open={picker === 'category'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
-        <SheetTitle title={t('หมวด', 'Category')} />
-        <SheetSection title={t('เลือกหนึ่งหมวด', 'Pick one')}>
-          {categoryOptions.map((option) => (
-            <ChoiceChip key={option.value} label={option.label} on={option.value === draft.categoryId} onPress={() => { set({ categoryId: option.value }); setPicker('none'); }} />
-          ))}
-        </SheetSection>
-      </BottomSheet>
-      <BottomSheet open={picker === 'unit'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
-        <SheetTitle title={t('หน่วยสต็อก', 'Stock unit')} />
-        <SheetSection title={t('เลือกหนึ่งหน่วย', 'Pick one')}>
-          {unitOptions.map((option) => (
-            <ChoiceChip key={option} label={option} on={option === draft.unit} onPress={() => { set({ unit: option }); setPicker('none'); }} />
-          ))}
-        </SheetSection>
-      </BottomSheet>
-      <BottomSheet open={picker === 'storage'} onClose={() => setPicker('none')} heightFraction={0.4} label={t('ปิด', 'Close')} showClose>
-        <SheetTitle title={t('การจัดเก็บ', 'Storage')} />
-        <SheetSection title={t('เก็บแบบไหน', 'Kept how')}>
-          {storageOptions.map((option) => (
-            <ChoiceChip key={option.value} label={option.label} on={option.value === draft.storageType} onPress={() => { set({ storageType: option.value }); setPicker('none'); }} />
-          ))}
-        </SheetSection>
-      </BottomSheet>
     </View>
   );
 }
