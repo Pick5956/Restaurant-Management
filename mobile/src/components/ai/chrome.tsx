@@ -471,10 +471,12 @@ export function GlassMorphMenu({
     // the shape curves below, where they can be read and tuned; a spring on top
     // of them added a second, unrelated bounce and rushed the drop phase past
     // in five frames. The first version ran in 0.3s and read as a jump from
-    // circle to box — the drop needs time on screen to be seen at all.
+    // circle to box — the drop needs time on screen to be seen at all. 780ms
+    // showed the drop but felt slow once the menu was on every card; 520 is
+    // the owner's pick, still long enough for the drop phase to register.
     const animation = Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: reducedMotion ? 0 : open ? 780 : 560,
+      duration: reducedMotion ? 0 : open ? 520 : 380,
       // Fast out of the button, long settle. Closing is gentler both ends.
       easing: open ? Easing.bezier(0.22, 0.8, 0.24, 1) : Easing.bezier(0.4, 0, 0.6, 1),
       useNativeDriver: false,
