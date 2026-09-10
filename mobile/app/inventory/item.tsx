@@ -1,40 +1,52 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { adjustStock, createIngredient, deleteIngredient, listIngredientCategories, listIngredients, listTransactions, updateIngredient } from '@/src/api/ingredient';
-import { AppText as Text } from '@/src/components/app-text';
+import { createIngredient, deleteIngredient, listIngredientCategories, listIngredients, updateIngredient } from '@/src/api/ingredient';
+import { BottomSheet } from '@/src/components/ai/chrome';
+import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
-import { StateMessage } from '@/src/components/mobile-screen';
-import { Button, ChipGroup, Divider, EmptyState, Feedback, SectionHeader, Surface, TextField } from '@/src/components/ui';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, SheetSection, SheetTitle, headerContentTop } from '@/src/components/inventory/parts';
+import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   buildIngredientCreateInput,
   buildIngredientMetadataInput,
-  ingredientUnitOptions,
   ingredientToFormValues,
-  validateStockAdjustmentQuantity,
+  ingredientUnitOptions,
 } from '@/src/lib/inventory-form';
 import { inventoryItemAccess } from '@/src/lib/permission-parity';
 import { can } from '@/src/lib/rbac';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
-import type { Ingredient, IngredientCategory, IngredientTransaction } from '@/src/types/ingredient';
+import { palette } from '@/src/theme';
+import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
 
+/**
+ * The ingredient's own facts — name, category, unit, cost, reorder level,
+ * storage — and nothing else. Stock moves and history live on the detail
+ * screen; this one is a form, laid out the way iOS lays out a form: grouped
+ * rows, the label on the left, what you type on the right.
+ */
 export default function InventoryItemScreen() {
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { activeMembership } = useAuth();
-  const { copy, language } = useDisplayPreferences();
-  const locale = language === 'th' ? 'th-TH' : 'en-US';
+  const { copy: t } = useDisplayPreferences();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const routeId = parsePositiveRouteId(id);
   const itemId = routeId.kind === 'valid' ? routeId.id : null;
   const editing = routeId.kind === 'valid';
   const invalidRoute = routeId.kind === 'invalid';
+  const canView = can(activeMembership, 'view_inventory');
+  const canManage = can(activeMembership, 'manage_inventory');
+  const access = inventoryItemAccess(editing, canView, canManage);
+  const readOnly = access === 'read';
+
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
-  const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
   const [name, setName] = useState('');
+  // SKU, image and yield have no rows any more — the owner dropped them — but
+  // the API still carries them, so whatever the record had goes back as it was.
   const [sku, setSku] = useState('');
   const [categoryId, setCategoryId] = useState('none');
   const [imageUrl, setImageUrl] = useState('');
@@ -44,24 +56,15 @@ export default function InventoryItemScreen() {
   const [cost, setCost] = useState('0');
   const [yieldPercent, setYieldPercent] = useState('100');
   const [storageType, setStorageType] = useState('room_temp');
-  const [adjustType, setAdjustType] = useState<'in' | 'out' | 'adjust'>('in');
-  const [adjustQuantity, setAdjustQuantity] = useState('');
-  const [adjustNote, setAdjustNote] = useState('');
-  const [adjustError, setAdjustError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(editing);
   const [itemExists, setItemExists] = useState<boolean | null>(editing ? null : true);
-  const canViewInventory = can(activeMembership, 'view_inventory');
-  const canManage = can(activeMembership, 'manage_inventory');
-  const access = inventoryItemAccess(editing, canViewInventory, canManage);
-  const readOnly = access === 'read';
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
-  const screenTitle = editing
-    ? canManage ? copy('แก้ไขวัตถุดิบ', 'Edit ingredient') : copy('รายละเอียดวัตถุดิบ', 'Ingredient details')
-    : copy('เพิ่มวัตถุดิบ', 'Add ingredient');
+  const [picker, setPicker] = useState<'none' | 'category' | 'unit' | 'storage'>('none');
+
+  const title = editing
+    ? readOnly ? t('รายละเอียดวัตถุดิบ', 'Ingredient details') : t('แก้ไขวัตถุดิบ', 'Edit ingredient')
+    : t('เพิ่มวัตถุดิบ', 'Add ingredient');
 
   useEffect(() => {
     if (invalidRoute || access === 'denied') {
@@ -73,26 +76,19 @@ export default function InventoryItemScreen() {
     setError(null);
     setItemExists(editing ? null : true);
     Promise.all([listIngredientCategories(), listIngredients()])
-      .then(async ([categoryResponse, ingredientResponse]) => {
+      .then(([categoryResponse, ingredientResponse]) => {
         setCategories(categoryResponse.categories || []);
         const item = ingredientResponse.ingredients.find((current) => current.ID === itemId);
         if (editing && !item) {
-          setTransactions([]);
           setItemExists(false);
           return;
         }
         if (item) fill(item);
         setItemExists(true);
-        if (editing && itemId !== null) {
-          const transactionResponse = await listTransactions(itemId);
-          setTransactions(transactionResponse.transactions || []);
-        } else {
-          setTransactions([]);
-        }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : copy('โหลดข้อมูลวัตถุดิบไม่สำเร็จ', 'Could not load ingredient data.')))
+      .catch((err) => setError(err instanceof Error ? err.message : t('โหลดข้อมูลวัตถุดิบไม่สำเร็จ', 'Could not load ingredient data.')))
       .finally(() => setLoading(false));
-  }, [access, copy, editing, invalidRoute, itemId]);
+  }, [access, t, editing, invalidRoute, itemId]);
 
   function fill(item: Ingredient) {
     const values = ingredientToFormValues(item);
@@ -101,283 +97,184 @@ export default function InventoryItemScreen() {
     setCost(values.cost); setYieldPercent(values.yieldPercent); setStorageType(values.storageType);
   }
 
-  const categoryOptions = useMemo(() => [{ label: copy('ไม่มีหมวด', 'Uncategorized'), value: 'none' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))], [categories, copy]);
-  const unitOptions = useMemo(() => ingredientUnitOptions(unit).map((option) => ({ label: option, value: option })), [unit]);
-  const categoryName = categories.find((item) => String(item.ID) === categoryId)?.name || copy('ไม่มีหมวด', 'Uncategorized');
-  const storageLabel = storageType === 'dry'
-    ? copy('แห้ง', 'Dry')
-    : storageType === 'chilled'
-      ? copy('แช่เย็น', 'Chilled')
-      : storageType === 'frozen'
-        ? copy('แช่แข็ง', 'Frozen')
-        : copy('อุณหภูมิห้อง', 'Room temperature');
-  const readOnlyRows = [
-    [copy('ชื่อวัตถุดิบ', 'Ingredient name'), name || '—'],
-    [copy('หมวด', 'Category'), categoryName],
-    [copy('สต็อกคงเหลือ', 'Stock on hand'), `${Number(stock).toLocaleString(locale)} ${unit}`],
-    [copy('จุดเตือนขั้นต่ำ', 'Low-stock threshold'), `${Number(minStock).toLocaleString(locale)} ${unit}`],
-    [copy('ต้นทุนต่อหน่วย', 'Cost per unit'), Number(cost).toLocaleString(locale)],
-    [copy('การจัดเก็บ', 'Storage'), storageLabel],
+  const categoryOptions = useMemo(
+    () => [{ label: t('ไม่มีหมวด', 'Uncategorised'), value: 'none' }, ...categories.filter((row) => row.is_active).map((row) => ({ label: row.name, value: String(row.ID) }))],
+    [categories, t],
+  );
+  const unitOptions = useMemo(() => ingredientUnitOptions(unit), [unit]);
+  const storageOptions = [
+    { label: t('อุณหภูมิห้อง', 'Room temperature'), value: 'room_temp' },
+    { label: t('แห้ง', 'Dry'), value: 'dry' },
+    { label: t('แช่เย็น', 'Chilled'), value: 'chilled' },
+    { label: t('แช่แข็ง', 'Frozen'), value: 'frozen' },
   ];
+  const categoryName = categoryOptions.find((row) => row.value === categoryId)?.label ?? t('ไม่มีหมวด', 'Uncategorised');
+  const storageName = storageOptions.find((row) => row.value === storageType)?.label ?? storageOptions[0].label;
 
   async function save() {
-    if (!canManage || invalidRoute) return;
+    if (!canManage || invalidRoute || saving) return;
     if (editing && (itemId === null || itemExists !== true)) return;
-    if (!name.trim() || !unit.trim()) { setError(copy('กรอกชื่อและหน่วยให้ครบ', 'Enter both an ingredient name and unit.')); return; }
-    setSaving(true); setError(null); setMessage(null);
-    try {
-      const values = {
-        name,
-        sku,
-        categoryId,
-        imageUrl,
-        unit,
-        stock,
-        minStock,
-        cost,
-        yieldPercent,
-        storageType,
-      };
-      if (editing) {
-        if (itemId === null) return;
-        await updateIngredient(itemId, buildIngredientMetadataInput(values));
-      } else {
-        await createIngredient(buildIngredientCreateInput(values));
-      }
-      router.back();
-    } catch (err) { setError(err instanceof Error ? err.message : copy('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save the ingredient.')); }
-    finally { setSaving(false); }
-  }
-
-  async function submitAdjustment() {
-    if (!canManage || itemId === null || itemExists !== true) return;
-    const result = validateStockAdjustmentQuantity(adjustQuantity, adjustType);
-    if (!result.ok) {
-      const detail = result.reason === 'required'
-        ? copy('กรอกจำนวนที่ต้องการปรับ', 'Enter the quantity to adjust.')
-        : result.reason === 'positive'
-          ? copy('จำนวนที่ปรับต้องมากกว่า 0', 'The adjustment quantity must be greater than zero.')
-          : result.reason === 'non_negative'
-            ? copy('ยอดคงเหลือใหม่ต้องไม่น้อยกว่า 0', 'The new stock balance cannot be below zero.')
-            : copy('กรอกจำนวนเป็นตัวเลขที่ถูกต้อง', 'Enter a valid numeric quantity.');
-      setAdjustError(detail);
-      return;
-    }
-    const quantity = result.quantity;
-    if (adjustType === 'out' && quantity > Number(stock)) {
-      setAdjustError(copy(`สต็อกคงเหลือมีเพียง ${Number(stock).toLocaleString('th-TH')} ${unit}`, `Only ${Number(stock).toLocaleString('en-US')} ${unit} remains in stock.`));
-      return;
-    }
-    setSaving(true); setError(null); setAdjustError(null); setMessage(null);
-    try {
-      const next = await adjustStock(itemId, { type: adjustType, quantity, note: adjustNote.trim() });
-      setStock(String(next.stock)); setAdjustQuantity(''); setAdjustNote(''); setMessage(copy('ปรับสต็อกแล้ว', 'Stock updated.'));
-      try {
-        const response = await listTransactions(itemId);
-        setTransactions(response.transactions || []);
-      } catch (refreshError) {
-        setError(refreshError instanceof Error
-          ? copy(`ปรับสต๊อกแล้ว แต่โหลดประวัติล่าสุดไม่สำเร็จ: ${refreshError.message}`, `Stock was updated, but the latest history could not be loaded: ${refreshError.message}`)
-          : copy('ปรับสต๊อกแล้ว แต่โหลดประวัติล่าสุดไม่สำเร็จ', 'Stock was updated, but the latest history could not be loaded.'));
-      }
-    } catch (err) { setAdjustError(err instanceof Error ? err.message : copy('ปรับสต็อกไม่สำเร็จ', 'Could not update stock.')); }
-    finally { setSaving(false); }
-  }
-
-  async function remove() {
-    if (!canManage || itemId === null || itemExists !== true) return;
-    if (!confirmDelete) { setConfirmDelete(true); return; }
+    if (!name.trim() || !unit.trim()) { setError(t('กรอกชื่อและหน่วยให้ครบ', 'Enter both an ingredient name and unit.')); return; }
     setSaving(true); setError(null);
-    try { await deleteIngredient(itemId); router.back(); }
-    catch (err) { setError(err instanceof Error ? err.message : copy('ลบวัตถุดิบไม่สำเร็จ', 'Could not delete the ingredient.')); setSaving(false); }
+    try {
+      const values = { name, sku, categoryId, imageUrl, unit, stock, minStock, cost, yieldPercent, storageType };
+      if (editing) await updateIngredient(itemId!, buildIngredientMetadataInput(values));
+      else await createIngredient(buildIngredientCreateInput(values));
+      router.back();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save the ingredient.'));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (invalidRoute) {
+  function remove() {
+    if (!canManage || itemId === null || itemExists !== true) return;
+    Alert.alert(
+      t(`ลบ ${name}?`, `Delete ${name}?`),
+      t('ประวัติสต็อกของรายการนี้จะหายไปด้วย', 'Its stock history goes with it.'),
+      [
+        { text: t('ยกเลิก', 'Cancel'), style: 'cancel' },
+        {
+          text: t('ลบ', 'Delete'),
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              await deleteIngredient(itemId);
+              // Straight back to the list: the detail screen underneath is for
+              // an ingredient that no longer exists.
+              router.dismissTo('/inventory' as never);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : t('ลบวัตถุดิบไม่สำเร็จ', 'Could not delete the ingredient.'));
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  if (invalidRoute || access === 'denied' || (editing && itemExists === false) || (editing && !loading && error && itemExists !== true)) {
+    const heading = invalidRoute || itemExists === false
+      ? t('ไม่พบวัตถุดิบ', 'Ingredient not found')
+      : access === 'denied'
+        ? (editing ? t('ไม่มีสิทธิ์ดูวัตถุดิบ', 'Ingredient access unavailable') : t('ไม่มีสิทธิ์เพิ่มวัตถุดิบ', 'Ingredient creation unavailable'))
+        : t('โหลดวัตถุดิบไม่สำเร็จ', 'Unable to load ingredient');
+    const detail = invalidRoute
+      ? t('ลิงก์นี้ไม่ชี้ไปที่วัตถุดิบรายการใด', 'This link does not point at an ingredient.')
+      : itemExists === false
+        ? t('อาจถูกลบไปแล้ว', 'It may have been deleted.')
+        : access === 'denied'
+          ? t('บัญชีนี้ต้องมีสิทธิ์จัดการคลังวัตถุดิบ', 'This account needs permission to manage inventory.')
+          : error ?? undefined;
     return (
-      <AppScreen title={copy('รายละเอียดวัตถุดิบ', 'Ingredient details')} topLevel={false}>
-        <EmptyState
-          title={copy('ไม่พบวัตถุดิบ', 'Ingredient not found')}
-          detail={copy(
-            'ลิงก์วัตถุดิบนี้ไม่ถูกต้อง กรุณากลับไปเลือกรายการจากหน้าคลัง',
-            'This ingredient link is invalid. Go back and choose an item from inventory.',
-          )}
-          action={<Button variant="secondary" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />}
-        />
+      <AppScreen title={title} topLevel={false}>
+        <EmptyState title={heading} detail={detail} action={<Button variant="secondary" label={t('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />} />
       </AppScreen>
     );
   }
 
-  if (access === 'denied') {
-    return <AppScreen title={screenTitle} topLevel={false}><StateMessage title={editing ? copy('ไม่มีสิทธิ์ดูวัตถุดิบ', 'Ingredient access unavailable') : copy('ไม่มีสิทธิ์เพิ่มวัตถุดิบ', 'Ingredient creation unavailable')} detail={editing ? copy('บัญชีนี้ต้องมีสิทธิ์ดูหรือจัดการคลังวัตถุดิบ', 'This account needs permission to view or manage inventory.') : copy('บัญชีนี้ต้องมีสิทธิ์จัดการคลังวัตถุดิบ', 'This account needs permission to manage inventory.')} /></AppScreen>;
-  }
-
-  if (editing && itemExists !== true) {
-    const title = loading
-      ? copy('กำลังโหลดวัตถุดิบ', 'Loading ingredient')
-      : error
-        ? copy('โหลดวัตถุดิบไม่สำเร็จ', 'Unable to load ingredient')
-        : copy('ไม่พบวัตถุดิบ', 'Ingredient not found');
-    const detail = loading
-      ? copy('กำลังตรวจสอบข้อมูลรายการนี้', 'Checking this item now.')
-      : error || copy(
-        'วัตถุดิบนี้อาจถูกลบไปแล้ว กรุณากลับไปเลือกรายการจากหน้าคลัง',
-        'This ingredient may have been deleted. Go back and choose an item from inventory.',
-      );
-    return (
-      <AppScreen title={copy('รายละเอียดวัตถุดิบ', 'Ingredient details')} topLevel={false}>
-        <EmptyState
-          title={title}
-          detail={detail}
-          action={loading ? undefined : (
-            <Button variant="secondary" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />
-          )}
-        />
-      </AppScreen>
-    );
-  }
-
-  const detailsPanel = readOnly ? (
-    <Surface>
-      <SectionHeader title={copy('ข้อมูลวัตถุดิบ', 'Ingredient details')} detail={copy('ดูอย่างเดียว', 'Read only')} />
-      {readOnlyRows.map(([label, value], index) => (
-        <View key={label}>
-          {index ? <Divider /> : null}
-          <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <Text selectable style={[typeScale.body, { flex: 1, color: palette.muted }]}>{label}</Text>
-            <Text selectable style={[typeScale.cardTitle, { flexShrink: 1, textAlign: 'right' }]}>{value}</Text>
-          </View>
-        </View>
-      ))}
-    </Surface>
-  ) : (
-    <Surface>
-      <SectionHeader title={copy('ข้อมูลวัตถุดิบ', 'Ingredient details')} />
-      <TextField icon="cube-outline" label={copy('ชื่อวัตถุดิบ', 'Ingredient name')} value={name} onChangeText={setName} />
-      <ChipGroup label={copy('หมวด', 'Category')} value={categoryId} options={categoryOptions} onChange={setCategoryId} />
-      <ChipGroup label={copy('หน่วยสต็อก', 'Stock unit')} value={unit} options={unitOptions} onChange={setUnit} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-        <View style={{ flex: 1, minWidth: 140 }}>
-          <TextField icon="cash-outline" label={copy('ต้นทุนต่อหน่วย', 'Cost per unit')} value={cost} keyboardType="decimal-pad" onChangeText={setCost} />
-        </View>
-        {!editing ? (
-          <View style={{ flex: 1, minWidth: 140 }}>
-            <TextField icon="layers-outline" label={copy('สต็อกเริ่มต้น', 'Opening stock')} value={stock} keyboardType="decimal-pad" onChangeText={setStock} />
-          </View>
-        ) : null}
-        <View style={{ flex: 1, minWidth: 140 }}>
-          <TextField icon="alert-circle-outline" label={copy('จุดเตือนขั้นต่ำ', 'Low-stock threshold')} value={minStock} keyboardType="decimal-pad" onChangeText={setMinStock} />
-        </View>
-      </View>
-      <ChipGroup
-        label={copy('การจัดเก็บ', 'Storage')}
-        value={storageType}
-        onChange={setStorageType}
-        options={[
-          { label: copy('อุณหภูมิห้อง', 'Room temperature'), value: 'room_temp' },
-          { label: copy('แห้ง', 'Dry'), value: 'dry' },
-          { label: copy('แช่เย็น', 'Chilled'), value: 'chilled' },
-          { label: copy('แช่แข็ง', 'Frozen'), value: 'frozen' },
-        ]}
-      />
-      <Button icon="save-outline" label={editing ? copy('บันทึกข้อมูล', 'Save details') : copy('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={save} loading={saving} />
-    </Surface>
-  );
-
-  const adjustmentPanel = editing && canManage ? (
-    <Surface>
-      <SectionHeader
-        title={copy('ปรับสต็อก', 'Adjust stock')}
-        detail={copy(`คงเหลือ ${Number(stock).toLocaleString('th-TH')} ${unit}`, `${Number(stock).toLocaleString('en-US')} ${unit} on hand`)}
-      />
-      <ChipGroup
-        value={adjustType}
-        onChange={(value) => { setAdjustType(value); setAdjustError(null); }}
-        options={[
-          { label: copy('รับเข้า', 'Stock in'), value: 'in' },
-          { label: copy('เบิกออก', 'Stock out'), value: 'out' },
-          { label: copy('ตั้งยอด', 'Set balance'), value: 'adjust' },
-        ]}
-      />
-      <TextField
-        icon={adjustType === 'in' ? 'add-circle-outline' : adjustType === 'out' ? 'remove-circle-outline' : 'sync-outline'}
-        label={adjustType === 'adjust' ? copy('ยอดคงเหลือใหม่', 'New stock balance') : copy('จำนวน', 'Quantity')}
-        value={adjustQuantity}
-        keyboardType="decimal-pad"
-        onChangeText={(value) => { setAdjustQuantity(value); setAdjustError(null); }}
-        error={adjustError}
-      />
-      <TextField icon="document-text-outline" label={copy('หมายเหตุ', 'Note')} value={adjustNote} onChangeText={setAdjustNote} multiline />
-      <Button icon="checkmark-outline" label={copy('ยืนยันปรับสต็อก', 'Confirm adjustment')} onPress={submitAdjustment} loading={saving} />
-    </Surface>
-  ) : null;
-
-  const historyPanel = editing ? (
-    <Surface>
-      <SectionHeader
-        title={copy('ประวัติสต็อก', 'Stock history')}
-        detail={copy(`${transactions.length.toLocaleString('th-TH')} รายการล่าสุด`, `${transactions.length.toLocaleString('en-US')} recent entries`)}
-      />
-      {transactions.length ? transactions.slice(0, 20).map((item, index) => (
-        <View key={item.ID}>
-          {index ? <Divider /> : null}
-          <View style={{ minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
-              <Text selectable style={typeScale.cardTitle}>
-                {item.type === 'in' ? copy('รับเข้า', 'Stock in') : item.type === 'out' ? copy('เบิกออก', 'Stock out') : copy('ตั้งยอด', 'Set balance')}
-              </Text>
-              <Text selectable numberOfLines={1} style={[typeScale.caption, { color: palette.muted }]}>{item.note || copy('ไม่มีหมายเหตุ', 'No note')}</Text>
-            </View>
-            <Text selectable style={typeScale.number}>{item.quantity.toLocaleString(locale)} {unit}</Text>
-          </View>
-        </View>
-      )) : (
-        <StateMessage title={copy('ยังไม่มีประวัติสต็อก', 'No stock history yet')} detail={copy('รายการปรับสต็อกจะแสดงที่นี่', 'Stock adjustments will appear here.')} />
-      )}
-    </Surface>
-  ) : null;
-
-  const deletePanel = editing && canManage ? (
-    <Surface style={{ borderColor: confirmDelete ? palette.danger : palette.border }}>
-      <SectionHeader
-        title={copy('ลบวัตถุดิบ', 'Delete ingredient')}
-        detail={confirmDelete
-          ? copy('แตะยืนยันอีกครั้งเพื่อลบวัตถุดิบและข้อมูลสต็อก', 'Confirm again to delete this ingredient and its stock data.')
-          : copy('ใช้เมื่อรายการนี้ไม่ควรอยู่ในคลังอีกต่อไป', 'Use this only when the item should no longer exist in inventory.')}
-      />
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        {confirmDelete ? <Button variant="secondary" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmDelete(false)} style={{ flex: 1 }} /> : null}
-        <Button icon="trash-outline" variant="danger" label={confirmDelete ? copy('ยืนยันลบ', 'Confirm delete') : copy('ลบวัตถุดิบ', 'Delete ingredient')} onPress={remove} loading={saving} style={{ flex: 1 }} />
-      </View>
-    </Surface>
-  ) : null;
+  const dockBottom = canManage ? Math.max(insets.bottom, 12) + 6 + 54 + 22 : insets.bottom;
 
   return (
-    <AppScreen
-      title={screenTitle}
-      subtitle={readOnly ? copy('ข้อมูลและประวัติสต็อก', 'Ingredient data and stock history') : copy('ข้อมูลต้นทุน สต็อก และการจัดเก็บ', 'Cost, stock, and storage details')}
-      topLevel={false}
-    >
-      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /> : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
-      {tabletWorkspace && editing ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
-          <View style={{ minWidth: 0, flex: 1, gap: spacing.lg }}>
-            {detailsPanel}
-            {deletePanel}
-          </View>
-          <View style={{ minWidth: 0, flex: 1, gap: spacing.lg }}>
-            {adjustmentPanel}
-            {historyPanel}
-          </View>
-        </View>
-      ) : (
-        <View style={{ gap: spacing.lg }}>
-          {detailsPanel}
-          {adjustmentPanel}
-          {historyPanel}
-          {deletePanel}
-        </View>
-      )}
-    </AppScreen>
+    <View style={{ flex: 1, backgroundColor: palette.canvas }}>
+      <FloatingHeader
+        centered
+        title={title}
+        backLabel={t('ย้อนกลับ', 'Back')}
+        onBack={() => router.back()}
+        trailing={editing && canManage && !loading ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('ลบวัตถุดิบ', 'Delete ingredient')}
+            disabled={saving}
+            onPress={remove}
+            hitSlop={6}
+            style={({ pressed }) => ({ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.danger, opacity: pressed ? 0.85 : 1, shadowColor: '#3d2b1f', shadowOpacity: 0.24, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 })}
+          >
+            <AppIcon name="trash-outline" size={21} color="#ffffff" />
+          </Pressable>
+        ) : undefined}
+      />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}
+        >
+          {error ? <View style={{ marginBottom: 12 }}><Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /></View> : null}
+          {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
+
+          {!loading ? (
+            <>
+              <FormGroup>
+                <FormRow label={t('ชื่อ', 'Name')} first>
+                  <FormField value={name} onChangeText={setName} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} readOnly={readOnly} />
+                </FormRow>
+              </FormGroup>
+
+              <FormGroup title={t('หมวดและหน่วย', 'Category and unit')}>
+                <FormPickRow label={t('หมวด', 'Category')} value={categoryName} first onPress={readOnly ? undefined : () => setPicker('category')} />
+                <FormPickRow label={t('หน่วยสต็อก', 'Stock unit')} value={unit} onPress={readOnly ? undefined : () => setPicker('unit')} />
+              </FormGroup>
+
+              <FormGroup
+                title={t('ต้นทุนและสต็อก', 'Cost and stock')}
+                footer={t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดกลางหลอดของรายการนี้', 'Below the reorder level the item shows as "Low" and the bar\'s midpoint marks it.')}
+              >
+                <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
+                  <FormField value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
+                </FormRow>
+                {!editing ? (
+                  <FormRow label={t('สต็อกเริ่มต้น', 'Opening stock')}>
+                    <FormField value={stock} onChangeText={setStock} numeric suffix={unit} readOnly={readOnly} />
+                  </FormRow>
+                ) : null}
+                <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
+                  <FormField value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
+                </FormRow>
+              </FormGroup>
+
+              <FormGroup title={t('การจัดเก็บ', 'Storage')}>
+                <FormPickRow label={t('วิธีเก็บ', 'Kept')} value={storageName} first onPress={readOnly ? undefined : () => setPicker('storage')} />
+              </FormGroup>
+
+            </>
+          ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {canManage && !loading ? (
+        <Dock>
+          <DockButton label={saving ? t('กำลังบันทึก…', 'Saving…') : editing ? t('บันทึกการแก้ไข', 'Save changes') : t('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={save} disabled={saving} />
+        </Dock>
+      ) : null}
+
+      <BottomSheet open={picker === 'category'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('หมวด', 'Category')} />
+        <SheetSection title={t('เลือกหนึ่งหมวด', 'Pick one')}>
+          {categoryOptions.map((option) => (
+            <ChoiceChip key={option.value} label={option.label} on={option.value === categoryId} onPress={() => { setCategoryId(option.value); setPicker('none'); }} />
+          ))}
+        </SheetSection>
+      </BottomSheet>
+      <BottomSheet open={picker === 'unit'} onClose={() => setPicker('none')} heightFraction={0.5} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('หน่วยสต็อก', 'Stock unit')} subtitle={t('หน่วยที่ใช้นับในคลังและในสูตร', 'What the shelf and the recipes count in')} />
+        <SheetSection title={t('เลือกหนึ่งหน่วย', 'Pick one')}>
+          {unitOptions.map((option) => (
+            <ChoiceChip key={option} label={option} on={option === unit} onPress={() => { setUnit(option); setPicker('none'); }} />
+          ))}
+        </SheetSection>
+      </BottomSheet>
+      <BottomSheet open={picker === 'storage'} onClose={() => setPicker('none')} heightFraction={0.4} label={t('ปิด', 'Close')} showClose>
+        <SheetTitle title={t('การจัดเก็บ', 'Storage')} />
+        <SheetSection title={t('เก็บแบบไหน', 'Kept how')}>
+          {storageOptions.map((option) => (
+            <ChoiceChip key={option.value} label={option.label} on={option.value === storageType} onPress={() => { setStorageType(option.value); setPicker('none'); }} />
+          ))}
+        </SheetSection>
+      </BottomSheet>
+    </View>
   );
 }

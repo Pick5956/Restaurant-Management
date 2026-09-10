@@ -577,7 +577,12 @@ export default function AIAssistantScreen() {
           panel, no tint. The blur cannot weaken by itself, so a blurred copy is
           masked: solid behind the buttons, then given a long ramp to nothing. The
           ramp is deliberately longer than it needs to be, because any short one
-          shows up as a line across the chat. */}
+          shows up as a line across the chat.
+
+          Only once there is a chat to pass under it. On the empty first screen
+          there is nothing to blur but the Orb, and frosting it left a cloudy
+          band across the top of the ball. */}
+      {empty ? null : (
       <MaskedView
         pointerEvents="none"
         style={{ position: 'absolute', top: 0, left: 0, right: 0, height: headerPane, zIndex: 2 }}
@@ -609,6 +614,7 @@ export default function AIAssistantScreen() {
           <View style={{ flex: 1 }} />
         </GlassSurface>
       </MaskedView>
+      )}
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingBottom: HEADER_ROW_PADDING_BOTTOM, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingRight: 14, gap: 8, zIndex: 3 }}>
         <GlassButton
           icon="chevron-back"
