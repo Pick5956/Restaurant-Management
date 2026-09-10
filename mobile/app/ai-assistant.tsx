@@ -40,7 +40,7 @@ import {
 } from '@/src/components/ai/bubbles';
 import { AIChart } from '@/src/components/ai/chart';
 import { ChatListSheet } from '@/src/components/ai/chat-list-sheet';
-import { GlassButton, GlassMenu, GlassPill, GlassSurface } from '@/src/components/ai/chrome';
+import { GlassButton, GlassMorphMenu, GlassPill, GlassSurface } from '@/src/components/ai/chrome';
 import { Composer } from '@/src/components/ai/composer';
 import { ConfirmCard, type ConfirmState } from '@/src/components/ai/confirm-card';
 import { InsightsSheet, insightKey } from '@/src/components/ai/insights-sheet';
@@ -636,19 +636,10 @@ export default function AIAssistantScreen() {
           <View style={{ flex: 1 }} />
         )}
         {started ? (
-          menuOpen ? (
-            // The menu grows over this corner and takes the button's place, so the
-            // button is not left showing through the glass. The gap it leaves has to
-            // be the button's exact size, or the title beside it shifts as it opens.
-            <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />
-          ) : (
-            <GlassButton
-              icon="ellipsis-horizontal"
-              label={copy('เมนู', 'Menu')}
-              dot={unseenInsights > 0}
-              onPress={() => setMenuOpen(true)}
-            />
-          )
+          // The "…" button is drawn by GlassMorphMenu below, at this exact spot,
+          // because it and the menu have to be one piece of glass. The row keeps
+          // a gap the button's size so the title beside it never moves.
+          <View style={{ width: HEADER_BUTTON, height: HEADER_BUTTON }} />
         ) : (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <GlassButton icon="chatbubbles-outline" label={copy('รายการแชท', 'Chats')} onPress={() => setListOpen(true)} />
@@ -658,10 +649,16 @@ export default function AIAssistantScreen() {
         )}
       </View>
 
-      <GlassMenu
+      {started ? (
+      <GlassMorphMenu
         open={menuOpen}
+        onOpen={() => setMenuOpen(true)}
         onClose={() => setMenuOpen(false)}
-        from="top-right"
+        icon="ellipsis-horizontal"
+        label={copy('เมนู', 'Menu')}
+        dot={unseenInsights > 0}
+        // The row above puts the button's top-right corner here: its own top
+        // padding is the safe area, its right padding 14.
         style={{ top: insets.top, right: 14 }}
         items={[
           { key: 'chats', icon: 'chatbubbles-outline', label: copy('รายการแชท', 'Chats'), onPress: () => setListOpen(true) },
@@ -677,6 +674,7 @@ export default function AIAssistantScreen() {
           { key: 'settings', icon: 'settings-outline', label: copy('การตั้งค่า', 'Settings'), onPress: () => setSettingsOpen(true) },
         ]}
       />
+      ) : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
         <View style={{ flex: 1, alignSelf: 'center', width: '100%', maxWidth: wide ? 760 : undefined }}>

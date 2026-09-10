@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, Switch, View, useWindowDimensions } from 'react-native';
 
 import {
   getAISettings,
@@ -12,6 +12,7 @@ import {
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
+import { useReducedMotion } from '@/src/components/motion';
 import { threadStamp } from '@/src/lib/ai-chat';
 import { readFollowUpsEnabled, writeCachedOwnerTitle, writeFollowUpsEnabled } from '@/src/lib/ai-prefs';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
@@ -143,6 +144,32 @@ export function SettingsSheet({
 }) {
   const t = (th: string, en: string) => (language === 'th' ? th : en);
   const [page, setPage] = useState<Page>('root');
+  // Pages push in from the right and pop back out to it, the way a navigation
+  // stack does. While one is on its way the page it is replacing is still
+  // mounted, sliding the other way; `transition` holds which one and which
+  // direction, and `slide` is how far along the move is.
+  const { width } = useWindowDimensions();
+  const reducedMotion = useReducedMotion();
+  const [transition, setTransition] = useState<{ from: Page; dir: 'push' | 'pop' } | null>(null);
+  const slide = useRef(new Animated.Value(1)).current;
+  const go = (next: Page) => {
+    if (next === page) return;
+    if (reducedMotion) {
+      setPage(next);
+      return;
+    }
+    setTransition({ from: page, dir: next === 'root' ? 'pop' : 'push' });
+    setPage(next);
+    slide.setValue(0);
+    Animated.timing(slide, {
+      toValue: 1,
+      duration: 340,
+      easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setTransition(null);
+    });
+  };
   const [settings, setSettings] = useState<AISettingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [followUps, setFollowUps] = useState(true);
@@ -240,6 +267,7 @@ export function SettingsSheet({
     if (!open) return;
     let active = true;
     setPage('root');
+    setTransition(null);
     setError(null);
     void readFollowUpsEnabled().then((enabled) => { if (active) setFollowUps(enabled); });
     getAISettings()
@@ -296,6 +324,227 @@ export function SettingsSheet({
     <View style={{ paddingVertical: 28, alignItems: 'center' }}><ActivityIndicator color={ai.orange} /></View>
   ) : null;
 
+  // The body of one page. Named `page` on purpose: the checks inside read the
+  // parameter, so the same markup can draw the page leaving and the page
+  // arriving while a move is on.
+  const renderPage = (page: Page) => (
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+      {error ? (
+        <Text style={{ fontSize: 13, color: '#dc2626', paddingHorizontal: 18, paddingBottom: 8 }}>{error}</Text>
+      ) : null}
+
+      {page === 'root' ? (
+        <>
+          <GroupLabel text={t('ทั่วไป', 'General')} />
+          <Group>
+            <Row
+              first
+              icon="person-circle-outline"
+              label={t('ชื่อเรียก', 'Name')}
+              value={settings?.owner_title?.trim() || t('คุณผู้จัดการ', 'Manager')}
+              onPress={() => go('title')}
+            />
+            <Row
+              icon="sparkles-outline"
+              label={t('แนะนำให้ถาม', 'Suggested questions')}
+              toggle={{ on: followUps, onChange: (next) => { setFollowUps(next); void writeFollowUpsEnabled(next); onFollowUps(next); } }}
+            />
+          </Group>
+
+          <GroupLabel text={t('สิ่งที่ผู้ช่วยทำได้', 'What it can do')} />
+          <Group>
+            <Row
+              first
+              icon="shield-checkmark-outline"
+              label={t('ความปลอดภัย', 'Safety')}
+              onPress={() => go('actions')}
+            />
+            <Row
+              icon="notifications-outline"
+              label={t('การแจ้งเตือน', 'Notifications')}
+              onPress={() => go('notifications')}
+            />
+          </Group>
+
+          <GroupLabel text={t('แชท', 'Chats')} />
+          <Group>
+            <Row
+              first
+              icon="trash-outline"
+              label={t('ถังขยะ', 'Trash')}
+              detail={t('แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน', 'Deleted chats, restorable for 7 days')}
+              onPress={() => { go('trash'); void loadTrash(); }}
+            />
+          </Group>
+        </>
+      ) : null}
+
+      {page === 'title' ? (
+        <>
+          <GroupLabel text={t('ผู้ช่วยจะเรียกคุณแบบนี้ตอนทักทาย', 'The assistant greets you by this')} />
+          <Group>
+            <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                onBlur={commitTitle}
+                onSubmitEditing={commitTitle}
+                editable={Boolean(settings)}
+                maxLength={40}
+                returnKeyType="done"
+                autoFocus
+                placeholder={t('คุณผู้จัดการ', 'Manager')}
+                placeholderTextColor={ai.faded}
+                accessibilityLabel={t('ชื่อเรียก', 'Name')}
+                style={{ minHeight: 44, fontSize: 17, color: ai.ink, paddingVertical: 0 }}
+              />
+            </View>
+          </Group>
+          <Text style={{ fontSize: 12.5, color: ai.faded, paddingHorizontal: 18, paddingTop: 10 }}>
+            {t('เว้นว่างไว้ก็ได้ ผู้ช่วยจะเรียกว่าคุณผู้จัดการ', 'Leave it empty and it says "Manager"')}
+          </Text>
+        </>
+      ) : null}
+
+      {page === 'actions' ? (
+        <>
+          <GroupLabel text={t('ทุกอย่างยังต้องกดยืนยันก่อนบันทึกเสมอ', 'Everything still needs your confirmation')} />
+          {loading ?? (
+            <>
+              <Group>
+                <Row
+                  first
+                  label={t('ให้ผู้ช่วยแก้ข้อมูลได้', 'Allow changes')}
+                  toggle={{ on: settings!.actions_enabled, onChange: (next) => { void patch({ actions_enabled: next }); } }}
+                  disabled={!settings!.feature_available}
+                />
+              </Group>
+              <GroupLabel text={t('เลือกทีละอย่าง', 'Pick them one by one')} />
+              <Group>
+                {AI_ACTION_TYPES.map((type, index) => (
+                  <Row
+                    key={type}
+                    first={index === 0}
+                    label={language === 'th' ? ACTION_LABELS[type].th : ACTION_LABELS[type].en}
+                    toggle={{ on: Boolean(settings!.action_types?.[type]), onChange: (next) => { void patch({ action_types: { [type]: next } }); } }}
+                    disabled={!settings!.actions_enabled || !settings!.feature_available}
+                  />
+                ))}
+              </Group>
+            </>
+          )}
+        </>
+      ) : null}
+
+      {page === 'trash' ? (
+        <>
+          <GroupLabel text={t('แตะแชทเพื่อกู้คืนหรือลบถาวร', 'Tap a chat to restore it or delete it for good')} />
+          {trashBusy && !trashed ? (
+            <View style={{ paddingVertical: 28, alignItems: 'center' }}><ActivityIndicator color={ai.orange} /></View>
+          ) : (trashed?.length ?? 0) === 0 ? (
+            <Group>
+              <Row first label={t('ถังขยะว่าง', 'The trash is empty')} />
+            </Group>
+          ) : (
+            <>
+              <Group>
+                {(trashed ?? []).map((conversation, index) => (
+                  <Row
+                    key={conversation.id}
+                    first={index === 0}
+                    label={conversation.title || t('แชทไม่มีชื่อ', 'Untitled chat')}
+                    detail={conversation.trashed_at
+                      ? t('ลบเมื่อ ' + threadStamp(conversation.trashed_at, language), 'Deleted ' + threadStamp(conversation.trashed_at, language))
+                      : undefined}
+                    onPress={() => openTrashRow(conversation)}
+                  />
+                ))}
+              </Group>
+              <View style={{ marginTop: 20, marginHorizontal: 12 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={emptyTrash}
+                  style={({ pressed }) => ({
+                    minHeight: 52,
+                    borderRadius: 18,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: pressed ? '#fee2e2' : ai.surface,
+                  })}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#dc2626' }}>{t('ล้างถังขยะทั้งหมด', 'Empty the trash')}</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+        </>
+      ) : null}
+
+      {page === 'notifications' ? (
+        <>
+          <GroupLabel text={t('เรื่องที่ขึ้นใน "ควรรู้วันนี้"', 'What shows under "Today\'s insights"')} />
+          {loading ?? (
+            <Group>
+              {INSIGHT_ROWS.map((row, index) => (
+                <Row
+                  key={row.key}
+                  first={index === 0}
+                  label={language === 'th' ? row.th : row.en}
+                  toggle={{
+                    on: Boolean(settings!.insight_kinds?.[row.key]),
+                    onChange: (next) => {
+                      const change: Partial<Record<AIInsightKind, boolean>> = { [row.key]: next };
+                      if (row.pair) change[row.pair] = next;
+                      void patch({ insight_kinds: change });
+                    },
+                  }}
+                />
+              ))}
+            </Group>
+          )}
+        </>
+      ) : null}
+    </ScrollView>
+  );
+
+  const fill = { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#f4f2ee' };
+  const stage = transition ? (
+    <View style={{ flex: 1, overflow: 'hidden' }}>
+      {/* The page on its way out: on a push it slips back a little and dims,
+          the way the one under a card does; on a pop it slides off to the right. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          fill,
+          {
+            opacity: transition.dir === 'push' ? slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] }) : 1,
+            transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, transition.dir === 'push' ? -width * 0.28 : width] }) }],
+          },
+        ]}
+      >
+        {renderPage(transition.from)}
+      </Animated.View>
+      {/* The page arriving, with a soft edge so it reads as sliding over. */}
+      <Animated.View
+        style={[
+          fill,
+          {
+            opacity: transition.dir === 'pop' ? slide.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) : 1,
+            transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [transition.dir === 'push' ? width : -width * 0.28, 0] }) }],
+            shadowColor: '#000',
+            shadowOpacity: transition.dir === 'push' ? 0.12 : 0,
+            shadowRadius: 14,
+            shadowOffset: { width: -4, height: 0 },
+          },
+        ]}
+      >
+        {renderPage(page)}
+      </Animated.View>
+    </View>
+  ) : (
+    renderPage(page)
+  );
+
   return (
     <BottomSheet open={open} onClose={onClose} heightFraction={1} background="#f4f2ee" label={t('ปิดตั้งค่า', 'Close settings')}>
       <View style={{ flex: 1 }}>
@@ -305,9 +554,17 @@ export function SettingsSheet({
           {page === 'root' ? (
             <View style={{ width: 44 }} />
           ) : (
-            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => setPage('root')} size={44} />
+            <GlassButton icon="chevron-back" label={t('ย้อนกลับ', 'Back')} onPress={() => go('root')} size={44} />
           )}
-          <Text numberOfLines={1} style={{ flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{heading}</Text>
+          <Animated.View
+            style={{
+              flex: 1,
+              opacity: transition ? slide : 1,
+              transform: [{ translateX: transition ? slide.interpolate({ inputRange: [0, 1], outputRange: [transition.dir === 'push' ? 28 : -28, 0] }) : 0 }],
+            }}
+          >
+            <Text numberOfLines={1} style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', color: ai.ink }}>{heading}</Text>
+          </Animated.View>
           {page === 'root' ? (
             <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
           ) : (
@@ -315,183 +572,7 @@ export function SettingsSheet({
           )}
         </View>
 
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
-          {error ? (
-            <Text style={{ fontSize: 13, color: '#dc2626', paddingHorizontal: 18, paddingBottom: 8 }}>{error}</Text>
-          ) : null}
-
-          {page === 'root' ? (
-            <>
-              <GroupLabel text={t('ทั่วไป', 'General')} />
-              <Group>
-                <Row
-                  first
-                  icon="person-circle-outline"
-                  label={t('ชื่อเรียก', 'Name')}
-                  value={settings?.owner_title?.trim() || t('คุณผู้จัดการ', 'Manager')}
-                  onPress={() => setPage('title')}
-                />
-                <Row
-                  icon="sparkles-outline"
-                  label={t('แนะนำให้ถาม', 'Suggested questions')}
-                  toggle={{ on: followUps, onChange: (next) => { setFollowUps(next); void writeFollowUpsEnabled(next); onFollowUps(next); } }}
-                />
-              </Group>
-
-              <GroupLabel text={t('สิ่งที่ผู้ช่วยทำได้', 'What it can do')} />
-              <Group>
-                <Row
-                  first
-                  icon="shield-checkmark-outline"
-                  label={t('ความปลอดภัย', 'Safety')}
-                  onPress={() => setPage('actions')}
-                />
-                <Row
-                  icon="notifications-outline"
-                  label={t('การแจ้งเตือน', 'Notifications')}
-                  onPress={() => setPage('notifications')}
-                />
-              </Group>
-
-              <GroupLabel text={t('แชท', 'Chats')} />
-              <Group>
-                <Row
-                  first
-                  icon="trash-outline"
-                  label={t('ถังขยะ', 'Trash')}
-                  detail={t('แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน', 'Deleted chats, restorable for 7 days')}
-                  onPress={() => { setPage('trash'); void loadTrash(); }}
-                />
-              </Group>
-            </>
-          ) : null}
-
-          {page === 'title' ? (
-            <>
-              <GroupLabel text={t('ผู้ช่วยจะเรียกคุณแบบนี้ตอนทักทาย', 'The assistant greets you by this')} />
-              <Group>
-                <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
-                  <TextInput
-                    value={title}
-                    onChangeText={setTitle}
-                    onBlur={commitTitle}
-                    onSubmitEditing={commitTitle}
-                    editable={Boolean(settings)}
-                    maxLength={40}
-                    returnKeyType="done"
-                    autoFocus
-                    placeholder={t('คุณผู้จัดการ', 'Manager')}
-                    placeholderTextColor={ai.faded}
-                    accessibilityLabel={t('ชื่อเรียก', 'Name')}
-                    style={{ minHeight: 44, fontSize: 17, color: ai.ink, paddingVertical: 0 }}
-                  />
-                </View>
-              </Group>
-              <Text style={{ fontSize: 12.5, color: ai.faded, paddingHorizontal: 18, paddingTop: 10 }}>
-                {t('เว้นว่างไว้ก็ได้ ผู้ช่วยจะเรียกว่าคุณผู้จัดการ', 'Leave it empty and it says "Manager"')}
-              </Text>
-            </>
-          ) : null}
-
-          {page === 'actions' ? (
-            <>
-              <GroupLabel text={t('ทุกอย่างยังต้องกดยืนยันก่อนบันทึกเสมอ', 'Everything still needs your confirmation')} />
-              {loading ?? (
-                <>
-                  <Group>
-                    <Row
-                      first
-                      label={t('ให้ผู้ช่วยแก้ข้อมูลได้', 'Allow changes')}
-                      toggle={{ on: settings!.actions_enabled, onChange: (next) => { void patch({ actions_enabled: next }); } }}
-                      disabled={!settings!.feature_available}
-                    />
-                  </Group>
-                  <GroupLabel text={t('เลือกทีละอย่าง', 'Pick them one by one')} />
-                  <Group>
-                    {AI_ACTION_TYPES.map((type, index) => (
-                      <Row
-                        key={type}
-                        first={index === 0}
-                        label={language === 'th' ? ACTION_LABELS[type].th : ACTION_LABELS[type].en}
-                        toggle={{ on: Boolean(settings!.action_types?.[type]), onChange: (next) => { void patch({ action_types: { [type]: next } }); } }}
-                        disabled={!settings!.actions_enabled || !settings!.feature_available}
-                      />
-                    ))}
-                  </Group>
-                </>
-              )}
-            </>
-          ) : null}
-
-          {page === 'trash' ? (
-            <>
-              <GroupLabel text={t('แตะแชทเพื่อกู้คืนหรือลบถาวร', 'Tap a chat to restore it or delete it for good')} />
-              {trashBusy && !trashed ? (
-                <View style={{ paddingVertical: 28, alignItems: 'center' }}><ActivityIndicator color={ai.orange} /></View>
-              ) : (trashed?.length ?? 0) === 0 ? (
-                <Group>
-                  <Row first label={t('ถังขยะว่าง', 'The trash is empty')} />
-                </Group>
-              ) : (
-                <>
-                  <Group>
-                    {(trashed ?? []).map((conversation, index) => (
-                      <Row
-                        key={conversation.id}
-                        first={index === 0}
-                        label={conversation.title || t('แชทไม่มีชื่อ', 'Untitled chat')}
-                        detail={conversation.trashed_at
-                          ? t('ลบเมื่อ ' + threadStamp(conversation.trashed_at, language), 'Deleted ' + threadStamp(conversation.trashed_at, language))
-                          : undefined}
-                        onPress={() => openTrashRow(conversation)}
-                      />
-                    ))}
-                  </Group>
-                  <View style={{ marginTop: 20, marginHorizontal: 12 }}>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={emptyTrash}
-                      style={({ pressed }) => ({
-                        minHeight: 52,
-                        borderRadius: 18,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: pressed ? '#fee2e2' : ai.surface,
-                      })}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#dc2626' }}>{t('ล้างถังขยะทั้งหมด', 'Empty the trash')}</Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </>
-          ) : null}
-
-          {page === 'notifications' ? (
-            <>
-              <GroupLabel text={t('เรื่องที่ขึ้นใน "ควรรู้วันนี้"', 'What shows under "Today\'s insights"')} />
-              {loading ?? (
-                <Group>
-                  {INSIGHT_ROWS.map((row, index) => (
-                    <Row
-                      key={row.key}
-                      first={index === 0}
-                      label={language === 'th' ? row.th : row.en}
-                      toggle={{
-                        on: Boolean(settings!.insight_kinds?.[row.key]),
-                        onChange: (next) => {
-                          const change: Partial<Record<AIInsightKind, boolean>> = { [row.key]: next };
-                          if (row.pair) change[row.pair] = next;
-                          void patch({ insight_kinds: change });
-                        },
-                      }}
-                    />
-                  ))}
-                </Group>
-              )}
-            </>
-          ) : null}
-        </ScrollView>
+        {stage}
       </View>
     </BottomSheet>
   );
