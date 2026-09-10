@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,9 +7,7 @@ import { createIngredient, deleteIngredient, listIngredientCategories, listIngre
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
-import { AppText as Text } from '@/src/components/app-text';
-import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { ChoiceChip, Dock, DockButton, FloatingHeader, SheetSection, SheetTitle, headerContentTop } from '@/src/components/inventory/parts';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, SheetSection, SheetTitle, headerContentTop } from '@/src/components/inventory/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   buildIngredientCreateInput,
@@ -210,37 +208,37 @@ export default function InventoryItemScreen() {
 
           {!loading ? (
             <>
-              <Group>
-                <FieldRow label={t('ชื่อ', 'Name')} first>
-                  <Field value={name} onChangeText={setName} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} readOnly={readOnly} />
-                </FieldRow>
-              </Group>
+              <FormGroup>
+                <FormRow label={t('ชื่อ', 'Name')} first>
+                  <FormField value={name} onChangeText={setName} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} readOnly={readOnly} />
+                </FormRow>
+              </FormGroup>
 
-              <Group title={t('หมวดและหน่วย', 'Category and unit')}>
-                <PickRow label={t('หมวด', 'Category')} value={categoryName} first onPress={readOnly ? undefined : () => setPicker('category')} />
-                <PickRow label={t('หน่วยสต็อก', 'Stock unit')} value={unit} onPress={readOnly ? undefined : () => setPicker('unit')} />
-              </Group>
+              <FormGroup title={t('หมวดและหน่วย', 'Category and unit')}>
+                <FormPickRow label={t('หมวด', 'Category')} value={categoryName} first onPress={readOnly ? undefined : () => setPicker('category')} />
+                <FormPickRow label={t('หน่วยสต็อก', 'Stock unit')} value={unit} onPress={readOnly ? undefined : () => setPicker('unit')} />
+              </FormGroup>
 
-              <Group
+              <FormGroup
                 title={t('ต้นทุนและสต็อก', 'Cost and stock')}
                 footer={t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดกลางหลอดของรายการนี้', 'Below the reorder level the item shows as "Low" and the bar\'s midpoint marks it.')}
               >
-                <FieldRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
-                  <Field value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
-                </FieldRow>
+                <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
+                  <FormField value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
+                </FormRow>
                 {!editing ? (
-                  <FieldRow label={t('สต็อกเริ่มต้น', 'Opening stock')}>
-                    <Field value={stock} onChangeText={setStock} numeric suffix={unit} readOnly={readOnly} />
-                  </FieldRow>
+                  <FormRow label={t('สต็อกเริ่มต้น', 'Opening stock')}>
+                    <FormField value={stock} onChangeText={setStock} numeric suffix={unit} readOnly={readOnly} />
+                  </FormRow>
                 ) : null}
-                <FieldRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
-                  <Field value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
-                </FieldRow>
-              </Group>
+                <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
+                  <FormField value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
+                </FormRow>
+              </FormGroup>
 
-              <Group title={t('การจัดเก็บ', 'Storage')}>
-                <PickRow label={t('วิธีเก็บ', 'Kept')} value={storageName} first onPress={readOnly ? undefined : () => setPicker('storage')} />
-              </Group>
+              <FormGroup title={t('การจัดเก็บ', 'Storage')}>
+                <FormPickRow label={t('วิธีเก็บ', 'Kept')} value={storageName} first onPress={readOnly ? undefined : () => setPicker('storage')} />
+              </FormGroup>
 
             </>
           ) : null}
@@ -278,91 +276,5 @@ export default function InventoryItemScreen() {
         </SheetSection>
       </BottomSheet>
     </View>
-  );
-}
-
-// ------------------------------------------------ the grouped form
-
-/** A section: a small caption, a white card of rows, an optional note under it. */
-function Group({ title, footer, children }: { title?: string; footer?: string; children: ReactNode }) {
-  return (
-    <View style={{ marginBottom: 22 }}>
-      {title ? <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted, marginLeft: 16, marginBottom: 7 }}>{title}</Text> : null}
-      <View style={{ backgroundColor: palette.surface, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: palette.border, overflow: 'hidden' }}>
-        {children}
-      </View>
-      {footer ? <Text style={{ fontSize: 12, color: palette.placeholder, marginHorizontal: 16, marginTop: 7, lineHeight: 17 }}>{footer}</Text> : null}
-    </View>
-  );
-}
-
-/** A row with the label on the left and whatever is typed on the right. */
-function FieldRow({ label, first, children }: { label: string; first?: boolean; children: ReactNode }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingLeft: 16, paddingRight: 16, gap: 12, borderTopWidth: first ? 0 : 1, borderTopColor: palette.divider }}>
-      <Text style={{ fontSize: 15.5, color: palette.text, minWidth: 96 }}>{label}</Text>
-      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>{children}</View>
-    </View>
-  );
-}
-
-function Field({
-  value,
-  onChangeText,
-  placeholder,
-  numeric,
-  prefix,
-  suffix,
-  readOnly,
-  autoCapitalize,
-}: {
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  numeric?: boolean;
-  prefix?: string;
-  suffix?: string;
-  readOnly?: boolean;
-  autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
-}) {
-  if (readOnly) {
-    return (
-      <Text numberOfLines={1} style={{ fontSize: 15.5, color: palette.muted, textAlign: 'right', fontVariant: numeric ? ['tabular-nums'] : undefined }}>
-        {prefix ? `${prefix} ` : ''}{value || '—'}{suffix ? ` ${suffix}` : ''}
-      </Text>
-    );
-  }
-  return (
-    <>
-      {prefix ? <Text style={{ fontSize: 15.5, color: palette.placeholder }}>{prefix}</Text> : null}
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={palette.placeholder}
-        keyboardType={numeric ? 'decimal-pad' : undefined}
-        autoCapitalize={autoCapitalize ?? (numeric ? 'none' : 'sentences')}
-        selectTextOnFocus={numeric}
-        style={{ flex: 1, minWidth: 0, textAlign: 'right', fontSize: 15.5, color: palette.textStrong, paddingVertical: 0, fontVariant: numeric ? ['tabular-nums'] : undefined }}
-      />
-      {suffix ? <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{suffix}</Text> : null}
-    </>
-  );
-}
-
-/** A row that opens a picker: the chosen value on the right, a chevron after it. */
-function PickRow({ label, value, first, onPress }: { label: string; value: string; first?: boolean; onPress?: () => void }) {
-  const inner = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingLeft: 16, paddingRight: onPress ? 10 : 16, gap: 12, borderTopWidth: first ? 0 : 1, borderTopColor: palette.divider }}>
-      <Text style={{ fontSize: 15.5, color: palette.text, minWidth: 96 }}>{label}</Text>
-      <Text numberOfLines={1} style={{ flex: 1, textAlign: 'right', fontSize: 15.5, color: onPress ? palette.textStrong : palette.muted }}>{value}</Text>
-      {onPress ? <AppIcon name="chevron-forward" size={17} color={palette.placeholder} /> : null}
-    </View>
-  );
-  if (!onPress) return inner;
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? palette.surfaceSubtle : 'transparent' })}>
-      {inner}
-    </Pressable>
   );
 }

@@ -776,3 +776,90 @@ export function dayKey(iso: string | undefined): string {
   if (Number.isNaN(date.getTime())) return '';
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
+
+// ------------------------------------------------ the grouped form
+// iOS-style: a caption, a white card of rows, the label left and the value right.
+
+/** A section: a small caption, a white card of rows, an optional note under it. */
+export function FormGroup({ title, footer, children }: { title?: string; footer?: string; children: ReactNode }) {
+  return (
+    <View style={{ marginBottom: 22 }}>
+      {title ? <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted, marginLeft: 16, marginBottom: 7 }}>{title}</Text> : null}
+      <View style={{ backgroundColor: palette.surface, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: palette.border, overflow: 'hidden' }}>
+        {children}
+      </View>
+      {footer ? <Text style={{ fontSize: 12, color: palette.placeholder, marginHorizontal: 16, marginTop: 7, lineHeight: 17 }}>{footer}</Text> : null}
+    </View>
+  );
+}
+
+/** A row with the label on the left and whatever is typed on the right. */
+export function FormRow({ label, first, children }: { label: string; first?: boolean; children: ReactNode }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingLeft: 16, paddingRight: 16, gap: 12, borderTopWidth: first ? 0 : 1, borderTopColor: palette.divider }}>
+      <Text style={{ fontSize: 15.5, color: palette.text, minWidth: 96 }}>{label}</Text>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>{children}</View>
+    </View>
+  );
+}
+
+export function FormField({
+  value,
+  onChangeText,
+  placeholder,
+  numeric,
+  prefix,
+  suffix,
+  readOnly,
+  autoCapitalize,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  numeric?: boolean;
+  prefix?: string;
+  suffix?: string;
+  readOnly?: boolean;
+  autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
+}) {
+  if (readOnly) {
+    return (
+      <Text numberOfLines={1} style={{ fontSize: 15.5, color: palette.muted, textAlign: 'right', fontVariant: numeric ? ['tabular-nums'] : undefined }}>
+        {prefix ? `${prefix} ` : ''}{value || '—'}{suffix ? ` ${suffix}` : ''}
+      </Text>
+    );
+  }
+  return (
+    <>
+      {prefix ? <Text style={{ fontSize: 15.5, color: palette.placeholder }}>{prefix}</Text> : null}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={palette.placeholder}
+        keyboardType={numeric ? 'decimal-pad' : undefined}
+        autoCapitalize={autoCapitalize ?? (numeric ? 'none' : 'sentences')}
+        selectTextOnFocus={numeric}
+        style={{ flex: 1, minWidth: 0, textAlign: 'right', fontSize: 15.5, color: palette.textStrong, paddingVertical: 0, fontVariant: numeric ? ['tabular-nums'] : undefined }}
+      />
+      {suffix ? <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{suffix}</Text> : null}
+    </>
+  );
+}
+
+/** A row that opens a picker: the chosen value on the right, a chevron after it. */
+export function FormPickRow({ label, value, first, onPress }: { label: string; value: string; first?: boolean; onPress?: () => void }) {
+  const inner = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingLeft: 16, paddingRight: onPress ? 10 : 16, gap: 12, borderTopWidth: first ? 0 : 1, borderTopColor: palette.divider }}>
+      <Text style={{ fontSize: 15.5, color: palette.text, minWidth: 96 }}>{label}</Text>
+      <Text numberOfLines={1} style={{ flex: 1, textAlign: 'right', fontSize: 15.5, color: onPress ? palette.textStrong : palette.muted }}>{value}</Text>
+      {onPress ? <AppIcon name="chevron-forward" size={17} color={palette.placeholder} /> : null}
+    </View>
+  );
+  if (!onPress) return inner;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? palette.surfaceSubtle : 'transparent' })}>
+      {inner}
+    </Pressable>
+  );
+}
