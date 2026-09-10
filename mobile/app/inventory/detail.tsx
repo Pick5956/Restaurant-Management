@@ -197,7 +197,7 @@ export default function IngredientDetailScreen() {
             {canManage ? (
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
                 <DockButton icon="add" label={t('เติมสต็อก', 'Restock')} onPress={() => setSheet('restock')} />
-                <DockButton secondary icon="calculator-outline" label={t('ปรับยอด (นับจริง)', 'Set count')} onPress={() => setSheet('count')} />
+                <DockButton secondary icon="calculator-outline" label={t('ปรับยอด', 'Set count')} onPress={() => setSheet('count')} />
               </View>
             ) : null}
 

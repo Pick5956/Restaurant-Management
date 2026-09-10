@@ -388,7 +388,7 @@ export default function InventoryScreen() {
           items={[
             { key: 'detail', icon: 'document-text-outline', label: t('ดูรายละเอียดและประวัติ', 'Details and history'), onPress: () => router.push({ pathname: '/inventory/detail' as never, params: { id: String(rowMenu.item.ID) } } as never) },
             { key: 'restock', icon: 'add-circle-outline', label: t('เติมสต็อก', 'Restock'), onPress: () => setSheet({ kind: 'restock', item: rowMenu.item }) },
-            { key: 'count', icon: 'calculator-outline', label: t('ปรับยอด (นับจริง)', 'Set counted quantity'), onPress: () => setSheet({ kind: 'count', item: rowMenu.item }) },
+            { key: 'count', icon: 'calculator-outline', label: t('ปรับยอด', 'Set count'), onPress: () => setSheet({ kind: 'count', item: rowMenu.item }) },
             { key: 'edit', icon: 'create-outline', label: t('แก้ไขข้อมูลวัตถุดิบ', 'Edit ingredient'), onPress: () => router.push({ pathname: '/inventory/item' as never, params: { id: String(rowMenu.item.ID) } } as never) },
             { key: 'delete', icon: 'trash-outline', label: t('ลบวัตถุดิบ', 'Delete ingredient'), danger: true, onPress: () => confirmDelete(rowMenu.item) },
           ]}

@@ -660,7 +660,7 @@ export function CountSheet({
   const difference = amount - Number(item.stock);
   return (
     <BottomSheet open={open} onClose={onClose} heightFraction={0.58} label={t('ปิด', 'Close')} showClose>
-      <SheetTitle title={t('ปรับยอด (นับจริง)', 'Set counted quantity')} subtitle={item.name} />
+      <SheetTitle title={t('ปรับยอด', 'Set count')} subtitle={item.name} />
       <Stepper value={amount} step={restockStep(item)} unit={item.unit} onChange={setAmount} />
       <KeyValue
         label={t('ส่วนต่าง', 'Difference')}
