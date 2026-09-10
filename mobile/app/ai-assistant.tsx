@@ -94,6 +94,24 @@ import type {
 
 // The header buttons and the gap left when one steps aside share this size.
 const HEADER_BUTTON = 46;
+/** The header row's own bottom padding, below the buttons. */
+const HEADER_ROW_PADDING_BOTTOM = 8;
+/**
+ * How far the header's blur spills past the bottom of the buttons before it is
+ * gone entirely. The whole fade happens inside this band.
+ *
+ * It is the one number that decides both how soft the header's bottom edge is
+ * and how far down the chat has to start, and those two pull against each
+ * other: content must begin below the band or the first message sits in the
+ * blur and looks washed out, but a long band pushes that first message a long
+ * way down the screen.
+ *
+ * The owner chose the far short end of that trade, on the screen and by eye:
+ * the blur clears the buttons and stops. Do not raise it back "to smooth the
+ * scroll" without asking — the tighter first message is the point, and the
+ * abruptness underneath is a price that was picked deliberately.
+ */
+const HEADER_FADE = 15;
 
 const SUGGESTIONS_TH = ['สรุปร้าน', 'เมนูขายดี', 'วัตถุดิบใกล้หมด', 'มูลค่าสต๊อก'];
 const SUGGESTIONS_EN = ['Shop summary', 'Best sellers', 'Low stock', 'Stock value'];
@@ -162,8 +180,20 @@ export default function AIAssistantScreen() {
   );
   const suggestions = language === 'th' ? SUGGESTIONS_TH : SUGGESTIONS_EN;
   const busy = loading || threadLoading;
-  // The floating header's height: the status bar plus one button row.
-  const headerHeight = insets.top + 42;
+  // The floating header's real height: the status bar, one button row, and the
+  // row's own bottom padding. It used to be written as `insets.top + 42` while
+  // the buttons in that row are HEADER_BUTTON tall — so everything measured
+  // against it sat 12px too high, and the first message came out tucked under
+  // the chat's name instead of below it.
+  const headerHeight = insets.top + HEADER_BUTTON + HEADER_ROW_PADDING_BOTTOM;
+  // The blurred pane: down to the bottom of the buttons, then the fade.
+  const headerPane = insets.top + HEADER_BUTTON + HEADER_FADE;
+  // Where the fade starts, as a share of the pane — the buttons' bottom edge.
+  // Computed rather than written as a fixed fraction because the status bar is a
+  // different height on every phone, and a fixed fraction puts the ramp across
+  // the buttons on some of them and below the pane on others.
+  const headerSolid = (insets.top + HEADER_BUTTON) / headerPane;
+  const fadeAt = (through: number) => headerSolid + (1 - headerSolid) * through;
   // Once the owner has asked something the header becomes the chat's own: its
   // name in the middle, and the four buttons folded into one "…".
   const started = messages.length > 0 || threadLoading;
@@ -550,7 +580,7 @@ export default function AIAssistantScreen() {
           shows up as a line across the chat. */}
       <MaskedView
         pointerEvents="none"
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: headerHeight + 54, zIndex: 2 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: headerPane, zIndex: 2 }}
         maskElement={
           <LinearGradient
             colors={[
@@ -562,20 +592,24 @@ export default function AIAssistantScreen() {
               'rgba(0,0,0,0.05)',
               'rgba(0,0,0,0)',
             ]}
-            locations={[0, 0.5, 0.66, 0.79, 0.89, 0.96, 1]}
+            locations={[0, headerSolid, fadeAt(0.3), fadeAt(0.55), fadeAt(0.75), fadeAt(0.9), 1]}
             style={{ flex: 1 }}
           />
         }
       >
+        {/* "regular" rather than "clear": frosted, so the band reads as a
+            material the chat passes under instead of a smear of the chat itself.
+            The mask still takes it to nothing, so this cannot bleach the page the
+            way a flat tint over the whole header did. */}
         <GlassSurface
-          effect="clear"
+          effect="regular"
           style={{ flex: 1 }}
-          fallbackStyle={{ backgroundColor: 'rgba(250,248,242,0.82)' }}
+          fallbackStyle={{ backgroundColor: 'rgba(250,248,242,0.9)' }}
         >
           <View style={{ flex: 1 }} />
         </GlassSurface>
       </MaskedView>
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingRight: 14, gap: 8, zIndex: 3 }}>
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingBottom: HEADER_ROW_PADDING_BOTTOM, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingRight: 14, gap: 8, zIndex: 3 }}>
         <GlassButton
           icon="chevron-back"
           label={started ? copy('กลับไปหน้าเริ่มต้นของผู้ช่วย', 'Back to the assistant home') : copy('ย้อนกลับ', 'Back')}
@@ -657,7 +691,10 @@ export default function AIAssistantScreen() {
                 ref={scrollRef}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
-                contentContainerStyle={{ paddingHorizontal: 14, paddingTop: headerHeight + 10, paddingBottom: composerHeight + 12, gap: 14 }}
+                // Content starts where the fade ends, not inside it. The fade is there
+        // for messages travelling up past the header; a message sitting still at
+        // the top of an unscrolled chat has no business being blurred at all.
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: headerPane + 8, paddingBottom: composerHeight + 12, gap: 14 }}
                 onContentSizeChange={() => { if (stickToBottom) scrollRef.current?.scrollToEnd({ animated: true }); }}
                 onScroll={(event) => {
                   const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
