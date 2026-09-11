@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   HISTORY_PAGE_SIZE,
   defaultHistoryRange,
+  formatHistoryRange,
   historyMovement,
   historyPageCount,
+  historyRangeFor,
+  historyRangeKeyOf,
   historyTypeLabel,
   toDateInput,
 } from "./inventoryHistoryUtils";
@@ -224,5 +227,56 @@ describe("formatDaysLeft", () => {
 
   it("says nothing when there is no usage history", () => {
     expect(formatDaysLeft(ingredient({ stock: 100 }), "th")).toBeNull();
+  });
+});
+
+describe("historyRangeFor", () => {
+  const today = new Date(2026, 8, 11);
+
+  it("counts the last 7 days inclusive, so a week is 7 dates and not 8", () => {
+    expect(historyRangeFor("7d", today)).toEqual({ from: "2026-09-05", to: "2026-09-11" });
+  });
+
+  it("starts this month on the first, whatever day of it today is", () => {
+    expect(historyRangeFor("month", today)).toEqual({ from: "2026-09-01", to: "2026-09-11" });
+  });
+
+  it("leaves both ends empty for all time, which the query builder drops entirely", () => {
+    expect(historyRangeFor("all", today)).toEqual({ from: "", to: "" });
+  });
+
+  it("matches the range the history opens on", () => {
+    expect(historyRangeFor("30d", today)).toEqual(defaultHistoryRange(today));
+  });
+});
+
+describe("historyRangeKeyOf", () => {
+  const today = new Date(2026, 8, 11);
+
+  it("recognises a range the owner picked from the presets", () => {
+    expect(historyRangeKeyOf("2026-09-05", "2026-09-11", today)).toBe("7d");
+    expect(historyRangeKeyOf("", "", today)).toBe("all");
+  });
+
+  it("calls anything else custom rather than rounding it to a preset", () => {
+    expect(historyRangeKeyOf("2026-09-04", "2026-09-11", today)).toBe("custom");
+  });
+});
+
+describe("formatHistoryRange", () => {
+  it("reads as a range short enough for a toolbar button", () => {
+    expect(formatHistoryRange("2026-08-13", "2026-09-11", "th")).toBe("13 ส.ค. – 11 ก.ย.");
+    expect(formatHistoryRange("2026-08-13", "2026-09-11", "en")).toBe("13 Aug – 11 Sep");
+  });
+
+  it("adds the year only when the range crosses one, in the era the table uses", () => {
+    expect(formatHistoryRange("2025-12-28", "2026-01-04", "th")).toBe("28 ธ.ค. 2568 – 4 ม.ค. 2569");
+    expect(formatHistoryRange("2025-12-28", "2026-01-04", "en")).toBe("28 Dec 2025 – 4 Jan 2026");
+  });
+
+  it("names the unbounded range instead of showing an empty dash", () => {
+    expect(formatHistoryRange("", "", "th")).toBe("ทุกช่วงเวลา");
+    expect(formatHistoryRange("2026-09-01", "", "th")).toBe("ตั้งแต่ 1 ก.ย.");
+    expect(formatHistoryRange("", "2026-09-11", "en")).toBe("Until 11 Sep");
   });
 });
