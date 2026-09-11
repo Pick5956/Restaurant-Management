@@ -845,6 +845,7 @@ export function AppScreen({
   centerTitle = false,
   immersive = false,
   floatingLeading,
+  floatingTrailing,
   scrollControlRef,
 }: {
   title: string;
@@ -893,6 +894,13 @@ export function AppScreen({
    *  putting one inside the content instead would scroll away with the image and
    *  leave no way out of the screen. */
   floatingLeading?: React.ReactNode;
+  /** The mirror of `floatingLeading` on the trailing side, aligned with the top
+   *  of the header row rather than the screen. For a control that has to sit in
+   *  the header but draw OUTSIDE it - a menu that opens downward over the
+   *  content - which an `action` cannot do without being clipped by the header
+   *  it lives in. Pair it with a spacer in `action` so the title keeps its
+   *  place. */
+  floatingTrailing?: React.ReactNode;
   /** Sit the title on the screen's centre line instead of hard left. Opt-in:
    *  a left-aligned title is the app's default and reads faster in a stack of
    *  content, so this is for screens that are a single self-contained record. */
@@ -1358,6 +1366,22 @@ export function AppScreen({
           style={{ position: 'absolute', top: insets.top, left: horizontalPadding, zIndex: 10 }}
         >
           {floatingLeading}
+        </View>
+      ) : null}
+      {floatingTrailing ? (
+        <View
+          pointerEvents="box-none"
+          // `spacing.lg` more than the leading slot when the header owns the top
+          // inset: that is the header's own top padding, so this lands on the
+          // first line of the heading instead of above it.
+          style={{
+            position: 'absolute',
+            top: insets.top + (headerOwnsTopInset ? spacing.lg : 0),
+            right: horizontalPadding,
+            zIndex: 10,
+          }}
+        >
+          {floatingTrailing}
         </View>
       ) : null}
     </Animated.View>

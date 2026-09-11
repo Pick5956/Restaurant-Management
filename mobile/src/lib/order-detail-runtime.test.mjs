@@ -250,7 +250,10 @@ test('the swipe-to-delete row keeps its gesture contract, and the summary uses i
   // Removal on the summary is the swipe and nothing else - no edit mode, no
   // per-row buttons, no inline steppers.
   assert.match(billSource, /<SwipeToDeleteRow\b/);
-  assert.doesNotMatch(billSource, /setEditing|\[editing,/);
+  // The list has no edit mode of its own any more: the old `editing` toggle
+  // gated every row's remove button behind it. The served-line control that
+  // replaced part of it is a separate, deliberate mode and is not this.
+  assert.doesNotMatch(billSource, /const \[editing, setEditing\]/);
   assert.doesNotMatch(billSource, /'Edit items'/);
 
   // The stack's back gesture has to stand down while a rail is open, or the
