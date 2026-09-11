@@ -158,6 +158,8 @@ func (r *IngredientRepository) UpdateMetadata(ingredient *entity.Ingredient) err
 			"image_url":     ingredient.ImageURL,
 			"unit":          ingredient.Unit,
 			"min_stock":     ingredient.MinStock,
+			"max_stock":     ingredient.MaxStock,
+			"min_percent":   ingredient.MinPercent,
 			"cost_per_unit": ingredient.CostPerUnit,
 			"yield_percent": ingredient.YieldPercent,
 			"storage_type":  ingredient.StorageType,
@@ -168,6 +170,20 @@ func (r *IngredientRepository) UpdateStock(restaurantID, ingredientID uint, stoc
 	return r.db.Model(&entity.Ingredient{}).
 		Where("restaurant_id = ? AND id = ?", restaurantID, ingredientID).
 		Update("stock", stock).Error
+}
+
+// UpdateStockLevels writes the three numbers that move together — see
+// stockLevels in the service package. They go in one statement because a
+// maximum that lands without the stock that raised it, or a reorder level that
+// lands without the maximum it was computed from, is a row nobody can explain.
+func (r *IngredientRepository) UpdateStockLevels(restaurantID, ingredientID uint, stock, maxStock, minStock float64) error {
+	return r.db.Model(&entity.Ingredient{}).
+		Where("restaurant_id = ? AND id = ?", restaurantID, ingredientID).
+		Updates(map[string]any{
+			"stock":     stock,
+			"max_stock": maxStock,
+			"min_stock": minStock,
+		}).Error
 }
 
 func (r *IngredientRepository) Delete(ingredient *entity.Ingredient) error {

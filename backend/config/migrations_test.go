@@ -148,6 +148,9 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// tags live on fields in the frozen registry, so the fingerprint advances
 		// even though the only DDL is CREATE UNIQUE INDEX plus its backfill.
 		27: "359a653ff6994b5a81b9f8678f0d97a9114a4bcc57a254637a0952a38841fe63",
+		// Version 28 adds max_stock and min_percent to Ingredient, both inside
+		// the frozen registry, so the fingerprint advances with the columns.
+		28: "4b8d61e758c577bfaaf189619b263822bd025b716fcf077587b3992ff73ba001",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {

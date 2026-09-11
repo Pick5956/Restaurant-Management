@@ -8,7 +8,14 @@ import {
   toDateInput,
 } from "./inventoryHistoryUtils";
 import { filenameFromDisposition, transactionParams } from "@/src/lib/ingredient";
-import { FULL_COVER_DAYS, formatDaysLeft, getStockPercent } from "./inventoryPageUtils";
+import {
+  FULL_COVER_DAYS,
+  formatDaysLeft,
+  getReorderPercent,
+  getStockPercent,
+  getTargetStock,
+  reorderQuantityFor,
+} from "./inventoryPageUtils";
 import type { Ingredient } from "@/src/types/ingredient";
 import { normalizeApiMediaUrls } from "@/src/lib/mediaUrl";
 
@@ -141,28 +148,67 @@ function ingredient(fields: Partial<Ingredient>): Ingredient {
 }
 
 describe("getStockPercent", () => {
-  // The old version divided by min_stock, so an item that merely reached its
-  // reorder line already showed a full bar — the same picture as one sitting at
-  // ten times the minimum. The bar now answers "how long does this last?".
-  it("no longer pins at 100% the moment stock reaches the minimum", () => {
-    const atMinimum = ingredient({ stock: 3000, min_stock: 3000, days_left: 2 });
-    expect(getStockPercent(atMinimum)).toBe(Math.round((2 / FULL_COVER_DAYS) * 100));
+  // An item at its reorder line is not full. The first version of this bar
+  // divided by min_stock and showed exactly that, which made an item sitting at
+  // its minimum look identical to one at ten times it.
+  it("does not pin at 100% the moment stock reaches the minimum", () => {
+    const atMinimum = ingredient({ stock: 3000, min_stock: 3000, max_stock: 9000 });
+    expect(getStockPercent(atMinimum)).toBe(33);
   });
 
-  it("caps at 100% once a week of cover is reached", () => {
-    expect(getStockPercent(ingredient({ stock: 9000, days_left: 7 }))).toBe(100);
-    expect(getStockPercent(ingredient({ stock: 90000, days_left: 400 }))).toBe(100);
+  it("caps at 100% rather than reporting a shelf as more than full", () => {
+    expect(getStockPercent(ingredient({ stock: 9000, max_stock: 9000 }))).toBe(100);
+    expect(getStockPercent(ingredient({ stock: 90000, max_stock: 9000 }))).toBe(100);
   });
 
-  // An ingredient nobody cooks with has no rate to divide by. A percentage
-  // there would be invented, and an empty bar would read as "about to run out".
-  it("returns null when there is no usage history", () => {
+  // Nothing has ever been observed on this shelf, so there is no ceiling to
+  // divide by. A percentage here would be invented, and an empty bar would read
+  // as "about to run out" when the truth is "we have no idea yet".
+  it("returns null when the shelf has no observed maximum", () => {
     expect(getStockPercent(ingredient({ stock: 5000 }))).toBeNull();
+    expect(getStockPercent(ingredient({ stock: 5000, max_stock: 0 }))).toBeNull();
   });
 
-  // Empty is empty regardless of history — that one needs no forecast.
-  it("reports an empty shelf as 0 even without usage data", () => {
-    expect(getStockPercent(ingredient({ stock: 0 }))).toBe(0);
+  it("reports an empty shelf as 0 once there is a maximum to measure against", () => {
+    expect(getStockPercent(ingredient({ stock: 0, max_stock: 9000 }))).toBe(0);
+  });
+});
+
+describe("getReorderPercent", () => {
+  it("places the mark where the reorder level falls along the bar", () => {
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 2000, max_stock: 10000 }))).toBe(20);
+  });
+
+  // A reorder level at or above the observed maximum has no place on the bar.
+  // Drawing it at the far end would say the shelf is permanently short, which
+  // is a statement about the numbers rather than about the shelf.
+  it("has no mark when the reorder level is not below the maximum", () => {
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 9000, max_stock: 9000 }))).toBeNull();
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 0, max_stock: 9000 }))).toBeNull();
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 500 }))).toBeNull();
+  });
+});
+
+describe("getTargetStock", () => {
+  it("aims a restock at the most the shelf has held", () => {
+    expect(getTargetStock(ingredient({ stock: 200, min_stock: 1000, max_stock: 8000 }))).toBe(8000);
+  });
+
+  // Before there was an observed maximum the target was twice the reorder
+  // level, which nobody chose. Ingredients that still have no maximum keep it.
+  it("falls back to twice the reorder level while no maximum has been observed", () => {
+    expect(getTargetStock(ingredient({ stock: 200, min_stock: 1000 }))).toBe(2000);
+  });
+});
+
+describe("reorderQuantityFor", () => {
+  it("turns a share of the maximum into the quantity the rest of the system reads", () => {
+    expect(reorderQuantityFor(5000, 20)).toBe(1000);
+  });
+
+  it("is zero when there is no maximum or no percentage to work from", () => {
+    expect(reorderQuantityFor(0, 20)).toBe(0);
+    expect(reorderQuantityFor(5000, 0)).toBe(0);
   });
 });
 

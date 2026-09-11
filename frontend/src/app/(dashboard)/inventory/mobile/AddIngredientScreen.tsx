@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
-import { formatCurrency } from "@/src/lib/format";
+import { formatCurrency, formatAdaptiveNumber as formatNumber } from "@/src/lib/format";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
-import { UNITS } from "../inventoryPageUtils";
+import { UNITS, reorderQuantityFor } from "../inventoryPageUtils";
 import type { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -50,6 +50,10 @@ export default function AddIngredientScreen({
             openingStock: "จำนวนเริ่มต้น",
             price: "ราคาต่อหน่วย",
             minStock: "แจ้งเตือนเมื่อต่ำกว่า",
+            minAsPercent: "ตั้งเป็น %",
+            minAsAmount: "ตั้งเป็นจำนวน",
+            warnsAt: (amount: string, unit: string, max: string) =>
+              `จะเตือนเมื่อเหลือ ${amount} ${unit} · เต็ม ${max} ${unit}`,
             minNote: "ค่านี้เป็นเส้นแจ้งเตือน ใช้ตัดสินว่าวัตถุดิบอยู่ในสถานะใกล้หมดหรือยัง",
             openingValue: "มูลค่าเริ่มต้น",
             pickCategory: "เลือกหมวดหมู่",
@@ -72,6 +76,10 @@ export default function AddIngredientScreen({
             openingStock: "Opening quantity",
             price: "Unit price",
             minStock: "Warn below",
+            minAsPercent: "As %",
+            minAsAmount: "As a quantity",
+            warnsAt: (amount: string, unit: string, max: string) =>
+              `warns at ${amount} ${unit} · full at ${max} ${unit}`,
             minNote: "This is the reorder line — it decides when an ingredient counts as low.",
             openingValue: "Opening value",
             pickCategory: "Pick a category",
@@ -89,6 +97,10 @@ export default function AddIngredientScreen({
   const [stock, setStock] = useState(editing ? String(editing.stock) : "");
   const [price, setPrice] = useState(editing ? String(editing.cost_per_unit) : "");
   const [minStock, setMinStock] = useState(editing ? String(editing.min_stock) : "");
+  // A percentage is only on offer once this shelf has a maximum to be a
+  // percentage of; a brand new ingredient has none, so it types a quantity.
+  const shelfMax = editing?.max_stock ?? 0;
+  const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
   const [picker, setPicker] = useState<"none" | "category" | "unit">("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -113,6 +125,7 @@ export default function AddIngredientScreen({
         // on edit and the typed one only on create.
         stock: editing ? editing.stock : Number(stock) || 0,
         min_stock: Number(minStock) || 0,
+        min_percent: minPercent,
         cost_per_unit: Number(price) || 0,
       };
       if (editing) await actions.update(editing.ID, payload);
@@ -183,17 +196,63 @@ export default function AddIngredientScreen({
               className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
             />
           </FormRow>
-          <FormRow label={copy.minStock} suffix={unit} divider={false}>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={minStock}
-              onChange={(event) => setMinStock(event.target.value)}
-              placeholder="0"
-              className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
-            />
-          </FormRow>
+          {minPercent > 0 && shelfMax > 0 ? (
+            <FormRow label={copy.minStock} suffix="%" divider={false}>
+              <div className="flex w-full items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={minPercent}
+                  onChange={(event) => {
+                    const percent = Number(event.target.value);
+                    setMinPercent(percent);
+                    setMinStock(String(reorderQuantityFor(shelfMax, percent)));
+                  }}
+                  className="h-9 flex-1 accent-(--inv-action)"
+                />
+                <span className="w-9 shrink-0 text-right text-[16px] tabular-nums text-(--inv-heading)">
+                  {minPercent}
+                </span>
+              </div>
+            </FormRow>
+          ) : (
+            <FormRow label={copy.minStock} suffix={unit} divider={false}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={minStock}
+                onChange={(event) => {
+                  setMinStock(event.target.value);
+                  setMinPercent(0);
+                }}
+                placeholder="0"
+                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+              />
+            </FormRow>
+          )}
         </FormGroup>
+        {shelfMax > 0 ? (
+          <div className="-mt-4 mb-[22px] flex items-baseline justify-between gap-3 px-1">
+            <span className="text-[11px] leading-snug text-(--inv-faint)">
+              {minPercent > 0
+                ? copy.warnsAt(formatNumber(Number(minStock) || 0, lang), unit, formatNumber(shelfMax, lang))
+                : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = minPercent > 0 ? 0 : 20;
+                setMinPercent(next);
+                if (next > 0) setMinStock(String(reorderQuantityFor(shelfMax, next)));
+              }}
+              className="shrink-0 text-[11px] font-semibold text-(--inv-action)"
+            >
+              {minPercent > 0 ? copy.minAsAmount : copy.minAsPercent}
+            </button>
+          </div>
+        ) : null}
         <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
           {copy.minNote}
         </p>

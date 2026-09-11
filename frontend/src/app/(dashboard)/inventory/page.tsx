@@ -51,7 +51,9 @@ import {
   buildAdjustStockPayload,
   getInventoryValue,
   getStatus,
+  getReorderPercent,
   getStockPercent,
+  reorderQuantityFor,
   inputCls,
   STORAGE_TYPES,
   UNITS,
@@ -135,6 +137,10 @@ function buildCopy(language: "th" | "en") {
         stock: "สต็อก",
         level: "ระดับสต็อก",
         minStock: "แจ้งเตือนเมื่อต่ำกว่า",
+        minAsPercent: "ตั้งเป็น % ของเต็ม",
+        minAsAmount: "ตั้งเป็นจำนวน",
+        ofFull: (max: string, unit: string) => `เต็ม ${max} ${unit}`,
+        warnsAt: (amount: string, unit: string) => `จะเตือนเมื่อเหลือ ${amount} ${unit}`,
         costPerUnit: "ราคา/หน่วย",
         save: "บันทึก",
         cancel: "ยกเลิก",
@@ -237,6 +243,10 @@ function buildCopy(language: "th" | "en") {
         stock: "Stock",
         level: "Level",
         minStock: "Alert below",
+        minAsPercent: "As % of full",
+        minAsAmount: "As a quantity",
+        ofFull: (max: string, unit: string) => `full at ${max} ${unit}`,
+        warnsAt: (amount: string, unit: string) => `warns at ${amount} ${unit}`,
         costPerUnit: "Cost/unit",
         save: "Save",
         cancel: "Cancel",
@@ -639,6 +649,7 @@ export default function InventoryPage() {
       unit: item.unit,
       stock: item.stock,
       min_stock: item.min_stock,
+      min_percent: item.min_percent ?? 0,
       cost_per_unit: item.cost_per_unit,
       storage_type: item.storage_type ?? "room_temp",
     });
@@ -1341,6 +1352,7 @@ export default function InventoryPage() {
                         const status = getStatus(item);
                         const meta = statusMeta(status, copy);
                         const percent = getStockPercent(item);
+                        const reorderAt = getReorderPercent(item);
 
                         return (
                           <tr key={item.ID} className={`transition-colors ${meta.row}`}>
@@ -1365,19 +1377,25 @@ export default function InventoryPage() {
                                     {formatNumber(item.stock, lang)} <span className="text-[11px] font-medium text-slate-400">{item.unit}</span>
                                   </span>
                                 </div>
-                                {/* percent is null when the ingredient has never been
-                                    cooked with — there is no rate to forecast from, so
-                                    the bar says so instead of drawing an empty tank. */}
+                                {/* percent is null when this shelf has no observed
+                                    maximum yet — there is nothing to divide by, so the
+                                    bar says so instead of drawing an empty tank. */}
                                 {percent === null ? (
                                   <p className="mt-1.5 text-[10px] leading-none text-slate-400">
-                                    {lang === "th" ? "ยังไม่มีข้อมูลการใช้" : "No usage data"}
+                                    {lang === "th" ? "ยังไม่รู้ว่าเต็มเท่าไหร่" : "No maximum yet"}
                                   </p>
                                 ) : (
-                                  <>
-                                    <div className="mt-1.5 h-1.5 rounded-full bg-slate-200/80 dark:bg-gray-800">
-                                      <div className={`h-1.5 rounded-full bg-gradient-to-r ${meta.bar}`} style={{ width: `${percent}%` }} />
-                                    </div>
-                                  </>
+                                  <div className="relative mt-1.5 h-1.5 rounded-full bg-slate-200/80 dark:bg-gray-800">
+                                    <div className={`h-1.5 rounded-full bg-gradient-to-r ${meta.bar}`} style={{ width: `${percent}%` }} />
+                                    {reorderAt === null ? null : (
+                                      <span
+                                        aria-hidden
+                                        title={`${copy.minStock} ${formatNumber(item.min_stock, lang)} ${item.unit}`}
+                                        className="absolute -top-0.5 h-2.5 w-0.5 rounded-full bg-slate-500/70 dark:bg-slate-300/60"
+                                        style={{ left: `${reorderAt}%` }}
+                                      />
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             </td>
@@ -1589,16 +1607,70 @@ export default function InventoryPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.min_stock}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, min_stock: parseFloat(event.target.value) || 0 }))
-                      }
-                      className={inputCls}
-                    />
+                    <div className="mb-1.5 flex items-baseline gap-2">
+                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                      {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((current) => ({
+                              ...current,
+                              min_percent: (current.min_percent ?? 0) > 0 ? 0 : 20,
+                              min_stock:
+                                (current.min_percent ?? 0) > 0
+                                  ? current.min_stock
+                                  : reorderQuantityFor(editingItem.max_stock ?? 0, 20),
+                            }))
+                          }
+                          className="text-[11px] font-semibold text-orange-600 underline-offset-2 hover:underline dark:text-orange-400"
+                        >
+                          {(form.min_percent ?? 0) > 0 ? copy.minAsAmount : copy.minAsPercent}
+                        </button>
+                      ) : null}
+                    </div>
+                    {(form.min_percent ?? 0) > 0 && editingItem ? (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={form.min_percent ?? 0}
+                            onChange={(event) => {
+                              const percent = Number(event.target.value);
+                              setForm((current) => ({
+                                ...current,
+                                min_percent: percent,
+                                min_stock: reorderQuantityFor(editingItem.max_stock ?? 0, percent),
+                              }));
+                            }}
+                            className="h-10 flex-1 accent-orange-500"
+                          />
+                          <span className="w-12 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                            {form.min_percent ?? 0}%
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                          {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
+                          {copy.ofFull(formatNumber(editingItem.max_stock ?? 0, lang), form.unit)}
+                        </p>
+                      </>
+                    ) : (
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.min_stock}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            min_stock: parseFloat(event.target.value) || 0,
+                            min_percent: 0,
+                          }))
+                        }
+                        className={inputCls}
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
