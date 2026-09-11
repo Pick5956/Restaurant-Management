@@ -20,6 +20,9 @@ type HomeOrder = {
   payment_status?: string | null;
   grand_total?: number | string | null;
   total_amount?: number | string | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  table?: { ID?: number; display_label?: string } | null;
 };
 
 type HomeSalesDay = {
@@ -337,4 +340,158 @@ export function resolveHomePriority(counts: HomeOperationalCounts, access: HomeA
     return { key: 'orders', count: 0, href: '/orders', tone: 'info' };
   }
   return { key: 'overview', count: 0, tone: 'neutral' };
+}
+
+// ---------------------------------------------------------------- home v2
+
+export type HomeDay = {
+  date: string;
+  /** 0 = Sunday, as Date.getDay() counts. */
+  weekday: number;
+  dayOfMonth: number;
+  selected: boolean;
+  isToday: boolean;
+  /** Whether anything was sold that day, when the sales history is known. */
+  hasSales: boolean | null;
+};
+
+/**
+ * The seven days ending today, for the strip that replaced the < date > arrows.
+ * A day carries a dot when the sales history says it sold something; with no
+ * history at all (no report permission) the dots are simply absent rather than
+ * every day pretending to be empty.
+ */
+export function homeDayStrip(today: string, selectedDate: string, salesDays: HomeSalesDay[] | null): HomeDay[] {
+  const sold = salesDays
+    ? new Set(salesDays.filter((day) => finiteNumber(day.revenue) > 0).map((day) => day.order_date))
+    : null;
+  const days: HomeDay[] = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const date = shiftDashboardDate(today, -offset);
+    const parsed = parseDateKey(date);
+    days.push({
+      date,
+      weekday: parsed ? parsed.getUTCDay() : 0,
+      dayOfMonth: parsed ? parsed.getUTCDate() : 0,
+      selected: date === selectedDate,
+      isToday: date === today,
+      hasSales: sold ? sold.has(date) : null,
+    });
+  }
+  return days;
+}
+
+/** The hour (0-23) an ISO timestamp falls in, Bangkok time. */
+export function bangkokHour(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const text = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: '2-digit', hour12: false }).format(date);
+  const hour = Number(text);
+  // Some engines print midnight as "24".
+  return Number.isFinite(hour) ? hour % 24 : null;
+}
+
+export type HomeRevenueCurve = {
+  /** First hour on the axis. */
+  startHour: number;
+  /** Last hour on the axis, inclusive. */
+  endHour: number;
+  /** Paid revenue accumulated by the end of each hour, one entry per hour. */
+  cumulative: number[];
+};
+
+/**
+ * Paid revenue accumulated hour by hour, for the line on the sales card. Bills
+ * count at the hour they were closed, since that is when the money was taken.
+ * The axis runs from the first sale (never later than 10:00) to the last one, or
+ * to the current hour when the day is still going, so the line ends where the
+ * day has actually got to instead of trailing flat to midnight.
+ */
+export function homeRevenueCurve(orders: HomeOrder[], nowHour: number | null): HomeRevenueCurve | null {
+  const byHour = new Array<number>(24).fill(0);
+  let any = false;
+  for (const order of orders) {
+    if (order.status === 'cancelled') continue;
+    const paid = order.payment_status === 'paid' || order.status === 'completed';
+    if (!paid) continue;
+    const hour = bangkokHour(order.closed_at || order.opened_at);
+    if (hour === null) continue;
+    byHour[hour] += finiteNumber(order.grand_total || order.total_amount);
+    any = true;
+  }
+  if (!any && nowHour === null) return null;
+  let first = byHour.findIndex((value) => value > 0);
+  if (first < 0) first = 10;
+  const startHour = Math.min(first, 10);
+  let last = 23;
+  while (last > startHour && byHour[last] === 0) last -= 1;
+  const endHour = nowHour === null ? last : Math.max(Math.min(nowHour, 23), Math.min(last, 23), startHour);
+  const cumulative: number[] = [];
+  let running = 0;
+  for (let hour = startHour; hour <= endHour; hour += 1) {
+    running += byHour[hour];
+    cumulative.push(running);
+  }
+  return { startHour, endHour, cumulative };
+}
+
+/**
+ * What the same weekday a week earlier took, when the history covers it. This is
+ * the honest comparison for a finished day; for a day still in progress the
+ * caller shows it as a reference figure, never as a percentage against a total
+ * that is not in yet.
+ */
+export function sameWeekdayRevenue(salesDays: HomeSalesDay[] | null, date: string): number | null {
+  if (!salesDays) return null;
+  const target = shiftDashboardDate(date, -7);
+  const day = salesDays.find((entry) => entry.order_date === target);
+  return day ? finiteNumber(day.revenue) : null;
+}
+
+/** Percentage change, or null when there is nothing to compare against. */
+export function percentChange(current: number, previous: number | null): number | null {
+  if (previous === null || previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+/**
+ * Bills the kitchen has finished that nobody has paid for yet: the tables that
+ * are waiting to check out.
+ */
+export function waitingBillOrders<T extends HomeOrder>(orders: T[]): T[] {
+  return orders.filter((order) =>
+    (order.status === 'served' || order.status === 'ready') &&
+    order.payment_status !== 'paid',
+  );
+}
+
+export type HomeTableCell = {
+  id: number;
+  label: string;
+  state: 'busy' | 'bill' | 'reserved' | 'free';
+};
+
+/**
+ * The floor as a grid of cells. A table whose bill is waiting shows as such
+ * rather than merely occupied, because that is the one the front of house has
+ * to go to next. Inactive tables are not on the floor.
+ */
+export function homeTableCells(
+  tables: Array<{ ID: number; display_label: string; status: string }>,
+  billTableIds: Set<number>,
+): HomeTableCell[] {
+  return tables
+    .filter((table) => table.status !== 'inactive')
+    .map((table) => ({
+      id: table.ID,
+      label: table.display_label,
+      state: billTableIds.has(table.ID)
+        ? 'bill' as const
+        : table.status === 'occupied'
+          ? 'busy' as const
+          : table.status === 'reserved'
+            ? 'reserved' as const
+            : 'free' as const,
+    }));
 }
