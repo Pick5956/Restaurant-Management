@@ -450,7 +450,13 @@ export default function HomeScreen() {
         headline: copy(`${item.count} รายการ`, `${item.count} ${item.count === 1 ? 'item' : 'items'}`),
         detail,
         tone: item.tone === 'danger' ? 'danger' : 'warning',
-        onPress: item.href ? () => router.push(item.href as never) : undefined,
+        onPress: item.key === 'stock-out'
+          ? () => router.push({ pathname: '/inventory' as never, params: { status: 'out' } } as never)
+          : item.key === 'stock-low'
+            ? () => router.push({ pathname: '/inventory' as never, params: { status: 'low' } } as never)
+            : item.href
+              ? () => router.push(item.href as never)
+              : undefined,
       };
     });
     if (billOrders.length && canViewOrders) {
@@ -463,11 +469,32 @@ export default function HomeScreen() {
         headline: copy(`${billOrders.length} โต๊ะ`, `${billOrders.length} ${billOrders.length === 1 ? 'table' : 'tables'}`),
         detail: `${labels.slice(0, 3).join(' · ')} · ${formatMoney(owed, language)}`,
         tone: 'info',
-        onPress: () => router.push('/orders'),
+        // One table waiting: straight to its bill. Several: the orders list,
+        // where each one is a row.
+        onPress: billOrders.length === 1
+          ? () => router.push({ pathname: '/order/[id]', params: { id: String(billOrders[0].ID) } })
+          : () => router.push('/orders'),
       });
     }
     return cards;
   }, [attention, billOrders, canViewOrders, copy, isToday, language, shortIngredients]);
+
+  // The same three doors the tables screen opens: the running order if the
+  // table has one, the reservation if it is only booked, a fresh order if it is
+  // free. Tapping a table on the overview should never just land on a list of
+  // tables with the same one still to find.
+  const openTable = useCallback((cell: { id: number; state: 'busy' | 'bill' | 'reserved' | 'free' }) => {
+    const running = activeOrders.find((order) => order.table?.ID === cell.id);
+    if (running) {
+      router.push({ pathname: '/order/[id]', params: { id: String(running.ID) } });
+      return;
+    }
+    if (cell.state === 'reserved') {
+      router.push({ pathname: '/table-reservation' as never, params: { tableId: String(cell.id) } } as never);
+      return;
+    }
+    router.push({ pathname: '/order/new' as never, params: { tableId: String(cell.id) } } as never);
+  }, [activeOrders]);
 
   const tableLegend = {
     busy: copy('ใช้งาน', 'Seated'),
@@ -542,7 +569,7 @@ export default function HomeScreen() {
   ) : null;
   const attentionBlock = attentionCards.length ? (
     <View style={{ gap: spacing.sm }}>
-      <HomeHeading icon="alert-circle-outline" title={copy('ต้องจัดการตอนนี้', 'Needs attention now')} trailing={copy('ทั้งหมด', 'All')} onPress={priority.href ? () => router.push(priority.href as never) : undefined} />
+      <HomeHeading icon="alert-circle-outline" title={copy('ต้องจัดการตอนนี้', 'Needs attention now')} />
       <AttentionRail cards={attentionCards} stacked={tabletWorkspace} />
     </View>
   ) : null;
@@ -558,7 +585,7 @@ export default function HomeScreen() {
         cells={tableCells}
         columns={tabletWorkspace ? 4 : 5}
         legend={tableLegend}
-        onPress={canTakeOrder ? () => router.push('/tables') : undefined}
+        onPress={canTakeOrder ? openTable : undefined}
       />
     </View>
   ) : null;
