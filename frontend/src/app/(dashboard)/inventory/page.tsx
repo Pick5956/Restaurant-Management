@@ -141,6 +141,7 @@ function buildCopy(language: "th" | "en") {
         minAsAmount: "ตั้งเป็นจำนวน",
         ofFull: (max: string, unit: string) => `เต็ม ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `จะเตือนเมื่อเหลือ ${amount} ${unit}`,
+        markIsWarn: "ขีดคือจุดที่จะเตือน",
         costPerUnit: "ราคา/หน่วย",
         save: "บันทึก",
         cancel: "ยกเลิก",
@@ -247,6 +248,7 @@ function buildCopy(language: "th" | "en") {
         minAsAmount: "As a quantity",
         ofFull: (max: string, unit: string) => `full at ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `warns at ${amount} ${unit}`,
+        markIsWarn: "The mark is where it warns",
         costPerUnit: "Cost/unit",
         save: "Save",
         cancel: "Cancel",
@@ -1691,6 +1693,32 @@ export default function InventoryPage() {
                     />
                   </div>
                 </div>
+                {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
+                  <div>
+                    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">{copy.markIsWarn}</span>
+                      <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                        {formatNumber(editingItem.stock, lang)} / {formatNumber(editingItem.max_stock ?? 0, lang)} {form.unit}
+                      </span>
+                    </div>
+                    <div className="relative h-2 rounded-full bg-slate-200 dark:bg-gray-800">
+                      <div
+                        className={`h-2 rounded-full ${editingItem.stock <= form.min_stock ? "bg-amber-500" : "bg-emerald-500"}`}
+                        style={{
+                          width: `${Math.round(Math.max(0, Math.min(1, editingItem.stock / (editingItem.max_stock || 1))) * 100)}%`,
+                        }}
+                      />
+                      {form.min_stock > 0 && form.min_stock < (editingItem.max_stock ?? 0) ? (
+                        <span
+                          className="absolute -top-1 h-4 w-0.5 rounded-full bg-slate-700/60 dark:bg-white/60"
+                          style={{
+                            left: `${Math.round((form.min_stock / (editingItem.max_stock || 1)) * 100)}%`,
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>

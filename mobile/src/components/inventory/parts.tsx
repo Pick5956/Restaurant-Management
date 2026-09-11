@@ -754,6 +754,53 @@ export function ChoiceChip({ label, on, onPress }: { label: string; on: boolean;
 }
 
 /**
+ * The item's own level bar, drawn from figures being edited rather than from
+ * the saved row: what is on the shelf now, and where the reorder level being
+ * set would sit along it.
+ *
+ * The form used to describe this bar in words — "the mark on this item's bar" —
+ * on a screen that showed no bar at all, so the only way to find out what a
+ * number did was to save it and go back to the list. Here the mark moves while
+ * the number is being chosen.
+ */
+export function ReorderPreview({
+  stock,
+  minStock,
+  maxStock,
+  unit,
+  locale,
+  caption,
+}: {
+  stock: number;
+  minStock: number;
+  maxStock: number;
+  unit: string;
+  locale: string;
+  caption: string;
+}) {
+  if (!(maxStock > 0)) return null;
+  const filled = Math.max(0, Math.min(1, stock / maxStock));
+  const mark = minStock > 0 && minStock < maxStock ? minStock / maxStock : null;
+  const short = stock <= minStock;
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, borderTopWidth: 1, borderTopColor: palette.divider }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 7 }}>
+        <Text style={{ flex: 1, fontSize: 11.5, color: palette.muted }}>{caption}</Text>
+        <Text style={{ fontSize: 11.5, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>
+          {fmt(stock, locale)} / {fmt(maxStock, locale)} {unit}
+        </Text>
+      </View>
+      <View style={{ height: 8, borderRadius: 4, backgroundColor: palette.surfaceStrong }}>
+        <View style={{ width: `${Math.round(filled * 100)}%`, height: '100%', borderRadius: 4, backgroundColor: short ? palette.warning : palette.success }} />
+        {mark === null ? null : (
+          <View style={{ position: 'absolute', left: `${Math.round(mark * 100)}%`, top: -4, width: 2, height: 16, borderRadius: 1, backgroundColor: palette.textStrong, opacity: 0.55 }} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
  * A percentage picked by dragging, with the quantity it comes to shown against
  * the shelf it belongs to.
  *

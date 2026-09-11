@@ -8,7 +8,7 @@ import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, PercentSlider, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, PercentSlider, ReorderPreview, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   buildIngredientCreateInput,
@@ -236,7 +236,7 @@ export default function InventoryItemScreen() {
                         `จะเตือนเมื่อเหลือ ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · ชั้นนี้เคยมีมากสุด ${fmt(maxStock, locale)} ${unit}`,
                         `Warns at ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · most this shelf has held is ${fmt(maxStock, locale)} ${unit}`,
                       )
-                    : t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดบนหลอดของรายการนี้', 'Below this the item shows as "Low", and the mark on its bar sits here.')
+                    : t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง', 'Below this the item shows as "Low" in the inventory list.')
                 }
                 action={editing && maxStock > 0 && !readOnly ? (
                   <Pressable
@@ -281,6 +281,14 @@ export default function InventoryItemScreen() {
                     }}
                   />
                 ) : null}
+                <ReorderPreview
+                  stock={Number(stock) || 0}
+                  minStock={Number(minStock) || 0}
+                  maxStock={maxStock}
+                  unit={unit}
+                  locale={locale}
+                  caption={t('ขีดคือจุดที่จะเตือน', 'The mark is where it warns')}
+                />
               </FormGroup>
 
               <FormGroup title={t('การจัดเก็บ', 'Storage')}>
