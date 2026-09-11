@@ -7,6 +7,7 @@ import {
   buildIngredientMetadataInput,
   ingredientUnitOptions,
   ingredientToFormValues,
+  reorderPercentOf,
   validateStockAdjustmentQuantity,
 } from './inventory-form.ts';
 
@@ -18,6 +19,7 @@ const completeForm = {
   unit: 'กก.',
   stock: '8.25',
   minStock: '2',
+  minPercent: '0',
   cost: '315.75',
   yieldPercent: '92',
   storageType: 'chilled',
@@ -33,6 +35,10 @@ test('builds the complete metadata update without including stock', () => {
     image_url: 'https://example.com/salmon.jpg',
     unit: 'กก.',
     min_stock: 2,
+    // Always present, never omitted: this form owns the choice between a share
+    // of the shelf's maximum and a plain quantity, so leaving the field out
+    // would keep a percentage the owner has just switched away from.
+    min_percent: 0,
     cost_per_unit: 315.75,
     yield_percent: 92,
     storage_type: 'chilled',
@@ -67,6 +73,7 @@ test('round-trips every editable backend metadata field without changing stock',
     image_url: item.image_url,
     unit: item.unit,
     min_stock: item.min_stock,
+    min_percent: 0,
     cost_per_unit: item.cost_per_unit,
     yield_percent: item.yield_percent,
     storage_type: item.storage_type,
@@ -179,4 +186,16 @@ test('accepts a positive decimal stock adjustment', () => {
     ok: true,
     quantity: 2.75,
   });
+});
+
+test('a form set to a share of the maximum sends the share as well as the quantity', () => {
+  const payload = buildIngredientMetadataInput({ ...completeForm, minPercent: '20', minStock: '1900' });
+
+  assert.equal(payload.min_percent, 20);
+  assert.equal(payload.min_stock, 1900);
+});
+
+test('a share above a whole shelf is capped rather than sent as typed', () => {
+  assert.equal(reorderPercentOf({ minPercent: '250' }), 100);
+  assert.equal(reorderPercentOf({}), 0);
 });

@@ -7,7 +7,8 @@ import { createIngredient, deleteIngredient, listIngredientCategories, listIngre
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
-import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, SheetSection, SheetTitle, headerContentTop } from '@/src/components/inventory/parts';
+import { AppText as Text } from '@/src/components/app-text';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, PercentSlider, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   buildIngredientCreateInput,
@@ -16,6 +17,7 @@ import {
   ingredientUnitOptions,
 } from '@/src/lib/inventory-form';
 import { inventoryItemAccess } from '@/src/lib/permission-parity';
+import { reorderQuantityFor } from '@/src/lib/inventory-list';
 import { can } from '@/src/lib/rbac';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -32,7 +34,8 @@ import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
 export default function InventoryItemScreen() {
   const insets = useSafeAreaInsets();
   const { activeMembership } = useAuth();
-  const { copy: t } = useDisplayPreferences();
+  const { copy: t, language } = useDisplayPreferences();
+  const locale = language === 'th' ? 'th-TH' : 'en-US';
   const { id } = useLocalSearchParams<{ id?: string }>();
   const routeId = parsePositiveRouteId(id);
   const itemId = routeId.kind === 'valid' ? routeId.id : null;
@@ -53,6 +56,10 @@ export default function InventoryItemScreen() {
   const [unit, setUnit] = useState('กก.');
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
+  // The reorder level as a share of the shelf's maximum. Zero means the
+  // quantity above stands on its own, which is where every ingredient starts.
+  const [minPercent, setMinPercent] = useState(0);
+  const [maxStock, setMaxStock] = useState(0);
   const [cost, setCost] = useState('0');
   const [yieldPercent, setYieldPercent] = useState('100');
   const [storageType, setStorageType] = useState('room_temp');
@@ -94,6 +101,8 @@ export default function InventoryItemScreen() {
     const values = ingredientToFormValues(item);
     setName(values.name); setSku(values.sku); setCategoryId(values.categoryId); setImageUrl(values.imageUrl);
     setUnit(values.unit); setStock(values.stock); setMinStock(values.minStock);
+    setMinPercent(Number(values.minPercent) || 0);
+    setMaxStock(Number(item.max_stock ?? 0));
     setCost(values.cost); setYieldPercent(values.yieldPercent); setStorageType(values.storageType);
   }
 
@@ -117,7 +126,7 @@ export default function InventoryItemScreen() {
     if (!name.trim() || !unit.trim()) { setError(t('กรอกชื่อและหน่วยให้ครบ', 'Enter both an ingredient name and unit.')); return; }
     setSaving(true); setError(null);
     try {
-      const values = { name, sku, categoryId, imageUrl, unit, stock, minStock, cost, yieldPercent, storageType };
+      const values = { name, sku, categoryId, imageUrl, unit, stock, minStock, minPercent: String(minPercent), cost, yieldPercent, storageType };
       if (editing) await updateIngredient(itemId!, buildIngredientMetadataInput(values));
       else await createIngredient(buildIngredientCreateInput(values));
       router.back();
@@ -221,7 +230,29 @@ export default function InventoryItemScreen() {
 
               <FormGroup
                 title={t('ต้นทุนและสต็อก', 'Cost and stock')}
-                footer={t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดกลางหลอดของรายการนี้', 'Below the reorder level the item shows as "Low" and the bar\'s midpoint marks it.')}
+                footer={
+                  minPercent > 0
+                    ? t(
+                        `จะเตือนเมื่อเหลือ ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · ชั้นนี้เคยมีมากสุด ${fmt(maxStock, locale)} ${unit}`,
+                        `Warns at ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · most this shelf has held is ${fmt(maxStock, locale)} ${unit}`,
+                      )
+                    : t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง และเป็นขีดบนหลอดของรายการนี้', 'Below this the item shows as "Low", and the mark on its bar sits here.')
+                }
+                action={editing && maxStock > 0 && !readOnly ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      const next = minPercent > 0 ? 0 : 20;
+                      setMinPercent(next);
+                      if (next > 0) setMinStock(String(reorderQuantityFor(maxStock, next)));
+                    }}
+                    hitSlop={6}
+                  >
+                    <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.primaryInk }}>
+                      {minPercent > 0 ? t('ตั้งเป็นจำนวน', 'As a quantity') : t('ตั้งเป็น %', 'As a %')}
+                    </Text>
+                  </Pressable>
+                ) : undefined}
               >
                 <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
                   <FormField value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
@@ -232,8 +263,24 @@ export default function InventoryItemScreen() {
                   </FormRow>
                 ) : null}
                 <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
-                  <FormField value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
+                  {minPercent > 0 ? (
+                    <Text style={{ fontSize: 15.5, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{minPercent}%</Text>
+                  ) : (
+                    <FormField value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
+                  )}
                 </FormRow>
+                {minPercent > 0 ? (
+                  <PercentSlider
+                    value={minPercent}
+                    maxStock={maxStock}
+                    unit={unit}
+                    locale={locale}
+                    onChange={(percent) => {
+                      setMinPercent(percent);
+                      setMinStock(String(reorderQuantityFor(maxStock, percent)));
+                    }}
+                  />
+                ) : null}
               </FormGroup>
 
               <FormGroup title={t('การจัดเก็บ', 'Storage')}>

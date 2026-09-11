@@ -126,6 +126,9 @@ export default function BulkAddIngredientsScreen() {
           unit: row.unit,
           stock: row.stock,
           minStock: row.minStock,
+          // A shelf with no history has no maximum to take a share of, so a new
+          // ingredient is always given a quantity here.
+          minPercent: '0',
           cost: row.cost,
           yieldPercent: '100',
           storageType: row.storageType,
