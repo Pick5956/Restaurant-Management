@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 27
+	CurrentSchemaVersion int64 = 28
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -548,6 +548,49 @@ func schemaMigrationPlan() []SchemaMigration {
 				} {
 					if err := ctx.DB.Exec(statement).Error; err != nil {
 						return fmt.Errorf("enforce one active reservation per slot: %w", err)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 28,
+			Name:    "ingredient_max_stock",
+			Up: func(ctx *MigrationContext) error {
+				// The backfill has to give every existing row a maximum, because a
+				// zero maximum means "no bar" and every shelf would lose its bar on
+				// the day this ships.
+				//
+				// There is no stored history of stock levels to read a true peak
+				// out of — the movement log holds amounts, not balances — so the
+				// backfill takes the highest level this ingredient is *known* to
+				// have reached: what is on the shelf now, the largest single
+				// delivery it ever took in, the largest counted level anyone ever
+				// set, and its own reorder level. Each of those is a real number
+				// the shelf has held or must hold. It is a floor, not the truth,
+				// and the rule in levelsAfterStockChange raises it from there on
+				// the first restock that beats it.
+				for _, statement := range []string{
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS max_stock NUMERIC(18,4) NOT NULL DEFAULT 0`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS min_percent NUMERIC(7,4) NOT NULL DEFAULT 0`,
+					`UPDATE ingredients AS i
+					    SET max_stock = GREATEST(
+					          i.stock,
+					          i.min_stock,
+					          COALESCE((SELECT MAX(t.quantity)
+					                      FROM ingredient_transactions AS t
+					                     WHERE t.ingredient_id = i.id
+					                       AND t.deleted_at IS NULL
+					                       AND t.type IN ('in', 'adjust')), 0)
+					        )
+					  WHERE i.max_stock = 0`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_max_stock_nonnegative`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_max_stock_nonnegative CHECK (max_stock >= 0)`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_min_percent_range`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_min_percent_range CHECK (min_percent >= 0 AND min_percent <= 100)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add ingredient max stock: %w", err)
 					}
 				}
 				return nil

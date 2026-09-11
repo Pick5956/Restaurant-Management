@@ -28,6 +28,13 @@ type IngredientRequest struct {
 	Unit         string  `json:"unit" binding:"required,max=40"`
 	Stock        float64 `json:"stock"`
 	MinStock     float64 `json:"min_stock"`
+	// MinPercent sets the reorder level as a share of the maximum instead of as
+	// a quantity. Above zero it wins and MinStock is computed from it; zero
+	// clears the link, so an explicit quantity is never overwritten on the next
+	// restock. It is a pointer because leaving the field out has to mean "leave
+	// it as it is" — every client that predates this column omits it, and a
+	// plain float would read those as a request to clear it.
+	MinPercent   *float64 `json:"min_percent"`
 	CostPerUnit  float64 `json:"cost_per_unit"`
 	YieldPercent float64 `json:"yield_percent"`
 	StorageType  string  `json:"storage_type" binding:"max=40"`
@@ -202,6 +209,9 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 		YieldPercent: sanitizeYieldPercent(req.YieldPercent),
 		StorageType:  storageType,
 	}
+	ingredient.MaxStock = startingMaxStock(req.Stock, req.MinStock)
+	ingredient.MinPercent = percentOr(req.MinPercent, 0)
+	ingredient.MinStock = reorderLevelFrom(ingredient.MaxStock, ingredient.MinPercent, req.MinStock)
 	if err := s.repo.Transaction(func(tx *repository.IngredientRepository) error {
 		if err := tx.Create(ingredient); err != nil {
 			return err
@@ -255,7 +265,9 @@ func (s *IngredientService) Update(restaurantID, ingredientID uint, req *Ingredi
 	ingredient.CategoryID = categoryID
 	ingredient.ImageURL = strings.TrimSpace(req.ImageURL)
 	ingredient.Unit = unit
-	ingredient.MinStock = req.MinStock
+	ingredient.MinPercent = percentOr(req.MinPercent, ingredient.MinPercent)
+	ingredient.MaxStock = startingMaxStock(math.Max(ingredient.MaxStock, ingredient.Stock), req.MinStock)
+	ingredient.MinStock = reorderLevelFrom(ingredient.MaxStock, ingredient.MinPercent, req.MinStock)
 	ingredient.CostPerUnit = req.CostPerUnit
 	ingredient.YieldPercent = sanitizeYieldPercent(req.YieldPercent)
 	ingredient.StorageType = storageType
@@ -306,7 +318,11 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 		if err != nil {
 			return err
 		}
-		if err := tx.UpdateStock(restaurantID, ingredientID, nextStock); err != nil {
+		// Whatever the shelf is holding now is proof it can hold that much, so
+		// the maximum rises to meet it and the reorder level follows if it is a
+		// percentage. See stockLevels for why the maximum is not allowed to fall.
+		levels := levelsAfterStockChange(nextStock, ingredient.MaxStock, ingredient.MinStock, ingredient.MinPercent)
+		if err := tx.UpdateStockLevels(restaurantID, ingredientID, levels.Stock, levels.MaxStock, levels.MinStock); err != nil {
 			return err
 		}
 		// Running the stock down to zero (or below) closes the sale of every menu
@@ -338,7 +354,9 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 				return err
 			}
 		}
-		ingredient.Stock = nextStock
+		ingredient.Stock = levels.Stock
+		ingredient.MaxStock = levels.MaxStock
+		ingredient.MinStock = levels.MinStock
 		updated = ingredient
 		return nil
 	})
@@ -417,6 +435,12 @@ func validateIngredientNumbers(req *IngredientRequest) error {
 	}
 	if !isFiniteIngredientNumber(req.YieldPercent) || req.YieldPercent < 0 || req.YieldPercent > 100 {
 		return errors.New("yield percent must be between 0 and 100")
+	}
+	if req.MinPercent != nil {
+		percent := *req.MinPercent
+		if !isFiniteIngredientNumber(percent) || percent < 0 || percent > 100 {
+			return errors.New("minimum stock percent must be between 0 and 100")
+		}
 	}
 	if req.Stock > maxIngredientQuantity || req.MinStock > maxIngredientQuantity {
 		return errors.New("stock value is too large")

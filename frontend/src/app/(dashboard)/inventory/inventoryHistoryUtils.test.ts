@@ -2,13 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   HISTORY_PAGE_SIZE,
   defaultHistoryRange,
+  formatHistoryRange,
   historyMovement,
   historyPageCount,
+  historyRangeFor,
+  historyRangeKeyOf,
   historyTypeLabel,
   toDateInput,
 } from "./inventoryHistoryUtils";
 import { filenameFromDisposition, transactionParams } from "@/src/lib/ingredient";
-import { FULL_COVER_DAYS, formatDaysLeft, getStockPercent } from "./inventoryPageUtils";
+import {
+  FULL_COVER_DAYS,
+  formatDaysLeft,
+  getReorderPercent,
+  getStockPercent,
+  getTargetStock,
+  reorderQuantityFor,
+} from "./inventoryPageUtils";
 import type { Ingredient } from "@/src/types/ingredient";
 import { normalizeApiMediaUrls } from "@/src/lib/mediaUrl";
 
@@ -141,28 +151,67 @@ function ingredient(fields: Partial<Ingredient>): Ingredient {
 }
 
 describe("getStockPercent", () => {
-  // The old version divided by min_stock, so an item that merely reached its
-  // reorder line already showed a full bar — the same picture as one sitting at
-  // ten times the minimum. The bar now answers "how long does this last?".
-  it("no longer pins at 100% the moment stock reaches the minimum", () => {
-    const atMinimum = ingredient({ stock: 3000, min_stock: 3000, days_left: 2 });
-    expect(getStockPercent(atMinimum)).toBe(Math.round((2 / FULL_COVER_DAYS) * 100));
+  // An item at its reorder line is not full. The first version of this bar
+  // divided by min_stock and showed exactly that, which made an item sitting at
+  // its minimum look identical to one at ten times it.
+  it("does not pin at 100% the moment stock reaches the minimum", () => {
+    const atMinimum = ingredient({ stock: 3000, min_stock: 3000, max_stock: 9000 });
+    expect(getStockPercent(atMinimum)).toBe(33);
   });
 
-  it("caps at 100% once a week of cover is reached", () => {
-    expect(getStockPercent(ingredient({ stock: 9000, days_left: 7 }))).toBe(100);
-    expect(getStockPercent(ingredient({ stock: 90000, days_left: 400 }))).toBe(100);
+  it("caps at 100% rather than reporting a shelf as more than full", () => {
+    expect(getStockPercent(ingredient({ stock: 9000, max_stock: 9000 }))).toBe(100);
+    expect(getStockPercent(ingredient({ stock: 90000, max_stock: 9000 }))).toBe(100);
   });
 
-  // An ingredient nobody cooks with has no rate to divide by. A percentage
-  // there would be invented, and an empty bar would read as "about to run out".
-  it("returns null when there is no usage history", () => {
+  // Nothing has ever been observed on this shelf, so there is no ceiling to
+  // divide by. A percentage here would be invented, and an empty bar would read
+  // as "about to run out" when the truth is "we have no idea yet".
+  it("returns null when the shelf has no observed maximum", () => {
     expect(getStockPercent(ingredient({ stock: 5000 }))).toBeNull();
+    expect(getStockPercent(ingredient({ stock: 5000, max_stock: 0 }))).toBeNull();
   });
 
-  // Empty is empty regardless of history — that one needs no forecast.
-  it("reports an empty shelf as 0 even without usage data", () => {
-    expect(getStockPercent(ingredient({ stock: 0 }))).toBe(0);
+  it("reports an empty shelf as 0 once there is a maximum to measure against", () => {
+    expect(getStockPercent(ingredient({ stock: 0, max_stock: 9000 }))).toBe(0);
+  });
+});
+
+describe("getReorderPercent", () => {
+  it("places the mark where the reorder level falls along the bar", () => {
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 2000, max_stock: 10000 }))).toBe(20);
+  });
+
+  // A reorder level at or above the observed maximum has no place on the bar.
+  // Drawing it at the far end would say the shelf is permanently short, which
+  // is a statement about the numbers rather than about the shelf.
+  it("has no mark when the reorder level is not below the maximum", () => {
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 9000, max_stock: 9000 }))).toBeNull();
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 0, max_stock: 9000 }))).toBeNull();
+    expect(getReorderPercent(ingredient({ stock: 0, min_stock: 500 }))).toBeNull();
+  });
+});
+
+describe("getTargetStock", () => {
+  it("aims a restock at the most the shelf has held", () => {
+    expect(getTargetStock(ingredient({ stock: 200, min_stock: 1000, max_stock: 8000 }))).toBe(8000);
+  });
+
+  // Before there was an observed maximum the target was twice the reorder
+  // level, which nobody chose. Ingredients that still have no maximum keep it.
+  it("falls back to twice the reorder level while no maximum has been observed", () => {
+    expect(getTargetStock(ingredient({ stock: 200, min_stock: 1000 }))).toBe(2000);
+  });
+});
+
+describe("reorderQuantityFor", () => {
+  it("turns a share of the maximum into the quantity the rest of the system reads", () => {
+    expect(reorderQuantityFor(5000, 20)).toBe(1000);
+  });
+
+  it("is zero when there is no maximum or no percentage to work from", () => {
+    expect(reorderQuantityFor(0, 20)).toBe(0);
+    expect(reorderQuantityFor(5000, 0)).toBe(0);
   });
 });
 
@@ -178,5 +227,56 @@ describe("formatDaysLeft", () => {
 
   it("says nothing when there is no usage history", () => {
     expect(formatDaysLeft(ingredient({ stock: 100 }), "th")).toBeNull();
+  });
+});
+
+describe("historyRangeFor", () => {
+  const today = new Date(2026, 8, 11);
+
+  it("counts the last 7 days inclusive, so a week is 7 dates and not 8", () => {
+    expect(historyRangeFor("7d", today)).toEqual({ from: "2026-09-05", to: "2026-09-11" });
+  });
+
+  it("starts this month on the first, whatever day of it today is", () => {
+    expect(historyRangeFor("month", today)).toEqual({ from: "2026-09-01", to: "2026-09-11" });
+  });
+
+  it("leaves both ends empty for all time, which the query builder drops entirely", () => {
+    expect(historyRangeFor("all", today)).toEqual({ from: "", to: "" });
+  });
+
+  it("matches the range the history opens on", () => {
+    expect(historyRangeFor("30d", today)).toEqual(defaultHistoryRange(today));
+  });
+});
+
+describe("historyRangeKeyOf", () => {
+  const today = new Date(2026, 8, 11);
+
+  it("recognises a range the owner picked from the presets", () => {
+    expect(historyRangeKeyOf("2026-09-05", "2026-09-11", today)).toBe("7d");
+    expect(historyRangeKeyOf("", "", today)).toBe("all");
+  });
+
+  it("calls anything else custom rather than rounding it to a preset", () => {
+    expect(historyRangeKeyOf("2026-09-04", "2026-09-11", today)).toBe("custom");
+  });
+});
+
+describe("formatHistoryRange", () => {
+  it("reads as a range short enough for a toolbar button", () => {
+    expect(formatHistoryRange("2026-08-13", "2026-09-11", "th")).toBe("13 ส.ค. – 11 ก.ย.");
+    expect(formatHistoryRange("2026-08-13", "2026-09-11", "en")).toBe("13 Aug – 11 Sep");
+  });
+
+  it("adds the year only when the range crosses one, in the era the table uses", () => {
+    expect(formatHistoryRange("2025-12-28", "2026-01-04", "th")).toBe("28 ธ.ค. 2568 – 4 ม.ค. 2569");
+    expect(formatHistoryRange("2025-12-28", "2026-01-04", "en")).toBe("28 Dec 2025 – 4 Jan 2026");
+  });
+
+  it("names the unbounded range instead of showing an empty dash", () => {
+    expect(formatHistoryRange("", "", "th")).toBe("ทุกช่วงเวลา");
+    expect(formatHistoryRange("2026-09-01", "", "th")).toBe("ตั้งแต่ 1 ก.ย.");
+    expect(formatHistoryRange("", "2026-09-11", "en")).toBe("Until 11 Sep");
   });
 });

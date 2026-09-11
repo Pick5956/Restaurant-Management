@@ -7,6 +7,8 @@ import {
   inventoryTotals,
   niceQuantity,
   quickAmounts,
+  reorderQuantityFor,
+  reorderShare,
   restockStep,
   sortIngredients,
   stockShare,
@@ -37,12 +39,30 @@ test('stockStatus: out beats low, and no minimum means never low', () => {
   assert.equal(stockStatus(item({ stock: 5, min_stock: 0 })), 'ok');
 });
 
-test('stockShare: the reorder level sits at half, full is twice it, no level is null', () => {
-  assert.equal(stockShare(item({ stock: 100, min_stock: 100 })), 0.5);
-  assert.equal(stockShare(item({ stock: 200, min_stock: 100 })), 1);
-  assert.equal(stockShare(item({ stock: 900, min_stock: 100 })), 1);
-  assert.equal(stockShare(item({ stock: 0, min_stock: 100 })), 0);
-  assert.equal(stockShare(item({ stock: 50, min_stock: 0 })), null);
+test('stockShare measures against the most the shelf has held, and is null without one', () => {
+  assert.equal(stockShare(item({ stock: 2500, max_stock: 10000 })), 0.25);
+  assert.equal(stockShare(item({ stock: 10000, max_stock: 10000 })), 1);
+  // Above the recorded maximum only until the next write raises it; the bar
+  // must not run past its own end in the meantime.
+  assert.equal(stockShare(item({ stock: 90000, max_stock: 10000 })), 1);
+  assert.equal(stockShare(item({ stock: 0, max_stock: 10000 })), 0);
+  assert.equal(stockShare(item({ stock: 50, max_stock: 0 })), null);
+  assert.equal(stockShare(item({ stock: 50 })), null);
+});
+
+test('reorderShare puts the mark where the reorder level falls, or nowhere', () => {
+  assert.equal(reorderShare(item({ min_stock: 2000, max_stock: 10000 })), 0.2);
+  // A reorder level at or above everything the shelf has held has no place on
+  // the bar: a mark at the far end would say the shelf is always short.
+  assert.equal(reorderShare(item({ min_stock: 10000, max_stock: 10000 })), null);
+  assert.equal(reorderShare(item({ min_stock: 0, max_stock: 10000 })), null);
+  assert.equal(reorderShare(item({ min_stock: 500, max_stock: 0 })), null);
+});
+
+test('reorderQuantityFor turns a share of the maximum into a quantity', () => {
+  assert.equal(reorderQuantityFor(5000, 20), 1000);
+  assert.equal(reorderQuantityFor(0, 20), 0);
+  assert.equal(reorderQuantityFor(5000, 0), 0);
 });
 
 test('filterIngredients matches name, sku or category, then status and category', () => {
@@ -113,7 +133,9 @@ test('countPayload: zero removes what is left, same count is nothing, otherwise 
   assert.equal(countPayload(item({ stock: 1700 }), -1), null);
 });
 
-test('suggestedRestock tops up to twice the reorder level and never goes negative', () => {
+test('suggestedRestock fills the shelf back up, falling back while no maximum is known', () => {
+  assert.equal(suggestedRestock(item({ stock: 1700, min_stock: 2500, max_stock: 9000 })), 7300);
+  assert.equal(suggestedRestock(item({ stock: 9000, min_stock: 2500, max_stock: 9000 })), 0);
+  // Nothing observed yet: the old target, twice the reorder level, still holds.
   assert.equal(suggestedRestock(item({ stock: 1700, min_stock: 2500 })), 3300);
-  assert.equal(suggestedRestock(item({ stock: 9000, min_stock: 2500 })), 0);
 });

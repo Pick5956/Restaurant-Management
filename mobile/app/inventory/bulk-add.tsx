@@ -70,7 +70,7 @@ export default function BulkAddIngredientsScreen() {
   const labelOf = (options: Array<{ label: string; value: string }>, value: string) => options.find((row) => row.value === value)?.label ?? options[0].label;
 
   const open = openKey ? rows.find((row) => row.key === openKey) ?? null : null;
-  const unitOptions = useMemo(() => ingredientUnitOptions(open?.unit ?? 'กก.'), [open?.unit]);
+  const unitOptions = useMemo(() => ingredientUnitOptions(open?.unit ?? 'กิโลกรัม'), [open?.unit]);
   const set = (patch: Partial<Row>) => {
     if (!openKey) return;
     setRows((prev) => prev.map((row) => (row.key === openKey ? { ...row, ...patch } : row)));
@@ -84,7 +84,7 @@ export default function BulkAddIngredientsScreen() {
       key: `${Date.now()}-${rows.length}`,
       name: '',
       categoryId: last?.categoryId ?? 'none',
-      unit: last?.unit ?? 'กก.',
+      unit: last?.unit ?? 'กิโลกรัม',
       cost: '0',
       stock: '0',
       minStock: '0',
@@ -108,7 +108,7 @@ export default function BulkAddIngredientsScreen() {
   // with no name does not survive the trip to the list.
   const clearForm = () => {
     Keyboard.dismiss();
-    set({ name: '', categoryId: 'none', unit: 'กก.', cost: '0', stock: '0', minStock: '0', storageType: 'room_temp' });
+    set({ name: '', categoryId: 'none', unit: 'กิโลกรัม', cost: '0', stock: '0', minStock: '0', storageType: 'room_temp' });
   };
 
   async function saveAll() {
@@ -126,6 +126,9 @@ export default function BulkAddIngredientsScreen() {
           unit: row.unit,
           stock: row.stock,
           minStock: row.minStock,
+          // A shelf with no history has no maximum to take a share of, so a new
+          // ingredient is always given a quantity here.
+          minPercent: '0',
           cost: row.cost,
           yieldPercent: '100',
           storageType: row.storageType,

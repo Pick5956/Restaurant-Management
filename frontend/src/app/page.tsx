@@ -311,8 +311,8 @@ const OPEN_EXTRAS: Record<Language, {
     ],
     stockTitle: "วัตถุดิบที่ต้องดู", stockCount: "3 รายการ", viewStock: "ไปที่คลัง",
     stock: [
-      { name: "หมูสับ", level: "1.2 / 5 กก.", restock: "เติม 8 กก." },
-      { name: "โหระพา", level: "0.4 / 2 กก.", restock: "เติม 3 กก." },
+      { name: "หมูสับ", level: "1.2 / 5 กิโลกรัม", restock: "เติม 8 กิโลกรัม" },
+      { name: "โหระพา", level: "0.4 / 2 กิโลกรัม", restock: "เติม 3 กิโลกรัม" },
     ],
     peakTitle: "ช่วงที่ขายดี",
     peaks: [{ hour: "18:00", value: "฿4,180" }, { hour: "19:00", value: "฿3,640" }, { hour: "12:00", value: "฿2,910" }],

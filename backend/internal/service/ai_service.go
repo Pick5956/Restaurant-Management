@@ -155,7 +155,20 @@ func isAnalyticalTask(task AITask) bool {
 	}
 }
 
-func (s *AIService) classifyIntent(question string) (AIRouterResult, error) {
+// routerHistoryTurns is how much of the conversation the router is shown. Two
+// exchanges is what a follow-up ever refers back to; more only adds older
+// subjects for it to confuse the question with.
+const routerHistoryTurns = 4
+
+// routerHistory trims the conversation to the tail the router needs.
+func routerHistory(history []AIConversationMessage) []AIConversationMessage {
+	if len(history) <= routerHistoryTurns {
+		return history
+	}
+	return history[len(history)-routerHistoryTurns:]
+}
+
+func (s *AIService) classifyIntent(question string, history []AIConversationMessage) (AIRouterResult, error) {
 	provider := s.getAIProvider()
 	var lastErr error
 	for _, adapter := range s.orderedProviderAdapters() {
@@ -165,7 +178,7 @@ func (s *AIService) classifyIntent(question string) (AIRouterResult, error) {
 			}
 			continue
 		}
-		result, err := adapter.Classify(question)
+		result, err := adapter.Classify(question, history)
 		if err == nil {
 			return result, nil
 		}
@@ -390,7 +403,7 @@ func (s *AIService) askOperationsCore(restaurantID uint, req *AIAskRequest, prep
 
 		// Legacy mode: context rewrite and JSON router remain available as an
 		// immediate rollback path while the structured planner is evaluated.
-		routerResult, err = s.classifyIntent(question)
+		routerResult, err = s.classifyIntent(question, history)
 		if err != nil {
 			// The classifier is the one step nothing downstream can replace: without it
 			// there is no reading of the question at all, only a keyword guess. Carrying
@@ -478,7 +491,9 @@ func (s *AIService) askOperationsCore(restaurantID uint, req *AIAskRequest, prep
 			question = resolved
 			usedHistory = true
 			rewroteFromHistory = true
-			if retried, retryErr := s.classifyIntent(question); retryErr != nil {
+			// Already rewritten to stand on its own, so the history that produced
+			// it would only repeat itself to the router.
+			if retried, retryErr := s.classifyIntent(question, nil); retryErr != nil {
 				aiStage("warn", "second-chance classify failed (%v) → keeping the first result", retryErr)
 			} else {
 				routerResult = retried

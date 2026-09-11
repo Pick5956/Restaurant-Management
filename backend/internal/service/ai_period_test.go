@@ -276,7 +276,8 @@ func TestRouterTemplatesRenderCleanly(t *testing.T) {
 	for name, tmpl := range map[string]string{
 		"full": routerClassifierTemplate,
 	} {
-		rendered := fmt.Sprintf(tmpl, "ปรับราคาทุกเมนูขึ้น 10%")
+		// Two holes now: the recent conversation, then the question.
+		rendered := fmt.Sprintf(tmpl, "user: ยอดขายวันไหนสูงสุด", "ปรับราคาทุกเมนูขึ้น 10%")
 		if strings.Contains(rendered, "%!") {
 			t.Fatalf("%s template rendered with a fmt error marker: %s", name, rendered)
 		}
@@ -286,6 +287,11 @@ func TestRouterTemplatesRenderCleanly(t *testing.T) {
 		// The escaped literal should survive as a single percent sign.
 		if !strings.Contains(rendered, "raise all prices by 10%") {
 			t.Fatalf("%s template lost its literal percent example", name)
+		}
+		// A follow-up can only be read against what came before, so the
+		// conversation has to reach the prompt too.
+		if !strings.Contains(rendered, "user: ยอดขายวันไหนสูงสุด") {
+			t.Fatalf("%s template did not include the conversation", name)
 		}
 	}
 }

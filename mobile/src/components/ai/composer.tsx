@@ -3,7 +3,6 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { forwardRef, useState } from 'react';
 import { File as FileSystemFile } from 'expo-file-system';
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
 import { ActivityIndicator, Pressable, TextInput as NativeTextInput, View } from 'react-native';
 
 import { extractReceipt, transcribeVoiceNote } from '@/src/api/ai';
@@ -11,6 +10,7 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { bytesToBase64, receiptDraftToCommand } from '@/src/lib/ai-chat';
+import { enterRecordingMode, leaveRecordingMode, recordingPresets, requestRecordingPermission, useVoiceRecorder, voiceRecordingSupported } from '@/src/lib/voice-recording';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 
 import { GlassMenu, GlassSurface, type GlassMenuItem } from './chrome';
@@ -30,7 +30,7 @@ const ONE_LINE = 46;
 // narrowband AMR in a .3gp on Android, which the transcription endpoint does not
 // accept and which speech recognition reads poorly anyway.
 const VOICE_NOTE = {
-  ...RecordingPresets.LOW_QUALITY,
+  ...(recordingPresets?.LOW_QUALITY ?? {}),
   extension: '.m4a',
   numberOfChannels: 1,
   bitRate: 64000,
@@ -55,7 +55,7 @@ export const Composer = forwardRef<NativeTextInput, {
   const [transcribing, setTranscribing] = useState(false);
   // Speech goes to the shop's own backend, which runs it through Whisper; the
   // phone has no recogniser of its own inside Expo Go.
-  const recorder = useAudioRecorder(VOICE_NOTE);
+  const recorder = useVoiceRecorder(VOICE_NOTE);
   const t = (th: string, en: string) => (language === 'th' ? th : en);
   const canSend = value.trim().length > 0 && !sending && !disabled;
   const tall = value.length > 0 && contentHeight > ONE_LINE;
@@ -97,12 +97,12 @@ export const Composer = forwardRef<NativeTextInput, {
   const startListening = async () => {
     if (listening || transcribing || disabled) return;
     try {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
+      const granted = await requestRecordingPermission();
+      if (!granted) {
         onNotice(t('ยังไม่ได้อนุญาตให้ใช้ไมค์ เปิดได้ในตั้งค่าของเครื่อง', 'Microphone access is off. Turn it on in system settings'), 'error');
         return;
       }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await enterRecordingMode();
       await recorder.prepareToRecordAsync();
       recorder.record();
       setListening(true);
@@ -138,11 +138,13 @@ export const Composer = forwardRef<NativeTextInput, {
       );
     } finally {
       setTranscribing(false);
-      await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      await leaveRecordingMode().catch(() => undefined);
     }
   };
 
-  const micButton = (
+  // Nothing to offer on a build without the audio module: the button would
+  // only ever apologise, so it is not drawn at all.
+  const micButton = !voiceRecordingSupported ? null : (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={listening ? t('หยุดฟังแล้วแปลงเป็นข้อความ', 'Stop and transcribe') : t('พูดเพื่อพิมพ์', 'Speak to type')}

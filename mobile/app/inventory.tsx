@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIManager, View } from 'react-native';
 import type { Anchor } from '@/src/components/inventory/parts';
@@ -83,7 +83,12 @@ export default function InventoryScreen() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<StatusFilter>('all');
+  // The overview's "out of stock" and "low stock" cards arrive with the filter
+  // they promised already applied; anything else opens on everything.
+  const { status: requestedStatus } = useLocalSearchParams<{ status?: string }>();
+  const [status, setStatus] = useState<StatusFilter>(
+    requestedStatus === 'out' || requestedStatus === 'low' ? requestedStatus : 'all',
+  );
   const [category, setCategory] = useState('all');
   const [sort, setSort] = useState<SortKey>('urgent');
   // The filter sheet edits a draft and applies on "ดูผลลัพธ์", so the list

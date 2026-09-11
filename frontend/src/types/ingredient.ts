@@ -25,6 +25,19 @@ export interface Ingredient {
   unit_family?: IngredientUnitOption[];
   stock: number;
   min_stock: number;
+  /**
+   * The most this shelf has been proved to hold. It rises to meet any stock
+   * level above it and never falls, so it is a real observed number rather than
+   * a target anyone typed — which is what makes it safe to divide by. Zero
+   * means nothing has been observed yet: draw no bar rather than invent one.
+   */
+  max_stock?: number;
+  /**
+   * The reorder level as a share of max_stock. When it is above zero the server
+   * recomputes min_stock from it every time max_stock moves, so a shop that
+   * starts buying in larger loads keeps being warned at the same proportion.
+   */
+  min_percent?: number;
   cost_per_unit: number;
   yield_percent?: number;
   storage_type?: string;
@@ -98,6 +111,12 @@ export interface IngredientInput {
   unit: string;
   stock: number;
   min_stock: number;
+  /**
+   * Omit it and the server leaves whatever percentage is stored alone; send 0
+   * to clear it and keep min_stock as an absolute quantity. A client that never
+   * sends it can therefore not erase a percentage set from somewhere else.
+   */
+  min_percent?: number;
   cost_per_unit: number;
   storage_type?: string;
 }

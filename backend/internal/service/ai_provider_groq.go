@@ -83,14 +83,14 @@ func (s *AIService) askGroqWithRotation(question string, history []AIConversatio
 	return "", "", lastErr
 }
 
-func (s *AIService) executeClassifierGroq(question string, apiKey string) (string, error) {
+func (s *AIService) executeClassifierGroq(question string, history []AIConversationMessage, apiKey string) (string, error) {
 	model := strings.TrimSpace(os.Getenv("GROQ_MODEL"))
 	if model == "" {
 		model = "openai/gpt-oss-20b"
 	}
 	aiStage("call", "Groq classifier model=%s", model)
 
-	prompt := fmt.Sprintf(routerClassifierTemplate, question)
+	prompt := fmt.Sprintf(routerClassifierTemplate, conversationPrompt(routerHistory(history)), question)
 
 	payload := groqRequest{
 		Model: model,

@@ -20,20 +20,39 @@ export function stockStatus(item: Pick<Ingredient, 'stock' | 'min_stock'>): Stoc
 }
 
 /**
- * How full the level bar is, 0..1, or null when there is no reorder level to
- * measure against.
+ * How full the level bar is, 0..1, or null when this shelf has no observed
+ * maximum to measure against.
  *
- * The bar answers one question — "am I past the point where I reorder?" — so
- * the reorder level sits at its middle: half full is exactly the minimum, full
- * is twice it. Colour and length then come from the same number, which the
- * earlier "days of cover" bar could not manage (its colour came from the
- * minimum and its length from usage, and the two disagreed on screen).
+ * The bar used to divide by twice the reorder level, so its right-hand end was
+ * a number nobody had ever chosen — "full" meant "twice the level at which I
+ * reorder", which is not a thing anyone knows about their own shelf. It now
+ * divides by max_stock, the most the shelf has actually been seen to hold, and
+ * the web divides by the same number. One bar, one meaning, both screens.
  */
-export function stockShare(item: Pick<Ingredient, 'stock' | 'min_stock'>): number | null {
-  const min = Number(item.min_stock);
-  if (!(min > 0)) return null;
-  const share = Number(item.stock) / (min * 2);
+export function stockShare(item: Pick<Ingredient, 'stock' | 'max_stock'>): number | null {
+  const ceiling = Number(item.max_stock ?? 0);
+  if (!(ceiling > 0)) return null;
+  const share = Number(item.stock) / ceiling;
   return Math.max(0, Math.min(1, share));
+}
+
+/**
+ * Where the reorder mark sits along that bar, 0..1, or null when it would land
+ * at or past the end — a reorder level above everything the shelf has ever held
+ * has no place on the bar, and drawing it at the far end would say the shelf is
+ * permanently short.
+ */
+export function reorderShare(item: Pick<Ingredient, 'min_stock' | 'max_stock'>): number | null {
+  const ceiling = Number(item.max_stock ?? 0);
+  const min = Number(item.min_stock);
+  if (!(ceiling > 0) || !(min > 0) || min >= ceiling) return null;
+  return min / ceiling;
+}
+
+/** The quantity a share of the shelf's maximum works out to. */
+export function reorderQuantityFor(maxStock: number, percent: number): number {
+  if (!(maxStock > 0) || !(percent > 0)) return 0;
+  return Math.round(((maxStock * percent) / 100) * 10000) / 10000;
 }
 
 export function filterIngredients(
@@ -145,7 +164,13 @@ export function countPayload(
   return { type: 'adjust', quantity: counted };
 }
 
-/** A restock suggestion for a batch: top each row up to twice its reorder level. */
-export function suggestedRestock(item: Pick<Ingredient, 'stock' | 'min_stock'>): number {
-  return Math.max(0, Number(item.min_stock) * 2 - Number(item.stock));
+/**
+ * A restock suggestion: fill the shelf back to the most it has held. Before
+ * max_stock existed this aimed at twice the reorder level, which nobody chose;
+ * ingredients that still have no observed maximum keep that fallback.
+ */
+export function suggestedRestock(item: Pick<Ingredient, 'stock' | 'min_stock' | 'max_stock'>): number {
+  const ceiling = Number(item.max_stock ?? 0);
+  const target = ceiling > 0 ? ceiling : Number(item.min_stock) * 2;
+  return Math.max(0, target - Number(item.stock));
 }

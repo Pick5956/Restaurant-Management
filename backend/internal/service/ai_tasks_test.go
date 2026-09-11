@@ -1012,7 +1012,7 @@ func TestLiveAITaskRouterIntegration(t *testing.T) {
 
 	question := "เมนูไหนมีกำไรน้อยสุดในร้าน"
 
-	res, err := svc.classifyIntent(question)
+	res, err := svc.classifyIntent(question, nil)
 	if err != nil {
 		t.Fatalf("classifyIntent live API call failed: %v", err)
 	}
@@ -1047,7 +1047,7 @@ func TestLiveAITaskRouterOutOfScopeIntegration(t *testing.T) {
 
 	question := "ช่วยแต่งกลอน 8 เกี่ยวกับความรักให้หน่อย"
 
-	res, err := svc.classifyIntent(question)
+	res, err := svc.classifyIntent(question, nil)
 	if err != nil {
 		t.Fatalf("classifyIntent live API call failed: %v", err)
 	}
