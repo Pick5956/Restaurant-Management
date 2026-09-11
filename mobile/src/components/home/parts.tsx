@@ -17,12 +17,25 @@ import { palette } from '@/src/theme';
 
 const CARD_RADIUS = 20;
 
-/** A white card with a hairline. Glass on iOS 26, which on white mostly shows as the same card. */
+// The card's edge. `palette.divider` is tuned to separate rows inside a white
+// list and on a phone in daylight it vanished: the three stat tiles read as
+// numbers floating on the page. One step darker than the divider, still well
+// short of the orange `palette.border`, which would make every card a frame.
+const CARD_EDGE = '#E4D8CD';
+
+/**
+ * A white card with a visible hairline. Glass on iOS 26, which on a white
+ * canvas mostly shows as the same card — so the edge is drawn by a wrapper on
+ * both paths rather than only on the opaque fallback, or the glass version has
+ * no edge at all.
+ */
 export function HomeCard({ children, style, radius = CARD_RADIUS }: { children: ReactNode; style?: ViewStyle; radius?: number }) {
   return (
-    <GlassPanel radius={radius} style={style} interactive={false} tint="rgba(255,255,255,0.72)" fallback={palette.surface} fallbackBorder={palette.divider}>
-      {children}
-    </GlassPanel>
+    <View style={[style, { borderRadius: radius, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, overflow: 'hidden', backgroundColor: palette.surface }]}>
+      <GlassPanel radius={radius - 1} interactive={false} tint="rgba(255,255,255,0.72)" fallback={palette.surface}>
+        {children}
+      </GlassPanel>
+    </View>
   );
 }
 
