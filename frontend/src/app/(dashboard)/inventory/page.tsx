@@ -411,7 +411,10 @@ export default function InventoryPage() {
   // Where the reorder slider's handle sits. A percent set by dragging is kept as
   // it is; a quantity typed by hand is shown at the place it falls on this
   // shelf, so the handle is never somewhere the number is not.
-  const editingMaxStock = editingItem?.max_stock ?? 0;
+  // An existing item is measured against the shelf maximum its restocks have
+  // established; a new one against the opening stock being typed, which is what
+  // the server records as its first maximum.
+  const editingMaxStock = editingItem ? editingItem.max_stock ?? 0 : form.stock;
   const warnPercent =
     (form.min_percent ?? 0) > 0
       ? (form.min_percent ?? 0)
@@ -1605,9 +1608,20 @@ export default function InventoryPage() {
                         type="number"
                         min={0}
                         value={form.stock}
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, stock: parseFloat(event.target.value) || 0 }))
-                        }
+                        onChange={(event) => {
+                          const stock = parseFloat(event.target.value) || 0;
+                          setForm((current) => ({
+                            ...current,
+                            stock,
+                            // The shelf just changed size, so a reorder level held
+                            // as a share of it is recomputed rather than left as a
+                            // quantity from the old shelf.
+                            min_stock:
+                              (current.min_percent ?? 0) > 0
+                                ? reorderQuantityFor(stock, current.min_percent ?? 0)
+                                : current.min_stock,
+                          }));
+                        }}
                         className={inputCls}
                       />
                     </div>
@@ -1631,7 +1645,7 @@ export default function InventoryPage() {
                       }
                       className={inputCls}
                     />
-                    {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
+                    {editingMaxStock > 0 ? (
                       <>
                         <div className="mt-1.5 flex items-center gap-3">
                           <input
@@ -1645,7 +1659,7 @@ export default function InventoryPage() {
                               setForm((current) => ({
                                 ...current,
                                 min_percent: percent,
-                                min_stock: reorderQuantityFor(editingItem.max_stock ?? 0, percent),
+                                min_stock: reorderQuantityFor(editingMaxStock, percent),
                               }));
                             }}
                             className="h-6 flex-1 accent-orange-500"
@@ -1656,7 +1670,7 @@ export default function InventoryPage() {
                         </div>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                           {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
-                          {copy.ofFull(formatNumber(editingItem.max_stock ?? 0, lang), form.unit)}
+                          {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
                         </p>
                       </>
                     ) : null}
