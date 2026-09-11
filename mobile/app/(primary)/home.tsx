@@ -569,7 +569,7 @@ export default function HomeScreen() {
   ) : null;
   const attentionBlock = attentionCards.length ? (
     <View style={{ gap: spacing.sm }}>
-      <HomeHeading icon="alert-circle-outline" title={copy('ต้องจัดการตอนนี้', 'Needs attention now')} />
+      <HomeHeading icon="alert-circle-outline" title={copy('จัดการตอนนี้', 'Handle now')} />
       <AttentionRail cards={attentionCards} stacked={tabletWorkspace} />
     </View>
   ) : null;
