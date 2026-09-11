@@ -138,10 +138,13 @@ function AppNavigator() {
           <Stack.Screen name="staff" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="settings/printer" />
-          {/* Its status rail starts at the left edge, where iOS listens for the
-              swipe-back; a thumb grabbed there popped the screen. Back is the button. */}
-          <Stack.Screen name="inventory" options={{ gestureEnabled: false }} />
-          <Stack.Screen name="inventory/categories" options={{ gestureEnabled: false }} />
+          {/* These two have swipe-to-delete rows, and turning the back gesture off
+              wholesale to protect them cost the owner the way out of the screen.
+              They now keep the standard edge gesture like every other pushed
+              screen: iOS listens in a narrow band at the left edge, the rows own
+              every drag that starts anywhere else. */}
+          <Stack.Screen name="inventory" />
+          <Stack.Screen name="inventory/categories" />
           <Stack.Screen name="reports" />
           <Stack.Screen name="ai-assistant" />
         </Stack>

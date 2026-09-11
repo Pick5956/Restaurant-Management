@@ -559,6 +559,11 @@ test('native stack keeps edge-swipe Back on pushed screens but disables it for t
     /const topLevelScreenOptions\s*=\s*\{[\s\S]{0,160}gestureEnabled:\s*false/,
   );
   assert.doesNotMatch(rootLayoutSource, /fullScreenGestureEnabled/);
+
+  // 2026-09-11: the two inventory screens used to switch the gesture off because
+  // their rows swipe to delete, which left no way back out of them. The rows
+  // keep every drag that starts off the edge; the edge stays iOS's.
+  assert.doesNotMatch(rootLayoutSource, /name="inventory(\/categories)?"\s+options=\{\{[^}]*gestureEnabled:\s*false/);
 });
 
 test('detail heading Back is a bare chevron with an accessible 44 point target', async () => {
