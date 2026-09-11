@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { Redirect } from 'expo-router';
 import {
   TabList,
@@ -51,6 +52,8 @@ import {
   resolvePagerGestureStartPlan,
   resolvePagerRouteSyncAction,
   resolvePagerSwipeSettlement,
+  resolveTabChangeTick,
+  type TabChangeTickMemory,
   shouldStartPagerHorizontalSwipe,
 } from '@/src/lib/navigation-runtime';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -193,6 +196,33 @@ function PrimaryPager({
   const pagerSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [presentedIndex, setPresentedIndex] = useState(activeIndex);
+  // What the dock's capsule needs that `presentedIndex` cannot give it.
+  //
+  // `pagerGesture` is 1 while a finger is on the pager and eases to 0 after it
+  // lets go. The marker reads the same at 99% of a held drag and at 99% of the
+  // settle that follows, and the capsule has to hold its tab through the first
+  // and arrive only through the second - this is the only thing that tells the
+  // two apart, and its ease-out is the arrival.
+  //
+  // `pagerOrigin` is the tab the drag started on. An Animated.Value, NOT
+  // state, and it is never cleared: it is written in the same synchronous
+  // instant as `pagerGesture` and the marker snap at grant, so the three can
+  // never be seen disagreeing for a frame - which a state update, landing a
+  // render later, did. And once the gesture weight is back at 0 the origin is
+  // multiplied by nothing, so there is no moment at which clearing it could
+  // help and a real one at which it hurt: cleared while the weight was still
+  // fading, the capsule leapt from its compressed pose to its resting one,
+  // which on a fast back-and-forth swipe read as it bouncing.
+  const pagerGesture = useRef(new Animated.Value(0)).current;
+  const pagerOrigin = useRef(new Animated.Value(Math.max(activeIndex, 0))).current;
+  const releasePagerGesture = useCallback(() => {
+    Animated.timing(pagerGesture, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver,
+    }).start();
+  }, [pagerGesture, useNativeDriver]);
   activeIndexRef.current = activeIndex;
   permittedItemsRef.current = permittedItems;
 
@@ -396,6 +426,25 @@ function PrimaryPager({
     pagerPosition.stopAnimation(startAnimation);
   }, [clearPagerSettleTimer, clearRouteSyncTimer, isTablet, pagerPosition, reducedMotion, requestTabNavigation, restoreCommittedPager, useNativeDriver, writePagerPosition]);
 
+  // The tick the phone gives when a tab actually changes - the same light
+  // impact the assistant's settings switch makes. Fired at the moment the
+  // change is DECIDED (the tap, or the release of a swipe that will land on
+  // another tab), not when the route commits, so it lines up with the finger.
+  // A swipe that springs back to where it started gets nothing, and neither
+  // does a quick return to the tab just left - see resolveTabChangeTick.
+  const tabChangeTickMemory = useRef<TabChangeTickMemory>(null);
+  const tickTabChange = useCallback((targetIndex: number) => {
+    const step = resolveTabChangeTick(tabChangeTickMemory.current, {
+      from: activeIndexRef.current,
+      to: targetIndex,
+      now: Date.now(),
+    });
+    tabChangeTickMemory.current = step.memory;
+    if (step.tick) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    }
+  }, []);
+
   const jumpToTab = useCallback((targetIndex: number) => {
     const items = permittedItemsRef.current;
     const plan = resolvePagerDockSelectionPlan({
@@ -420,10 +469,11 @@ function PrimaryPager({
       pendingRouteIndexRef.current = null;
       return;
     }
+    tickTabChange(targetIndex);
     if (!requestTabNavigation(targetIndex, transitionId)) {
       restoreCommittedPager(transitionId);
     }
-  }, [clearPagerSettleTimer, clearRouteSyncTimer, pagerPosition, requestTabNavigation, restoreCommittedPager, writePagerPosition]);
+  }, [clearPagerSettleTimer, clearRouteSyncTimer, pagerPosition, requestTabNavigation, restoreCommittedPager, tickTabChange, writePagerPosition]);
 
   const finishGesture = useCallback((
     _: GestureResponderEvent,
@@ -446,12 +496,13 @@ function PrimaryPager({
       restoreCommittedPager();
       return;
     }
+    if (settlement.shouldNavigate) tickTabChange(settlement.targetIndex);
     animatePagerTo(
       settlement.targetIndex,
       settlement.shouldNavigate,
       pagerPositionRef.current,
     );
-  }, [animatePagerTo, restoreCommittedPager, viewportWidth]);
+  }, [animatePagerTo, restoreCommittedPager, tickTabChange, viewportWidth]);
 
   const pagerResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponderCapture: () => {
@@ -490,6 +541,9 @@ function PrimaryPager({
 
       pagerGestureActiveRef.current = true;
       gestureBaseIndexRef.current = startPlan.startIndex;
+      pagerGesture.stopAnimation();
+      pagerOrigin.setValue(startPlan.startIndex);
+      pagerGesture.setValue(1);
       const transitionId = ++transitionIdRef.current;
       transitionActiveRef.current = false;
       clearPagerSettleTimer();
@@ -530,8 +584,12 @@ function PrimaryPager({
         ),
       ));
     },
-    onPanResponderRelease: finishGesture,
+    onPanResponderRelease: (event, gesture) => {
+      releasePagerGesture();
+      finishGesture(event, gesture);
+    },
     onPanResponderTerminate: () => {
+      releasePagerGesture();
       pagerGestureActiveRef.current = false;
       animatePagerTo(
         gestureBaseIndexRef.current,
@@ -541,7 +599,7 @@ function PrimaryPager({
     },
     onPanResponderTerminationRequest: () => true,
     onShouldBlockNativeResponder: () => false,
-  }), [animatePagerTo, clearPagerSettleTimer, clearRouteSyncTimer, finishGesture, isTablet, pagerPosition, reducedMotion, requestTabNavigation, restoreCommittedPager, viewportWidth, writePagerPosition]);
+  }), [animatePagerTo, clearPagerSettleTimer, clearRouteSyncTimer, finishGesture, isTablet, pagerGesture, pagerOrigin, pagerPosition, reducedMotion, releasePagerGesture, requestTabNavigation, restoreCommittedPager, viewportWidth, writePagerPosition]);
 
   const renderTabScene = useCallback((
     descriptor: TabsDescriptor,
@@ -604,6 +662,8 @@ function PrimaryPager({
             <PrimaryPhoneNavigation
               accessibilitySelectedIndex={activeIndex}
               items={permittedItems}
+              markerGesture={pagerGesture}
+              markerOrigin={pagerOrigin}
               markerPosition={pagerPosition}
               onSelect={jumpToTab}
               selectedIndex={presentedIndex}

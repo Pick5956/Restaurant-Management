@@ -117,6 +117,25 @@ test('mobile chrome does not retain dark neutral background islands', async () =
   assert.match(cropperSource, /aspectBadge:[\s\S]{0,260}backgroundColor:\s*palette\.navigationBorder/);
 });
 
+test('the held dock capsule compresses its real height and radius, not a scale', async () => {
+  // A scaleY on a pill keeps the corner's full horizontal radius while it
+  // loses height, so the ends bulge into ellipses; the reference's ends stay
+  // round and its top and bottom run straight. That needs the HEIGHT and the
+  // RADIUS to animate, which the pager's native-driven value cannot do - so
+  // the shape is an inner view driven on the JS side off mirrored values.
+  const source = await readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8');
+  assert.match(source, /const PHONE_ACTIVE_INDICATOR_HELD_HEIGHT = 0\.8[0-9]/);
+  assert.match(source, /const PHONE_ACTIVE_INDICATOR_HELD_WIDTH = 1\.0[0-9]/);
+  assert.match(source, /height:\s*capsuleShape\.height/);
+  assert.match(source, /width:\s*capsuleShape\.width/);
+  assert.match(source, /borderRadius:\s*capsuleShape\.radius/);
+  assert.match(source, /\[markerPosition, mirror\.marker\]/);
+  assert.match(source, /source\.addListener\(/);
+  // Only the settled travel is a transform; the held pose is no longer a scale.
+  assert.doesNotMatch(source, /squash: u\.interpolate/);
+  assert.doesNotMatch(source, /stretch: u\.interpolate/);
+});
+
 test('mobile form controls use orange boundaries at rest and focus', async () => {
   // theme.ts used to carry a second `inputStyles` copy of this rule that no
   // screen ever rendered; it was removed, so the guarantee is asserted on the

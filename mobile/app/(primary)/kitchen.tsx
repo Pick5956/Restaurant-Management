@@ -1,11 +1,12 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, LayoutAnimation, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { kitchenQueue, updateOrderItemStatus } from '@/src/api/order';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
+import { useReducedMotion } from '@/src/components/motion';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { useKitchenOrderEvents } from '@/src/hooks/use-kitchen-order-events';
 import {
@@ -76,6 +77,23 @@ const styles = StyleSheet.create({
   },
   lane: {
     gap: spacing.md,
+  },
+  laneEmpty: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    // Deep enough that the board does not end a third of the way down a phone
+    // with nothing under it, without pretending to fill a tablet.
+    paddingVertical: spacing.xxxl * 2,
+  },
+  laneEmptyMark: {
+    width: 68,
+    height: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.full,
+    backgroundColor: palette.successSoft,
+    marginBottom: spacing.xs,
   },
   laneHeader: {
     minHeight: 44,
@@ -312,7 +330,6 @@ export default function KitchenScreen() {
   const [loading, setLoading] = useState(true);
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [cancelTargetId, setCancelTargetId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
@@ -322,11 +339,29 @@ export default function KitchenScreen() {
   const pendingQuietRefreshRef = useRef(false);
   const adjacentWarmRequestedRef = useRef(false);
   const primaryTabSceneStatus = usePrimaryTabSceneStatus();
+  // Read inside a callback that must not be rebuilt when the setting changes.
+  const reducedMotion = useReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
 
   const requestQueueSnapshot = useCallback(async (request: number) => {
     try {
       const response = await kitchenQueue();
       if (requestGenerationRef.current.isCurrent(request)) {
+        // The one place the board's contents change, so the one place the
+        // change has to be animated. A finished dish used to blink out of
+        // existence and everything below it jumped up a row - on a screen read
+        // at arm's length that is indistinguishable from the list reloading,
+        // and a cook who looked away for a second could not tell which item
+        // they had just tapped. The row fades, the rest close the gap.
+        if (!reducedMotionRef.current) {
+          LayoutAnimation.configureNext({
+            duration: 260,
+            update: { type: LayoutAnimation.Types.easeInEaseOut },
+            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity, duration: 170 },
+            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity, delay: 110 },
+          });
+        }
         setOrders(response.orders || []);
       }
     } catch (err) {
@@ -448,20 +483,17 @@ export default function KitchenScreen() {
     item: OrderItem,
     status: 'cooking' | 'ready' | 'cancelled',
     reason?: string,
-    success?: string,
   ) {
     if (!canUpdate || !mutationGateRef.current.tryAcquire()) return false;
     requestGenerationRef.current.invalidate();
     const actionKey = `${status}:${item.ID}`;
     setSubmittingKey(actionKey);
     setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(
         () => updateOrderItemStatus(orderId, item.ID, status, reason),
         reconcileQueue,
       );
-      if (success) setMessage(success);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : copy('อัปเดตสถานะอาหารไม่สำเร็จ', 'Could not update the item status'));
@@ -482,7 +514,6 @@ export default function KitchenScreen() {
     let updatedCount = 0;
     setSubmittingKey(actionKey);
     setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(async () => {
         for (const item of items) {
@@ -490,7 +521,6 @@ export default function KitchenScreen() {
           updatedCount += 1;
         }
       }, reconcileQueue);
-      setMessage(copy('บันทึกว่าครัวทำเสร็จทั้งรอบแล้ว', 'Marked the entire kitchen batch as done'));
     } catch (err) {
       const mutationFailed = !(err instanceof KitchenMutationError) || err.mutationFailed;
       const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
@@ -536,7 +566,6 @@ export default function KitchenScreen() {
     let updatedCount = 0;
     setSubmittingKey(actionKey);
     setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(async () => {
         for (const item of items) {
@@ -544,7 +573,6 @@ export default function KitchenScreen() {
           updatedCount += 1;
         }
       }, reconcileQueue);
-      setMessage(copy('ดึงทั้งรอบกลับไปกำลังทำแล้ว', 'The whole round was moved back to Cooking'));
     } catch (err) {
       const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
       const detail = mutationError instanceof Error
@@ -578,13 +606,7 @@ export default function KitchenScreen() {
         : copy('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'The reason must be 500 characters or fewer.'));
       return;
     }
-    const succeeded = await setItemStatus(
-      orderId,
-      item,
-      'cancelled',
-      validation.reason,
-      copy('ยกเลิกรายการอาหารแล้ว', 'Kitchen item cancelled'),
-    );
+    const succeeded = await setItemStatus(orderId, item, 'cancelled', validation.reason);
     if (succeeded) {
       setCancelTargetId(null);
       setCancelReason('');
@@ -759,7 +781,7 @@ export default function KitchenScreen() {
                                   icon="checkmark"
                                   tone="success"
                                   prominent={items.length === 1}
-                                  onPress={() => setItemStatus(order.ID, item, 'ready', undefined, copy('ย้ายรายการไปโซนทำเสร็จแล้ว', 'Item moved to Kitchen done'))}
+                                  onPress={() => setItemStatus(order.ID, item, 'ready')}
                                   loading={submittingKey === `ready:${item.ID}`}
                                   disabled={submittingKey !== null}
                                 />
@@ -843,9 +865,20 @@ export default function KitchenScreen() {
               );
             })}
             {!loading && !group.orders.length ? (
-              <EmptyState
-                title={copy('ไม่มีรายการกำลังทำ', 'No items cooking')}
-              />
+              // A kitchen with nothing to cook is the good state, not a failure
+              // or a blank. It gets the same weight as a ticket does: a mark to
+              // land on, what it means, and where the next round comes from.
+              <View style={styles.laneEmpty}>
+                <View style={styles.laneEmptyMark}>
+                  <AppIcon color={palette.success} name="checkmark" size={30} />
+                </View>
+                <Text selectable style={[typeScale.title, { textAlign: 'center' }]}>
+                  {copy('ครัวโล่ง', 'All caught up')}
+                </Text>
+                <Text selectable style={[typeScale.body, { color: palette.muted, textAlign: 'center' }]}>
+                  {copy('รอบใหม่จะขึ้นตรงนี้ทันทีที่หน้ารับออเดอร์ส่งเข้าครัว', 'New rounds land here the moment the order screen sends them in.')}
+                </Text>
+              </View>
             ) : null}
           </View>
   );
@@ -868,7 +901,6 @@ export default function KitchenScreen() {
       contentStyle={{ gap: spacing.lg }}
     >
       {error ? <Feedback title={copy('คิวครัวมีปัญหา', 'Kitchen queue issue')} detail={error} tone="danger" /> : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
       {realtimeStatus === 'offline' ? (
         <Feedback
           tone="warning"

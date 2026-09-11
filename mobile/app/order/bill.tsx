@@ -21,7 +21,6 @@ import {
   activeOrderItems,
   billExitRoute,
   billPaymentStage,
-  isCookingItem,
   canTakeOrderPayment,
   paymentReceivedAmount,
   undeliveredOrderItems,
@@ -162,6 +161,16 @@ export default function BillScreen() {
     [activeItems],
   );
   const undelivered = useMemo(() => undeliveredOrderItems(activeItems), [activeItems]);
+  // Unsent lines lead. They are the round being built - the thing the screen's
+  // own action acts on - and burying them under rounds that already went out
+  // put the only editable part of the bill wherever the kitchen happened to
+  // leave it. Stable within each group, so each keeps the order it was added in.
+  const listedItems = useMemo(
+    () => [...activeItems].sort(
+      (left, right) => (left.status === 'pending' ? 0 : 1) - (right.status === 'pending' ? 0 : 1),
+    ),
+    [activeItems],
+  );
   const billContextLabel = bill?.order.table?.display_label
     || (bill?.order.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : '');
   const menuImageById = useMemo(
@@ -222,10 +231,14 @@ export default function BillScreen() {
     setMessage(null);
     try {
       await sendOrderToKitchen(orderId);
-      await refreshBillAfterMutation(roundCopy.sentMessage);
+      // Back to the menu, with no banner. The round has left: there is nothing
+      // on this screen to come back to and read, and a green bar announcing it
+      // only pushed the list down on the way out. The spinner on the action is
+      // the whole confirmation, and the screen sliding away is the rest of it.
+      // The order screen reloads on focus, so its basket is empty on arrival.
+      router.back();
     } catch (err) {
       setError(err instanceof Error ? err.message : copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
-    } finally {
       setSaving(false);
     }
   }
@@ -478,7 +491,7 @@ export default function BillScreen() {
       {/* The rows carry their own vertical padding, so the panel's gap would
           be a second helping of space between every pair of dishes. */}
       <View>
-      {activeItems.map((item, index) => {
+      {listedItems.map((item, index) => {
         // Big enough to actually see the dish, the way a delivery app's order
         // summary shows it. 56 was a favicon of a photo next to two lines of
         // bold text, and the eye had nothing to land on.
@@ -494,9 +507,14 @@ export default function BillScreen() {
               deleteAccessibilityLabel={copy(`นำ ${item.menu_name} ออกจากบิล`, `Remove ${item.menu_name} from the bill`)}
               deleteLabel={copy('ลบ', 'Delete')}
               disabled={saving || !canEditBill}
+              // A line the kitchen already has is not removed by a swipe: it
+              // comes off the bill through `แก้ไขรายการเสิร์ฟ`, with a written
+              // reason. Locked rather than disabled so it still reads as an
+              // ordinary row.
+              locked={item.status !== 'pending'}
               editHint={item.status === 'pending'
                 ? copy('แตะเพื่อแก้ไข ปัดไปทางซ้ายเพื่อลบ', 'Tap to edit, swipe left to delete')
-                : copy('ปัดไปทางซ้ายเพื่อนำออกจากบิล', 'Swipe left to remove from the bill')}
+                : copy('ส่งเข้าครัวแล้ว', 'Already sent to the kitchen')}
               editLabel={copy(
                 `${item.menu_name} จำนวน ${item.quantity.toLocaleString('th-TH')}`,
                 `${item.menu_name}, quantity ${item.quantity.toLocaleString('en-US')}`,
@@ -528,11 +546,13 @@ export default function BillScreen() {
                   />
                   <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
                     {/* The status leads the name rather than sitting out on the
-                        right. An unsent line and a cooking line are both "not
-                        served", but only one of them is what `ส่งเข้าครัว` is
-                        about to act on, and since the basket lands here a bill
-                        can hold both at once - so it is the first thing read,
-                        not a footnote across the row. */}
+                        right: it is the first thing to know about a line, and
+                        since the basket lands here a bill holds unsent and sent
+                        lines at once. A sent line says WHICH ROUND it went out
+                        in - the one fact that separates two identical dishes on
+                        the same bill - and nothing about the kitchen's progress,
+                        which the kitchen screen owns and this screen was only
+                        repeating. */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                       {/* Nudged down by ROW_CHIP_OPTICAL_DROP. Thai glyphs sit
                           LOW inside their line box - the space above them is
@@ -548,9 +568,13 @@ export default function BillScreen() {
                         <View style={{ marginTop: ROW_CHIP_OPTICAL_DROP }}>
                           <StatusBadge emphasis="strong" label={copy('รอส่ง', 'Not sent')} tone="info" />
                         </View>
-                      ) : isCookingItem(item.status) ? (
+                      ) : item.kitchen_batch ? (
                         <View style={{ marginTop: ROW_CHIP_OPTICAL_DROP }}>
-                          <StatusBadge emphasis="strong" label={copy('ยังไม่เสิร์ฟ', 'Not served')} tone="warning" />
+                          <StatusBadge
+                            emphasis="strong"
+                            label={copy(`รอบ ${item.kitchen_batch}`, `Round ${item.kitchen_batch}`)}
+                            tone="muted"
+                          />
                         </View>
                       ) : null}
                       {/* Medium, not bold. With the photo carrying the row, a
@@ -953,9 +977,19 @@ export default function BillScreen() {
         `${bill.order.order_number} · ${itemCount.toLocaleString('en-US')} items`,
       )}
       topLevel={false}
+      // Pinned and flush to the top. The heading used to scroll away while the
+      // menu button beside it stayed put - two halves of one line coming apart
+      // - and it sat a gap lower than the button besides.
+      stickyHeading
+      tightHeading
       contentMaxWidth={splitWorkspace ? 1240 : 720}
       contentStyle={{ gap: splitWorkspace ? spacing.lg : spacing.xl }}
       footer={phoneFooter}
+      // An open delete rail does not scroll away. The page would carry it off
+      // screen still open, and the next tap anywhere would land on whatever had
+      // moved under the finger. The drag closes it and stops there; the one
+      // after that scrolls.
+      onScrollBlocked={openRowId === null ? undefined : () => setOpenRowId(null)}
       // A spacer, not the button: the button itself is the GlassMorphMenu
       // below, drawn at this exact spot, because it and the menu it opens are
       // one piece of glass and the menu has to hang OUTSIDE the header.

@@ -109,7 +109,7 @@ export const layout = StyleSheet.create({
   },
 });
 
-export function statusTone(tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral') {
+export function statusTone(tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'muted') {
   switch (tone) {
     case 'success':
       return { color: palette.success, backgroundColor: palette.successSoft, borderColor: '#A7F3D0' };
@@ -119,6 +119,11 @@ export function statusTone(tone: 'success' | 'warning' | 'danger' | 'info' | 'ne
       return { color: palette.danger, backgroundColor: palette.dangerSoft, borderColor: '#FECACA' };
     case 'info':
       return { color: palette.info, backgroundColor: palette.infoSoft, borderColor: '#BAE6FD' };
+    // `muted` is for a chip that is NOT a status - a round number, a count, a
+    // name. A true grey, where `neutral` is the slate the status set is built
+    // from and reads as "a status with nothing to say".
+    case 'muted':
+      return { color: '#6B7280', backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' };
     default:
       return { color: palette.neutral, backgroundColor: palette.neutralSoft, borderColor: palette.border };
   }

@@ -28,6 +28,7 @@ export function SwipeToDeleteRow({
   itemId,
   open,
   disabled,
+  locked,
   editLabel,
   editHint,
   deleteLabel,
@@ -43,6 +44,10 @@ export function SwipeToDeleteRow({
   itemId: number;
   open: boolean;
   disabled: boolean;
+  /** No gesture and no rail, but the row still reads as an ordinary row. Not
+   *  `disabled`, which also fades it: a line the kitchen already has is not
+   *  unavailable, it is simply not removed by a swipe. */
+  locked?: boolean;
   editLabel: string;
   editHint: string;
   deleteLabel: string;
@@ -69,12 +74,13 @@ export function SwipeToDeleteRow({
   const latestRef = useRef({
     open,
     disabled,
+    locked,
     onOpen,
     onClose,
     onSwipeStart,
     onSwipeEnd,
   });
-  latestRef.current = { open, disabled, onOpen, onClose, onSwipeStart, onSwipeEnd };
+  latestRef.current = { open, disabled, locked, onOpen, onClose, onSwipeStart, onSwipeEnd };
 
   useEffect(() => {
     const listenerId = translateX.addListener(({ value }) => {
@@ -128,7 +134,7 @@ export function SwipeToDeleteRow({
       const nextAxis = lockCurrentRoundRowSwipeAxis(previousAxis, {
         deltaX: gesture.dx,
         deltaY: gesture.dy,
-      }, latestRef.current.open, latestRef.current.disabled);
+      }, latestRef.current.open, latestRef.current.disabled || Boolean(latestRef.current.locked));
       axisRef.current = nextAxis;
       if (previousAxis !== 'horizontal' && nextAxis === 'horizontal') {
         activationDxRef.current = gesture.dx;
@@ -189,6 +195,7 @@ export function SwipeToDeleteRow({
 
   return (
     <View style={{ overflow: 'hidden', backgroundColor: palette.danger }}>
+      {locked ? null : (
       <View
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? 'yes' : 'no-hide-descendants'}
@@ -212,12 +219,13 @@ export function SwipeToDeleteRow({
           <Text style={{ color: palette.primaryText, fontSize: 15, lineHeight: 20, fontWeight: '700' }}>{deleteLabel}</Text>
         </Pressable>
       </View>
+      )}
       <Animated.View
         {...responder.panHandlers}
         style={{ backgroundColor: palette.surface, transform: [{ translateX }] }}
       >
         <Pressable
-          accessibilityActions={onEdit ? [
+          accessibilityActions={locked ? [] : onEdit ? [
             { name: 'activate', label: editLabel },
             { name: 'delete', label: deleteAccessibilityLabel },
           ] : [

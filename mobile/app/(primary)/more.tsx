@@ -21,7 +21,10 @@ export default function MoreScreen() {
   const columns = width >= breakpoints.tabletWorkspace;
 
   return (
-    <AppScreen title={copy('เพิ่มเติม', 'More')} topLevel>
+    // The title is kept as the screen's name for screen readers but not drawn:
+    // it repeated the tab that opened it, and the three group headings below say
+    // what is actually on the page. They lead it now.
+    <AppScreen hideTitle title={copy('เพิ่มเติม', 'More')} topLevel>
       <View style={{ alignItems: 'flex-start', flexDirection: columns ? 'row' : 'column', flexWrap: 'wrap', gap: spacing.xxl }}>
         {toolGroups.map((group) => {
           const items = available.filter((item) => group.itemKeys.includes(item.key as never));
@@ -43,7 +46,7 @@ export default function MoreScreen() {
                 },
               ]}
             >
-              <EdgeSectionHeader title={title} />
+              <EdgeSectionHeader prominent title={title} />
               <EdgeSection>
                 {items.map((item) => (
                   <EdgeRow
