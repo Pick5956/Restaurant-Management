@@ -139,7 +139,6 @@ function buildCopy(language: "th" | "en") {
         minStock: "แจ้งเตือนเมื่อต่ำกว่า",
         ofFull: (max: string, unit: string) => `เต็ม ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `จะเตือนเมื่อเหลือ ${amount} ${unit}`,
-        markIsWarn: "ขีดคือจุดที่จะเตือน",
         costPerUnit: "ราคา/หน่วย",
         save: "บันทึก",
         cancel: "ยกเลิก",
@@ -244,7 +243,6 @@ function buildCopy(language: "th" | "en") {
         minStock: "Alert below",
         ofFull: (max: string, unit: string) => `full at ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `warns at ${amount} ${unit}`,
-        markIsWarn: "The mark is where it warns",
         costPerUnit: "Cost/unit",
         save: "Save",
         cancel: "Cancel",
@@ -1206,7 +1204,7 @@ export default function InventoryPage() {
               one row each. The flex-1 spacer only exists to push them right on a
               wide row, so it is hidden where the header is a column. */}
           <div className="hidden flex-1 sm:block" />
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <div className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-orange-200/80 bg-orange-50/80 px-3 text-center dark:border-orange-900/40 dark:bg-orange-950/20">
             <span className="text-[11px] text-slate-500 dark:text-slate-400">{lang === "th" ? "มูลค่า" : "Value"}</span>
             <span className="text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">
@@ -1601,6 +1599,38 @@ export default function InventoryPage() {
                       options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
                     />
                   </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {copy.costPerUnit} (THB)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={costText}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        setCostText(raw);
+                        setForm((current) => ({ ...current, cost_per_unit: parseFloat(raw) || 0 }));
+                      }}
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                {/* Storage pairs with the opening stock when there is one; on an
+                    existing item it takes the whole row rather than leaving half
+                    of one empty. */}
+                <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
+                    <ThemedSelect
+                      aria-label={copy.storageType}
+                      value={form.storage_type ?? "room_temp"}
+                      onChange={(value) => setForm((current) => ({ ...current, storage_type: value }))}
+                      options={storageOptions}
+                    />
+                  </div>
                   {!editingItem ? (
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
@@ -1627,9 +1657,12 @@ export default function InventoryPage() {
                     </div>
                   ) : null}
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                {/* The number, the slider and the readout sit on one line of the
+                    same width, so the reorder level reads as a single control
+                    instead of three stacked measures. */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                  <div className="flex items-center gap-3">
                     <input
                       type="number"
                       min={0}
@@ -1643,93 +1676,38 @@ export default function InventoryPage() {
                           min_percent: 0,
                         }))
                       }
-                      className={inputCls}
+                      className={`${inputCls} w-32 shrink-0`}
                     />
                     {editingMaxStock > 0 ? (
                       <>
-                        <div className="mt-1.5 flex items-center gap-3">
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={5}
-                            value={warnPercent}
-                            onChange={(event) => {
-                              const percent = Number(event.target.value);
-                              setForm((current) => ({
-                                ...current,
-                                min_percent: percent,
-                                min_stock: reorderQuantityFor(editingMaxStock, percent),
-                              }));
-                            }}
-                            className="h-6 flex-1 accent-orange-500"
-                          />
-                          <span className="w-12 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
-                            {warnPercent}%
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                          {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
-                          {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
-                        </p>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={warnPercent}
+                          onChange={(event) => {
+                            const percent = Number(event.target.value);
+                            setForm((current) => ({
+                              ...current,
+                              min_percent: percent,
+                              min_stock: reorderQuantityFor(editingMaxStock, percent),
+                            }));
+                          }}
+                          className="h-9 min-w-0 flex-1 accent-orange-500"
+                        />
+                        <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                          {warnPercent}%
+                        </span>
                       </>
                     ) : null}
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {copy.costPerUnit} (THB)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      inputMode="decimal"
-                      value={costText}
-                      onChange={(event) => {
-                        const raw = event.target.value;
-                        setCostText(raw);
-                        setForm((current) => ({ ...current, cost_per_unit: parseFloat(raw) || 0 }));
-                      }}
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
-                {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
-                  <div>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">{copy.markIsWarn}</span>
-                      <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-                        {formatNumber(editingItem.stock, lang)} / {formatNumber(editingItem.max_stock ?? 0, lang)} {form.unit}
-                      </span>
-                    </div>
-                    <div className="relative h-2 rounded-full bg-slate-200 dark:bg-gray-800">
-                      <div
-                        className={`h-2 rounded-full ${editingItem.stock <= form.min_stock ? "bg-amber-500" : "bg-emerald-500"}`}
-                        style={{
-                          width: `${Math.round(Math.max(0, Math.min(1, editingItem.stock / (editingItem.max_stock || 1))) * 100)}%`,
-                        }}
-                      />
-                      {form.min_stock > 0 && form.min_stock < (editingItem.max_stock ?? 0) ? (
-                        <span
-                          className="absolute -top-1 h-4 w-0.5 rounded-full bg-slate-700/60 dark:bg-white/60"
-                          style={{
-                            left: `${Math.round((form.min_stock / (editingItem.max_stock || 1)) * 100)}%`,
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
-                    <ThemedSelect
-                      aria-label={copy.storageType}
-                      value={form.storage_type ?? "room_temp"}
-                      onChange={(value) => setForm((current) => ({ ...current, storage_type: value }))}
-                      options={storageOptions}
-                    />
-                  </div>
+                  {editingMaxStock > 0 ? (
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
+                      {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
+                    </p>
+                  ) : null}
                 </div>
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>
