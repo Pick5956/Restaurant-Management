@@ -632,11 +632,13 @@ export default function InventoryPage() {
   // from under it and the list scrolled on with no headings at all. `top` is the
   // toolbar's measured height — it wraps to a different number of rows per width
   // — plus the mobile top bar below lg, where the toolbar is fixed beneath it.
+  // The table separates its borders rather than collapsing them. A collapsed
+  // border belongs to the table rather than to the cell, and WebKit repaints a
+  // sticky cell against the table's own box every frame — which is the shimmy
+  // the header had while the list scrolled. Separated borders give the cell its
+  // own, so it rides steady and the underline below can be a plain border.
   const stickyThCls =
-    // The underline is an inset shadow, not a border: this table collapses its
-    // borders, and a collapsed border belongs to the table rather than to the
-    // cell, so it stays behind while the cell sticks.
-    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 bg-white px-4 py-2.5 shadow-[inset_0_-1px_0_#e2e8f0] dark:bg-gray-900 dark:shadow-[inset_0_-1px_0_#1f2937] lg:top-[var(--inv-th-top,0px)]";
+    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900 lg:top-[var(--inv-th-top,0px)]";
 
   const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
     const active = sortKey === key;
@@ -1377,12 +1379,13 @@ export default function InventoryPage() {
 
 
           <div className="grid gap-4">
-            <section className="rounded-md border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              {/* clip, not auto: `overflow-x: auto` makes this a scroll container,
-                  and the sticky column titles would then anchor to it instead of
-                  to the page — which is to say, not stick at all. Below md the
-                  phone layout renders instead of this table. */}
-              <div className="overflow-x-auto md:overflow-x-clip">
+            {/* The radius and the clipping live on the same element, or the
+                table's own square corners paint straight over the rounded border.
+                clip, not hidden or auto: those make this a scroll container, and
+                the sticky column titles would anchor to it instead of to the page
+                — which is to say, not stick at all. */}
+            <section className="overflow-x-clip rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <div>
                 {filtered.length === 0 ? (
                   <div className="m-2 flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-slate-200 px-6 py-12 text-center dark:border-gray-800">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-100 text-slate-400 dark:bg-gray-800 dark:text-slate-500">
@@ -1393,7 +1396,7 @@ export default function InventoryPage() {
                     </p>
                   </div>
                 ) : (
-                  <table className="w-full min-w-[640px] border-collapse text-sm">
+                  <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
                     <thead>
                       <tr
                         className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500"
