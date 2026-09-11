@@ -227,7 +227,10 @@ export default function InventoryHistoryTab({
           `flex-1` spacer inside a wrapping row stays on the first line, which is
           what stranded the export button at the left of the second one. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-56">
+        {/* Narrower between the phone layout and lg, which is where an iPad in
+            portrait sits: at the old widths the five controls came to more than
+            the row and the export button was pushed onto a line of its own. */}
+        <div className="relative w-full sm:w-48 lg:w-56">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -259,7 +262,9 @@ export default function InventoryHistoryTab({
             <>
               <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
               <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-md border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900">
-                <div className="mb-3 flex flex-wrap gap-2">
+                {/* A four-column grid, not a wrapping row: the labels differ in
+                    width per language and one of them kept falling to its own line. */}
+                <div className="mb-3 grid grid-cols-4 gap-1.5">
                   {HISTORY_RANGE_PRESETS.map((preset) => (
                     <button
                       key={preset}
@@ -270,7 +275,7 @@ export default function InventoryHistoryTab({
                         setTo(next.to);
                         setRangeOpen(false);
                       }}
-                      className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
+                      className={`rounded-full border px-1 py-1 text-center text-[11.5px] font-semibold transition ${
                         rangeKey === preset
                           ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
                           : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
@@ -280,25 +285,32 @@ export default function InventoryHistoryTab({
                     </button>
                   ))}
                 </div>
-                {/* The fields stay for the odd window a preset cannot express. */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    aria-label={copy.from}
-                    value={from}
-                    max={to || undefined}
-                    onChange={(event) => setFrom(event.target.value)}
-                    className={`${inputCls} !h-8 min-w-0 flex-1 !px-1.5 text-[12px]`}
-                  />
-                  <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
-                  <input
-                    type="date"
-                    aria-label={copy.to}
-                    value={to}
-                    min={from || undefined}
-                    onChange={(event) => setTo(event.target.value)}
-                    className={`${inputCls} !h-8 min-w-0 flex-1 !px-1.5 text-[12px]`}
-                  />
+                {/* The fields stay for the odd window a preset cannot express.
+                    Stacked, not side by side: a native date field is as wide as
+                    the locale makes it, and Safari in Thai renders "13 Aug BE
+                    2569" — half again what Chrome shows — which spilled the
+                    second field straight out of the panel. */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2">
+                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
+                    <input
+                      type="date"
+                      value={from}
+                      max={to || undefined}
+                      onChange={(event) => setFrom(event.target.value)}
+                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
+                    <input
+                      type="date"
+                      value={to}
+                      min={from || undefined}
+                      onChange={(event) => setTo(event.target.value)}
+                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                    />
+                  </label>
                 </div>
               </div>
             </>
@@ -308,7 +320,7 @@ export default function InventoryHistoryTab({
         <ThemedSelect
           aria-label={copy.type}
           compact
-          className="w-32"
+          className="w-28 lg:w-32"
           value={type}
           onChange={(value) => setType(value as TransactionType | "")}
           options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
@@ -317,7 +329,7 @@ export default function InventoryHistoryTab({
         <ThemedSelect
           aria-label={copy.allCategories}
           compact
-          className="w-40"
+          className="w-36 lg:w-40"
           value={String(categoryId)}
           onChange={(value) => setCategoryId(Number(value))}
           options={[
