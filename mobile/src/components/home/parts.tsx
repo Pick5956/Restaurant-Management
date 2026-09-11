@@ -6,6 +6,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 're
 import { GlassPanel } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
+import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
 import type { HomeDay, HomeRevenueCurve, HomeTableCell } from '@/src/lib/home-dashboard';
 import { palette } from '@/src/theme';
 
@@ -251,6 +252,11 @@ export type AttentionCardProps = {
  * an empty rail would only say "nothing" with a box.
  */
 export function AttentionRail({ cards, stacked }: { cards: AttentionCardProps[]; stacked?: boolean }) {
+  // The rail sits inside the primary tab pager, which also reads horizontal
+  // drags. A touch that begins on the rail is the rail's: these handlers tell
+  // the pager to stand down for as long as the finger is down here, and only
+  // here, so a swipe that starts anywhere else still turns the page.
+  const tabSwipeExclusionHandlers = useTabSwipeExclusionHandlers();
   const items = cards.map((card) => {
     const colours = card.tone === 'danger'
       ? { ink: palette.danger, bg: palette.dangerSoft, border: '#FECACA' }
@@ -288,7 +294,13 @@ export function AttentionRail({ cards, stacked }: { cards: AttentionCardProps[];
   });
   if (stacked) return <View style={{ gap: 8 }}>{items}</View>;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 2, paddingBottom: 2 }} style={{ marginHorizontal: -2 }}>
+    <ScrollView
+      {...tabSwipeExclusionHandlers}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 8, paddingHorizontal: 2, paddingBottom: 2 }}
+      style={{ marginHorizontal: -2 }}
+    >
       {items}
     </ScrollView>
   );
