@@ -69,6 +69,18 @@ export default function InventoryItemScreen() {
   const [itemExists, setItemExists] = useState<boolean | null>(editing ? null : true);
   const [picker, setPicker] = useState<'none' | 'category' | 'unit' | 'storage'>('none');
 
+  // Dragging needs a shelf to measure against, so it waits for an item that has
+  // a known maximum. A brand new ingredient has none until it is first restocked.
+  const canSlide = editing && maxStock > 0 && !readOnly;
+  // Where the knob sits. A percent that was set by dragging is kept as it is; a
+  // quantity typed by hand is shown at the place it falls on this shelf, so the
+  // knob is never somewhere the number is not.
+  const warnPercent = minPercent > 0
+    ? minPercent
+    : maxStock > 0
+      ? Math.max(0, Math.min(100, Math.round(((Number(minStock) || 0) / maxStock) * 100)))
+      : 0;
+
   const title = editing
     ? readOnly ? t('รายละเอียดวัตถุดิบ', 'Ingredient details') : t('แก้ไขวัตถุดิบ', 'Edit ingredient')
     : t('เพิ่มวัตถุดิบ', 'Add ingredient');
@@ -231,28 +243,13 @@ export default function InventoryItemScreen() {
               <FormGroup
                 title={t('ต้นทุนและสต็อก', 'Cost and stock')}
                 footer={
-                  minPercent > 0
+                  maxStock > 0
                     ? t(
-                        `จะเตือนเมื่อเหลือ ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · ชั้นนี้เคยมีมากสุด ${fmt(maxStock, locale)} ${unit}`,
-                        `Warns at ${fmt(reorderQuantityFor(maxStock, minPercent), locale)} ${unit} · most this shelf has held is ${fmt(maxStock, locale)} ${unit}`,
+                        `จะเตือนเมื่อเหลือ ${fmt(Number(minStock) || 0, locale)} ${unit} · ชั้นนี้เคยมีมากสุด ${fmt(maxStock, locale)} ${unit}`,
+                        `Warns at ${fmt(Number(minStock) || 0, locale)} ${unit} · most this shelf has held is ${fmt(maxStock, locale)} ${unit}`,
                       )
                     : t('ต่ำกว่านี้จะขึ้น "ใกล้หมด" ในหน้าคลัง', 'Below this the item shows as "Low" in the inventory list.')
                 }
-                action={editing && maxStock > 0 && !readOnly ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      const next = minPercent > 0 ? 0 : 20;
-                      setMinPercent(next);
-                      if (next > 0) setMinStock(String(reorderQuantityFor(maxStock, next)));
-                    }}
-                    hitSlop={6}
-                  >
-                    <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.primaryInk }}>
-                      {minPercent > 0 ? t('ตั้งเป็นจำนวน', 'As a quantity') : t('ตั้งเป็น %', 'As a %')}
-                    </Text>
-                  </Pressable>
-                ) : undefined}
               >
                 <FormRow label={t('ต้นทุนต่อหน่วย', 'Cost per unit')} first>
                   <FormField value={cost} onChangeText={setCost} numeric prefix="฿" suffix={`/ ${unit}`} readOnly={readOnly} />
@@ -263,15 +260,23 @@ export default function InventoryItemScreen() {
                   </FormRow>
                 ) : null}
                 <FormRow label={t('เตือนเมื่อต่ำกว่า', 'Warn below')}>
-                  {minPercent > 0 ? (
-                    <Text style={{ fontSize: 15.5, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{minPercent}%</Text>
-                  ) : (
-                    <FormField value={minStock} onChangeText={setMinStock} numeric suffix={unit} readOnly={readOnly} />
-                  )}
+                  <FormField
+                    value={minStock}
+                    onChangeText={(next) => {
+                      setMinStock(next);
+                      // Typed by hand: this is a quantity the owner means, not a
+                      // share of the shelf, so it stops tracking the maximum.
+                      setMinPercent(0);
+                    }}
+                    numeric
+                    suffix={unit}
+                    readOnly={readOnly}
+                  />
                 </FormRow>
-                {minPercent > 0 ? (
+                {canSlide ? (
                   <PercentSlider
-                    value={minPercent}
+                    value={warnPercent}
+                    stock={Number(stock) || 0}
                     maxStock={maxStock}
                     unit={unit}
                     locale={locale}
@@ -281,14 +286,16 @@ export default function InventoryItemScreen() {
                     }}
                   />
                 ) : null}
-                <ReorderPreview
-                  stock={Number(stock) || 0}
-                  minStock={Number(minStock) || 0}
-                  maxStock={maxStock}
-                  unit={unit}
-                  locale={locale}
-                  caption={t('ขีดคือจุดที่จะเตือน', 'The mark is where it warns')}
-                />
+                {!canSlide ? (
+                  <ReorderPreview
+                    stock={Number(stock) || 0}
+                    minStock={Number(minStock) || 0}
+                    maxStock={maxStock}
+                    unit={unit}
+                    locale={locale}
+                    caption={t('ขีดคือจุดที่จะเตือน', 'The mark is where it warns')}
+                  />
+                ) : null}
               </FormGroup>
 
               <FormGroup title={t('การจัดเก็บ', 'Storage')}>

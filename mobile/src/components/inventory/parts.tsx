@@ -808,15 +808,21 @@ export function ReorderPreview({
  * you can tell whether you meant it; dragging lets you find the quantity you
  * wanted and read the percentage off afterwards. It steps in fives because
  * nobody reorders at 23%, and every step is felt as well as seen.
+ *
+ * The track is the item's own bar, not a bare ruler: `stock` fills it, so the
+ * knob is dragged along the shelf it is about and the owner can see whether the
+ * point they are choosing is above or below what is there right now.
  */
 export function PercentSlider({
   value,
+  stock,
   maxStock,
   unit,
   locale,
   onChange,
 }: {
   value: number;
+  stock: number;
   maxStock: number;
   unit: string;
   locale: string;
@@ -853,8 +859,16 @@ export function PercentSlider({
   return (
     <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 14 }}>
       <View {...pan.panHandlers} onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ height: 34, justifyContent: 'center' }}>
-        <View style={{ height: 8, borderRadius: 4, backgroundColor: palette.surfaceStrong }}>
-          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: left + KNOB / 2, borderRadius: 4, backgroundColor: palette.primary, opacity: 0.55 }} />
+        {/* Inset by half a knob so the track's 0 and 100 sit under the knob's
+            own travel — otherwise the fill and the knob measure differently. */}
+        <View style={{ marginHorizontal: KNOB / 2, height: 8, borderRadius: 4, backgroundColor: palette.surfaceStrong, overflow: 'hidden' }}>
+          <View
+            style={{
+              width: `${Math.round(Math.max(0, Math.min(1, maxStock > 0 ? stock / maxStock : 0)) * 100)}%`,
+              height: '100%',
+              backgroundColor: stock <= reorderQuantityFor(maxStock, value) ? palette.warning : palette.success,
+            }}
+          />
         </View>
         <View
           pointerEvents="none"
@@ -878,7 +892,7 @@ export function PercentSlider({
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
         <Text style={{ fontSize: 11, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>0%</Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: palette.primaryInk, fontVariant: ['tabular-nums'] }}>
-          {fmt(reorderQuantityFor(maxStock, value), locale)} {unit}
+          {value}% · {fmt(reorderQuantityFor(maxStock, value), locale)} {unit}
         </Text>
         <Text style={{ fontSize: 11, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>100%</Text>
       </View>
@@ -939,14 +953,11 @@ export function dayKey(iso: string | undefined): string {
 // iOS-style: a caption, a white card of rows, the label left and the value right.
 
 /** A section: a small caption, a white card of rows, an optional note under it. */
-export function FormGroup({ title, footer, action, children }: { title?: string; footer?: string; /** A control on the caption's right — a mode switch for the rows below. */ action?: ReactNode; children: ReactNode }) {
+export function FormGroup({ title, footer, children }: { title?: string; footer?: string; children: ReactNode }) {
   return (
     <View style={{ marginBottom: 22 }}>
-      {title || action ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 16, marginRight: 16, marginBottom: 7 }}>
-          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{title ?? ''}</Text>
-          {action}
-        </View>
+      {title ? (
+        <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted, marginHorizontal: 16, marginBottom: 7 }}>{title}</Text>
       ) : null}
       <View style={{ backgroundColor: palette.surface, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: palette.border, overflow: 'hidden' }}>
         {children}

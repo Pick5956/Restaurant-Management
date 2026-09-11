@@ -137,8 +137,6 @@ function buildCopy(language: "th" | "en") {
         stock: "สต็อก",
         level: "ระดับสต็อก",
         minStock: "แจ้งเตือนเมื่อต่ำกว่า",
-        minAsPercent: "ตั้งเป็น % ของเต็ม",
-        minAsAmount: "ตั้งเป็นจำนวน",
         ofFull: (max: string, unit: string) => `เต็ม ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `จะเตือนเมื่อเหลือ ${amount} ${unit}`,
         markIsWarn: "ขีดคือจุดที่จะเตือน",
@@ -244,8 +242,6 @@ function buildCopy(language: "th" | "en") {
         stock: "Stock",
         level: "Level",
         minStock: "Alert below",
-        minAsPercent: "As % of full",
-        minAsAmount: "As a quantity",
         ofFull: (max: string, unit: string) => `full at ${max} ${unit}`,
         warnsAt: (amount: string, unit: string) => `warns at ${amount} ${unit}`,
         markIsWarn: "The mark is where it warns",
@@ -412,6 +408,16 @@ export default function InventoryPage() {
   const [form, setForm] = useState<IngredientInput>(emptyForm);
   const [costText, setCostText] = useState("");
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
+  // Where the reorder slider's handle sits. A percent set by dragging is kept as
+  // it is; a quantity typed by hand is shown at the place it falls on this
+  // shelf, so the handle is never somewhere the number is not.
+  const editingMaxStock = editingItem?.max_stock ?? 0;
+  const warnPercent =
+    (form.min_percent ?? 0) > 0
+      ? (form.min_percent ?? 0)
+      : editingMaxStock > 0
+        ? Math.max(0, Math.min(100, Math.round((form.min_stock / editingMaxStock) * 100)))
+        : 0;
   const [modalOpen, setModalOpen] = useState(false);
   const [modalClosing, setModalClosing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1609,36 +1615,31 @@ export default function InventoryPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <div className="mb-1.5 flex items-baseline gap-2">
-                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
-                      {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setForm((current) => ({
-                              ...current,
-                              min_percent: (current.min_percent ?? 0) > 0 ? 0 : 20,
-                              min_stock:
-                                (current.min_percent ?? 0) > 0
-                                  ? current.min_stock
-                                  : reorderQuantityFor(editingItem.max_stock ?? 0, 20),
-                            }))
-                          }
-                          className="text-[11px] font-semibold text-orange-600 underline-offset-2 hover:underline dark:text-orange-400"
-                        >
-                          {(form.min_percent ?? 0) > 0 ? copy.minAsAmount : copy.minAsPercent}
-                        </button>
-                      ) : null}
-                    </div>
-                    {(form.min_percent ?? 0) > 0 && editingItem ? (
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.min_stock}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          min_stock: parseFloat(event.target.value) || 0,
+                          // Typed by hand: a quantity the owner means, not a
+                          // share of the shelf, so it stops tracking the maximum.
+                          min_percent: 0,
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                    {editingItem && (editingItem.max_stock ?? 0) > 0 ? (
                       <>
-                        <div className="flex items-center gap-3">
+                        <div className="mt-1.5 flex items-center gap-3">
                           <input
                             type="range"
                             min={0}
                             max={100}
                             step={5}
-                            value={form.min_percent ?? 0}
+                            value={warnPercent}
                             onChange={(event) => {
                               const percent = Number(event.target.value);
                               setForm((current) => ({
@@ -1647,10 +1648,10 @@ export default function InventoryPage() {
                                 min_stock: reorderQuantityFor(editingItem.max_stock ?? 0, percent),
                               }));
                             }}
-                            className="h-10 flex-1 accent-orange-500"
+                            className="h-6 flex-1 accent-orange-500"
                           />
                           <span className="w-12 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
-                            {form.min_percent ?? 0}%
+                            {warnPercent}%
                           </span>
                         </div>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
@@ -1658,21 +1659,7 @@ export default function InventoryPage() {
                           {copy.ofFull(formatNumber(editingItem.max_stock ?? 0, lang), form.unit)}
                         </p>
                       </>
-                    ) : (
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.min_stock}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            min_stock: parseFloat(event.target.value) || 0,
-                            min_percent: 0,
-                          }))
-                        }
-                        className={inputCls}
-                      />
-                    )}
+                    ) : null}
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
