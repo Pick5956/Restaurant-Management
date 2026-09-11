@@ -205,7 +205,7 @@ func TestPlannerReadiness(t *testing.T) {
 		}
 
 		legacyStart := time.Now()
-		legacy, legacyErr := svc.classifyIntent(testCase.Question)
+		legacy, legacyErr := svc.classifyIntent(testCase.Question, nil)
 		outcome.LegacyMillis = time.Since(legacyStart).Milliseconds()
 		if legacyErr != nil {
 			outcome.LegacyFailed = true

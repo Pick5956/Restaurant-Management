@@ -25,7 +25,7 @@ func (a *stubAIProviderAdapter) ID() string          { return a.id }
 func (a *stubAIProviderAdapter) DisplayName() string { return a.displayName }
 func (a *stubAIProviderAdapter) Configured() bool    { return a.configured }
 
-func (a *stubAIProviderAdapter) Classify(question string) (AIRouterResult, error) {
+func (a *stubAIProviderAdapter) Classify(question string, _ []AIConversationMessage) (AIRouterResult, error) {
 	a.classifyCalls++
 	if a.classify == nil {
 		return AIRouterResult{}, errors.New("classifier not stubbed")
@@ -70,7 +70,7 @@ func (a *scriptedAIProviderAdapter) next() (string, error) {
 	return output, nil
 }
 
-func (a *scriptedAIProviderAdapter) Classify(string) (AIRouterResult, error) {
+func (a *scriptedAIProviderAdapter) Classify(string, []AIConversationMessage) (AIRouterResult, error) {
 	raw, err := a.next()
 	if err != nil {
 		return AIRouterResult{}, err
@@ -132,7 +132,7 @@ func TestClassifyIntentAutoFallsBackAcrossProviderAdapters(t *testing.T) {
 	}
 	service := &AIService{providerAdapters: []aiProviderAdapter{groq, gemini}}
 
-	result, err := service.classifyIntent("hello")
+	result, err := service.classifyIntent("hello", nil)
 	if err != nil {
 		t.Fatalf("classifyIntent fallback: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestClassifyIntentExplicitProviderDoesNotFallThrough(t *testing.T) {
 	}
 	service := &AIService{providerAdapters: []aiProviderAdapter{groq, gemini}}
 
-	result, err := service.classifyIntent("hello")
+	result, err := service.classifyIntent("hello", nil)
 	if err == nil || result.Task != AITaskAnalyzeData {
 		t.Fatalf("explicit provider failure = result %+v, err %v", result, err)
 	}

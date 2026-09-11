@@ -83,7 +83,7 @@ type aiProviderAdapter interface {
 	ID() string
 	DisplayName() string
 	Configured() bool
-	Classify(question string) (AIRouterResult, error)
+	Classify(question string, history []AIConversationMessage) (AIRouterResult, error)
 	Answer(request aiProviderAnswerRequest) (aiProviderAnswer, error)
 	Complete(prompt string, opts aiProviderCompleteOptions) (aiProviderAnswer, error)
 }
@@ -96,7 +96,7 @@ func (a *groqProviderAdapter) ID() string          { return "groq" }
 func (a *groqProviderAdapter) DisplayName() string { return "Groq" }
 func (a *groqProviderAdapter) Configured() bool    { return len(a.service.getGroqKeys()) > 0 }
 
-func (a *groqProviderAdapter) Classify(question string) (AIRouterResult, error) {
+func (a *groqProviderAdapter) Classify(question string, history []AIConversationMessage) (AIRouterResult, error) {
 	keys := a.service.getGroqKeys()
 	if len(keys) == 0 {
 		return AIRouterResult{}, errors.New("GROQ_API_KEYS is not configured")
@@ -109,7 +109,7 @@ func (a *groqProviderAdapter) Classify(question string) (AIRouterResult, error) 
 
 	var lastErr error
 	for _, attempt := range attempts {
-		raw, err := a.service.executeClassifierGroq(question, attempt.Key)
+		raw, err := a.service.executeClassifierGroq(question, history, attempt.Key)
 		if err == nil {
 			a.service.keyHealth.clear("groq", attempt.Index)
 			result, parseErr := parseRouterJSON(raw)
@@ -173,7 +173,7 @@ func (a *geminiProviderAdapter) ID() string          { return "gemini" }
 func (a *geminiProviderAdapter) DisplayName() string { return "Gemini" }
 func (a *geminiProviderAdapter) Configured() bool    { return len(a.service.getGeminiKeys()) > 0 }
 
-func (a *geminiProviderAdapter) Classify(question string) (AIRouterResult, error) {
+func (a *geminiProviderAdapter) Classify(question string, history []AIConversationMessage) (AIRouterResult, error) {
 	keys := a.service.getGeminiKeys()
 	if len(keys) == 0 {
 		return AIRouterResult{}, errors.New("GEMINI_API_KEYS is not configured")
@@ -186,7 +186,7 @@ func (a *geminiProviderAdapter) Classify(question string) (AIRouterResult, error
 
 	var lastErr error
 	for _, attempt := range attempts {
-		raw, err := a.service.executeClassifierGemini(question, attempt.Key)
+		raw, err := a.service.executeClassifierGemini(question, history, attempt.Key)
 		if err == nil {
 			a.service.keyHealth.clear("gemini", attempt.Index)
 			result, parseErr := parseRouterJSON(raw)
