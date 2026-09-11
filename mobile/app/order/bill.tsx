@@ -7,6 +7,7 @@ import { listCategories, listMenuItems } from '@/src/api/menu';
 import { addOrderItem, deleteOrderItem, getBill, payOrder, sendOrderToKitchen, updateOrderItemStatus } from '@/src/api/order';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
+import { GlassMorphMenu } from '@/src/components/ai/chrome';
 import { MenuImage } from '@/src/components/menu-image';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
 import { ActionDock, Button, EmptyState, Feedback, RadioGroup, SearchField, SectionHeader, Select, StatusBadge, TextField } from '@/src/components/ui';
@@ -93,6 +94,11 @@ export default function BillScreen() {
   // the list changes state to allow it.
   const [openRowId, setOpenRowId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Reveals the take-it-off-the-bill control on lines the kitchen has already
+  // made. Those are removed with a written reason rather than deleted, so they
+  // get a deliberate control rather than the swipe an unsent line answers to.
+  const [editingServed, setEditingServed] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [loading, setLoading] = useState(true);
@@ -616,6 +622,21 @@ export default function BillScreen() {
               </View>
             </SwipeToDeleteRow>
             </View>
+            {editingServed && canEditBill && item.status !== 'pending' && cancelTarget?.ID !== item.ID ? (
+              <View style={{ paddingBottom: spacing.sm }}>
+                <Button
+                  compact
+                  icon="trash-outline"
+                  variant="secondary"
+                  label={copy('นำออกจากบิล', 'Remove from bill')}
+                  onPress={() => {
+                    setCancelTarget(item);
+                    setCancelReason('');
+                    setAdding(false);
+                  }}
+                />
+              </View>
+            ) : null}
             {cancelTarget?.ID === item.ID ? (
               <View style={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
                 <TextField
@@ -660,13 +681,16 @@ export default function BillScreen() {
 
       {splitWorkspace ? sendRoundAction : null}
 
-      {canEditBill ? (
+      {/* Only the way OUT of the catalog lives in the list. The way in moved to
+          the header menu: it is a once-in-a-while action, and a button sitting
+          under every bill for it was the first thing read after the dishes. */}
+      {adding && canEditBill ? (
         <Button
-          icon={adding ? 'arrow-back' : 'add-circle-outline'}
+          icon="arrow-back"
           variant="secondary"
-          label={adding ? copy('กลับไปดูบิล', 'Back to bill') : copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add served item')}
+          label={copy('กลับไปดูบิล', 'Back to bill')}
           onPress={() => {
-            setAdding((value) => !value);
+            setAdding(false);
             setCancelTarget(null);
             setCancelReason('');
           }}
@@ -856,9 +880,45 @@ export default function BillScreen() {
 
   // The one place the total is stated on this screen, so it gets a line to
   // itself with the action full width beneath, rather than the two sharing a row.
+  // The header's overflow menu. Everything here is occasional: the add-served
+  // catalog, taking a made dish off the bill, and the receipt. None of them
+  // belong under the dishes, which is where they each used to sit.
+  const billMenuItems = [
+    canEditBill ? {
+      key: 'add-served',
+      icon: 'add-circle-outline' as const,
+      label: copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add served item'),
+      onPress: () => {
+        setAdding(true);
+        setCancelTarget(null);
+        setCancelReason('');
+      },
+    } : null,
+    canEditBill ? {
+      key: 'edit-served',
+      icon: editingServed ? ('checkmark' as const) : ('create-outline' as const),
+      label: editingServed
+        ? copy('เสร็จสิ้นการแก้ไข', 'Done editing')
+        : copy('แก้ไขรายการเสิร์ฟ', 'Edit served items'),
+      detail: editingServed ? undefined : copy('นำรายการที่ครัวทำแล้วออกจากบิล', 'Take a made dish off the bill'),
+      onPress: () => {
+        setEditingServed((value) => !value);
+        setCancelTarget(null);
+        setCancelReason('');
+      },
+    } : null,
+    printerSupported ? {
+      key: 'print',
+      icon: 'print-outline' as const,
+      label: printing ? copy('กำลังพิมพ์…', 'Printing…') : copy('พิมพ์ใบเสร็จ', 'Print receipt'),
+      onPress: () => { void printReceipt(); },
+    } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
+
   // While a round is unsent, sending it IS the primary action of the screen -
   // payment cannot complete until the kitchen has the items anyway, and two
   // full-width actions in one dock is the duplicate-CTA trap.
+  //
   // Whichever primary action the order is up to, it gets the SAME footer: the
   // bill total on its own line, the action full width beneath it. Sending used
   // to sit in an ActionDock instead - figure left, button right - which put two
@@ -896,6 +956,23 @@ export default function BillScreen() {
       contentMaxWidth={splitWorkspace ? 1240 : 720}
       contentStyle={{ gap: splitWorkspace ? spacing.lg : spacing.xl }}
       footer={phoneFooter}
+      // A spacer, not the button: the button itself is the GlassMorphMenu
+      // below, drawn at this exact spot, because it and the menu it opens are
+      // one piece of glass and the menu has to hang OUTSIDE the header.
+      action={billMenuItems.length ? <View style={{ width: 46, height: 46 }} /> : undefined}
+      floatingTrailing={billMenuItems.length ? (
+        <GlassMorphMenu
+          open={menuOpen}
+          onOpen={() => setMenuOpen(true)}
+          onClose={() => setMenuOpen(false)}
+          icon="ellipsis-horizontal"
+          items={billMenuItems}
+          label={copy('จัดการบิล', 'Manage bill')}
+          // 4 centres the 46pt button on the two-line heading beside it; the
+          // slot itself is already at the header's top-right.
+          style={{ top: 4, right: 0 }}
+        />
+      ) : undefined}
     >
       {error ? <Feedback title={copy('ทำรายการไม่สำเร็จ', 'Could not complete this action')} detail={error} tone="danger" /> : null}
       {message && paymentStage === 'due' ? <Feedback title={message} tone="success" /> : null}
