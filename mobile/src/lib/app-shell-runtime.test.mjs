@@ -282,7 +282,9 @@ test('mobile role-name surfaces consume the restaurant override contract', async
   assert.match(typesSource, /display_name_override\?: string/);
   assert.match(restaurantsSource, /roleLabel\(membership\.role, language\)/);
   assert.match(invitationSource, /return roleLabel\(role, language\)/);
-  assert.match(homeSource, /roleDisplayNameOverride: activeMembership\?\.role\?\.display_name_override/);
+  // Since 2026-09-11 Home shows the role as a chip at the top right instead of
+  // the restaurant row; the override still has to be what that chip reads.
+  assert.match(homeSource, /activeMembership\?\.role\?\.display_name_override/);
 });
 
 test('restaurant identity is rendered only on Home while detail headings retain Back', async () => {
@@ -303,7 +305,9 @@ test('restaurant identity is rendered only on Home while detail headings retain 
   assert.doesNotMatch(appShellSource, /function RestaurantBar\b|<RestaurantBar\b/);
   assert.match(appShellSource, /showBack=\{!topLevel\}/);
   assert.match(appShellSource, /router\.back\(\)/);
-  assert.deepEqual(identityConsumers, ['app/(primary)/home.tsx']);
+  // The restaurant row came off Home on 2026-09-11 at the owner's request: the
+  // shop is chosen from the settings screen now, and no heading draws it.
+  assert.deepEqual(identityConsumers, []);
 });
 
 test('the primary tab navigator is the sole owner of the phone bottom dock', async () => {
