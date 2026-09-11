@@ -753,7 +753,12 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 		}
 		request := aiIngredientRequestFrom(current)
 		if item.ActionType == entity.AIActionTypeSetIngredientMinStock {
+			// A quantity was asked for, so the percentage link is broken on
+			// purpose: leaving it would have the next restock overwrite the
+			// number the owner just approved.
 			request.MinStock = payload.MinStock
+			cleared := 0.0
+			request.MinPercent = &cleared
 		} else {
 			request.CostPerUnit = payload.CostPerUnit
 		}
@@ -789,6 +794,7 @@ func aiIngredientRequestFrom(item *entity.Ingredient) *IngredientRequest {
 		Unit:         item.Unit,
 		Stock:        item.Stock,
 		MinStock:     item.MinStock,
+		MinPercent:   &item.MinPercent,
 		CostPerUnit:  item.CostPerUnit,
 		YieldPercent: item.YieldPercent,
 		StorageType:  item.StorageType,

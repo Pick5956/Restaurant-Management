@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Filter,
   History,
+  MoreHorizontal,
   Pencil,
   Plus,
   RotateCcw,
@@ -51,7 +52,9 @@ import {
   buildAdjustStockPayload,
   getInventoryValue,
   getStatus,
+  getReorderPercent,
   getStockPercent,
+  reorderQuantityFor,
   inputCls,
   STORAGE_TYPES,
   UNITS,
@@ -71,7 +74,7 @@ type BulkRow = {
   cost_per_unit: number;
   costText?: string;
 };
-const bulkEmptyRow: BulkRow = { name: "", category_id: 0, unit: "กก.", stock: 0, min_stock: 0, cost_per_unit: 0 };
+const bulkEmptyRow: BulkRow = { name: "", category_id: 0, unit: "กิโลกรัม", stock: 0, min_stock: 0, cost_per_unit: 0 };
 
 // Column-header sort glyph: an up- and a down-triangle stacked. The active sort
 // direction's triangle is solid; the other stays faint.
@@ -135,6 +138,8 @@ function buildCopy(language: "th" | "en") {
         stock: "สต็อก",
         level: "ระดับสต็อก",
         minStock: "แจ้งเตือนเมื่อต่ำกว่า",
+        ofFull: (max: string, unit: string) => `เต็ม ${max} ${unit}`,
+        warnsAt: (amount: string, unit: string) => `จะเตือนเมื่อเหลือ ${amount} ${unit}`,
         costPerUnit: "ราคา/หน่วย",
         save: "บันทึก",
         cancel: "ยกเลิก",
@@ -191,7 +196,7 @@ function buildCopy(language: "th" | "en") {
         category: "หมวดหมู่",
         stockUnit: "หน่วย",
         yieldPercent: "Yield %",
-        yieldHint: "% วัตถุดิบที่ใช้ได้จริงหลังหั่น/ทำความสะอาด เช่น 80% = ซื้อ 1 กก. ใช้ได้จริง 800 กรัม ระบบใช้ค่านี้คำนวณต้นทุนต่อจานให้แม่นขึ้น",
+        yieldHint: "% วัตถุดิบที่ใช้ได้จริงหลังหั่น/ทำความสะอาด เช่น 80% = ซื้อ 1 กิโลกรัม ใช้ได้จริง 800 กรัม ระบบใช้ค่านี้คำนวณต้นทุนต่อจานให้แม่นขึ้น",
         storageType: "ประเภทการเก็บ",
         imageUrl: "ลิงก์รูปภาพ",
         uncategorized: "ยังไม่จัดหมวด",
@@ -237,6 +242,8 @@ function buildCopy(language: "th" | "en") {
         stock: "Stock",
         level: "Level",
         minStock: "Alert below",
+        ofFull: (max: string, unit: string) => `full at ${max} ${unit}`,
+        warnsAt: (amount: string, unit: string) => `warns at ${amount} ${unit}`,
         costPerUnit: "Cost/unit",
         save: "Save",
         cancel: "Cancel",
@@ -379,6 +386,10 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState<number>(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersClosing, setFiltersClosing] = useState(false);
+  // Export, categories and bulk add: three things an owner reaches for now and
+  // then, which between them pushed the primary button onto a row of its own.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreClosing, setMoreClosing] = useState(false);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<"" | "name" | "category" | "stock" | "price">("");
@@ -400,6 +411,19 @@ export default function InventoryPage() {
   const [form, setForm] = useState<IngredientInput>(emptyForm);
   const [costText, setCostText] = useState("");
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
+  // Where the reorder slider's handle sits. A percent set by dragging is kept as
+  // it is; a quantity typed by hand is shown at the place it falls on this
+  // shelf, so the handle is never somewhere the number is not.
+  // An existing item is measured against the shelf maximum its restocks have
+  // established; a new one against the opening stock being typed, which is what
+  // the server records as its first maximum.
+  const editingMaxStock = editingItem ? editingItem.max_stock ?? 0 : form.stock;
+  const warnPercent =
+    (form.min_percent ?? 0) > 0
+      ? (form.min_percent ?? 0)
+      : editingMaxStock > 0
+        ? Math.max(0, Math.min(100, Math.round((form.min_stock / editingMaxStock) * 100)))
+        : 0;
   const [modalOpen, setModalOpen] = useState(false);
   const [modalClosing, setModalClosing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -503,7 +527,10 @@ export default function InventoryPage() {
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [canView, canManage]);
+    // `loading` and `isMobile` belong here: the toolbar is not in the tree during
+    // the skeleton or the phone layout, so without them the effect ran once
+    // against a null ref and the height stayed 0 for the life of the page.
+  }, [canView, canManage, loading, isMobile]);
 
   // `/inventory?adjust=<id>` — the dashboard's stock-risk cards link straight
   // to the adjustment for the ingredient they warned about. Read off the URL
@@ -596,10 +623,27 @@ export default function InventoryPage() {
     }
   }
 
+  // One row of the overflow menu. Roomier than a toolbar button, because a menu
+  // is read down a column rather than scanned across a row.
+  const moreItemCls =
+    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:text-slate-300 dark:hover:bg-gray-800";
+
+  // The toolbar above already stays put; without this the column titles slid out
+  // from under it and the list scrolled on with no headings at all. `top` is the
+  // toolbar's measured height — it wraps to a different number of rows per width
+  // — plus the mobile top bar below lg, where the toolbar is fixed beneath it.
+  // The table separates its borders rather than collapsing them. A collapsed
+  // border belongs to the table rather than to the cell, and WebKit repaints a
+  // sticky cell against the table's own box every frame — which is the shimmy
+  // the header had while the list scrolled. Separated borders give the cell its
+  // own, so it rides steady and the underline below can be a plain border.
+  const stickyThCls =
+    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900 lg:top-[var(--inv-th-top,0px)]";
+
   const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
     const active = sortKey === key;
     return (
-      <th className={`px-4 py-2.5 ${alignRight ? "text-right" : ""}`}>
+      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""}`}>
         <button
           type="button"
           onClick={() => toggleSort(key)}
@@ -639,6 +683,7 @@ export default function InventoryPage() {
       unit: item.unit,
       stock: item.stock,
       min_stock: item.min_stock,
+      min_percent: item.min_percent ?? 0,
       cost_per_unit: item.cost_per_unit,
       storage_type: item.storage_type ?? "room_temp",
     });
@@ -991,6 +1036,23 @@ export default function InventoryPage() {
       setFiltersClosing(false);
     }, 260);
   }
+
+  function closeMore() {
+    if (moreClosing) return;
+    setMoreClosing(true);
+    window.setTimeout(() => {
+      setMoreOpen(false);
+      setMoreClosing(false);
+    }, 260);
+  }
+
+  /** Runs a menu action and shuts the menu behind it. */
+  function fromMore(run: () => void) {
+    return () => {
+      closeMore();
+      run();
+    };
+  }
   const modalBackdrop = useBackdropClose(closeModal);
   const categoryBackdrop = useBackdropClose(closeCategoryModal);
   const deleteBackdrop = useBackdropClose(closeDeleteModal);
@@ -1184,53 +1246,77 @@ export default function InventoryPage() {
               one row each. The flex-1 spacer only exists to push them right on a
               wide row, so it is hidden where the header is a column. */}
           <div className="hidden flex-1 sm:block" />
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <div className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-orange-200/80 bg-orange-50/80 px-3 text-center dark:border-orange-900/40 dark:bg-orange-950/20">
             <span className="text-[11px] text-slate-500 dark:text-slate-400">{lang === "th" ? "มูลค่า" : "Value"}</span>
             <span className="text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">
               {formatCurrency(totalValue, lang)}
             </span>
           </div>
-          <button
-            type="button"
-            disabled={stockExporting}
-            onClick={() => void handleExportStock()}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <Download className="h-4 w-4" />
-            {stockExporting
-              ? lang === "th"
-                ? "กำลังสร้างไฟล์…"
-                : "Preparing…"
-              : lang === "th"
-                ? "ส่งออก CSV"
-                : "Export CSV"}
-          </button>
-          {canManage && (
+          <div className="relative shrink-0">
             <button
               type="button"
-              onClick={() => {
-                setCategoryError("");
-                setCategoryName("");
-                setCategoryModalClosing(false);
-                setCategoryModalOpen(true);
-              }}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => (moreOpen ? closeMore() : setMoreOpen(true))}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold transition ${
+                moreOpen
+                  ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              }`}
             >
-              <Tags className="h-4 w-4" />
-              {lang === "th" ? "จัดการหมวด" : "Categories"}
+              <MoreHorizontal className="h-4 w-4" />
+              {lang === "th" ? "เพิ่มเติม" : "More"}
             </button>
-          )}
-          {canManage && (
-            <button
-              type="button"
-              onClick={openBulk}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-            >
-              <Plus className="h-4 w-4" />
-              {lang === "th" ? "หลายรายการ" : "Bulk add"}
-            </button>
-          )}
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={closeMore} />
+                <div
+                  role="menu"
+                  className={`${moreClosing ? "smooth-pop-exit" : "smooth-pop"} absolute right-0 top-full z-50 mt-2 w-56 origin-top-right overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl dark:border-gray-800 dark:bg-gray-900`}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={stockExporting}
+                    onClick={fromMore(() => void handleExportStock())}
+                    className={moreItemCls}
+                  >
+                    <Download className="h-4 w-4 text-slate-400" />
+                    {stockExporting
+                      ? lang === "th"
+                        ? "กำลังสร้างไฟล์…"
+                        : "Preparing…"
+                      : lang === "th"
+                        ? "ส่งออก CSV"
+                        : "Export CSV"}
+                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={fromMore(() => {
+                        setCategoryError("");
+                        setCategoryName("");
+                        setCategoryModalClosing(false);
+                        setCategoryModalOpen(true);
+                      })}
+                      className={moreItemCls}
+                    >
+                      <Tags className="h-4 w-4 text-slate-400" />
+                      {lang === "th" ? "จัดการหมวด" : "Categories"}
+                    </button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" onClick={fromMore(openBulk)} className={moreItemCls}>
+                      <Plus className="h-4 w-4 text-slate-400" />
+                      {lang === "th" ? "เพิ่มหลายรายการ" : "Bulk add"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           {canManage && (
             <button
               type="button"
@@ -1293,8 +1379,13 @@ export default function InventoryPage() {
 
 
           <div className="grid gap-4">
-            <section className="rounded-md border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <div className="overflow-x-auto">
+            {/* The radius and the clipping live on the same element, or the
+                table's own square corners paint straight over the rounded border.
+                clip, not hidden or auto: those make this a scroll container, and
+                the sticky column titles would anchor to it instead of to the page
+                — which is to say, not stick at all. */}
+            <section className="overflow-x-clip rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <div>
                 {filtered.length === 0 ? (
                   <div className="m-2 flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-slate-200 px-6 py-12 text-center dark:border-gray-800">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-100 text-slate-400 dark:bg-gray-800 dark:text-slate-500">
@@ -1305,11 +1396,14 @@ export default function InventoryPage() {
                     </p>
                   </div>
                 ) : (
-                  <table className="w-full min-w-[640px] border-collapse text-sm">
+                  <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:border-gray-800 dark:text-slate-500">
+                      <tr
+                        className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500"
+                        style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}
+                      >
                         {canManage && (
-                          <th className="w-12 px-4 py-2.5 text-center align-middle">
+                          <th className={`${stickyThCls} w-12 text-center align-middle`}>
                             <input
                               type="checkbox"
                               aria-label="select all"
@@ -1333,7 +1427,7 @@ export default function InventoryPage() {
                         {sortableTh("stock", copy.current)}
                         {sortableTh("category", copy.category)}
                         {sortableTh("price", copy.costPerUnit, true)}
-                        <th className="px-4 py-2.5" />
+                        <th className={stickyThCls} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -1341,6 +1435,7 @@ export default function InventoryPage() {
                         const status = getStatus(item);
                         const meta = statusMeta(status, copy);
                         const percent = getStockPercent(item);
+                        const reorderAt = getReorderPercent(item);
 
                         return (
                           <tr key={item.ID} className={`transition-colors ${meta.row}`}>
@@ -1365,19 +1460,25 @@ export default function InventoryPage() {
                                     {formatNumber(item.stock, lang)} <span className="text-[11px] font-medium text-slate-400">{item.unit}</span>
                                   </span>
                                 </div>
-                                {/* percent is null when the ingredient has never been
-                                    cooked with — there is no rate to forecast from, so
-                                    the bar says so instead of drawing an empty tank. */}
+                                {/* percent is null when this shelf has no observed
+                                    maximum yet — there is nothing to divide by, so the
+                                    bar says so instead of drawing an empty tank. */}
                                 {percent === null ? (
                                   <p className="mt-1.5 text-[10px] leading-none text-slate-400">
-                                    {lang === "th" ? "ยังไม่มีข้อมูลการใช้" : "No usage data"}
+                                    {lang === "th" ? "ยังไม่รู้ว่าเต็มเท่าไหร่" : "No maximum yet"}
                                   </p>
                                 ) : (
-                                  <>
-                                    <div className="mt-1.5 h-1.5 rounded-full bg-slate-200/80 dark:bg-gray-800">
-                                      <div className={`h-1.5 rounded-full bg-gradient-to-r ${meta.bar}`} style={{ width: `${percent}%` }} />
-                                    </div>
-                                  </>
+                                  <div className="relative mt-1.5 h-1.5 rounded-full bg-slate-200/80 dark:bg-gray-800">
+                                    <div className={`h-1.5 rounded-full bg-gradient-to-r ${meta.bar}`} style={{ width: `${percent}%` }} />
+                                    {reorderAt === null ? null : (
+                                      <span
+                                        aria-hidden
+                                        title={`${copy.minStock} ${formatNumber(item.min_stock, lang)} ${item.unit}`}
+                                        className="absolute -top-0.5 h-2.5 w-0.5 rounded-full bg-slate-500/70 dark:bg-slate-300/60"
+                                        style={{ left: `${reorderAt}%` }}
+                                      />
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             </td>
@@ -1572,34 +1673,6 @@ export default function InventoryPage() {
                       options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
                     />
                   </div>
-                  {!editingItem ? (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.stock}
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, stock: parseFloat(event.target.value) || 0 }))
-                        }
-                        className={inputCls}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.min_stock}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, min_stock: parseFloat(event.target.value) || 0 }))
-                      }
-                      className={inputCls}
-                    />
-                  </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
                       {copy.costPerUnit} (THB)
@@ -1619,7 +1692,10 @@ export default function InventoryPage() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* Storage pairs with the opening stock when there is one; on an
+                    existing item it takes the whole row rather than leaving half
+                    of one empty. */}
+                <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
                     <ThemedSelect
@@ -1629,6 +1705,89 @@ export default function InventoryPage() {
                       options={storageOptions}
                     />
                   </div>
+                  {!editingItem ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.stock}
+                        onChange={(event) => {
+                          const stock = parseFloat(event.target.value) || 0;
+                          setForm((current) => ({
+                            ...current,
+                            stock,
+                            // The shelf just changed size, so a reorder level held
+                            // as a share of it is recomputed rather than left as a
+                            // quantity from the old shelf.
+                            min_stock:
+                              (current.min_percent ?? 0) > 0
+                                ? reorderQuantityFor(stock, current.min_percent ?? 0)
+                                : current.min_stock,
+                          }));
+                        }}
+                        className={inputCls}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                {/* The number, the slider and the readout sit on one line of the
+                    same width, so the reorder level reads as a single control
+                    instead of three stacked measures. */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                  <div className="flex items-center gap-3">
+                    {/* The width lives on the wrapper, not on the input: inputCls
+                        already carries w-full, and two width utilities on one
+                        element are settled by stylesheet order, not by the order
+                        they are written in. */}
+                    <div className="w-32 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.min_stock}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            min_stock: parseFloat(event.target.value) || 0,
+                            // Typed by hand: a quantity the owner means, not a
+                            // share of the shelf, so it stops tracking the maximum.
+                            min_percent: 0,
+                          }))
+                        }
+                        className={inputCls}
+                      />
+                    </div>
+                    {editingMaxStock > 0 ? (
+                      <>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={warnPercent}
+                          onChange={(event) => {
+                            const percent = Number(event.target.value);
+                            setForm((current) => ({
+                              ...current,
+                              min_percent: percent,
+                              min_stock: reorderQuantityFor(editingMaxStock, percent),
+                            }));
+                          }}
+                          className="h-9 min-w-0 flex-1 accent-orange-500"
+                        />
+                        <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                          {warnPercent}%
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  {editingMaxStock > 0 ? (
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
+                      {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
+                    </p>
+                  ) : null}
                 </div>
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>

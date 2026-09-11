@@ -23,7 +23,7 @@ import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/
 import { exportStockCSV } from "@/src/lib/ingredient";
 import type { Ingredient } from "@/src/types/ingredient";
 import { getStatus, type ItemStatus } from "../inventoryPageUtils";
-import { getStockPercent } from "../inventoryPageUtils";
+import { getReorderPercent, getStockPercent } from "../inventoryPageUtils";
 import { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -108,7 +108,7 @@ function buildCopy(lang: "th" | "en") {
         batchPartial: (ok: number, fail: number) => `สำเร็จ ${ok} · ไม่สำเร็จ ${fail} (ยังเลือกไว้ให้ลองใหม่)`,
         batchExpenseNote: "การเติมสต็อกที่มีต้นทุนต่อหน่วย จะบันทึกเป็นรายจ่ายให้อัตโนมัติ",
         now: "ตอนนี้",
-        noUsage: "ยังไม่มีข้อมูลการใช้",
+        noUsage: "ยังไม่รู้ว่าเต็มเท่าไหร่",
         loading: "กำลังโหลด",
         restocked: (name: string, n: string, unit: string) => `เติม ${name} แล้ว ${n} ${unit}`,
         countSaved: (name: string) => `บันทึกยอด ${name} แล้ว`,
@@ -169,7 +169,7 @@ function buildCopy(lang: "th" | "en") {
         batchPartial: (ok: number, fail: number) => `${ok} done · ${fail} failed (left selected to retry)`,
         batchExpenseNote: "A restock on an ingredient with a unit cost also writes an expense",
         now: "Now",
-        noUsage: "No usage data",
+        noUsage: "No maximum yet",
         loading: "Loading",
         restocked: (name: string, n: string, unit: string) => `Added ${n} ${unit} to ${name}`,
         countSaved: (name: string) => `Saved the count for ${name}`,
@@ -543,6 +543,7 @@ export default function InventoryMobile({
             {visible.map((item) => {
               const tone = statusTone(getStatus(item), lang);
               const percent = getStockPercent(item);
+              const reorderAt = getReorderPercent(item);
               const checked = selected.has(item.ID);
               return (
                 <div
@@ -605,14 +606,19 @@ export default function InventoryMobile({
                     {percent === null ? (
                       <p className="mt-2 text-[11px] text-(--inv-faint)">{copy.noUsage}</p>
                     ) : (
-                      <>
-                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-(--inv-action-soft)">
-                          <div
-                            className={`h-full rounded-full ${tone.bar}`}
-                            style={{ width: `${percent}%` }}
+                      <div className="relative mt-2 h-1.5 w-full rounded-full bg-(--inv-action-soft)">
+                        <div
+                          className={`h-full rounded-full ${tone.bar}`}
+                          style={{ width: `${percent}%` }}
+                        />
+                        {reorderAt === null ? null : (
+                          <span
+                            aria-hidden
+                            className="absolute -top-0.5 h-2.5 w-0.5 rounded-full bg-(--inv-muted) opacity-60"
+                            style={{ left: `${reorderAt}%` }}
                           />
-                        </div>
-                      </>
+                        )}
+                      </div>
                     )}
 
                     <div className="mt-2 flex items-center gap-2">

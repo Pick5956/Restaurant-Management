@@ -97,7 +97,7 @@ func TestLiveProviderRoutingAccuracy(t *testing.T) {
 			if delay > 0 {
 				time.Sleep(delay)
 			}
-			res, err := svc.classifyIntent(tc.Question)
+			res, err := svc.classifyIntent(tc.Question, nil)
 			if err != nil {
 				t.Logf("classifyIntent(%q): %v", tc.Question, err)
 				continue

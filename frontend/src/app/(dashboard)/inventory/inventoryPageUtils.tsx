@@ -1,18 +1,25 @@
 import type { AdjustStockInput, Ingredient, IngredientInput } from "@/src/types/ingredient";
 import { localeForLanguage } from "@/src/lib/format";
 
-export const UNITS = ["กรัม", "กก.", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
+export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {
   name: "",
   category_id: 0,
-  unit: "กก.",
+  unit: "กิโลกรัม",
   stock: 0,
   min_stock: 0,
+  min_percent: 0,
   cost_per_unit: 0,
   storage_type: "room_temp",
 };
+
+/** The quantity a percentage of the shelf's maximum works out to. */
+export function reorderQuantityFor(maxStock: number, percent: number): number {
+  if (!(maxStock > 0) || !(percent > 0)) return 0;
+  return Math.round(((maxStock * percent) / 100) * 10000) / 10000;
+}
 
 export type StockStatus = "all" | "ok" | "low" | "out";
 export type ItemStatus = Exclude<StockStatus, "all">;
@@ -31,20 +38,35 @@ export function getStatus(item: Ingredient): ItemStatus {
 export const FULL_COVER_DAYS = 7;
 
 /**
- * The bar answers "how long does this last?", not "what fraction of some
- * ceiling is this?" — the inventory has no ceiling to divide by. The old
- * version divided by min_stock, which pinned at 100% the moment stock merely
- * reached the reorder line, so an item at ten times its minimum looked
- * identical to one exactly at it.
+ * How full the shelf is, as a share of the most it has been proved to hold.
  *
- * Returns null when the ingredient has no consumption history: there is no rate
- * to forecast from, and any percentage would be invented. Callers must render
- * that as "no usage data" rather than an empty bar.
+ * There was no ceiling to divide by until max_stock existed, so this used to
+ * answer a different question — how many days of cover, against a week — and
+ * the phone answered a third one. Three screens, three meanings of the same
+ * bar. Now both divide by the same observed number, and the bar means the same
+ * thing wherever it is drawn.
+ *
+ * Returns null when nothing has been observed yet (a brand new ingredient that
+ * has never been stocked). Callers must render that as "no data" rather than as
+ * an empty bar, which would read as "we are out".
  */
 export function getStockPercent(item: Ingredient): number | null {
+  const ceiling = item.max_stock ?? 0;
+  if (ceiling <= 0) return null;
   if (item.stock <= 0) return 0;
-  if (item.days_left === undefined || item.days_left === null) return null;
-  return Math.min(100, Math.round((item.days_left / FULL_COVER_DAYS) * 100));
+  return Math.min(100, Math.round((item.stock / ceiling) * 100));
+}
+
+/**
+ * Where the reorder mark sits along that bar, 0-100, or null when the mark
+ * would land off the end — which is what a reorder level above the observed
+ * maximum means, and drawing it at 100% would claim the shelf is always short.
+ */
+export function getReorderPercent(item: Ingredient): number | null {
+  const ceiling = item.max_stock ?? 0;
+  if (ceiling <= 0 || item.min_stock <= 0) return null;
+  if (item.min_stock >= ceiling) return null;
+  return Math.round((item.min_stock / ceiling) * 100);
 }
 
 /** Rounds the cover figure the way it is spoken: "2 วัน", "7 วัน+". */
@@ -57,7 +79,14 @@ export function formatDaysLeft(item: Ingredient, lang: "th" | "en"): string | nu
   return lang === "th" ? `พอใช้ ${days} วัน` : `${days} days left`;
 }
 
+/**
+ * What a restock is aimed at: filling the shelf back to the most it has held.
+ * The old answer was twice the reorder level, which nobody chose — it was a
+ * stand-in from before there was an observed maximum to aim at.
+ */
 export function getTargetStock(item: Ingredient) {
+  const ceiling = item.max_stock ?? 0;
+  if (ceiling > 0) return ceiling;
   return item.min_stock > 0 ? item.min_stock * 2 : Math.max(item.stock, 1);
 }
 

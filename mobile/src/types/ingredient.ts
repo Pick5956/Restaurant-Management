@@ -20,8 +20,24 @@ export interface Ingredient {
   yield_percent: number;
   storage_type: string;
   category?: IngredientCategory;
+  /**
+   * The most this shelf has been proved to hold: it rises to meet any stock
+   * level above it and never falls, so it is an observed number rather than a
+   * target anyone typed — which is what makes it safe to divide by. Zero means
+   * nothing has been observed yet: draw no bar rather than invent one.
+   */
+  max_stock?: number;
+  /**
+   * The reorder level as a share of max_stock. Above zero, the server recomputes
+   * min_stock from it every time max_stock moves, so a shop buying in larger
+   * loads keeps being warned at the same proportion instead of at a quantity
+   * somebody typed once. Zero means min_stock stands on its own.
+   */
+  min_percent?: number;
   /** Days of cover at the last 30 days' kitchen usage; null with no usage yet. */
   days_left?: number | null;
+  /** The daily rate days_left was derived from, for showing the working. */
+  daily_use?: number | null;
   /** Bumped by every stock write, so it is a truthful "last moved". */
   UpdatedAt?: string;
 }
@@ -75,6 +91,12 @@ export interface IngredientMetadataInput {
   image_url: string;
   unit: string;
   min_stock: number;
+  /**
+   * Omitted means "leave whatever is stored alone"; 0 clears the link and keeps
+   * min_stock as an absolute quantity. A screen that never sends it therefore
+   * cannot wipe a percentage set from the web.
+   */
+  min_percent?: number;
   cost_per_unit: number;
   yield_percent: number;
   storage_type: string;

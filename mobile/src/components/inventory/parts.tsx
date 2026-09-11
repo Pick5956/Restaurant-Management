@@ -11,7 +11,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { money } from '@/src/lib/format';
-import { countPayload, quickAmounts, restockStep, stockShare, stockStatus, type StockStatus } from '@/src/lib/inventory-list';
+import { countPayload, quickAmounts, reorderQuantityFor, reorderShare, restockStep, stockShare, stockStatus, type StockStatus } from '@/src/lib/inventory-list';
 import { palette } from '@/src/theme';
 import type { Ingredient } from '@/src/types/ingredient';
 
@@ -323,18 +323,25 @@ export function StatusPill({ status, language }: { status: StockStatus; language
 }
 
 /**
- * The level bar: how the stock stands against its reorder level. The tick at
- * the middle is the level itself, so a bar past it is fine and one short of it
- * is not — colour and length agreeing, which the days-of-cover bar could not.
+ * The level bar: how much of this shelf is filled, with a tick where the
+ * reorder level falls. The tick used to sit at the middle by construction,
+ * because the bar's end was defined as twice the reorder level; now both ends
+ * are real numbers and the tick lands wherever the reorder level actually is.
+ *
+ * Nothing is drawn when the shelf has no observed maximum — an empty bar there
+ * would read as "we are out" when the truth is "nothing has been seen yet".
  */
 export function LevelBar({ item, height = 6 }: { item: Ingredient; height?: number }) {
   const share = stockShare(item);
   const status = stockStatus(item);
+  const mark = reorderShare(item);
   if (share === null) return null;
   return (
     <View style={{ marginTop: 8, height, borderRadius: height / 2, backgroundColor: palette.surfaceStrong }}>
       <View style={{ width: `${Math.round(share * 100)}%`, height: '100%', borderRadius: height / 2, backgroundColor: statusColour(status).ink }} />
-      <View style={{ position: 'absolute', left: '50%', top: -3, width: 2, height: height + 6, borderRadius: 1, backgroundColor: palette.muted, opacity: 0.5 }} />
+      {mark === null ? null : (
+        <View style={{ position: 'absolute', left: `${Math.round(mark * 100)}%`, top: -3, width: 2, height: height + 6, borderRadius: 1, backgroundColor: palette.muted, opacity: 0.5 }} />
+      )}
     </View>
   );
 }
@@ -746,6 +753,153 @@ export function ChoiceChip({ label, on, onPress }: { label: string; on: boolean;
   );
 }
 
+/**
+ * The item's own level bar, drawn from figures being edited rather than from
+ * the saved row: what is on the shelf now, and where the reorder level being
+ * set would sit along it.
+ *
+ * The form used to describe this bar in words — "the mark on this item's bar" —
+ * on a screen that showed no bar at all, so the only way to find out what a
+ * number did was to save it and go back to the list. Here the mark moves while
+ * the number is being chosen.
+ */
+export function ReorderPreview({
+  stock,
+  minStock,
+  maxStock,
+  unit,
+  locale,
+  caption,
+}: {
+  stock: number;
+  minStock: number;
+  maxStock: number;
+  unit: string;
+  locale: string;
+  caption: string;
+}) {
+  if (!(maxStock > 0)) return null;
+  const filled = Math.max(0, Math.min(1, stock / maxStock));
+  const mark = minStock > 0 && minStock < maxStock ? minStock / maxStock : null;
+  const short = stock <= minStock;
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, borderTopWidth: 1, borderTopColor: palette.divider }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 7 }}>
+        <Text style={{ flex: 1, fontSize: 11.5, color: palette.muted }}>{caption}</Text>
+        <Text style={{ fontSize: 11.5, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>
+          {fmt(stock, locale)} / {fmt(maxStock, locale)} {unit}
+        </Text>
+      </View>
+      <View style={{ height: 8, borderRadius: 4, backgroundColor: palette.surfaceStrong }}>
+        <View style={{ width: `${Math.round(filled * 100)}%`, height: '100%', borderRadius: 4, backgroundColor: short ? palette.warning : palette.success }} />
+        {mark === null ? null : (
+          <View style={{ position: 'absolute', left: `${Math.round(mark * 100)}%`, top: -4, width: 2, height: 16, borderRadius: 1, backgroundColor: palette.textStrong, opacity: 0.55 }} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A percentage picked by dragging, with the quantity it comes to shown against
+ * the shelf it belongs to.
+ *
+ * Typing a number means working out what 20% of this particular shelf is before
+ * you can tell whether you meant it; dragging lets you find the quantity you
+ * wanted and read the percentage off afterwards. It steps in fives because
+ * nobody reorders at 23%, and every step is felt as well as seen.
+ *
+ * The track is the item's own bar, not a bare ruler: `stock` fills it, so the
+ * knob is dragged along the shelf it is about and the owner can see whether the
+ * point they are choosing is above or below what is there right now.
+ */
+export function PercentSlider({
+  value,
+  stock,
+  maxStock,
+  unit,
+  locale,
+  onChange,
+}: {
+  value: number;
+  stock: number;
+  maxStock: number;
+  unit: string;
+  locale: string;
+  onChange: (percent: number) => void;
+}) {
+  const KNOB = 26;
+  const [width, setWidth] = useState(0);
+  const travel = Math.max(1, width - KNOB);
+  // The responder is built once, so the live figures reach it through a ref.
+  const live = useRef({ travel, onChange, value });
+  live.current = { travel, onChange, value };
+
+  const percentAt = (x: number) => {
+    const share = Math.max(0, Math.min(1, (x - KNOB / 2) / live.current.travel));
+    return Math.round((share * 100) / 5) * 5;
+  };
+  const settle = (percent: number) => {
+    if (percent === live.current.value) return;
+    void Haptics.selectionAsync();
+    live.current.onChange(percent);
+  };
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => settle(percentAt(event.nativeEvent.locationX)),
+      onPanResponderMove: (event) => settle(percentAt(event.nativeEvent.locationX)),
+    }),
+  ).current;
+
+  const left = (value / 100) * travel;
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 14 }}>
+      <View {...pan.panHandlers} onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ height: 34, justifyContent: 'center' }}>
+        {/* Inset by half a knob so the track's 0 and 100 sit under the knob's
+            own travel — otherwise the fill and the knob measure differently. */}
+        <View style={{ marginHorizontal: KNOB / 2, height: 8, borderRadius: 4, backgroundColor: palette.surfaceStrong, overflow: 'hidden' }}>
+          <View
+            style={{
+              width: `${Math.round(Math.max(0, Math.min(1, maxStock > 0 ? stock / maxStock : 0)) * 100)}%`,
+              height: '100%',
+              backgroundColor: stock <= reorderQuantityFor(maxStock, value) ? palette.warning : palette.success,
+            }}
+          />
+        </View>
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left,
+            width: KNOB,
+            height: KNOB,
+            borderRadius: KNOB / 2,
+            backgroundColor: palette.surface,
+            borderWidth: 2,
+            borderColor: palette.primary,
+            shadowColor: '#3d2b1f',
+            shadowOpacity: 0.22,
+            shadowRadius: 5,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 3,
+          }}
+        />
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+        <Text style={{ fontSize: 11, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>0%</Text>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: palette.primaryInk, fontVariant: ['tabular-nums'] }}>
+          {value}% · {fmt(reorderQuantityFor(maxStock, value), locale)} {unit}
+        </Text>
+        <Text style={{ fontSize: 11, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>100%</Text>
+      </View>
+    </View>
+  );
+}
+
 export function SheetSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
@@ -802,7 +956,9 @@ export function dayKey(iso: string | undefined): string {
 export function FormGroup({ title, footer, children }: { title?: string; footer?: string; children: ReactNode }) {
   return (
     <View style={{ marginBottom: 22 }}>
-      {title ? <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted, marginLeft: 16, marginBottom: 7 }}>{title}</Text> : null}
+      {title ? (
+        <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted, marginHorizontal: 16, marginBottom: 7 }}>{title}</Text>
+      ) : null}
       <View style={{ backgroundColor: palette.surface, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: palette.border, overflow: 'hidden' }}>
         {children}
       </View>

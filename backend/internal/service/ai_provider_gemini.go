@@ -93,14 +93,14 @@ func (s *AIService) askGeminiWithRotation(question string, history []AIConversat
 	return "", "", lastErr
 }
 
-func (s *AIService) executeClassifierGemini(question string, apiKey string) (string, error) {
+func (s *AIService) executeClassifierGemini(question string, history []AIConversationMessage, apiKey string) (string, error) {
 	model := strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
 	if model == "" {
 		model = "gemini-3.5-flash-lite"
 	}
 	aiStage("call", "Gemini classifier model=%s", model)
 
-	prompt := fmt.Sprintf(routerClassifierTemplate, question)
+	prompt := fmt.Sprintf(routerClassifierTemplate, conversationPrompt(routerHistory(history)), question)
 
 	payload := geminiGenerateRequest{
 		Contents: []geminiContent{

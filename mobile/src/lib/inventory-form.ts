@@ -2,7 +2,7 @@ import type { Ingredient, IngredientInput, IngredientMetadataInput } from '@/src
 
 export const INGREDIENT_UNITS = [
   'กรัม',
-  'กก.',
+  'กิโลกรัม',
   'มิลลิลิตร',
   'ลิตร',
   'ชิ้น',
@@ -24,6 +24,12 @@ export interface IngredientFormValues {
   unit: string;
   stock: string;
   minStock: string;
+  /**
+   * The reorder level as a share of the shelf's maximum, as typed. Empty or "0"
+   * means the quantity in minStock stands on its own — which is every
+   * ingredient until someone moves the slider.
+   */
+  minPercent: string;
   cost: string;
   yieldPercent: string;
   storageType: string;
@@ -55,7 +61,7 @@ function nonNegativeNumber(value: string, fallback = 0) {
 }
 
 export function ingredientToFormValues(item: Ingredient): IngredientFormValues {
-  const unit = item.unit?.trim() || 'กก.';
+  const unit = item.unit?.trim() || 'กิโลกรัม';
 
   return {
     name: item.name || '',
@@ -65,6 +71,7 @@ export function ingredientToFormValues(item: Ingredient): IngredientFormValues {
     unit,
     stock: String(item.stock ?? 0),
     minStock: String(item.min_stock ?? 0),
+    minPercent: String(item.min_percent ?? 0),
     cost: String(item.cost_per_unit ?? 0),
     yieldPercent: String(item.yield_percent ?? 100),
     storageType: item.storage_type || 'room_temp',
@@ -83,10 +90,20 @@ export function buildIngredientMetadataInput(values: IngredientFormValues): Ingr
     image_url: values.imageUrl.trim(),
     unit,
     min_stock: nonNegativeNumber(values.minStock),
+    // Always sent, never omitted: this screen owns the choice between a share
+    // and a quantity, so leaving it out would keep a percentage the owner has
+    // just switched away from.
+    min_percent: reorderPercentOf(values),
     cost_per_unit: nonNegativeNumber(values.cost),
     yield_percent: yieldPercent > 0 && yieldPercent <= 100 ? yieldPercent : 100,
     storage_type: values.storageType.trim() || 'room_temp',
   };
+}
+
+/** The percentage a form is sending, clamped to something the API will accept. */
+export function reorderPercentOf(values: Partial<Pick<IngredientFormValues, 'minPercent'>>): number {
+  const percent = nonNegativeNumber(values.minPercent ?? '0');
+  return percent > 100 ? 100 : percent;
 }
 
 export function buildIngredientCreateInput(values: IngredientFormValues): IngredientInput {

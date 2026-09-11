@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Download, RotateCcw, Search } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, RotateCcw, Search } from "lucide-react";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
 import type { IngredientCategory, IngredientTransaction, TransactionQuery, TransactionType } from "@/src/types/ingredient";
@@ -10,10 +10,15 @@ import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { inputCls } from "./inventoryPageUtils";
 import {
   HISTORY_PAGE_SIZE,
+  HISTORY_RANGE_PRESETS,
   HISTORY_TYPES,
   defaultHistoryRange,
+  formatHistoryRange,
   historyMovement,
   historyPageCount,
+  historyRangeFor,
+  historyRangeKeyOf,
+  historyRangeLabel,
   historyTypeLabel,
 } from "./inventoryHistoryUtils";
 
@@ -23,6 +28,7 @@ function buildCopy(lang: "th" | "en") {
         searchPlaceholder: "ค้นหาวัตถุดิบ",
         from: "ตั้งแต่",
         to: "ถึง",
+        range: "ช่วงวันที่",
         allCategories: "ทุกหมวด",
         clear: "ล้างตัวกรอง",
         export: "ส่งออก CSV",
@@ -39,7 +45,6 @@ function buildCopy(lang: "th" | "en") {
         setTo: "ตั้งเป็น",
         empty: "ไม่มีรายการในช่วงนี้",
         loading: "กำลังโหลด…",
-        total: (n: number) => `${n} รายการ`,
         page: (current: number, last: number) => `หน้า ${current} / ${last}`,
         exported: "ดาวน์โหลดแล้ว",
         exportedRows: (n: number) => `${n} รายการ`,
@@ -53,6 +58,7 @@ function buildCopy(lang: "th" | "en") {
         searchPlaceholder: "Search ingredient",
         from: "From",
         to: "To",
+        range: "Date range",
         allCategories: "All categories",
         clear: "Clear filters",
         export: "Export CSV",
@@ -69,7 +75,6 @@ function buildCopy(lang: "th" | "en") {
         setTo: "Set to",
         empty: "No movements in this period",
         loading: "Loading…",
-        total: (n: number) => `${n} movements`,
         page: (current: number, last: number) => `Page ${current} / ${last}`,
         exported: "Downloaded",
         exportedRows: (n: number) => `${n} rows`,
@@ -123,6 +128,7 @@ export default function InventoryHistoryTab({
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   // Typing must not fire a request per keystroke; the rest of the filters apply
   // immediately because each one is a deliberate single click.
@@ -201,6 +207,9 @@ export default function InventoryHistoryTab({
   );
 
   const lastPage = historyPageCount(total, HISTORY_PAGE_SIZE);
+  // Which preset the current range is, so the button and the chips agree about
+  // what is selected without either of them owning the state.
+  const rangeKey = historyRangeKeyOf(from, to);
   const filtersTouched =
     type !== "" || categoryId !== 0 || search !== "" || from !== initialRange.from || to !== initialRange.to;
 
@@ -214,8 +223,14 @@ export default function InventoryHistoryTab({
 
   return (
     <div className="space-y-4">
+      {/* Two groups, not one long row with a spacer wedged in the middle. A
+          `flex-1` spacer inside a wrapping row stays on the first line, which is
+          what stranded the export button at the left of the second one. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-56">
+        {/* Narrower between the phone layout and lg, which is where an iPad in
+            portrait sits: at the old widths the five controls came to more than
+            the row and the export button was pushed onto a line of its own. */}
+        <div className="relative w-full sm:w-48 lg:w-56">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -226,29 +241,86 @@ export default function InventoryHistoryTab({
           />
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
-          <input
-            type="date"
-            value={from}
-            max={to}
-            onChange={(event) => setFrom(event.target.value)}
-            className={`${inputCls} !h-9 !w-auto px-2`}
-          />
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
-          <input
-            type="date"
-            value={to}
-            min={from}
-            onChange={(event) => setTo(event.target.value)}
-            className={`${inputCls} !h-9 !w-auto px-2`}
-          />
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={rangeOpen}
+            aria-label={copy.range}
+            onClick={() => setRangeOpen((open) => !open)}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold transition ${
+              rangeOpen || rangeKey !== "30d"
+                ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+            }`}
+          >
+            <CalendarDays className="h-4 w-4" />
+            {formatHistoryRange(from, to, lang)}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
+          </button>
+          {rangeOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
+              <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-md border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+                {/* A four-column grid, not a wrapping row: the labels differ in
+                    width per language and one of them kept falling to its own line. */}
+                <div className="mb-3 grid grid-cols-4 gap-1.5">
+                  {HISTORY_RANGE_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        const next = historyRangeFor(preset);
+                        setFrom(next.from);
+                        setTo(next.to);
+                        setRangeOpen(false);
+                      }}
+                      className={`rounded-full border px-1 py-1 text-center text-[11.5px] font-semibold transition ${
+                        rangeKey === preset
+                          ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                      }`}
+                    >
+                      {historyRangeLabel(preset, lang)}
+                    </button>
+                  ))}
+                </div>
+                {/* The fields stay for the odd window a preset cannot express.
+                    Stacked, not side by side: a native date field is as wide as
+                    the locale makes it, and Safari in Thai renders "13 Aug BE
+                    2569" — half again what Chrome shows — which spilled the
+                    second field straight out of the panel. */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2">
+                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
+                    <input
+                      type="date"
+                      value={from}
+                      max={to || undefined}
+                      onChange={(event) => setFrom(event.target.value)}
+                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
+                    <input
+                      type="date"
+                      value={to}
+                      min={from || undefined}
+                      onChange={(event) => setTo(event.target.value)}
+                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                    />
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <ThemedSelect
           aria-label={copy.type}
           compact
-          className="w-32"
+          className="w-28 lg:w-32"
           value={type}
           onChange={(value) => setType(value as TransactionType | "")}
           options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
@@ -257,7 +329,7 @@ export default function InventoryHistoryTab({
         <ThemedSelect
           aria-label={copy.allCategories}
           compact
-          className="w-40"
+          className="w-36 lg:w-40"
           value={String(categoryId)}
           onChange={(value) => setCategoryId(Number(value))}
           options={[
@@ -277,11 +349,7 @@ export default function InventoryHistoryTab({
           </button>
         )}
 
-        <div className="flex-1" />
-
-        <span className="text-[11px] text-slate-500 dark:text-slate-400">{copy.total(total)}</span>
-
-        <div className="relative shrink-0">
+        <div className="relative ml-auto shrink-0">
           <button
             type="button"
             disabled={exporting}
@@ -320,7 +388,13 @@ export default function InventoryHistoryTab({
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400 dark:bg-gray-950/40 dark:text-slate-500">
               <tr>
-                <th className="px-4 py-2.5 font-semibold">{copy.date}</th>
+                {/* The count belongs beside what it counts, the way the stock
+                    tab reads "ชื่อวัตถุดิบ (28)". On the toolbar it was a result
+                    sitting among the controls that produced it. */}
+                <th className="whitespace-nowrap px-4 py-2.5 font-semibold">
+                  {copy.date}{" "}
+                  <span className="text-slate-500 dark:text-slate-300">({formatNumber(total, lang)})</span>
+                </th>
                 <th className="px-4 py-2.5 font-semibold">{copy.item}</th>
                 <th className="px-4 py-2.5 font-semibold">{copy.type}</th>
                 <th className="px-4 py-2.5 text-right font-semibold">{copy.change}</th>

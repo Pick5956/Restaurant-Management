@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  bangkokHour,
+  homeDayStrip,
+  homeRevenueCurve,
+  homeTableCells,
+  percentChange,
+  sameWeekdayRevenue,
+  waitingBillOrders,
   buildHomeOperationalMetrics,
   buildHomeAttention,
   clampDashboardDate,
@@ -259,4 +266,88 @@ test('keeps only the top three monthly menu items in stable sales order', () => 
     { menu_id: 3, menu_name: 'Rice', quantity: 8 },
     { menu_id: 1, menu_name: 'Tea', quantity: 8 },
   ]);
+});
+
+test('the day strip ends on today, marks the selected day, and dots only days that sold', () => {
+  const days = homeDayStrip('2026-09-11', '2026-09-09', [
+    { order_date: '2026-09-05', revenue: 9942, profit: 1 },
+    { order_date: '2026-09-08', revenue: 0, profit: 0 },
+    { order_date: '2026-09-11', revenue: 5768, profit: 1 },
+  ]);
+  assert.equal(days.length, 7);
+  assert.equal(days[0].date, '2026-09-05');
+  assert.equal(days[6].date, '2026-09-11');
+  assert.equal(days[6].isToday, true);
+  assert.equal(days[4].selected, true);
+  assert.equal(days[0].hasSales, true);
+  assert.equal(days[3].hasSales, false, 'a day with zero revenue has no dot');
+  assert.equal(days[6].weekday, 5, '11 Sep 2026 is a Friday');
+});
+
+test('without sales history the strip has no dots at all rather than every day looking empty', () => {
+  const days = homeDayStrip('2026-09-11', '2026-09-11', null);
+  assert.ok(days.every((day) => day.hasSales === null));
+});
+
+test('the revenue curve accumulates paid bills by the hour they closed and stops at the current hour', () => {
+  const orders = [
+    { status: 'completed', order_type: 'dine_in', payment_status: 'paid', grand_total: 100, closed_at: '2026-09-11T04:30:00Z' }, // 11:30 Bangkok
+    { status: 'completed', order_type: 'dine_in', payment_status: 'paid', grand_total: 50, closed_at: '2026-09-11T04:45:00Z' },  // 11:45
+    { status: 'served', order_type: 'dine_in', payment_status: 'unpaid', grand_total: 999, closed_at: null, opened_at: '2026-09-11T05:00:00Z' },
+    { status: 'cancelled', order_type: 'dine_in', payment_status: 'paid', grand_total: 999, closed_at: '2026-09-11T06:00:00Z' },
+    { status: 'completed', order_type: 'takeaway', payment_status: 'paid', grand_total: 25, closed_at: '2026-09-11T07:10:00Z' }, // 14:10
+  ];
+  const curve = homeRevenueCurve(orders, 15);
+  assert.equal(curve.startHour, 10, 'the axis never starts later than opening');
+  assert.equal(curve.endHour, 15, 'a day in progress runs to the current hour');
+  assert.deepEqual(curve.cumulative, [0, 150, 150, 150, 175, 175]);
+});
+
+test("a finished day's curve ends at the last sale, not at midnight", () => {
+  const curve = homeRevenueCurve([
+    { status: 'completed', order_type: 'dine_in', payment_status: 'paid', grand_total: 10, closed_at: '2026-09-10T13:00:00Z' }, // 20:00
+  ], null);
+  assert.equal(curve.endHour, 20);
+  assert.equal(curve.cumulative.length, 11);
+});
+
+test('an empty finished day has no curve', () => {
+  assert.equal(homeRevenueCurve([], null), null);
+});
+
+test("bangkokHour reads the hour in the shop's timezone", () => {
+  assert.equal(bangkokHour('2026-09-11T17:00:00Z'), 0, 'midnight in Bangkok is hour 0, not 24');
+  assert.equal(bangkokHour('2026-09-11T04:30:00Z'), 11);
+  assert.equal(bangkokHour('not a date'), null);
+});
+
+test('the same weekday a week earlier is the only fair comparison offered', () => {
+  const history = [{ order_date: '2026-09-04', revenue: 9533, profit: 0 }];
+  assert.equal(sameWeekdayRevenue(history, '2026-09-11'), 9533);
+  assert.equal(sameWeekdayRevenue(history, '2026-09-10'), null);
+  assert.equal(sameWeekdayRevenue(null, '2026-09-11'), null);
+  assert.equal(percentChange(5768, 9533), -39);
+  assert.equal(percentChange(5768, 0), null);
+  assert.equal(percentChange(5768, null), null);
+});
+
+test('waiting-bill orders are finished but unpaid, whatever the kitchen calls finished', () => {
+  const orders = [
+    { status: 'served', order_type: 'dine_in', payment_status: 'unpaid', table: { ID: 3 } },
+    { status: 'ready', order_type: 'dine_in', payment_status: 'unpaid', table: { ID: 4 } },
+    { status: 'served', order_type: 'dine_in', payment_status: 'paid', table: { ID: 5 } },
+    { status: 'cooking', order_type: 'dine_in', payment_status: 'unpaid', table: { ID: 6 } },
+  ];
+  assert.deepEqual(waitingBillOrders(orders).map((order) => order.table.ID), [3, 4]);
+});
+
+test('the floor grid ranks a waiting bill above plain occupancy and leaves inactive tables out', () => {
+  const cells = homeTableCells([
+    { ID: 1, display_label: 'F01', status: 'occupied' },
+    { ID: 2, display_label: 'F02', status: 'occupied' },
+    { ID: 3, display_label: 'A01', status: 'reserved' },
+    { ID: 4, display_label: 'A02', status: 'free' },
+    { ID: 5, display_label: 'X', status: 'inactive' },
+  ], new Set([2]));
+  assert.deepEqual(cells.map((cell) => `${cell.label}:${cell.state}`), ['F01:busy', 'F02:bill', 'A01:reserved', 'A02:free']);
 });

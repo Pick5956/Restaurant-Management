@@ -139,7 +139,7 @@ func TestPlannerProbeLive(t *testing.T) {
 		}
 
 		// The legacy router's answer to the same question, for comparison.
-		legacy, legacyErr := svc.classifyIntent(question)
+		legacy, legacyErr := svc.classifyIntent(question, nil)
 		if legacyErr != nil {
 			t.Logf("  legacy      : ล้มเหลว (%v)", legacyErr)
 		} else {

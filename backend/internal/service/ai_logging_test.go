@@ -56,7 +56,7 @@ func TestProviderCallLogsExcludeCredentialDerivedMaterial(t *testing.T) {
 	service := &AIService{httpClient: client}
 
 	logs := captureAILogs(t, func() {
-		if _, err := service.executeClassifierGroq("test question", credential); err != nil {
+		if _, err := service.executeClassifierGroq("test question", nil, credential); err != nil {
 			t.Fatalf("Groq classifier: %v", err)
 		}
 		if _, _, err := service.executeGroq("test question", nil, AISnapshot{}, credential, nil); err != nil {
@@ -68,7 +68,7 @@ func TestProviderCallLogsExcludeCredentialDerivedMaterial(t *testing.T) {
 		if _, _, err := service.executeSecondRoundGroq("test prompt", credential, aiProviderCompleteOptions{}); err != nil {
 			t.Fatalf("Groq second-round call: %v", err)
 		}
-		if _, err := service.executeClassifierGemini("test question", credential); err != nil {
+		if _, err := service.executeClassifierGemini("test question", nil, credential); err != nil {
 			t.Fatalf("Gemini classifier: %v", err)
 		}
 		if _, _, err := service.executeGemini("test question", nil, AISnapshot{}, credential, nil); err != nil {
@@ -144,7 +144,7 @@ func TestProviderFailureErrorsAndLogsExcludeResponseBodyAndCredentialMaterial(t 
 		run  func() error
 	}{
 		{"Groq classifier", func() error {
-			_, err := (&groqProviderAdapter{service: service}).Classify("private question")
+			_, err := (&groqProviderAdapter{service: service}).Classify("private question", nil)
 			return err
 		}},
 		{"Groq analytical", func() error {
@@ -160,7 +160,7 @@ func TestProviderFailureErrorsAndLogsExcludeResponseBodyAndCredentialMaterial(t 
 			return err
 		}},
 		{"Gemini classifier", func() error {
-			_, err := (&geminiProviderAdapter{service: service}).Classify("private question")
+			_, err := (&geminiProviderAdapter{service: service}).Classify("private question", nil)
 			return err
 		}},
 		{"Gemini analytical", func() error {
@@ -227,7 +227,7 @@ func TestProviderHTTP429StillReturnsRateLimitSentinel(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"Groq classifier", func() error { _, err := (&groqProviderAdapter{service: service}).Classify("question"); return err }},
+		{"Groq classifier", func() error { _, err := (&groqProviderAdapter{service: service}).Classify("question", nil); return err }},
 		{"Groq analytical", func() error {
 			_, err := (&groqProviderAdapter{service: service}).Answer(aiProviderAnswerRequest{Question: "question", Snapshot: snapshot, Mode: aiProviderAnswerAnalytical})
 			return err
@@ -237,7 +237,7 @@ func TestProviderHTTP429StillReturnsRateLimitSentinel(t *testing.T) {
 			return err
 		}},
 		{"Groq second round", func() error { _, err := (&groqProviderAdapter{service: service}).Complete("prompt", aiProviderCompleteOptions{}); return err }},
-		{"Gemini classifier", func() error { _, err := (&geminiProviderAdapter{service: service}).Classify("question"); return err }},
+		{"Gemini classifier", func() error { _, err := (&geminiProviderAdapter{service: service}).Classify("question", nil); return err }},
 		{"Gemini analytical", func() error {
 			_, err := (&geminiProviderAdapter{service: service}).Answer(aiProviderAnswerRequest{Question: "question", Snapshot: snapshot, Mode: aiProviderAnswerAnalytical})
 			return err
