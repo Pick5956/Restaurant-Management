@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { Keyboard, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { listOrders } from '@/src/api/order';
 import { listTables } from '@/src/api/table';
@@ -152,6 +152,16 @@ export default function TablesScreen() {
     router.push({ pathname: '/order/new' as never, params: { tableId: String(table.ID) } } as never);
   }
 
+  // Opening the search takes the filter row over: the zone picker is gone until
+  // this runs. `Keyboard.dismiss()` is not redundant with unmounting the field -
+  // unmounting blurs it, and blur puts the keyboard away a frame later, which
+  // reads as the row snapping back and the keyboard trailing after it.
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setSearch('');
+    setSearchOpen(false);
+  }, []);
+
   // The secondary actions live in the header as icons rather than in the filter
   // row, which belongs to the zone picker and the magnifier. Each carries its
   // label for screen readers, the only name an icon-only control has.
@@ -163,13 +173,14 @@ export default function TablesScreen() {
       accessibilityLabel={compactView ? copy('มุมมองแบบเต็ม', 'Detailed view') : copy('มุมมองแบบย่อ', 'Compact view')}
       icon={compactView ? 'grid-outline' : 'apps-outline'}
       onPress={() => setCompactTables(!compactView)}
+      variant="glass"
     />,
-    canTakeOrder ? <IconButton key="takeaway" accessibilityLabel={copy('ซื้อกลับบ้าน', 'Takeaway')} icon="bag-handle-outline" onPress={() => router.push({ pathname: '/order/new' as never, params: { type: 'takeaway' } } as never)} /> : null,
+    canTakeOrder ? <IconButton key="takeaway" accessibilityLabel={copy('ซื้อกลับบ้าน', 'Takeaway')} icon="bag-handle-outline" onPress={() => router.push({ pathname: '/order/new' as never, params: { type: 'takeaway' } } as never)} variant="glass" /> : null,
     // Neither glyph names this screen on its own: a bare clock reads as
     // "something about time", and the clipboard that replaced it reads as "a
     // list" without saying a list of what. The clock rides the clipboard as a
     // badge so the pair says "the list of bookings", which is what is behind it.
-    canViewHistory ? <IconButton key="history" accessibilityLabel={copy('ประวัติการจองโต๊ะ', 'Reservation history')} badgeIcon="time-outline" icon="clipboard-outline" onPress={() => router.push('/reservations' as never)} /> : null,
+    canViewHistory ? <IconButton key="history" accessibilityLabel={copy('ประวัติการจองโต๊ะ', 'Reservation history')} badgeIcon="time-outline" icon="clipboard-outline" onPress={() => router.push('/reservations' as never)} variant="glass" /> : null,
   ].filter(Boolean);
 
   // The order screen's filter bar, to the letter. Pinned under the heading, one
@@ -204,6 +215,7 @@ export default function TablesScreen() {
             accessibilityLabel={copy('ค้นหาโต๊ะ', 'Search tables')}
             icon="search-outline"
             onPress={() => setSearchOpen(true)}
+            variant="glass"
           />
         </View>
       )}
@@ -236,14 +248,16 @@ export default function TablesScreen() {
       // reach the last one except more scrolling.
       stickyHeading
       stickyContent={zoneFilterBar}
-      // Scrolling the map closes the search and hands the row back to the zone
-      // picker. Any typed keyword is cleared with it, so the grid can never stay
-      // filtered by a search box that is no longer on screen.
-      onScrollStart={() => {
-        if (!searchOpen) return;
-        setSearch('');
-        setSearchOpen(false);
-      }}
+      // The open search field is a stage, not a control sitting alongside the
+      // others: while it is up, the first touch anywhere else on the screen is
+      // spent closing it and putting the keyboard away, and reaches nothing
+      // underneath. This replaced closing on scroll, which could only end the
+      // stage one way - so dismissing the keyboard without also scrolling left
+      // the row stuck showing a search box nobody was typing in.
+      //
+      // Any typed keyword goes with it, so the grid can never stay filtered by
+      // a search box that is no longer on screen.
+      onTouchOutsideStickyContent={searchOpen ? closeSearch : undefined}
       action={headerActions.length ? <View style={{ flexDirection: 'row', gap: spacing.sm }}>{headerActions}</View> : undefined}
     >
       {error ? <Feedback title={copy('โหลดผังโต๊ะไม่ได้', 'Could not load the table map')} detail={error} tone="danger" /> : null}

@@ -893,7 +893,7 @@ export default function MenuPage() {
                         </span>
                       ) : null}
                       <div
-                        className="aspect-[4/3] w-full shrink-0 bg-transparent bg-cover bg-center"
+                        className="aspect-square w-full shrink-0 bg-transparent bg-cover bg-center"
                         style={{ backgroundImage: `url(${item.image_url || "/menu-placeholder-v2.webp"})` }}
                         aria-label={item.image_url ? `${copy.imageAlt} ${item.name}` : undefined}
                       />

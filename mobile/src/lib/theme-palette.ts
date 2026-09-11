@@ -1,6 +1,6 @@
 export const palette = {
-  canvas: '#FFF7ED',
-  surface: '#FFFCF8',
+  canvas: '#FFFFFF',
+  surface: '#FFFFFF',
   surfaceSubtle: '#FFF4E8',
   surfaceStrong: '#FFEDD5',
   border: '#FED7AA',
@@ -31,6 +31,20 @@ export const palette = {
   navigationActiveText: '#7C2D12',
   navigationMuted: '#FED7AA',
   navigationBorder: '#7C2D12',
+  // The phone dock alone. It is the iOS 26 tab bar rebuilt - dark translucent
+  // glass, white glyphs, a paler glass capsule for the selection - and stopped
+  // sharing the rail's burnt orange on 2026-09-10. The rail keeps the tokens above.
+  //
+  // `navigationDockSurface` is the fill where there is no material to blur
+  // (every Android, iOS below 26): the tint composited over dark content, so
+  // those devices land near what iOS 26 shows rather than on an unrelated colour.
+  navigationDockSurface: '#1C1C1E',
+  navigationDockIcon: '#FFFFFF',
+  navigationDockIndicator: 'rgba(255, 255, 255, 0.16)',
+  // 0.38, walked up from 0.12 and 0.22: the reference bar carries a visibly
+  // lit edge, and the rim is a large part of what reads as gloss on a dark
+  // surface. Asked for "a lot more" and this is the lit-edge half of it.
+  navigationDockRim: 'rgba(255, 255, 255, 0.38)',
   shadow: '#7C2D12',
   success: '#047857',
   successSoft: '#ECFDF5',

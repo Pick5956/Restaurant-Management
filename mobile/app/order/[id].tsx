@@ -1,6 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { Keyboard, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { listCategories, listMenuItems } from '@/src/api/menu';
 import { closeEmptyTable, deleteOrderItem, getOrder, updateOrderItem } from '@/src/api/order';
@@ -403,6 +403,16 @@ export default function OrderDetailScreen() {
     </>
   ) : null;
 
+  // Opening the search takes the filter row over: the category picker is gone
+  // until this runs. `Keyboard.dismiss()` is not redundant with unmounting the
+  // field - unmounting blurs it, and blur puts the keyboard away a frame later,
+  // which reads as the row snapping back and the keyboard trailing after it.
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setSearch('');
+    setSearchOpen(false);
+  }, []);
+
   // Pinned with the heading rather than scrolled with the grid: a filter that
   // has scrolled off screen cannot be changed without scrolling back for it.
   // One row, not two — the category picker and a magnifier share it, and the
@@ -410,9 +420,9 @@ export default function OrderDetailScreen() {
   const menuFilterBar = order && !locked && canTakeOrder ? (
     <>
       {searchOpen ? (
-        // No close button. Scrolling the menu is what ends the search, which is
-        // the gesture already being made to look at the results — a dedicated
-        // dismiss control would only be in the way of the field it sits beside.
+        // No close button: while this is up the whole screen is a dismiss
+        // target, so a dedicated one would only be in the way of the field it
+        // sits beside.
         <SearchField
           accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
           autoFocus
@@ -434,6 +444,7 @@ export default function OrderDetailScreen() {
             accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
             icon="search-outline"
             onPress={() => setSearchOpen(true)}
+            variant="glass"
           />
         </View>
       )}
@@ -506,8 +517,8 @@ export default function OrderDetailScreen() {
     if (!canCloseEmpty) return null;
     return (
       <View style={{ flexDirection: stackActions ? 'column' : 'row', gap: spacing.sm }}>
-        {confirmEmptyClose ? <Button variant="secondary" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmEmptyClose(false)} style={actionStyle} /> : null}
-        <Button variant={confirmEmptyClose ? 'danger' : 'secondary'} label={confirmEmptyClose ? copy('ยืนยันปิดโต๊ะ', 'Confirm table close') : copy('ปิดโต๊ะว่าง', 'Close empty table')} onPress={closeEmpty} loading={submitting} style={actionStyle} />
+        {confirmEmptyClose ? <Button variant="glass" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmEmptyClose(false)} style={actionStyle} /> : null}
+        <Button variant={confirmEmptyClose ? 'danger' : 'glass'} label={confirmEmptyClose ? copy('ยืนยันปิดโต๊ะ', 'Confirm table close') : copy('ปิดโต๊ะว่าง', 'Close empty table')} onPress={closeEmpty} loading={submitting} style={actionStyle} />
       </View>
     );
   }
@@ -523,13 +534,23 @@ export default function OrderDetailScreen() {
   // No billing bar across the bottom. It sat over the menu grid permanently for
   // an action taken once per order, and it belongs with the order it settles:
   // the item count in the header opens the summary, and the bill button is there.
+  const openOrderSummary = useCallback(() => {
+    router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never);
+  }, [orderId]);
+
+  // The basket and the `รายการ` chip in the header lead to the SAME screen -
+  // the order summary. They used to fork: the chip opened the summary and the
+  // basket opened a separate current-round screen that listed the same unsent
+  // items again, so a waiter checking the order saw two different answers to
+  // "what is on this table" depending on which control they reached for. The
+  // summary carries the round now, including `ส่งเข้าครัว`.
   const currentRoundBasket = showCurrentRoundBasket ? (
     <CurrentRoundBasket
       accessibilityLabel={currentRoundCopy.openLabel}
       disabled={submitting}
       label={currentRoundCopy.basketLabel}
       value={money(currentRoundSummary.subtotal, language)}
-      onPress={() => router.push({ pathname: '/order/current-round' as never, params: { id: String(orderId) } } as never)}
+      onPress={openOrderSummary}
     />
   ) : null;
 
@@ -543,21 +564,23 @@ export default function OrderDetailScreen() {
       // for and the item count both scroll out of sight.
       stickyHeading
       stickyContent={menuFilterBar}
-      // Scrolling the menu closes the search and hands the row back to the
-      // category picker. Any typed keyword is cleared with it, so the grid can
-      // never stay filtered by a search box that is no longer on screen.
-      onScrollStart={() => {
-        if (!searchOpen) return;
-        setSearch('');
-        setSearchOpen(false);
-      }}
+      // The open search field is a stage, not a control sitting alongside the
+      // others: while it is up, the first touch anywhere else - a dish card, the
+      // header, the basket, the dock - is spent closing it and putting the
+      // keyboard away, and reaches nothing underneath. Tapping a dish straight
+      // through a live keyboard was opening the item sheet with the keyboard
+      // still climbing over it.
+      //
+      // Any typed keyword goes with it, so the grid can never stay filtered by
+      // a search box that is no longer on screen.
+      onTouchOutsideStickyContent={searchOpen ? closeSearch : undefined}
       footer={currentRoundBasket}
       action={order ? (
         <OrderSummaryAction
           accessibilityLabel={orderSummaryCopy.title}
           count={activeQuantity}
           label={copy('รายการ', 'Items')}
-          onPress={() => router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never)}
+          onPress={openOrderSummary}
         />
       ) : undefined}
     >

@@ -972,7 +972,7 @@ export default function PosOrderDetailPage() {
                       </span>
                     )}
                     <div
-                      className="aspect-[4/3] w-full shrink-0 bg-transparent bg-cover bg-center"
+                      className="aspect-square w-full shrink-0 bg-transparent bg-cover bg-center"
                       style={{ backgroundImage: `url(${item.image_url || "/menu-placeholder-v2.webp"})` }}
                       aria-label={item.image_url ? `${language === "th" ? "รูปเมนู" : "Menu image"} ${item.name}` : undefined}
                     />
@@ -1015,7 +1015,7 @@ export default function PosOrderDetailPage() {
       {selectedMenu && (
         <div {...menuPickerBackdrop} className={`${selectedMenuClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-3 backdrop-blur-sm sm:p-4`}>
           <div className={`${selectedMenuClosing ? "motion-dialog-exit" : "motion-dialog"} flex max-h-[calc(100vh-1.5rem)] w-full max-w-sm flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100vh-2rem)]`}>
-            <div className="relative aspect-[4/3] w-full rounded-t-md bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${selectedMenu.image_url || "/menu-placeholder-v2.webp"})` }}>
+            <div className="relative aspect-square w-full rounded-t-md bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${selectedMenu.image_url || "/menu-placeholder-v2.webp"})` }}>
               <button type="button" aria-label={language === "th" ? "ปิด" : "Close"} onClick={closeMenuPicker} className="ui-press absolute left-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/70 bg-white/95 text-gray-700 shadow-md shadow-gray-950/15 hover:bg-white dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:shadow-black/30">
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1308,7 +1308,7 @@ export default function PosOrderDetailPage() {
                               onClick={() => { void addServedItem(menu); }}
                               className="ui-press flex flex-col overflow-hidden rounded-md border border-gray-200 bg-white text-left transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900"
                             >
-                              <div role="img" aria-hidden="true" className="aspect-[4/3] w-full bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${menu.image_url || "/menu-placeholder-v2.webp"})` }} />
+                              <div role="img" aria-hidden="true" className="aspect-square w-full bg-transparent bg-cover bg-center" style={{ backgroundImage: `url(${menu.image_url || "/menu-placeholder-v2.webp"})` }} />
                               <div className="min-w-0 p-2">
                                 <p className="truncate text-[12px] font-semibold text-gray-900 dark:text-white">{menu.name}</p>
                                 <p className="font-mono text-[11px] text-gray-500 dark:text-gray-400">฿{menu.price.toLocaleString()}</p>

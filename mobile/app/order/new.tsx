@@ -1,15 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 
 import { createOrder } from '@/src/api/order';
 import { reserveTable } from '@/src/api/reservation';
 import { listTables } from '@/src/api/table';
 import { AppText as Text } from '@/src/components/app-text';
-import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { ActionDock, Button, ChipGroup, EmptyState, Feedback, Select, Surface, TextField } from '@/src/components/ui';
+import { ActionDock, Button, ChipGroup, EmptyState, Feedback, IconButton, Select, Surface, TextField } from '@/src/components/ui';
 import { can } from '@/src/lib/rbac';
 import {
   defaultReservationSlot,
@@ -22,45 +21,6 @@ import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, controlShadow, palette, radius, spacing, typeScale } from '@/src/theme';
 import type { RestaurantTable } from '@/src/types/table';
-
-// Matches the 52px stepper the current-round item screen uses: a guest count is
-// the only thing this screen asks for, so it gets the same full-size treatment
-// rather than the 44px variant used beside a dense order list.
-function StepperButton({
-  label,
-  icon,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  icon: 'add' | 'remove';
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width: 52,
-        height: 52,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: palette.borderStrong,
-        borderRadius: radius.md,
-        backgroundColor: pressed ? palette.surfaceStrong : palette.surface,
-        ...controlShadow,
-        opacity: disabled ? 0.42 : pressed ? 0.74 : 1,
-      })}
-    >
-      <AppIcon color={palette.textStrong} name={icon} size={22} />
-    </Pressable>
-  );
-}
 
 export default function NewOrderScreen() {
   const { width } = useWindowDimensions();
@@ -129,11 +89,13 @@ export default function NewOrderScreen() {
     <View style={{ gap: spacing.sm }}>
       <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '600' }}>{copy('จำนวนลูกค้า', 'Guest count')}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <StepperButton
-          label={copy('ลดจำนวนลูกค้า', 'Decrease guest count')}
-          icon="remove"
+        <IconButton
+          accessibilityLabel={copy('ลดจำนวนลูกค้า', 'Decrease guest count')}
           disabled={guestCount <= 1}
+          icon="remove"
           onPress={() => setGuestCount(guestCount - 1)}
+          size={52}
+          variant="glass"
         />
         {/* Shadow on the wrapper: Android drops a box shadow set on a
             TextInput, and this field sits between two lifted buttons. */}
@@ -162,18 +124,20 @@ export default function NewOrderScreen() {
             value={customerCount}
           />
         </View>
-        <StepperButton
-          label={copy('เพิ่มจำนวนลูกค้า', 'Increase guest count')}
-          icon="add"
+        <IconButton
+          accessibilityLabel={copy('เพิ่มจำนวนลูกค้า', 'Increase guest count')}
           disabled={guestCount >= 9999}
+          icon="add"
           onPress={() => setGuestCount(guestCount + 1)}
+          size={52}
+          variant="glass"
         />
       </View>
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         {/* Up and down rather than two sizes of up: overshooting is as common as
             undershooting, and getting back down took ten taps of the stepper. */}
-        <Button compact label="+5" onPress={() => setGuestCount(guestCount + 5)} style={{ flex: 1 }} variant="secondary" />
-        <Button compact label="−5" onPress={() => setGuestCount(guestCount - 5)} style={{ flex: 1 }} variant="secondary" />
+        <Button compact label="+5" onPress={() => setGuestCount(guestCount + 5)} style={{ flex: 1 }} variant="glass" />
+        <Button compact label="−5" onPress={() => setGuestCount(guestCount - 5)} style={{ flex: 1 }} variant="glass" />
       </View>
     </View>
   );
@@ -246,9 +210,9 @@ export default function NewOrderScreen() {
       // The footer follows the mode too. A screen showing a reservation form
       // under a button that says "Open order" is the same lie the chips told.
       footer={tabletWorkspace ? undefined : reserveMode ? (
-        <ActionDock><Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} /></ActionDock>
+        <ActionDock><Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} pill variant="glass" /></ActionDock>
       ) : (
-        <ActionDock><Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} /></ActionDock>
+        <ActionDock><Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} pill variant="glass" /></ActionDock>
       )}
     >
       {error ? <Feedback title={copy('เปิดออเดอร์ไม่ได้', 'Could not open the order')} detail={error} tone="danger" /> : null}
@@ -262,6 +226,7 @@ export default function NewOrderScreen() {
         {orderType === 'takeaway' ? null : (
           <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined }}>
             <ChipGroup
+              glass
               fill
               value={reserveMode ? 'reservation' : 'dine_in'}
               onChange={(next) => {
@@ -282,6 +247,7 @@ export default function NewOrderScreen() {
           <TextField icon="call-outline" label={copy('เบอร์โทร', 'Phone')} value={reservePhone} onChangeText={setReservePhone} keyboardType="phone-pad" maxLength={32} />
           {guestCountField}
           <ChipGroup
+            glass
             fill
             label={copy('เวลา', 'Time')}
             value={reserveDay}
@@ -298,7 +264,7 @@ export default function NewOrderScreen() {
           {reserveDay === 'now' ? null : (
             <Select value={reserveSlot} onChange={setReserveSlot} options={reserveSlots.map((slot) => ({ label: slot, value: slot }))} />
           )}
-          {tabletWorkspace ? <Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} /> : null}
+          {tabletWorkspace ? <Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} pill variant="glass" /> : null}
         </Surface>
         ) : (
         <Surface style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.2 : undefined }}>
@@ -312,7 +278,7 @@ export default function NewOrderScreen() {
           {/* Two lines, not three. A table note is "แพ้กุ้ง" or "ขอโต๊ะริมหน้าต่าง",
               and the box grows as it is typed into anyway. */}
           <TextField label={copy('หมายเหตุโต๊ะ', 'Table note')} value={note} onChangeText={setNote} multiline minHeight={72} maxLength={1000} />
-          {tabletWorkspace ? <Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} /> : null}
+          {tabletWorkspace ? <Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} pill variant="glass" /> : null}
         </Surface>
         )}
       </View>

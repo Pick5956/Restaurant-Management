@@ -52,6 +52,11 @@ type AddOrderItemRequest struct {
 type UpdateOrderItemRequest struct {
 	Quantity int    `json:"quantity" binding:"required,gte=1,lte=100"`
 	Note     string `json:"note" binding:"max=500"`
+	// SelectedOptionIDs replaces the line's chosen options. A nil pointer leaves
+	// them alone — that is what a quantity-only edit sends — while an empty
+	// slice clears them. Only a pending line gets here (editablePendingItem), so
+	// nothing the kitchen has seen can be rewritten underneath it.
+	SelectedOptionIDs *[]uint `json:"selected_option_ids"`
 }
 
 // VoidItemUnitsRequest voids a chosen number of units from a single order item
@@ -442,6 +447,29 @@ func (s *OrderService) AddItem(restaurantID, userID, orderID uint, req *AddOrder
 		if err != nil {
 			return err
 		}
+		// The same dish, with the same options and the same note, is ONE line with
+		// a bigger number - not a column of identical rows for a waiter to read
+		// twice and the kitchen to reconcile. Only a pending line merges: once a
+		// round has gone to the kitchen its quantity is a record of what was sent,
+		// and a served-immediately line is its own event with its own timestamp.
+		if !req.ServeImmediately {
+			if existing := findMergeableOrderItem(order, menu.ID, fulfillmentType, strings.TrimSpace(req.Note), selectedOptions); existing != nil {
+				merged, err := tx.FindItemForUpdate(restaurantID, order.ID, existing.ID)
+				if err != nil {
+					return err
+				}
+				merged.Quantity += qty
+				merged.Subtotal = (merged.UnitPrice + merged.OptionsTotal) * float64(merged.Quantity)
+				if err := tx.SaveItem(merged); err != nil {
+					return err
+				}
+				if err := recalcOrderTotals(tx, order); err != nil {
+					return err
+				}
+				changed = order.ID
+				return nil
+			}
+		}
 		itemStatus := entity.OrderItemStatusPending
 		if req.ServeImmediately {
 			itemStatus = entity.OrderItemStatusServed
@@ -538,6 +566,48 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 			if err := ensureMenuCapacity(tx, restaurantID, item.MenuID, item.MenuName, delta); err != nil {
 				return err
 			}
+		}
+		if req.SelectedOptionIDs != nil {
+			if len(*req.SelectedOptionIDs) > 50 {
+				return errors.New("too many selected options")
+			}
+			menu, err := tx.FindMenuItem(restaurantID, item.MenuID)
+			if err != nil {
+				return errors.New("menu item not found")
+			}
+			selectedOptions, optionsTotal, err := validateSelectedMenuOptions(menu, *req.SelectedOptionIDs)
+			if err != nil {
+				return err
+			}
+			// The options decide both what the guest is charged and what the
+			// kitchen takes out of stock, so the price snapshot and the recipe
+			// snapshot are rewritten together. Leaving the old recipe behind
+			// would deduct the ingredients of a dish nobody ordered.
+			if err := tx.DeleteItemOptions(restaurantID, item.ID); err != nil {
+				return err
+			}
+			for _, option := range selectedOptions {
+				snapshot := &entity.OrderItemOption{
+					OrderItemID:   item.ID,
+					OrderID:       order.ID,
+					RestaurantID:  restaurantID,
+					MenuOptionID:  option.ID,
+					OptionGroupID: option.OptionGroupID,
+					GroupName:     option.GroupName,
+					OptionName:    option.OptionName,
+					PriceDelta:    option.PriceDelta,
+				}
+				if err := tx.CreateItemOption(snapshot); err != nil {
+					return err
+				}
+			}
+			if err := tx.DeleteItemRecipeSnapshots(restaurantID, item.ID); err != nil {
+				return err
+			}
+			if err := snapshotRecipeForOrderItem(tx, order, item, selectedOptions); err != nil {
+				return err
+			}
+			item.OptionsTotal = optionsTotal
 		}
 		item.Quantity = qty
 		item.Note = strings.TrimSpace(req.Note)
@@ -1173,6 +1243,48 @@ func buildOrderItemRecipeSnapshots(
 		})
 	}
 	return snapshots
+}
+
+// findMergeableOrderItem returns the pending line this add should fold into:
+// same menu, same dine-in/takeaway, same note, and exactly the same set of
+// options. Anything else is a different order line even when the dish matches.
+func findMergeableOrderItem(
+	order *entity.Order,
+	menuID uint,
+	fulfillmentType string,
+	note string,
+	options []selectedMenuOption,
+) *entity.OrderItem {
+	wanted := make(map[uint]struct{}, len(options))
+	for _, option := range options {
+		wanted[option.ID] = struct{}{}
+	}
+	for index := range order.Items {
+		item := &order.Items[index]
+		if item.Status != entity.OrderItemStatusPending {
+			continue
+		}
+		if item.MenuID != menuID || item.FulfillmentType != fulfillmentType {
+			continue
+		}
+		if strings.TrimSpace(item.Note) != note {
+			continue
+		}
+		if len(item.SelectedOptions) != len(wanted) {
+			continue
+		}
+		matches := true
+		for _, selected := range item.SelectedOptions {
+			if _, ok := wanted[selected.MenuOptionID]; !ok {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return item
+		}
+	}
+	return nil
 }
 
 func snapshotRecipeForOrderItem(

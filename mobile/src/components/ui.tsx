@@ -64,6 +64,8 @@ export function Button({
   loading,
   compact,
   icon,
+  trailingIcon,
+  pill,
   leading,
   style,
 }: {
@@ -79,10 +81,19 @@ export function Button({
   loading?: boolean;
   compact?: boolean;
   icon?: AppIconName;
+  /** A glyph pinned to the trailing edge while the label stays centred. For the
+   *  action at the bottom of a screen, where the arrow says the button carries
+   *  you onward rather than acting in place. Absolutely positioned on purpose:
+   *  in the row it would push the label off centre by exactly its own width. */
+  trailingIcon?: AppIconName;
+  /** Fully round the ends. The dock action wears it; the controls inside a form
+   *  keep `radius.md`, so the two never read as the same rank. */
+  pill?: boolean;
   leading?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   const isGlass = variant === 'glass';
+  const borderRadius = pill ? radius.full : radius.md;
   const backgroundColor = variant === 'primary' ? palette.primary : variant === 'danger' ? palette.danger : variant === 'ghost' ? 'transparent' : palette.surface;
   const color = variant === 'primary' || variant === 'danger' ? palette.primaryText : variant === 'ghost' ? palette.muted : isGlass ? palette.primaryInk : palette.text;
   const body = (
@@ -91,6 +102,24 @@ export function Button({
         ? <ActivityIndicator color={color} size="small" />
         : leading || (icon ? <AppIcon color={color} name={icon} size={19} /> : null)}
       <Text style={{ color, fontSize: 14, fontWeight: '700' }}>{label}</Text>
+      {trailingIcon ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            // 0, not the button's own padding value: Yoga positions an
+            // absolute child inside the parent's PADDING box, not its border box
+            // the way CSS does, so `paddingHorizontal` is already counted here
+            // and naming it again would inset the arrow twice.
+            right: 0,
+            justifyContent: 'center',
+          }}
+        >
+          <AppIcon color={color} name={trailingIcon} size={19} />
+        </View>
+      ) : null}
     </>
   );
   if (isGlass) {
@@ -102,7 +131,7 @@ export function Button({
         onPress={onPress}
         style={({ pressed }) => [
           {
-            borderRadius: radius.md,
+            borderRadius,
             ...controlShadow,
             opacity: disabled || loading ? 0.48 : pressed ? 0.78 : 1,
             transform: [{ scale: pressed ? 0.985 : 1 }],
@@ -117,7 +146,7 @@ export function Button({
             justifyContent: 'center',
             flexDirection: 'row',
             gap: spacing.sm,
-            borderRadius: radius.md,
+            borderRadius,
             paddingHorizontal: compact ? spacing.md : spacing.lg,
           }}
           // A pale wash of the brand orange, chosen by the owner over a solid
@@ -151,7 +180,7 @@ export function Button({
           gap: spacing.sm,
           borderWidth: variant === 'ghost' ? 0 : 1,
           borderColor: variant === 'primary' ? palette.primary : variant === 'danger' ? palette.danger : palette.borderStrong,
-          borderRadius: radius.md,
+          borderRadius,
           backgroundColor,
           paddingHorizontal: compact ? spacing.md : spacing.lg,
           // A ghost button has no surface of its own, so a lift under it would
@@ -483,12 +512,53 @@ export function SectionHeader({
   );
 }
 
-export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }) {
+export function StatusBadge({
+  label,
+  tone = 'neutral',
+  emphasis = 'soft',
+}: {
+  label: string;
+  tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+  /** `strong` fills the chip with the tone's own colour and drops the dot.
+   *  For a chip that has to hold its own inside a row of content - in front of
+   *  an item name, say - where the soft wash reads as decoration and the dot
+   *  is a second thing to look at for a word that is already right there. */
+  emphasis?: 'soft' | 'strong';
+}) {
   const style = statusTone(tone);
+  const strong = emphasis === 'strong';
   return (
-    <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.md, paddingHorizontal: 8, paddingVertical: 5, ...style }}>
-      <View style={{ width: 6, height: 6, borderRadius: radius.full, backgroundColor: style.color }} />
-      <Text selectable style={{ color: style.color, fontSize: 12, fontWeight: '700' }}>{label}</Text>
+    <View
+      style={{
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        borderRadius: radius.md,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        ...style,
+        // A strong chip sits inline with content, so it is built to the text
+        // rather than to a row of its own: tighter padding, and an explicit
+        // line height, because Kanit's own line box is what made the filled
+        // version read as a block.
+        ...(strong
+          ? { backgroundColor: style.color, borderColor: style.color, paddingHorizontal: 7, paddingVertical: 1 }
+          : null),
+      }}
+    >
+      {strong ? null : <View style={{ width: 6, height: 6, borderRadius: radius.full, backgroundColor: style.color }} />}
+      <Text
+        selectable
+        style={{
+          color: strong ? palette.primaryText : style.color,
+          fontSize: 12,
+          fontWeight: '700',
+          ...(strong ? { lineHeight: 16 } : null),
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }

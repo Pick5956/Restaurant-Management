@@ -1,5 +1,10 @@
+// Square, 1:1. Menu photos were framed 4:3 (1200x900) to match the web card
+// until 2026-09-11, when the owner moved the whole contract to a square crop:
+// a dish is round on a plate, and a square frame gives it the same room top to
+// bottom as side to side. Both platforms crop, export and display at this
+// ratio - a menu image is one contract, not a per-screen decision.
 export const MENU_IMAGE_OUTPUT_WIDTH = 1200;
-export const MENU_IMAGE_OUTPUT_HEIGHT = 900;
+export const MENU_IMAGE_OUTPUT_HEIGHT = 1200;
 export const MENU_IMAGE_OUTPUT_MIME_TYPE = 'image/webp';
 export const MENU_IMAGE_OUTPUT_QUALITY = 0.9;
 export const MENU_IMAGE_BACKGROUND_PROCESSING_MIME_TYPE = 'image/png';
