@@ -2,7 +2,7 @@ import type { Ingredient, IngredientInput, IngredientMetadataInput } from '@/src
 
 export const INGREDIENT_UNITS = [
   'กรัม',
-  'กก.',
+  'กิโลกรัม',
   'มิลลิลิตร',
   'ลิตร',
   'ชิ้น',
@@ -61,7 +61,7 @@ function nonNegativeNumber(value: string, fallback = 0) {
 }
 
 export function ingredientToFormValues(item: Ingredient): IngredientFormValues {
-  const unit = item.unit?.trim() || 'กก.';
+  const unit = item.unit?.trim() || 'กิโลกรัม';
 
   return {
     name: item.name || '',

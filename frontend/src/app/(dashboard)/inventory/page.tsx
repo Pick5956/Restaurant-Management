@@ -73,7 +73,7 @@ type BulkRow = {
   cost_per_unit: number;
   costText?: string;
 };
-const bulkEmptyRow: BulkRow = { name: "", category_id: 0, unit: "กก.", stock: 0, min_stock: 0, cost_per_unit: 0 };
+const bulkEmptyRow: BulkRow = { name: "", category_id: 0, unit: "กิโลกรัม", stock: 0, min_stock: 0, cost_per_unit: 0 };
 
 // Column-header sort glyph: an up- and a down-triangle stacked. The active sort
 // direction's triangle is solid; the other stays faint.
@@ -195,7 +195,7 @@ function buildCopy(language: "th" | "en") {
         category: "หมวดหมู่",
         stockUnit: "หน่วย",
         yieldPercent: "Yield %",
-        yieldHint: "% วัตถุดิบที่ใช้ได้จริงหลังหั่น/ทำความสะอาด เช่น 80% = ซื้อ 1 กก. ใช้ได้จริง 800 กรัม ระบบใช้ค่านี้คำนวณต้นทุนต่อจานให้แม่นขึ้น",
+        yieldHint: "% วัตถุดิบที่ใช้ได้จริงหลังหั่น/ทำความสะอาด เช่น 80% = ซื้อ 1 กิโลกรัม ใช้ได้จริง 800 กรัม ระบบใช้ค่านี้คำนวณต้นทุนต่อจานให้แม่นขึ้น",
         storageType: "ประเภทการเก็บ",
         imageUrl: "ลิงก์รูปภาพ",
         uncategorized: "ยังไม่จัดหมวด",

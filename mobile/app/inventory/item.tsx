@@ -53,7 +53,7 @@ export default function InventoryItemScreen() {
   const [sku, setSku] = useState('');
   const [categoryId, setCategoryId] = useState('none');
   const [imageUrl, setImageUrl] = useState('');
-  const [unit, setUnit] = useState('กก.');
+  const [unit, setUnit] = useState('กิโลกรัม');
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
   // The reorder level as a share of the shelf's maximum. Zero means the

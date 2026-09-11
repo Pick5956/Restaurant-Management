@@ -1,13 +1,13 @@
 import type { AdjustStockInput, Ingredient, IngredientInput } from "@/src/types/ingredient";
 import { localeForLanguage } from "@/src/lib/format";
 
-export const UNITS = ["กรัม", "กก.", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
+export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {
   name: "",
   category_id: 0,
-  unit: "กก.",
+  unit: "กิโลกรัม",
   stock: 0,
   min_stock: 0,
   min_percent: 0,

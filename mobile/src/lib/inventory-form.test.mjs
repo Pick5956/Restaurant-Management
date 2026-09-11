@@ -16,7 +16,7 @@ const completeForm = {
   sku: '  FISH-01  ',
   categoryId: '7',
   imageUrl: '  https://example.com/salmon.jpg  ',
-  unit: 'กก.',
+  unit: 'กิโลกรัม',
   stock: '8.25',
   minStock: '2',
   minPercent: '0',
@@ -33,7 +33,7 @@ test('builds the complete metadata update without including stock', () => {
     sku: 'FISH-01',
     category_id: 7,
     image_url: 'https://example.com/salmon.jpg',
-    unit: 'กก.',
+    unit: 'กิโลกรัม',
     min_stock: 2,
     // Always present, never omitted: this form owns the choice between a share
     // of the shelf's maximum and a plain quantity, so leaving the field out
@@ -54,7 +54,7 @@ test('round-trips every editable backend metadata field without changing stock',
     sku: 'FISH-01',
     category_id: 7,
     image_url: 'https://example.com/salmon.jpg',
-    unit: 'กก.',
+    unit: 'กิโลกรัม',
     stock: 8.25,
     min_stock: 2,
     cost_per_unit: 315.75,
@@ -99,14 +99,14 @@ test('uses backend-compatible metadata defaults without discarding the stock uni
   });
 
   assert.equal(payload.category_id, undefined);
-  assert.equal(payload.unit, 'กก.');
+  assert.equal(payload.unit, 'กิโลกรัม');
   assert.equal(payload.storage_type, 'room_temp');
 });
 
 test('matches the canonical Thai unit choices used by the web inventory form', () => {
   assert.deepEqual(INGREDIENT_UNITS, [
     'กรัม',
-    'กก.',
+    'กิโลกรัม',
     'มิลลิลิตร',
     'ลิตร',
     'ชิ้น',
@@ -123,7 +123,8 @@ test('matches the canonical Thai unit choices used by the web inventory form', (
 
 test('keeps a legacy custom unit available without duplicating canonical units', () => {
   assert.deepEqual(ingredientUnitOptions('ลัง'), ['ลัง', ...INGREDIENT_UNITS]);
-  assert.deepEqual(ingredientUnitOptions('กก.'), INGREDIENT_UNITS);
+  assert.deepEqual(ingredientUnitOptions('กิโลกรัม'), INGREDIENT_UNITS);
+  assert.deepEqual(ingredientUnitOptions('กก.'), ['กก.', ...INGREDIENT_UNITS]);
 });
 
 test('falls back to the canonical kilogram unit when backend data has no unit', () => {
@@ -142,7 +143,7 @@ test('falls back to the canonical kilogram unit when backend data has no unit', 
     storage_type: 'room_temp',
   });
 
-  assert.equal(values.unit, 'กก.');
+  assert.equal(values.unit, 'กิโลกรัม');
 });
 
 test('rejects a blank stock adjustment as required', () => {
