@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Filter,
   History,
+  MoreHorizontal,
   Pencil,
   Plus,
   RotateCcw,
@@ -385,6 +386,10 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState<number>(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersClosing, setFiltersClosing] = useState(false);
+  // Export, categories and bulk add: three things an owner reaches for now and
+  // then, which between them pushed the primary button onto a row of its own.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreClosing, setMoreClosing] = useState(false);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<"" | "name" | "category" | "stock" | "price">("");
@@ -522,7 +527,10 @@ export default function InventoryPage() {
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [canView, canManage]);
+    // `loading` and `isMobile` belong here: the toolbar is not in the tree during
+    // the skeleton or the phone layout, so without them the effect ran once
+    // against a null ref and the height stayed 0 for the life of the page.
+  }, [canView, canManage, loading, isMobile]);
 
   // `/inventory?adjust=<id>` — the dashboard's stock-risk cards link straight
   // to the adjustment for the ingredient they warned about. Read off the URL
@@ -615,10 +623,25 @@ export default function InventoryPage() {
     }
   }
 
+  // One row of the overflow menu. Roomier than a toolbar button, because a menu
+  // is read down a column rather than scanned across a row.
+  const moreItemCls =
+    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:text-slate-300 dark:hover:bg-gray-800";
+
+  // The toolbar above already stays put; without this the column titles slid out
+  // from under it and the list scrolled on with no headings at all. `top` is the
+  // toolbar's measured height — it wraps to a different number of rows per width
+  // — plus the mobile top bar below lg, where the toolbar is fixed beneath it.
+  const stickyThCls =
+    // The underline is an inset shadow, not a border: this table collapses its
+    // borders, and a collapsed border belongs to the table rather than to the
+    // cell, so it stays behind while the cell sticks.
+    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 bg-white px-4 py-2.5 shadow-[inset_0_-1px_0_#e2e8f0] dark:bg-gray-900 dark:shadow-[inset_0_-1px_0_#1f2937] lg:top-[var(--inv-th-top,0px)]";
+
   const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
     const active = sortKey === key;
     return (
-      <th className={`px-4 py-2.5 ${alignRight ? "text-right" : ""}`}>
+      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""}`}>
         <button
           type="button"
           onClick={() => toggleSort(key)}
@@ -1011,6 +1034,23 @@ export default function InventoryPage() {
       setFiltersClosing(false);
     }, 260);
   }
+
+  function closeMore() {
+    if (moreClosing) return;
+    setMoreClosing(true);
+    window.setTimeout(() => {
+      setMoreOpen(false);
+      setMoreClosing(false);
+    }, 260);
+  }
+
+  /** Runs a menu action and shuts the menu behind it. */
+  function fromMore(run: () => void) {
+    return () => {
+      closeMore();
+      run();
+    };
+  }
   const modalBackdrop = useBackdropClose(closeModal);
   const categoryBackdrop = useBackdropClose(closeCategoryModal);
   const deleteBackdrop = useBackdropClose(closeDeleteModal);
@@ -1211,46 +1251,70 @@ export default function InventoryPage() {
               {formatCurrency(totalValue, lang)}
             </span>
           </div>
-          <button
-            type="button"
-            disabled={stockExporting}
-            onClick={() => void handleExportStock()}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <Download className="h-4 w-4" />
-            {stockExporting
-              ? lang === "th"
-                ? "กำลังสร้างไฟล์…"
-                : "Preparing…"
-              : lang === "th"
-                ? "ส่งออก CSV"
-                : "Export CSV"}
-          </button>
-          {canManage && (
+          <div className="relative shrink-0">
             <button
               type="button"
-              onClick={() => {
-                setCategoryError("");
-                setCategoryName("");
-                setCategoryModalClosing(false);
-                setCategoryModalOpen(true);
-              }}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => (moreOpen ? closeMore() : setMoreOpen(true))}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold transition ${
+                moreOpen
+                  ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              }`}
             >
-              <Tags className="h-4 w-4" />
-              {lang === "th" ? "จัดการหมวด" : "Categories"}
+              <MoreHorizontal className="h-4 w-4" />
+              {lang === "th" ? "เพิ่มเติม" : "More"}
             </button>
-          )}
-          {canManage && (
-            <button
-              type="button"
-              onClick={openBulk}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-            >
-              <Plus className="h-4 w-4" />
-              {lang === "th" ? "หลายรายการ" : "Bulk add"}
-            </button>
-          )}
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={closeMore} />
+                <div
+                  role="menu"
+                  className={`${moreClosing ? "smooth-pop-exit" : "smooth-pop"} absolute right-0 top-full z-50 mt-2 w-56 origin-top-right overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl dark:border-gray-800 dark:bg-gray-900`}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={stockExporting}
+                    onClick={fromMore(() => void handleExportStock())}
+                    className={moreItemCls}
+                  >
+                    <Download className="h-4 w-4 text-slate-400" />
+                    {stockExporting
+                      ? lang === "th"
+                        ? "กำลังสร้างไฟล์…"
+                        : "Preparing…"
+                      : lang === "th"
+                        ? "ส่งออก CSV"
+                        : "Export CSV"}
+                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={fromMore(() => {
+                        setCategoryError("");
+                        setCategoryName("");
+                        setCategoryModalClosing(false);
+                        setCategoryModalOpen(true);
+                      })}
+                      className={moreItemCls}
+                    >
+                      <Tags className="h-4 w-4 text-slate-400" />
+                      {lang === "th" ? "จัดการหมวด" : "Categories"}
+                    </button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" onClick={fromMore(openBulk)} className={moreItemCls}>
+                      <Plus className="h-4 w-4 text-slate-400" />
+                      {lang === "th" ? "เพิ่มหลายรายการ" : "Bulk add"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           {canManage && (
             <button
               type="button"
@@ -1314,7 +1378,11 @@ export default function InventoryPage() {
 
           <div className="grid gap-4">
             <section className="rounded-md border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <div className="overflow-x-auto">
+              {/* clip, not auto: `overflow-x: auto` makes this a scroll container,
+                  and the sticky column titles would then anchor to it instead of
+                  to the page — which is to say, not stick at all. Below md the
+                  phone layout renders instead of this table. */}
+              <div className="overflow-x-auto md:overflow-x-clip">
                 {filtered.length === 0 ? (
                   <div className="m-2 flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-slate-200 px-6 py-12 text-center dark:border-gray-800">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-100 text-slate-400 dark:bg-gray-800 dark:text-slate-500">
@@ -1327,9 +1395,12 @@ export default function InventoryPage() {
                 ) : (
                   <table className="w-full min-w-[640px] border-collapse text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:border-gray-800 dark:text-slate-500">
+                      <tr
+                        className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500"
+                        style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}
+                      >
                         {canManage && (
-                          <th className="w-12 px-4 py-2.5 text-center align-middle">
+                          <th className={`${stickyThCls} w-12 text-center align-middle`}>
                             <input
                               type="checkbox"
                               aria-label="select all"
@@ -1353,7 +1424,7 @@ export default function InventoryPage() {
                         {sortableTh("stock", copy.current)}
                         {sortableTh("category", copy.category)}
                         {sortableTh("price", copy.costPerUnit, true)}
-                        <th className="px-4 py-2.5" />
+                        <th className={stickyThCls} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -1663,21 +1734,27 @@ export default function InventoryPage() {
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
                   <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.min_stock}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          min_stock: parseFloat(event.target.value) || 0,
-                          // Typed by hand: a quantity the owner means, not a
-                          // share of the shelf, so it stops tracking the maximum.
-                          min_percent: 0,
-                        }))
-                      }
-                      className={`${inputCls} w-32 shrink-0`}
-                    />
+                    {/* The width lives on the wrapper, not on the input: inputCls
+                        already carries w-full, and two width utilities on one
+                        element are settled by stylesheet order, not by the order
+                        they are written in. */}
+                    <div className="w-32 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.min_stock}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            min_stock: parseFloat(event.target.value) || 0,
+                            // Typed by hand: a quantity the owner means, not a
+                            // share of the shelf, so it stops tracking the maximum.
+                            min_percent: 0,
+                          }))
+                        }
+                        className={inputCls}
+                      />
+                    </div>
                     {editingMaxStock > 0 ? (
                       <>
                         <input
