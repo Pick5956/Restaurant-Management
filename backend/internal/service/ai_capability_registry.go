@@ -57,6 +57,7 @@ var aiReadCapabilities = []aiReadCapability{
 	{AIToolGetAverageOrderValue, ResolvedPlanDomainSales, []ResolvedPlanMetric{ResolvedPlanMetricAverageOrder}, 3, "", ResolvedPlanOperationRetrieve},
 	{AIToolGetOrderTypeBreakdown, ResolvedPlanDomainSales, []ResolvedPlanMetric{ResolvedPlanMetricOrderTypeShare, ResolvedPlanMetricRevenue, ResolvedPlanMetricOrderCount}, 4, "", ResolvedPlanOperationBreakdown},
 	{AIToolGetPeakPeriods, ResolvedPlanDomainSales, []ResolvedPlanMetric{ResolvedPlanMetricPeakPeriod}, 5, "", ResolvedPlanOperationBreakdown},
+	{AIToolGetBestSalesDay, ResolvedPlanDomainSales, []ResolvedPlanMetric{ResolvedPlanMetricRevenue, ResolvedPlanMetricOrderCount}, 6, "", ResolvedPlanOperationRetrieve},
 	// Store-level profit is revenue minus cost summarised across the whole store,
 	// so it sits in sales beside the revenue summary and is told apart from it by
 	// carrying the profit / margin / cost metrics the revenue summary does not.

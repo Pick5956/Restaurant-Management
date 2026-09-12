@@ -95,6 +95,12 @@ func ExecuteReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 		}
 		trend := ComputeSalesTrend(snapshot.SalesDays)
 		return AIToolResult{Tool: tool, SalesTrend: &trend}, nil
+	case AIToolGetBestSalesDay:
+		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
+			return AIToolResult{Tool: tool}, nil
+		}
+		best := ComputeBestSalesDay(snapshot.SalesDays)
+		return AIToolResult{Tool: tool, BestSalesDay: &best}, nil
 	case AIToolGetAverageOrderValue:
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 			return AIToolResult{Tool: tool}, nil

@@ -313,6 +313,25 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 				joyboyNum(changePct), direction, "7วันล่าสุด"),
 		}), true
 
+	case AIToolGetBestSalesDay:
+		best := result.BestSalesDay
+		if best == nil || !best.HasData {
+			return joyboyNoData("no_paid_sales_in_period"), true
+		}
+		// Both ends, always. Asked for the best day the model would otherwise
+		// reach for the worst one from somewhere, and the two figures are one
+		// query apart.
+		return joyboyJoin([]string{
+			window,
+			fmt.Sprintf("days_in_window=%d days_with_sales=%d", best.Days, best.DaysWithSales),
+			fmt.Sprintf("best_day=%s weekday=%s revenue=%s orders=%d",
+				best.BestDate, thaiWeekdayName(int(best.BestWeekday)), joyboyNum(best.BestRevenue), best.BestOrders),
+			fmt.Sprintf("worst_day=%s weekday=%s revenue=%s orders=%d",
+				best.WorstDate, thaiWeekdayName(int(best.WorstWeekday)), joyboyNum(best.WorstRevenue), best.WorstOrders),
+			"note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ห้ามตอบเป็น \"วันพุธ\" เฉย ๆ ให้บอกวันที่ด้วย " +
+				"วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด",
+		}), true
+
 	case AIToolGetAverageOrderValue:
 		average := result.AverageOrderValue
 		if average == nil || average.Orders == 0 {

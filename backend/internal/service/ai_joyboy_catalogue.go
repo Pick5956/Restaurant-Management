@@ -56,6 +56,11 @@ var joyboyToolGuide = map[AIToolName]string{
 		"ใช้ตอบเฉพาะเมื่อผู้ใช้ไม่ได้ระบุช่วงเวลาเลย เช่น ยอดขายดีขึ้นหรือแย่ลง ช่วงนี้เป็นไง " +
 		"ถ้าผู้ใช้เอ่ยช่วงเวลาใด ๆ ก็ตาม (เทียบเมื่อวาน เทียบเดือนที่แล้ว เทียบปีที่แล้ว) " +
 		"ให้ใช้ get_sales_for_period แทนเสมอ เพราะตัวนั้นเทียบช่วงที่ผู้ใช้ระบุได้จริง",
+	AIToolGetBestSalesDay: "วันที่ (วัน เดือน ปี) ที่ขายได้มากที่สุดและน้อยที่สุดใน 30 วันล่าสุด " +
+		"พร้อมยอดเงินและจำนวนบิลของวันนั้น ใช้ตอบคำถามที่ถามหา \"วันที่\" เช่น วันไหนขายดีที่สุด " +
+		"วันที่เท่าไหร่ขายดีสุด วันไหนขายแย่สุด ยอดสูงสุดที่เคยทำได้ในรอบนี้คือวันไหน " +
+		"ต่างจาก get_peak_periods ที่บอกแค่ \"วันในสัปดาห์\" (จันทร์/อังคาร) และนับเป็นจำนวนบิล ไม่ใช่เงิน " +
+		"ถ้าคำถามถามถึงวันที่เจาะจงหรือถามเป็นยอดเงิน ให้ใช้ตัวนี้",
 	AIToolGetAverageOrderValue: "ยอดขายเฉลี่ยต่อหนึ่งออเดอร์ ของ \"30 วันล่าสุด\" เท่านั้น ช่วงนี้ตายตัว " +
 		"ใช้ตอบเฉพาะเมื่อผู้ใช้ไม่ได้ระบุช่วงเวลาเลย เช่น ลูกค้าจ่ายเฉลี่ยคนละเท่าไหร่ ยอดต่อบิลเท่าไหร่ " +
 		"ถ้าผู้ใช้เอ่ยช่วงเวลาใด ๆ (เมื่อวาน สัปดาห์ที่แล้ว เดือนที่แล้ว กรกฎาคม) " +
@@ -399,6 +404,7 @@ var joyboyToolGroups = []struct {
 	{"ยอดขายและกำไร", []AIToolName{
 		AIToolGetSalesSummary, AIToolGetSalesForPeriod, AIToolGetSalesTrend,
 		AIToolGetAverageOrderValue, AIToolGetOrderTypeBreakdown, AIToolGetPeakPeriods,
+		AIToolGetBestSalesDay,
 		AIToolGetProfitSummary, joyboyToolProfitByMonth, joyboyToolSalesForecast, joyboyToolPaymentMix,
 		joyboyToolCancelledOrders,
 	}},
