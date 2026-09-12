@@ -415,11 +415,15 @@ func (r *AIRepository) SalesCoverage(restaurantID uint) (AISalesCoverage, error)
 			COUNT(DISTINCT TO_CHAR(completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')) AS days,
 			COUNT(*) AS orders,
 			COALESCE(SUM(grand_total), 0) AS revenue`).
+		// Capped at this minute like every other sales read: the demo seeder
+		// writes the whole day up front, and "ยอดขายรวมตั้งแต่เปิดร้าน" carried
+		// this evening's bills before they had happened.
 		Where(
-			"restaurant_id = ? AND status = ? AND payment_status = ? AND completed_at IS NOT NULL",
+			"restaurant_id = ? AND status = ? AND payment_status = ? AND completed_at IS NOT NULL AND completed_at <= ?",
 			restaurantID,
 			entity.OrderStatusCompleted,
 			entity.PaymentStatusPaid,
+			BangkokNow(),
 		).
 		Scan(&res).Error
 	return res, err

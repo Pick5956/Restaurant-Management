@@ -48,6 +48,36 @@ func (r *AIRepository) SalesByDayForRange(restaurantID uint, start, end time.Tim
 	return rows, err
 }
 
+// AIHourSales is one hour of the day across the window, in money.
+type AIHourSales struct {
+	Hour    int     `json:"hour"`
+	Orders  int64   `json:"orders"`
+	Revenue float64 `json:"revenue"`
+}
+
+// RevenueByHourForRange is paid revenue per hour of the day, over the window.
+//
+// PeakSalesByHourForRange already exists, but it counts every non-cancelled
+// bill by the hour it was opened — the right measure for "when is it busy".
+// Asked "ช่วงเวลาไหนทำเงินให้ร้านมากที่สุด" the assistant answered from it with
+// a bill count, for a question about baht. This one is the money question's
+// own read: paid bills, by the hour the bill closed, same as every sales total.
+func (r *AIRepository) RevenueByHourForRange(restaurantID uint, start, end time.Time) ([]AIHourSales, error) {
+	var rows []AIHourSales
+	err := r.db.Model(&entity.Order{}).
+		Select("EXTRACT(HOUR FROM completed_at AT TIME ZONE 'Asia/Bangkok')::int AS hour, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
+		Where(
+			"restaurant_id = ? AND completed_at >= ? AND completed_at < ? AND status = ? AND payment_status = ?",
+			restaurantID, start, end,
+			entity.OrderStatusCompleted,
+			entity.PaymentStatusPaid,
+		).
+		Group("hour").
+		Order("hour asc").
+		Scan(&rows).Error
+	return rows, err
+}
+
 // SalesByStaffForRange ranks the people who closed the bills, by money taken.
 //
 // The join is left so a bill whose staff record was removed still counts toward

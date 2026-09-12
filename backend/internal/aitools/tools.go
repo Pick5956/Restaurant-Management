@@ -99,7 +99,11 @@ func ExecuteReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 			return AIToolResult{Tool: tool}, nil
 		}
-		best := ComputeBestSalesDay(snapshot.SalesDays)
+		// The snapshot window opens at this minute thirty days ago (see
+		// snapshot_build.go), so its first date and today are both partial.
+		now := repository.BangkokNow()
+		best := ComputeBestSalesDayAsOf(snapshot.SalesDays, now.Format("2006-01-02"),
+			now.AddDate(0, 0, -int(AnalysisWindowDays)).Format("2006-01-02"))
 		return AIToolResult{Tool: tool, BestSalesDay: &best}, nil
 	case AIToolGetAverageOrderValue:
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {

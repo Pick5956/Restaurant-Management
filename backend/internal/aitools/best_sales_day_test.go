@@ -80,3 +80,51 @@ func TestComputeBestSalesDayBreaksTiesOnTheEarlierDate(t *testing.T) {
 		t.Fatalf("worst day = %q, want the earlier 2026-09-02", result.WorstDate)
 	}
 }
+
+func TestComputeBestSalesDayAsOfLeavesTodayOutOfTheRanking(t *testing.T) {
+	days := []repository.AISalesSummary{
+		{OrderDate: "2026-09-10", Orders: 31, Revenue: 9322},
+		{OrderDate: "2026-09-11", Orders: 25, Revenue: 6448},
+		{OrderDate: "2026-09-12", Orders: 13, Revenue: 3184}, // today, half over
+	}
+	got := ComputeBestSalesDayAsOf(days, "2026-09-12", "")
+	if !got.HasData || got.WorstDate != "2026-09-11" || got.BestDate != "2026-09-10" {
+		t.Fatalf("ranking = best %s worst %s", got.BestDate, got.WorstDate)
+	}
+	if !got.TodayExcluded || got.TodayDate != "2026-09-12" || got.TodayRevenue != 3184 || got.TodayOrders != 13 {
+		t.Fatalf("today = %+v", got)
+	}
+	if got.Days != 2 || got.DaysWithSales != 2 {
+		t.Fatalf("days = %d / %d, want 2 finished days", got.Days, got.DaysWithSales)
+	}
+	// A window that does not reach today is untouched.
+	past := ComputeBestSalesDayAsOf(days[:2], "2026-09-12", "")
+	if past.TodayExcluded || past.Days != 2 {
+		t.Fatalf("past window = %+v", past)
+	}
+	// Today alone: nothing finished to rank, but today is still reported.
+	only := ComputeBestSalesDayAsOf(days[2:], "2026-09-12", "")
+	if only.HasData || !only.TodayExcluded {
+		t.Fatalf("today only = %+v", only)
+	}
+}
+
+func TestComputeBestSalesDayAsOfDropsTheRollingWindowsFirstEvening(t *testing.T) {
+	// A 30-day window opened at 15:00 on 13 Aug: that date holds an evening.
+	days := []repository.AISalesSummary{
+		{OrderDate: "2026-08-13", Orders: 13, Revenue: 2936},
+		{OrderDate: "2026-08-14", Orders: 30, Revenue: 8000},
+		{OrderDate: "2026-08-15", Orders: 20, Revenue: 5000},
+	}
+	got := ComputeBestSalesDayAsOf(days, "", "2026-08-13")
+	if got.WorstDate != "2026-08-15" {
+		t.Fatalf("worst = %s, want the first finished day", got.WorstDate)
+	}
+	if !got.FirstPartialExcluded || got.FirstPartialDate != "2026-08-13" || got.TodayExcluded {
+		t.Fatalf("edges = %+v", got)
+	}
+	finished, edges := FinishedDays(days, "2026-08-13", "2026-08-15")
+	if len(finished) != 1 || finished[0].OrderDate != "2026-08-14" || !edges.FirstDropped || !edges.TodayDropped {
+		t.Fatalf("FinishedDays = %v / %+v", finished, edges)
+	}
+}

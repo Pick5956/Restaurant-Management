@@ -21,6 +21,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -144,7 +145,24 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 		if menu == nil || menu.Quantity <= 0 {
 			return joyboyNoData("margin_needs_recorded_sales_and_ingredient_costs"), true
 		}
-		return joyboyJoin([]string{window, joyboyMenuMarginLine(menu)}), true
+		lines := []string{window, joyboyMenuMarginLine(menu)}
+		if result.Tool == AIToolGetLowestMarginMenu {
+			// "เมนูไหนขาดทุน" reads this sheet. Handed only the thinnest-margin
+			// menu — still in profit — the model told the owner it could not
+			// fetch loss-making menus. The thinnest margin being positive IS the
+			// answer: nothing loses money. Same shape as the low-stock case.
+			if menu.Profit >= 0 {
+				lines = append(lines, "loss_making_menus=0",
+					"note=เมนูข้างบนคือเมนูที่กำไรน้อยที่สุดในช่วงนี้ และมันยังมีกำไรอยู่ "+
+						"แปลว่าไม่มีเมนูไหนขาดทุนเลย ถ้าถูกถามว่าเมนูไหนขาดทุน ให้ตอบว่าไม่มีเมนูขาดทุน "+
+						"แล้วบอกเมนูที่กำไรบางที่สุดแทน ห้ามตอบว่าดูไม่ได้หรือไม่มีข้อมูล เพราะระบบตรวจให้แล้ว")
+			} else {
+				lines = append(lines, "loss_making_menus=at_least_1",
+					"note=เมนูข้างบนขาดทุน (กำไรติดลบ) ใบนี้แสดงเฉพาะตัวที่แย่ที่สุด "+
+						"อาจมีเมนูอื่นขาดทุนอีกแต่ไม่ได้อยู่ในใบนี้ ห้ามสรุปว่ามีแค่ตัวเดียว")
+			}
+		}
+		return joyboyJoin(lines), true
 
 	case AIToolGetLowStockIngredients:
 		if len(result.LowStockIngredients) == 0 {
@@ -316,22 +334,33 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 
 	case AIToolGetBestSalesDay:
 		best := result.BestSalesDay
-		if best == nil || !best.HasData {
+		if best == nil || (!best.HasData && !best.TodayExcluded) {
 			return joyboyNoData("no_paid_sales_in_period"), true
+		}
+		if !best.HasData {
+			return joyboyJoin([]string{window, joyboyTodaySoFarLine(*best),
+				"note=มีแค่วันนี้ที่ยังไม่จบวัน ยังจัดอันดับวันดีสุด/แย่สุดไม่ได้"}), true
 		}
 		// Both ends, always. Asked for the best day the model would otherwise
 		// reach for the worst one from somewhere, and the two figures are one
 		// query apart.
-		return joyboyJoin([]string{
+		lines := []string{
 			window,
 			fmt.Sprintf("days_in_window=%d days_with_sales=%d", best.Days, best.DaysWithSales),
 			fmt.Sprintf("best_day=%s weekday=%s revenue=%s orders=%d",
 				best.BestDate, thaiWeekdayName(int(best.BestWeekday)), joyboyNum(best.BestRevenue), best.BestOrders),
 			fmt.Sprintf("worst_day=%s weekday=%s revenue=%s orders=%d",
 				best.WorstDate, thaiWeekdayName(int(best.WorstWeekday)), joyboyNum(best.WorstRevenue), best.WorstOrders),
-			"note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ห้ามตอบเป็น \"วันพุธ\" เฉย ๆ ให้บอกวันที่ด้วย " +
-				"วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด",
-		}), true
+		}
+		if best.TodayExcluded {
+			lines = append(lines, joyboyTodaySoFarLine(*best))
+		}
+		if best.FirstPartialExcluded {
+			lines = append(lines, joyboyFirstPartialLine(*best))
+		}
+		lines = append(lines, "note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ห้ามตอบเป็น \"วันพุธ\" เฉย ๆ ให้บอกวันที่ด้วย "+
+			"วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด")
+		return joyboyJoin(lines), true
 
 	case AIToolGetAverageOrderValue:
 		average := result.AverageOrderValue
@@ -1656,6 +1685,11 @@ func aiPaymentMethodThai(method string) string {
 func joyboyBestDayForPeriodBody(label string, best aitools.AIBestSalesDay) string {
 	lines := []string{"period=" + label, "scope=paid_bills_by_the_day_they_closed"}
 	if !best.HasData {
+		if best.TodayExcluded {
+			lines = append(lines, joyboyTodaySoFarLine(best),
+				"note=ช่วงนี้มีแค่วันนี้ที่ยังไม่จบวัน ยังจัดอันดับวันดีสุด/แย่สุดไม่ได้")
+			return joyboyJoin(lines)
+		}
 		lines = append(lines, joyboyNoData("no_paid_sales_in_period"))
 		return joyboyJoin(lines)
 	}
@@ -1665,8 +1699,58 @@ func joyboyBestDayForPeriodBody(label string, best aitools.AIBestSalesDay) strin
 			best.BestDate, thaiWeekdayName(int(best.BestWeekday)), joyboyNum(roundBaht(best.BestRevenue)), best.BestOrders),
 		fmt.Sprintf("worst_day=%s weekday=%s revenue=%s orders=%d",
 			best.WorstDate, thaiWeekdayName(int(best.WorstWeekday)), joyboyNum(roundBaht(best.WorstRevenue)), best.WorstOrders),
-		"note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ต้องบอกวันที่ด้วย วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด",
 	)
+	if best.TodayExcluded {
+		lines = append(lines, joyboyTodaySoFarLine(best))
+	}
+	if best.FirstPartialExcluded {
+		lines = append(lines, joyboyFirstPartialLine(best))
+	}
+	lines = append(lines, "note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ต้องบอกวันที่ด้วย วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด")
+	return joyboyJoin(lines)
+}
+
+// joyboyFirstPartialLine explains the missing first date of a rolling window.
+func joyboyFirstPartialLine(best aitools.AIBestSalesDay) string {
+	return fmt.Sprintf("first_day_partial=%s excluded_from_ranking=true note=ช่วงเริ่มนับกลางวันของวันนั้น จึงมีแค่บิลช่วงเย็น ไม่นับเป็นวันแย่สุด",
+		best.FirstPartialDate)
+}
+
+// joyboyTodaySoFarLine says how today is going and why it is not in the
+// ranking. Asked "เดือนนี้วันไหนขายแย่สุด" at three in the afternoon the answer
+// was "today, 3,184 บาท" — true of the paid total so far, and not a worst day.
+func joyboyTodaySoFarLine(best aitools.AIBestSalesDay) string {
+	return fmt.Sprintf("today_so_far=%s revenue=%s orders=%d excluded_from_ranking=true "+
+		"note=วันนี้ยังไม่จบวัน จึงไม่นับเป็นวันดีสุดหรือแย่สุด ถ้าจะพูดถึงวันนี้ให้บอกว่าเป็นยอดถึงตอนนี้",
+		best.TodayDate, joyboyNum(roundBaht(best.TodayRevenue)), best.TodayOrders)
+}
+
+// joyboyDailyRows is one line per calendar day of the window, in order, with
+// the days nothing was sold on written as zero rather than left out — a list
+// with a hole in it reads as a list with a mistake in it. Today, when the
+// window reaches it, is marked as still running.
+func joyboyDailyRows(p AIPeriod, days []repository.AISalesSummary, now time.Time) string {
+	byDate := make(map[string]repository.AISalesSummary, len(days))
+	for _, day := range days {
+		byDate[day.OrderDate] = day
+	}
+	loc := p.Start.Location()
+	today := now.In(loc).Format("2006-01-02")
+	last := joyboyQueryEnd(p.End)
+	lines := []string{"daily_rows=ยอดขายแต่ละวันของช่วงนี้ (บิลที่จ่ายแล้ว) ให้ไล่จากบรรทัดพวกนี้ตรง ๆ ห้ามใช้ค่าเฉลี่ยแทนยอดของแต่ละวัน"}
+	for cursor := p.Start; cursor.Before(last); cursor = cursor.AddDate(0, 0, 1) {
+		key := cursor.In(loc).Format("2006-01-02")
+		row, sold := byDate[key]
+		line := fmt.Sprintf("day=%s weekday=%s revenue=%s orders=%d",
+			key, thaiWeekdayName(int(cursor.In(loc).Weekday())), joyboyNum(roundBaht(row.Revenue)), row.Orders)
+		if !sold {
+			line += " note=ไม่มีบิลที่จ่ายแล้วในวันนี้"
+		}
+		if key == today {
+			line += " status=วันนี้ ยังไม่จบวัน"
+		}
+		lines = append(lines, line)
+	}
 	return joyboyJoin(lines)
 }
 
@@ -1708,6 +1792,270 @@ func joyboySalesByStaffBody(label string, rows []repository.AIStaffSales) string
 	}
 	lines = append(lines, "note=นับจากคนที่ปิดบิล ไม่ใช่คนที่รับออเดอร์เสมอไป ห้ามสรุปว่าใครทำงานดีหรือแย่จากตัวเลขนี้อย่างเดียว")
 	return joyboyJoin(lines)
+}
+
+// joyboySalesByTimeBody is the clock in money: revenue by the hour a bill
+// closed, and by weekday with per-day averages.
+//
+// Every line says baht, and the note says it again, because the sheet it
+// replaces for these questions counted bills — and "ช่วงเวลาไหนทำเงิน" was
+// answered "12:00 น. 127 บิล". The weekend comparison uses per-day averages:
+// a thirty-day window holds eight or nine weekend days against twenty-odd
+// weekdays, so the totals would say the working week wins by having more days.
+func joyboySalesByTimeBody(label string, hours []repository.AIHourSales, weekdays aitools.AISalesByWeekday, edges aitools.AIPartialEdges) string {
+	lines := []string{"period=" + label, "scope=paid_revenue_in_baht_by_hour_the_bill_closed_and_by_weekday", "unit=บาท"}
+	if edges.TodayDropped {
+		lines = append(lines, fmt.Sprintf("today_so_far=%s revenue=%s orders=%d excluded_from_weekday_averages=true note=วันนี้ยังไม่จบวัน จึงไม่นับในค่าเฉลี่ยรายวันในสัปดาห์",
+			edges.Today.OrderDate, joyboyNum(roundBaht(edges.Today.Revenue)), edges.Today.Orders))
+	}
+	if edges.FirstDropped {
+		lines = append(lines, fmt.Sprintf("first_day_partial=%s excluded_from_weekday_averages=true note=ช่วงเริ่มนับกลางวันของวันนั้น มีแค่บิลช่วงเย็น",
+			edges.First.OrderDate))
+	}
+	if !weekdays.HasData {
+		lines = append(lines, joyboyNoData("no_paid_sales_in_period"))
+		return joyboyJoin(lines)
+	}
+	peak := aitools.PeakHourByRevenue(hours)
+	if peak.HasData {
+		lines = append(lines, fmt.Sprintf("peak_hour=%02d:00-%02d:59 revenue=%s orders=%d share_of_revenue_pct=%s",
+			peak.Hour, peak.Hour, joyboyNum(roundBaht(peak.Revenue)), peak.Orders, joyboyNum(peak.SharePct)))
+	}
+	for _, hour := range hours {
+		lines = append(lines, fmt.Sprintf("hour=%02d:00 revenue=%s orders=%d",
+			hour.Hour, joyboyNum(roundBaht(hour.Revenue)), hour.Orders))
+	}
+	lines = append(lines,
+		fmt.Sprintf("best_weekday=%s avg_revenue_per_day=%s selling_days=%d",
+			thaiWeekdayName(int(weekdays.BestWeekday)),
+			joyboyNum(roundBaht(weekdays.Weekdays[weekdays.BestWeekday].AveragePerDay)),
+			weekdays.Weekdays[weekdays.BestWeekday].Days),
+		fmt.Sprintf("worst_weekday=%s avg_revenue_per_day=%s selling_days=%d",
+			thaiWeekdayName(int(weekdays.WorstWeekday)),
+			joyboyNum(roundBaht(weekdays.Weekdays[weekdays.WorstWeekday].AveragePerDay)),
+			weekdays.Weekdays[weekdays.WorstWeekday].Days))
+	for _, day := range weekdays.Weekdays {
+		if day.Days == 0 {
+			lines = append(lines, fmt.Sprintf("weekday=%s selling_days=0 note=ไม่มีวันขายในช่วงนี้", thaiWeekdayName(int(day.Weekday))))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("weekday=%s selling_days=%d revenue=%s avg_revenue_per_day=%s orders=%d",
+			thaiWeekdayName(int(day.Weekday)), day.Days, joyboyNum(roundBaht(day.Revenue)),
+			joyboyNum(roundBaht(day.AveragePerDay)), day.Orders))
+	}
+	lines = append(lines,
+		fmt.Sprintf("weekend=เสาร์-อาทิตย์ selling_days=%d revenue=%s avg_revenue_per_day=%s",
+			weekdays.WeekendDays, joyboyNum(roundBaht(weekdays.WeekendRevenue)), joyboyNum(roundBaht(weekdays.WeekendPerDay))),
+		fmt.Sprintf("weekday_group=จันทร์-ศุกร์ selling_days=%d revenue=%s avg_revenue_per_day=%s",
+			weekdays.WeekdayDays, joyboyNum(roundBaht(weekdays.WeekdayRevenue)), joyboyNum(roundBaht(weekdays.WeekdayPerDay))))
+	if weekdays.WeekendDays > 0 && weekdays.WeekdayDays > 0 && weekdays.WeekdayPerDay > 0 {
+		lines = append(lines, fmt.Sprintf("weekend_vs_weekday_avg_per_day_pct=%s",
+			joyboyNum((weekdays.WeekendPerDay/weekdays.WeekdayPerDay-1)*100)))
+	}
+	lines = append(lines, "note=ตัวเลขทุกตัวเป็นเงินบาท ไม่ใช่จำนวนบิล "+
+		"เทียบเสาร์อาทิตย์กับวันธรรมดาให้ใช้ค่าเฉลี่ยต่อวัน (avg_revenue_per_day) ไม่ใช่ยอดรวม เพราะจำนวนวันไม่เท่ากัน "+
+		"ชั่วโมงคือเวลาที่ปิดบิล")
+	return joyboyJoin(lines)
+}
+
+// joyboyBreakevenBody hands the model a breakeven it does not have to derive.
+//
+// The sheet carries the formula in Thai next to the figure so a follow-up
+// ("อยากได้กำไรวันละ 2,000") can be worked from the same numbers, and it says in
+// so many words that the expense per day is not the answer — the exact mistake
+// it exists to stop.
+func joyboyBreakevenBody(label string, be aitools.AIBreakeven) string {
+	lines := []string{"period=" + label, "scope=breakeven_from_paid_sales_ingredient_cost_and_recorded_expenses",
+		fmt.Sprintf("days_in_window=%d", be.Days)}
+	if !be.HasSales {
+		lines = append(lines, joyboyNoData("no_paid_sales_in_period"))
+		return joyboyJoin(lines)
+	}
+	lines = append(lines,
+		fmt.Sprintf("revenue=%s ingredient_cost=%s cost_ratio_pct=%s gross_margin_pct=%s",
+			joyboyNum(roundBaht(be.Revenue)), joyboyNum(roundBaht(be.Cost)),
+			joyboyNum(be.CostRatio*100), joyboyNum(be.MarginRatio*100)),
+		fmt.Sprintf("actual_revenue_per_day=%s", joyboyNum(roundBaht(be.RevenuePerDay))))
+	if be.ExpenseEntries == 0 {
+		lines = append(lines,
+			joyboyNoData("no_expenses_recorded_in_window"),
+			"note=ไม่มีรายจ่ายบันทึกไว้ในช่วงนี้ จึงยังคำนวณจุดคุ้มทุนไม่ได้ "+
+				"ให้บอกสัดส่วนต้นทุนวัตถุดิบที่มี แล้วแนะนำให้บันทึกรายจ่าย (ค่าเช่า ค่าแรง ค่าน้ำไฟ) ก่อน ห้ามประมาณจุดคุ้มทุนเอง")
+		return joyboyJoin(lines)
+	}
+	lines = append(lines, fmt.Sprintf("expenses_recorded=%s expense_entries=%d expense_per_day=%s",
+		joyboyNum(roundBaht(be.Expenses)), be.ExpenseEntries, joyboyNum(roundBaht(be.ExpensePerDay))))
+	if !be.Computable {
+		lines = append(lines, "breakeven=undefined",
+			"note=ต้นทุนวัตถุดิบเท่ากับหรือมากกว่ายอดขาย ขายเท่าไหร่ก็ไม่เหลืออะไรมาจ่ายรายจ่าย ต้องแก้ต้นทุนหรือราคาก่อน จึงยังไม่มีจุดคุ้มทุนให้บอก")
+		return joyboyJoin(lines)
+	}
+	status := "above_breakeven"
+	if be.NetPerDay < 0 {
+		status = "below_breakeven"
+	}
+	lines = append(lines,
+		fmt.Sprintf("breakeven_revenue_per_day=%s breakeven_revenue_for_window=%s",
+			joyboyNum(roundBaht(be.BreakevenPerDay)), joyboyNum(roundBaht(be.BreakevenTotal))),
+		fmt.Sprintf("current_net_profit_per_day=%s status=%s", joyboyNum(roundBaht(be.NetPerDay)), status),
+		fmt.Sprintf("gap_per_day=%s", joyboyNum(roundBaht(be.RevenuePerDay-be.BreakevenPerDay))),
+		fmt.Sprintf("how_computed=รายจ่ายต่อวัน %s ÷ กำไรขั้นต้น %s%% = %s บาทต่อวัน",
+			joyboyNum(roundBaht(be.ExpensePerDay)), joyboyNum(be.MarginRatio*100), joyboyNum(roundBaht(be.BreakevenPerDay))),
+		fmt.Sprintf("formula_for_target_profit=ยอดขายที่ต้องทำ = (กำไรที่ต้องการ + รายจ่ายของช่วงเดียวกัน) ÷ %s (สัดส่วนกำไรขั้นต้นเป็นทศนิยม)",
+			joyboyNum(be.MarginRatio)),
+	)
+	// The targets an owner actually names, worked out here. Given only the
+	// formula the model answered "กำไรเดือนละ 60,000" with 13,322 a day; the
+	// figure is 4,904. A row it can read beats arithmetic it has to do.
+	lines = append(lines, "targets_per_day=ยอดขายต่อวันที่ต้องทำ ถ้าอยากได้กำไรสุทธิต่อวันเท่านี้ (หลังหักวัตถุดิบและรายจ่ายต่อวันแล้ว)")
+	for _, target := range []float64{500, 1000, 2000, 3000, 5000} {
+		lines = append(lines, fmt.Sprintf("  profit_per_day=%s → sell_per_day=%s",
+			joyboyNum(target), joyboyNum(roundBaht(aitools.RevenueForTargetProfit(target, be.ExpensePerDay, be.MarginRatio)))))
+	}
+	lines = append(lines, "targets_per_month=ยอดขายที่ต้องทำ ถ้าอยากได้กำไรสุทธิต่อเดือน (30 วัน) เท่านี้ คิดรายจ่ายเดือนละ expense_per_day×30")
+	for _, target := range []float64{20000, 30000, 50000, 60000, 100000} {
+		month := aitools.RevenueForTargetProfit(target, be.ExpensePerDay*30, be.MarginRatio)
+		lines = append(lines, fmt.Sprintf("  profit_per_month=%s → sell_per_month=%s sell_per_day=%s",
+			joyboyNum(target), joyboyNum(roundBaht(month)), joyboyNum(roundBaht(month/30))))
+	}
+	lines = append(lines,
+		"note=จุดคุ้มทุนคือ breakeven_revenue_per_day ไม่ใช่ expense_per_day "+
+			"เพราะทุกบาทที่ขายต้องหักต้นทุนวัตถุดิบก่อนถึงจะเหลือไปจ่ายรายจ่ายอื่น "+
+			"ถ้าถามเป้ากำไร ให้อ่านจากตาราง targets_* ถ้าเป้าไม่อยู่ในตาราง ให้ใช้สูตร formula_for_target_profit "+
+			"ถ้ารายจ่ายบันทึกไม่ครบ จุดคุ้มทุนจริงจะสูงกว่านี้ ให้บอกเจ้าของด้วย")
+	return joyboyJoin(lines)
+}
+
+// joyboyMenuPeriodComparisonBody puts one menu's two windows side by side.
+//
+// Both windows are described by their dates and day counts because they are
+// rarely the same length — "เดือนนี้" on the twelfth against a whole August —
+// and a raw total would call a half-month a collapse. The per-day figures are
+// the fair comparison, and the note says so.
+func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, currentRows []repository.AIMenuMarginSummary,
+	previous AIPeriod, previousRows []repository.AIMenuMarginSummary, question string, history []AIConversationMessage) string {
+	if len(menus) == 0 {
+		return joyboyNoData("no_menu_items_recorded")
+	}
+	names := make([]string, len(menus))
+	for index, item := range menus {
+		names[index] = item.Name
+	}
+	found, partial := aiFindNamedRowsInThread(names, question, history)
+	if len(found) == 0 {
+		sample := make([]string, 0, 8)
+		for _, item := range menus {
+			sample = append(sample, item.Name)
+			if len(sample) == 8 {
+				break
+			}
+		}
+		return joyboyJoin([]string{
+			joyboyNoData("no_menu_named_in_question"),
+			"note=ยังไม่รู้ว่าถามถึงเมนูไหน ให้ถามกลับว่าหมายถึงเมนูไหน รายการข้างล่างเป็นแค่ตัวอย่างบางส่วน ไม่ใช่ทั้งหมด",
+			"menus_sample=" + strings.Join(sample, ", "),
+		})
+	}
+	currentDays := joyboyDaysCovered(current)
+	previousDays := joyboyDaysCovered(previous)
+	lines := []string{
+		"scope=one_menu_compared_across_two_periods",
+		fmt.Sprintf("current_period=%s from=%s to=%s days=%d%s", current.Label,
+			current.Start.Format("2006-01-02"), joyboyLastDateCovered(current), currentDays, joyboyStillRunningNote(current)),
+		fmt.Sprintf("previous_period=%s from=%s to=%s days=%d%s", previous.Label,
+			previous.Start.Format("2006-01-02"), joyboyLastDateCovered(previous), previousDays, joyboyStillRunningNote(previous)),
+	}
+	if partial {
+		lines = append(lines, "note=รายการด้านล่างคือตัวที่ชื่อใกล้เคียงกับที่ถาม ให้เลือกตัวที่ตรงแล้วตอบเฉพาะตัวนั้น ถ้าไม่แน่ใจให้ถามกลับ")
+	}
+	currentByName := joyboyMarginsByName(currentRows)
+	previousByName := joyboyMarginsByName(previousRows)
+	for _, index := range found {
+		name := menus[index].Name
+		now, soldNow := currentByName[aiNormalizeName(name)]
+		then, soldThen := previousByName[aiNormalizeName(name)]
+		lines = append(lines, "menu="+name)
+		lines = append(lines, joyboyComparisonSide("current", now, soldNow, currentDays))
+		lines = append(lines, joyboyComparisonSide("previous", then, soldThen, previousDays))
+		if soldNow && soldThen && then.Quantity > 0 {
+			lines = append(lines, fmt.Sprintf("change_qty_pct=%s change_revenue_pct=%s change_profit_pct=%s",
+				joyboyNum(joyboyPctChange(float64(then.Quantity), float64(now.Quantity))),
+				joyboyNum(joyboyPctChange(then.Revenue, now.Revenue)),
+				joyboyNum(joyboyPctChange(then.Profit, now.Profit))))
+			if currentDays > 0 && previousDays > 0 {
+				lines = append(lines, fmt.Sprintf("change_qty_per_day_pct=%s change_revenue_per_day_pct=%s",
+					joyboyNum(joyboyPctChange(float64(then.Quantity)/float64(previousDays), float64(now.Quantity)/float64(currentDays))),
+					joyboyNum(joyboyPctChange(then.Revenue/float64(previousDays), now.Revenue/float64(currentDays)))))
+			}
+		} else if !soldThen && soldNow {
+			lines = append(lines, "change=ช่วงก่อนหน้าไม่มียอดขายของเมนูนี้เลย เทียบเป็นเปอร์เซ็นต์ไม่ได้")
+		} else if soldThen && !soldNow {
+			lines = append(lines, "change=ช่วงนี้ยังไม่มียอดขายของเมนูนี้เลย ขายได้ 0 จาน")
+		} else {
+			lines = append(lines, "change=ทั้งสองช่วงไม่มียอดขายของเมนูนี้")
+		}
+	}
+	lines = append(lines, "note=ถ้าจำนวนวัน (days) สองช่วงไม่เท่ากัน ห้ามเทียบยอดรวมตรง ๆ ให้เทียบด้วย per_day และ change_*_per_day_pct "+
+		"และบอกเจ้าของว่าช่วงนี้ยังไม่ครบเดือน ตัวเลขทุกตัวเป็นบิลที่จ่ายแล้ว")
+	return joyboyJoin(lines)
+}
+
+func joyboyMarginsByName(rows []repository.AIMenuMarginSummary) map[string]repository.AIMenuMarginSummary {
+	byName := make(map[string]repository.AIMenuMarginSummary, len(rows))
+	for _, row := range rows {
+		byName[aiNormalizeName(row.MenuName)] = row
+	}
+	return byName
+}
+
+func joyboyComparisonSide(side string, row repository.AIMenuMarginSummary, sold bool, days int) string {
+	if !sold {
+		return side + "_qty=0 " + side + "_revenue=0.00 " + side + "_profit=0.00"
+	}
+	line := fmt.Sprintf("%s_qty=%d %s_revenue=%s %s_profit=%s",
+		side, row.Quantity, side, joyboyNum(roundBaht(row.Revenue)), side, joyboyNum(roundBaht(row.Profit)))
+	if days > 0 {
+		line += fmt.Sprintf(" %s_qty_per_day=%s %s_revenue_per_day=%s",
+			side, joyboyNum(float64(row.Quantity)/float64(days)), side, joyboyNum(roundBaht(row.Revenue/float64(days))))
+	}
+	return line
+}
+
+// joyboyDaysCovered is how many calendar days of the period have happened,
+// capped at this minute the way every query is. A week asked about on its
+// Saturday afternoon is six days, not five and a half rounded either way.
+func joyboyDaysCovered(period AIPeriod) int {
+	end := joyboyQueryEnd(period.End)
+	days := int(math.Ceil(end.Sub(period.Start).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	return days
+}
+
+// joyboyLastDateCovered is the last calendar day the query actually read:
+// today when the period reaches past this minute, otherwise the day before
+// the exclusive end.
+func joyboyLastDateCovered(period AIPeriod) string {
+	if now := repository.BangkokNow(); period.End.After(now) {
+		return now.Format("2006-01-02")
+	}
+	return period.End.AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+// joyboyStillRunningNote marks a window that has not finished yet.
+func joyboyStillRunningNote(period AIPeriod) string {
+	if period.End.After(repository.BangkokNow()) {
+		return " status=ยังไม่จบช่วง นับถึงตอนนี้"
+	}
+	return ""
+}
+
+func joyboyPctChange(before, after float64) float64 {
+	if before == 0 {
+		return 0
+	}
+	return (after - before) / before * 100
 }
 
 func joyboyPaymentMixBody(label string, mix []repository.AIPaymentMethodSummary, coverage repository.AIPaymentCoverage) string {

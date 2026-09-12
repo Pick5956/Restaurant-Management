@@ -258,6 +258,79 @@ func (t *joyboyTools) periodNamedIn(question string) (start, end time.Time, labe
 	return time.Time{}, time.Time{}, "", false
 }
 
+// comparisonWindows reads the two windows a comparison question is about.
+//
+// The model's period reader already returns two periods for "เดือนนี้กับเดือน
+// ที่แล้ว"; those are used as they came, later one first. A question that names
+// one period is compared against the window just before it — the previous
+// calendar month when the period is a calendar month, otherwise the same number
+// of days ending where this one starts. Naming none means the rolling window
+// against the thirty days before it. One model call either way, the same one
+// periodNamedIn would have made.
+func (t *joyboyTools) comparisonWindows(question string) (current, previous AIPeriod) {
+	now := repository.BangkokNow()
+	if request, ok := t.readPeriod(question, t.history, now); ok && strings.TrimSpace(request.clarify) == "" {
+		if len(request.periods) >= 2 {
+			current, previous = request.periods[0], request.periods[1]
+			if previous.Start.After(current.Start) {
+				current, previous = previous, current
+			}
+			aiStage("flow", "joyboy: comparison periods read by the model → %s vs %s", current.Label, previous.Label)
+			return current, previous
+		}
+		if len(request.periods) == 1 {
+			current = request.periods[0]
+			aiStage("flow", "joyboy: period read by the model → %s", current.Label)
+			return current, joyboyPeriodBefore(current)
+		}
+	}
+	if start, end, label, explicit := profitPeriod(question, now); explicit {
+		aiStage("flow", "joyboy: period read by the word list → %s", label)
+		current = AIPeriod{Label: label, Start: start, End: end}
+		return current, joyboyPeriodBefore(current)
+	}
+	current = AIPeriod{Label: analysisWindowLabel(), Start: now.AddDate(0, 0, -int(analysisWindowDays)), End: now}
+	return current, joyboyPeriodBefore(current)
+}
+
+// joyboyTodayKeyIfReached is today's date key when the window runs past this
+// minute, "" otherwise — the form ComputeBestSalesDayAsOf and FinishedDays take.
+// A default window ends at this very minute, so "reaches now" is end >= now,
+// not end > now; the strict form left today in the weekend average.
+func joyboyTodayKeyIfReached(end, now time.Time) string {
+	if !end.Before(now) {
+		return now.Format("2006-01-02")
+	}
+	return ""
+}
+
+// joyboyPartialFirstKey is the window's first date when the window opens part
+// way through it (a rolling "30 วันล่าสุด" starts at this minute thirty days
+// ago), "" when it opens at midnight.
+func joyboyPartialFirstKey(start time.Time) string {
+	if start.Hour() == 0 && start.Minute() == 0 && start.Second() == 0 {
+		return ""
+	}
+	return start.Format("2006-01-02")
+}
+
+// joyboyPeriodBefore is the window just before this one: the previous calendar
+// month for a calendar month, otherwise an equal number of days ending where
+// this one begins.
+func joyboyPeriodBefore(period AIPeriod) AIPeriod {
+	if period.Start.Day() == 1 && period.End.Equal(period.Start.AddDate(0, 1, 0)) {
+		start := period.Start.AddDate(0, -1, 0)
+		return AIPeriod{Label: "เดือนก่อนหน้า (" + start.Format("2006-01") + ")", Start: start, End: period.Start}
+	}
+	length := period.End.Sub(period.Start)
+	start := period.Start.Add(-length)
+	return AIPeriod{
+		Label: fmt.Sprintf("ช่วงก่อนหน้า (%s ถึง %s)", start.Format("2006-01-02"), period.Start.AddDate(0, 0, -1).Format("2006-01-02")),
+		Start: start,
+		End:   period.Start,
+	}
+}
+
 // runJoyboyExtraTool handles the joyboy-only tools that do not go through the
 // snapshot. handled is false for any other tool, so the caller falls through to
 // the normal read-only path.
@@ -561,9 +634,9 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
 			return "", false, true
 		}
-		best := aitools.ComputeBestSalesDay(days)
+		best := aitools.ComputeBestSalesDayAsOf(days, joyboyTodayKeyIfReached(end, now), joyboyPartialFirstKey(start))
 		return t.withPeriodCoverage(joyboyBestDayForPeriodBody(label, best),
-			label, start, end, !best.HasData), true, true
+			label, start, end, !best.HasData && !best.TodayExcluded), true, true
 
 	case joyboyToolSalesByStaff:
 		if t.service.repo == nil {
@@ -581,6 +654,97 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		}
 		return t.withPeriodCoverage(joyboySalesByStaffBody(label, staff),
 			label, start, end, len(staff) == 0), true, true
+
+	case joyboyToolSalesByTime:
+		if t.service.repo == nil {
+			return "", false, true
+		}
+		now := repository.BangkokNow()
+		start, end, label, explicit := t.periodNamedIn(question)
+		if !explicit {
+			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+		}
+		hours, err := t.service.repo.RevenueByHourForRange(t.restaurantID, start, joyboyQueryEnd(end))
+		if err != nil {
+			aiStage("warn", "joyboy: %s hours failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		days, err := t.service.repo.SalesByDayForRange(t.restaurantID, start, joyboyQueryEnd(end))
+		if err != nil {
+			aiStage("warn", "joyboy: %s days failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		// Weekday averages rank finished days only: today at three in the
+		// afternoon is not a Saturday's takings, and a rolling window's first
+		// date is an evening's.
+		finished, edges := aitools.FinishedDays(days, joyboyPartialFirstKey(start), joyboyTodayKeyIfReached(end, now))
+		weekdays := aitools.ComputeSalesByWeekday(finished)
+		return t.withPeriodCoverage(joyboySalesByTimeBody(label, hours, weekdays, edges),
+			label, start, end, !weekdays.HasData && !edges.TodayDropped), true, true
+
+	case joyboyToolBreakeven:
+		if t.service.repo == nil {
+			return "", false, true
+		}
+		now := repository.BangkokNow()
+		start, end, label, explicit := t.periodNamedIn(question)
+		if !explicit {
+			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+		}
+		queryEnd := joyboyQueryEnd(end)
+		metrics, err := t.service.repo.MenuMetricsForRange(t.restaurantID, start, queryEnd)
+		if err != nil {
+			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		var revenue, cost float64
+		for _, row := range metrics {
+			revenue += row.Revenue
+			cost += row.Cost
+		}
+		var expenses float64
+		var entries int64
+		if t.service.actionExpenses != nil {
+			from := start.Format("2006-01-02")
+			until := end.AddDate(0, 0, -1).Format("2006-01-02")
+			if !explicit {
+				until = end.Format("2006-01-02")
+			}
+			if list, err := t.service.actionExpenses.List(t.restaurantID, from, until, ""); err == nil && list != nil {
+				expenses, entries = list.Total, list.Entries
+			} else if err != nil {
+				aiStage("warn", "joyboy: %s expenses failed (%v) → sheet without expenses", tool, err)
+			}
+		}
+		// The days the window actually covers so far: a month asked about on its
+		// twelfth day is twelve days of bills, not thirty-one.
+		daysInWindow := joyboyDaysCovered(AIPeriod{Start: start, End: end})
+		breakeven := aitools.ComputeBreakeven(revenue, cost, expenses, entries, daysInWindow)
+		return t.withPeriodCoverage(joyboyBreakevenBody(label, breakeven),
+			label, start, end, !breakeven.HasSales), true, true
+
+	case joyboyToolMenuPeriodComparison:
+		if t.service.actionMenus == nil || t.service.repo == nil {
+			return "", false, true
+		}
+		menus, err := t.service.actionMenus.ListMenuItems(t.restaurantID, true, 0)
+		if err != nil {
+			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		current, previous := t.comparisonWindows(question)
+		currentRows, err := t.service.repo.MenuMetricsForRange(t.restaurantID, current.Start, joyboyQueryEnd(current.End))
+		if err != nil {
+			aiStage("warn", "joyboy: %s current window failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		previousRows, err := t.service.repo.MenuMetricsForRange(t.restaurantID, previous.Start, joyboyQueryEnd(previous.End))
+		if err != nil {
+			aiStage("warn", "joyboy: %s previous window failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		body := joyboyMenuPeriodComparisonBody(menus, current, currentRows, previous, previousRows, question, t.history)
+		return body, true, true
 
 	case joyboyToolPaymentMix:
 		if t.service.repo == nil {
@@ -772,6 +936,16 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 					return "", false, true
 				}
 				body := joyboySalesForPeriodBody(p, d, now)
+				// A window of a few days to two months gets one row per day.
+				// Without them "ขอดูยอดขายรายวันทีละวัน" read the per-day average
+				// off the sheet and listed it eleven times as eleven days.
+				if calendar, _, _ := joyboyPeriodDays(p, now); calendar >= 2 && calendar <= 62 {
+					if perDay, dayErr := t.service.repo.SalesByDayForRange(t.restaurantID, p.Start, joyboyQueryEnd(p.End)); dayErr == nil {
+						body = joyboyJoin([]string{body, joyboyDailyRows(p, perDay, now)})
+					} else {
+						aiStage("warn", "joyboy: %s could not read per-day rows (%v) → totals only", tool, dayErr)
+					}
+				}
 				// A window that reaches now has bills still open in it. "วันนี้ขาย
 				// ได้เท่าไหร่" at five in the afternoon answered 4,895 baht while
 				// 1,122 more sat unpaid on four tables — true of the paid total, and
@@ -1024,7 +1198,7 @@ func (s *AIService) askJoyboy(ctx context.Context, actor AIActorContext, request
 
 	assistant, err := joyboy.New(joyboyChat{service: s}, tools, func(format string, args ...any) {
 		aiStage("flow", format, args...)
-	})
+	}, joyboy.WithScope(joyboyScope{service: s}))
 	if err != nil {
 		return nil, err
 	}

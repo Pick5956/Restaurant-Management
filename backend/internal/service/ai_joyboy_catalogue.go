@@ -172,6 +172,23 @@ const joyboyToolBestDayForPeriod AIToolName = "get_best_sales_day_for_period"
 // used to reply that the system has no staff data at all.
 const joyboyToolSalesByStaff AIToolName = "get_sales_by_staff"
 
+// get_peak_periods counts bills by the hour a bill opened, which answers "when
+// is it busy". Asked "ช่วงเวลาไหนทำเงินให้ร้านมากที่สุด" the assistant read that
+// sheet and answered with a bill count, and asked "เสาร์อาทิตย์ขายดีกว่าวันธรรมดา
+// ไหม" it said it could not compare them. This is the money view of the same
+// clock: paid revenue by hour and by weekday, with weekend against weekday.
+const joyboyToolSalesByTime AIToolName = "get_sales_by_time"
+
+// Asked what a day has to sell to cover the bills, the assistant divided the
+// expenses by the days and answered 1,393 — the expense per day, not the sales
+// that cover it. The right figure divides by the margin too; Go does that.
+const joyboyToolBreakeven AIToolName = "get_breakeven"
+
+// get_menu_detail reads one menu over one window. "ผัดไทยเดือนนี้ขายดีขึ้นหรือแย่ลง
+// กว่าเดือนที่แล้ว" needs the same menu over two, and the assistant, holding
+// only this month's sheet, said it could not compare.
+const joyboyToolMenuPeriodComparison AIToolName = "get_menu_period_comparison"
+
 // The three lookup tools. Everything else here ranks or totals; these answer
 // about one named thing, which is the question an owner asks most and the one
 // the assistant used to answer worst — see ai_joyboy_detail.go for what went
@@ -260,10 +277,30 @@ var joyboyExtraTools = []AIToolName{
 	joyboyToolMenuProfitByCategory,
 	joyboyToolBestDayForPeriod,
 	joyboyToolSalesByStaff,
+	joyboyToolSalesByTime,
+	joyboyToolBreakeven,
+	joyboyToolMenuPeriodComparison,
 }
 
 // joyboyExtraToolGuide describes the extra tools, same shape as joyboyToolGuide.
 var joyboyExtraToolGuide = map[AIToolName]string{
+	joyboyToolSalesByTime: "ยอดขาย **เป็นเงินบาท** แยกตามชั่วโมงของวัน และแยกตามวันในสัปดาห์ (จันทร์–อาทิตย์) " +
+		"พร้อมค่าเฉลี่ยต่อวันของเสาร์-อาทิตย์เทียบกับวันธรรมดา ระบุช่วงเวลาได้ ค่าเริ่มต้น 30 วันล่าสุด " +
+		"ใช้ตอบ: ช่วงเวลาไหนทำเงินมากที่สุด กี่โมงขายได้เยอะสุด ช่วงไหนเงินเข้าเยอะ " +
+		"เสาร์อาทิตย์ขายดีกว่าวันธรรมดาไหม วันไหนในสัปดาห์ยอดเฉลี่ยสูงสุด/ต่ำสุด วันหยุดกับวันทำงานต่างกันแค่ไหน " +
+		"ต่างจาก get_peak_periods ที่นับเป็น **จำนวนบิล** (ความวุ่นวาย) ไม่ใช่เงิน — ถ้าคำถามพูดถึงเงิน ยอด รายได้ ให้ใช้ตัวนี้",
+	joyboyToolBreakeven: "จุดคุ้มทุน: วันหนึ่งต้องขายให้ได้กี่บาท กำไรขั้นต้นถึงจะครอบคลุมรายจ่ายที่บันทึกไว้ " +
+		"คิดจากสัดส่วนต้นทุนวัตถุดิบต่อยอดขายของช่วงนั้น (ทุกบาทที่ขายเหลือเท่าไหร่หลังหักวัตถุดิบ) " +
+		"แล้วหารรายจ่ายเฉลี่ยต่อวันด้วยสัดส่วนที่เหลือ พร้อมสูตรสำหรับเป้ากำไร ระบุช่วงเวลาได้ ค่าเริ่มต้น 30 วันล่าสุด " +
+		"ใช้ตอบ: ต้องขายวันละเท่าไหร่ถึงคุ้ม จุดคุ้มทุนอยู่ที่เท่าไหร่ ขายเท่านี้คุ้มไหม " +
+		"อยากได้กำไรเดือนละ X ต้องขายวันละเท่าไหร่ ตอนนี้เกินจุดคุ้มทุนไหม " +
+		"ห้ามใช้ get_expense_summary ตอบคำถามพวกนี้ เพราะรายจ่ายต่อวันไม่ใช่จุดคุ้มทุน (ยังไม่ได้หักต้นทุนวัตถุดิบ)",
+	joyboyToolMenuPeriodComparison: "เทียบเมนู **ตัวที่ผู้ใช้เอ่ยชื่อ** ระหว่างสองช่วงเวลา " +
+		"(เดือนนี้กับเดือนที่แล้ว สัปดาห์นี้กับสัปดาห์ก่อน สิงหาคมกับกรกฎาคม) " +
+		"บอกจำนวนจาน ยอดเงิน กำไร และเฉลี่ยต่อวันของแต่ละช่วง กับเปลี่ยนไปกี่เปอร์เซ็นต์ " +
+		"ถ้าเอ่ยช่วงเดียว จะเทียบกับช่วงก่อนหน้าที่ยาวเท่ากันให้เอง " +
+		"ใช้ตอบ: ผัดไทยเดือนนี้ขายดีขึ้นหรือแย่ลง เมนู X ตกลงไหม เมนูนี้เทียบเดือนก่อนเป็นยังไง ยอดเมนูนี้โตขึ้นกี่เปอร์เซ็นต์ " +
+		"ต่างจาก get_menu_detail ที่ดูช่วงเดียว และ get_sales_for_period ที่เทียบยอดทั้งร้านไม่ใช่รายเมนู",
 	joyboyToolBestDayForPeriod: "วันที่ (วัน เดือน ปี) ที่ขายได้มากที่สุดและน้อยที่สุด **ของช่วงเวลาที่ผู้ใช้ระบุ** พร้อมยอดเงินและจำนวนบิลของวันนั้น " +
 		"รับช่วงเวลาได้ทุกแบบ (สัปดาห์นี้ สัปดาห์ที่แล้ว เดือนนี้ เดือนที่แล้ว เดือนสิงหาคม 7 วันล่าสุด) " +
 		"ใช้ตอบเมื่อคำถามถามหาวันที่ **และเอ่ยช่วงเวลา** เช่น เดือนที่แล้ววันไหนขายดีสุด สัปดาห์นี้วันไหนดีสุด " +
@@ -419,7 +456,7 @@ var joyboyToolGroups = []struct {
 		AIToolGetTopSellingMenus, AIToolGetMenuRevenueRanking, AIToolGetSlowMovingMenus,
 		AIToolGetHighestMarginMenu, AIToolGetLowestMarginMenu, AIToolGetLowestCostMenu,
 		AIToolGetMostExpensiveMenu, AIToolGetMenuEngineering, joyboyToolMenuForPeriod,
-		joyboyToolMenuProfitByCategory,
+		joyboyToolMenuProfitByCategory, joyboyToolMenuPeriodComparison,
 	}},
 	{"โต๊ะและหน้าร้าน", []AIToolName{joyboyToolTableStatus, joyboyToolTableUsage, joyboyToolActiveOrders, joyboyToolCustomerCount}},
 	{"ยอดขายและกำไร", []AIToolName{
@@ -427,7 +464,8 @@ var joyboyToolGroups = []struct {
 		AIToolGetAverageOrderValue, AIToolGetOrderTypeBreakdown, AIToolGetPeakPeriods,
 		AIToolGetBestSalesDay,
 		AIToolGetProfitSummary, joyboyToolProfitByMonth, joyboyToolSalesForecast, joyboyToolPaymentMix,
-		joyboyToolCancelledOrders,
+		joyboyToolCancelledOrders, joyboyToolBestDayForPeriod, joyboyToolSalesByStaff,
+		joyboyToolSalesByTime, joyboyToolBreakeven,
 	}},
 	{"วัตถุดิบและสต๊อก", []AIToolName{
 		AIToolGetLowStockIngredients, AIToolGetIngredientReorderForecast, AIToolGetDeadStock,
