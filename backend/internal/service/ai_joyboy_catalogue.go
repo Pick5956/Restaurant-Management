@@ -162,6 +162,16 @@ const joyboyToolCustomerCount AIToolName = "get_customer_count"
 // promised to go and look — three runs, three promises, nothing ever fetched.
 const joyboyToolCancelledOrders AIToolName = "get_cancelled_orders"
 
+// get_best_sales_day answers the same question for the fixed thirty-day
+// snapshot; this one is for a window the owner named. Asked "สัปดาห์นี้วันไหน
+// ขายดีสุด" the assistant had nothing that could scope itself and answered
+// with a weekday counted in bills.
+const joyboyToolBestDayForPeriod AIToolName = "get_best_sales_day_for_period"
+
+// Every order carries a staff_id. Asked who sold the most, the assistant
+// used to reply that the system has no staff data at all.
+const joyboyToolSalesByStaff AIToolName = "get_sales_by_staff"
+
 // The three lookup tools. Everything else here ranks or totals; these answer
 // about one named thing, which is the question an owner asks most and the one
 // the assistant used to answer worst — see ai_joyboy_detail.go for what went
@@ -248,10 +258,21 @@ var joyboyExtraTools = []AIToolName{
 	joyboyToolPaymentMix,
 	joyboyToolTableUsage,
 	joyboyToolMenuProfitByCategory,
+	joyboyToolBestDayForPeriod,
+	joyboyToolSalesByStaff,
 }
 
 // joyboyExtraToolGuide describes the extra tools, same shape as joyboyToolGuide.
 var joyboyExtraToolGuide = map[AIToolName]string{
+	joyboyToolBestDayForPeriod: "วันที่ (วัน เดือน ปี) ที่ขายได้มากที่สุดและน้อยที่สุด **ของช่วงเวลาที่ผู้ใช้ระบุ** พร้อมยอดเงินและจำนวนบิลของวันนั้น " +
+		"รับช่วงเวลาได้ทุกแบบ (สัปดาห์นี้ สัปดาห์ที่แล้ว เดือนนี้ เดือนที่แล้ว เดือนสิงหาคม 7 วันล่าสุด) " +
+		"ใช้ตอบเมื่อคำถามถามหาวันที่ **และเอ่ยช่วงเวลา** เช่น เดือนที่แล้ววันไหนขายดีสุด สัปดาห์นี้วันไหนดีสุด " +
+		"ถ้าไม่ได้เอ่ยช่วงเวลาเลยให้ใช้ get_best_sales_day แทน (ตัวนั้นคิดจาก 30 วันล่าสุดตายตัว) " +
+		"ต่างจาก get_peak_periods ที่ตอบเป็นวันในสัปดาห์และนับเป็นจำนวนบิล ไม่ใช่วันที่และเงิน",
+	joyboyToolSalesByStaff: "ยอดขายแยกตามพนักงานที่ปิดบิล — ใครทำเงินได้เท่าไหร่ กี่บิล ลูกค้ากี่คน และบิลเฉลี่ยของคนนั้น " +
+		"เรียงจากมากไปน้อย ค่าเริ่มต้น 30 วันล่าสุด **ระบุช่วงเวลาได้** (วันนี้ เมื่อวาน สัปดาห์ที่แล้ว เดือนนี้) " +
+		"ใช้ตอบ: พนักงานคนไหนขายได้เยอะสุด ใครปิดบิลมากที่สุด ยอดขายแยกตามคน เทียบพนักงาน " +
+		"หมายเหตุ: นับจากคนที่ปิดบิลในระบบ ไม่ใช่คนที่รับออเดอร์เสมอไป และไม่ใช่การวัดผลงานทั้งหมดของคนนั้น",
 	joyboyToolDataCoverage: "ช่วงข้อมูลที่ระบบมีจริง วันเก่าสุดถึงวันใหม่สุดที่มีการขาย จำนวนวันที่มีข้อมูล " +
 		"และยอดขายรวมกับจำนวนออเดอร์รวมของทั้งประวัติตั้งแต่เปิดร้าน (ไม่ใช่แค่ 30 วันล่าสุด) " +
 		"ใช้ตอบ: ระบบมีข้อมูลตั้งแต่เมื่อไหร่ ข้อมูลถึงช่วงไหน มีข้อมูลย้อนหลังกี่วัน " +

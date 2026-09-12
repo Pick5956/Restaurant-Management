@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"Project-M/internal/aitools"
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
 )
@@ -1646,6 +1647,69 @@ func aiPaymentMethodThai(method string) string {
 // record, and from which day methods exist at all — a window starting before
 // that day would otherwise report a split over a fraction of its bills as if it
 // were the whole.
+
+// joyboyBestDayForPeriodBody reports both ends of a window the owner named.
+//
+// The note is the same one the snapshot version carries: asked for "วันไหน" the
+// model will otherwise answer with a weekday, which is a different question and
+// was the original bug.
+func joyboyBestDayForPeriodBody(label string, best aitools.AIBestSalesDay) string {
+	lines := []string{"period=" + label, "scope=paid_bills_by_the_day_they_closed"}
+	if !best.HasData {
+		lines = append(lines, joyboyNoData("no_paid_sales_in_period"))
+		return joyboyJoin(lines)
+	}
+	lines = append(lines,
+		fmt.Sprintf("days_in_window=%d days_with_sales=%d", best.Days, best.DaysWithSales),
+		fmt.Sprintf("best_day=%s weekday=%s revenue=%s orders=%d",
+			best.BestDate, thaiWeekdayName(int(best.BestWeekday)), joyboyNum(roundBaht(best.BestRevenue)), best.BestOrders),
+		fmt.Sprintf("worst_day=%s weekday=%s revenue=%s orders=%d",
+			best.WorstDate, thaiWeekdayName(int(best.WorstWeekday)), joyboyNum(roundBaht(best.WorstRevenue)), best.WorstOrders),
+		"note=นี่คือวันที่จริงในปฏิทิน ไม่ใช่วันในสัปดาห์ ต้องบอกวันที่ด้วย วันที่ไม่มียอดขายเลยไม่ถูกนับเป็นวันที่แย่ที่สุด",
+	)
+	return joyboyJoin(lines)
+}
+
+// joyboySalesByStaffBody ranks the people who closed the bills.
+//
+// The caveat line is not decoration. This counts who was on the till when the
+// bill was paid, which is not the same as who served the table, and an owner
+// reading a ranking of their own staff will act on it.
+func joyboySalesByStaffBody(label string, rows []repository.AIStaffSales) string {
+	lines := []string{"period=" + label, "scope=paid_bills_grouped_by_the_staff_who_closed_them"}
+	if len(rows) == 0 {
+		lines = append(lines, joyboyNoData("no_paid_sales_in_period"))
+		return joyboyJoin(lines)
+	}
+	var totalOrders int64
+	var totalRevenue float64
+	for _, row := range rows {
+		totalOrders += row.Orders
+		totalRevenue += row.Revenue
+	}
+	lines = append(lines, fmt.Sprintf("staff_count=%d total_orders=%d total_revenue=%s",
+		len(rows), totalOrders, joyboyNum(roundBaht(totalRevenue))))
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		if name == "" {
+			name = "ไม่ระบุ"
+		}
+		average := 0.0
+		if row.Orders > 0 {
+			average = row.Revenue / float64(row.Orders)
+		}
+		share := 0.0
+		if totalRevenue > 0 {
+			share = row.Revenue / totalRevenue * 100
+		}
+		lines = append(lines, fmt.Sprintf("staff=%s orders=%d revenue=%s average_bill=%s guests=%d revenue_share_pct=%s",
+			name, row.Orders, joyboyNum(roundBaht(row.Revenue)), joyboyNum(roundBaht(average)),
+			row.Guests, joyboyNum(share)))
+	}
+	lines = append(lines, "note=นับจากคนที่ปิดบิล ไม่ใช่คนที่รับออเดอร์เสมอไป ห้ามสรุปว่าใครทำงานดีหรือแย่จากตัวเลขนี้อย่างเดียว")
+	return joyboyJoin(lines)
+}
+
 func joyboyPaymentMixBody(label string, mix []repository.AIPaymentMethodSummary, coverage repository.AIPaymentCoverage) string {
 	lines := []string{"period=" + label, "scope=bills_paid_in_period_by_payment_method"}
 	if len(mix) == 0 {

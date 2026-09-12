@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"Project-M/internal/aitools"
 	"Project-M/internal/entity"
 	"Project-M/internal/joyboy"
 	"Project-M/internal/repository"
@@ -545,6 +546,41 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 			items = nil
 		}
 		return joyboyMenuProfitByCategoryBody(sold, items), true, true
+
+	case joyboyToolBestDayForPeriod:
+		if t.service.repo == nil {
+			return "", false, true
+		}
+		now := repository.BangkokNow()
+		start, end, label, explicit := t.periodNamedIn(question)
+		if !explicit {
+			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+		}
+		days, err := t.service.repo.SalesByDayForRange(t.restaurantID, start, joyboyQueryEnd(end))
+		if err != nil {
+			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		best := aitools.ComputeBestSalesDay(days)
+		return t.withPeriodCoverage(joyboyBestDayForPeriodBody(label, best),
+			label, start, end, !best.HasData), true, true
+
+	case joyboyToolSalesByStaff:
+		if t.service.repo == nil {
+			return "", false, true
+		}
+		now := repository.BangkokNow()
+		start, end, label, explicit := t.periodNamedIn(question)
+		if !explicit {
+			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+		}
+		staff, err := t.service.repo.SalesByStaffForRange(t.restaurantID, start, joyboyQueryEnd(end))
+		if err != nil {
+			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
+			return "", false, true
+		}
+		return t.withPeriodCoverage(joyboySalesByStaffBody(label, staff),
+			label, start, end, len(staff) == 0), true, true
 
 	case joyboyToolPaymentMix:
 		if t.service.repo == nil {
