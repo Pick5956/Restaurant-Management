@@ -107,12 +107,13 @@ const HEADER_ROW_PADDING_BOTTOM = 8;
  * blur and looks washed out, but a long band pushes that first message a long
  * way down the screen.
  *
- * The owner chose the far short end of that trade, on the screen and by eye:
- * the blur clears the buttons and stops. Do not raise it back "to smooth the
- * scroll" without asking — the tighter first message is the point, and the
- * abruptness underneath is a price that was picked deliberately.
+ * The owner first chose the far short end of that trade (15): the blur cleared
+ * the buttons and stopped. On 14 ก.ย. 2569 they asked for the pane to come down
+ * further — at 15 a bubble scrolling up showed sharp right under the chat's
+ * name — and accepted the first message starting 15pt lower as the cost.
+ * Change it only when the owner asks; both directions have been their call.
  */
-const HEADER_FADE = 15;
+const HEADER_FADE = 30;
 
 const SUGGESTIONS_TH = ['สรุปร้าน', 'เมนูขายดี', 'วัตถุดิบใกล้หมด', 'มูลค่าสต๊อก'];
 const SUGGESTIONS_EN = ['Shop summary', 'Best sellers', 'Low stock', 'Stock value'];
