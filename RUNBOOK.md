@@ -270,6 +270,7 @@ npm --prefix frontend run tunnel:public
 | EAS: `Entity not authorized: AppEntity[…]` | `projectId` ใน `app.json` ชี้ project ที่ไม่มี/ไม่ใช่ของบัญชีที่ล็อกอิน → เช็ค `npx eas-cli whoami` และ project บน expo.dev |
 | Expo Go iOS ขึ้นให้ล็อกอิน | ดู 5.3 |
 | `Metro waiting` แต่ log ไม่มี `Bundled` เลย | เครื่องยังไม่ถึง Metro — ลองเปิด `http://<IP>:8081` ใน Safari/Chrome บนมือถือ ถ้าเห็น JSON = เครือข่ายผ่าน ปัญหาอยู่ที่แอป |
+| เว็บ (localhost:3000) refresh ไม่หยุด / console ขึ้น `adapterFn is not a function` + `webpack-hmr ... failed` | `.next` cache ค้างข้ามเวอร์ชัน Next (มักหลัง pull/merge ที่ Next ขยับเวอร์ชัน) → ปิด dev server, ลบ `frontend/.next`, รัน `npm --prefix frontend run dev` ใหม่ แล้ว **hard refresh เบราว์เซอร์** (`Ctrl+Shift+R`) |
 
 ---
 
