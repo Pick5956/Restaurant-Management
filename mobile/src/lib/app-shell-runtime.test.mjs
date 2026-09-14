@@ -796,3 +796,23 @@ test('the overview keeps its fourteen-day report when an earlier day is picked',
   assert.doesNotMatch(home, /setManagerReport\(shouldLoadReports \?/);
   assert.match(home, /if \(shouldLoadReports\) \{\s*setManagerReport\(managerReportResponse\.response\)/);
 });
+
+test('loading shows the shape of the screen, not a one-line loading box', async () => {
+  const [home, chat, skeleton] = await Promise.all([
+    readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'ai-assistant.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'skeleton.tsx'), 'utf8'),
+  ]);
+
+  // 14 ก.ย. 2569: the overview grew from a 60pt "กำลังโหลด..." box into a full
+  // page the moment data landed, and an old chat opened as one lonely bubble.
+  assert.match(home, /\{dateLoading \? \(\s*<HomeSkeleton/);
+  assert.doesNotMatch(home, /กำลังโหลดข้อมูลของวันที่เลือก\.\.\./);
+  assert.match(chat, /\{threadLoading \? \(\s*<ThreadSkeleton/);
+
+  // One sweep for every bone, stopped under reduced motion, and a short hold so
+  // a fast load never flashes a skeleton for a frame.
+  assert.match(skeleton, /let sharedLoop/);
+  assert.match(skeleton, /useSharedShimmer\(!reducedMotion\)/);
+  assert.match(skeleton, /delay: 120/);
+});

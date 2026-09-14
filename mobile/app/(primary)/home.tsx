@@ -12,8 +12,8 @@ import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
-import { AttentionRail, DayStrip, HomeHeading, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
-import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, Surface } from '@/src/components/ui';
+import { AttentionRail, DayStrip, HomeHeading, HomeSkeleton, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
+import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback } from '@/src/components/ui';
 import {
   bangkokHour,
   buildHomeAttention,
@@ -622,11 +622,11 @@ export default function HomeScreen() {
       ) : null}
 
       {dateLoading ? (
-        <Surface>
-          <Text selectable style={[typeScale.body, { color: palette.muted }]}>
-            {copy('กำลังโหลดข้อมูลของวันที่เลือก...', 'Loading data for the selected date...')}
-          </Text>
-        </Surface>
+        <HomeSkeleton
+          isToday={isToday}
+          tablet={tabletWorkspace}
+          label={copy('กำลังโหลดข้อมูลของวันที่เลือก', 'Loading data for the selected date')}
+        />
       ) : tabletWorkspace ? (
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
           <View style={{ flex: 1.15, gap: spacing.md }}>

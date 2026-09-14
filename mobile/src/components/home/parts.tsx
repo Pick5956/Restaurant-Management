@@ -1,12 +1,13 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, View, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, View, type DimensionValue, type ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 
 import { GlassPanel } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import type { HomeDay, HomeRevenueCurve, HomeTableCell } from '@/src/lib/home-dashboard';
 import { palette } from '@/src/theme';
 
@@ -392,5 +393,134 @@ export function MonthRow({ title, detail, onPress }: { title: string; detail: st
         </View>
       </HomeCard>
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------- loading skeleton
+
+/**
+ * The overview before its figures arrive, block for block where the real page
+ * puts them: the orange sales card, the three tiles, the urgent-work cards and
+ * the table map on today; the card, the tiles and the order list on an earlier
+ * day. Replaces a one-line "กำลังโหลดข้อมูลของวันที่เลือก..." box (14 ก.ย.).
+ */
+export function HomeSkeleton({ isToday, tablet, label }: { isToday: boolean; tablet: boolean; label: string }) {
+  const hero = (
+    <LinearGradient
+      colors={['#b93a0d', '#d9581f', '#ef7a35']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ borderRadius: 22, borderCurve: 'continuous', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, gap: 8 }}
+    >
+      <Bone onColor width={92} height={10} />
+      <Bone onColor width={150} height={30} radius={10} />
+      <Bone onColor width={168} height={20} radius={999} />
+      <Bone onColor height={40} radius={10} style={{ marginTop: 2 }} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Bone onColor width={34} height={9} />
+        <Bone onColor width={58} height={9} />
+        <Bone onColor width={34} height={9} />
+      </View>
+    </LinearGradient>
+  );
+
+  const tile = (key: string, top: DimensionValue, bottom: DimensionValue) => (
+    <HomeCard key={key} radius={16} style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 10 }}>
+        <Bone width={26} height={26} radius={9} />
+        <View style={{ flex: 1, gap: 5 }}>
+          <Bone width={top} height={8} />
+          <Bone width={bottom} height={12} />
+        </View>
+      </View>
+    </HomeCard>
+  );
+  const tiles = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {tile('a', '70%', '90%')}
+      {tile('b', '60%', '85%')}
+      {tile('c', '65%', '50%')}
+    </View>
+  );
+
+  const heading = (width: number) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6 }}>
+      <Bone width={16} height={16} radius={5} />
+      <Bone width={width} height={12} />
+    </View>
+  );
+
+  const attentionCard = (key: string, first: DimensionValue) => (
+    <HomeCard key={key} radius={18} style={tablet ? undefined : { width: 164 }}>
+      <View style={{ paddingVertical: 11, paddingHorizontal: 12, gap: 7 }}>
+        <Bone width={first} height={9} />
+        <Bone width="80%" height={18} />
+        <Bone width="95%" height={9} />
+      </View>
+    </HomeCard>
+  );
+  const attention = (
+    <View style={{ gap: 8 }}>
+      {heading(92)}
+      <View style={{ flexDirection: tablet ? 'column' : 'row', gap: 8, overflow: 'hidden' }}>
+        {attentionCard('a', '70%')}
+        {attentionCard('b', '60%')}
+      </View>
+    </View>
+  );
+
+  const tables = (
+    <View style={{ gap: 8 }}>
+      {heading(40)}
+      <HomeCard radius={20}>
+        <View style={{ padding: 11, gap: 6 }}>
+          {[0, 1].map((row) => (
+            <View key={row} style={{ flexDirection: 'row', gap: 6 }}>
+              {[0, 1, 2, 3, 4].map((cell) => (
+                <View key={cell} style={{ flex: 1, aspectRatio: 1.5 }}>
+                  <Bone height={1} radius={11} style={{ flex: 1, height: undefined }} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      </HomeCard>
+    </View>
+  );
+
+  const orders = (
+    <View style={{ gap: 8 }}>
+      {heading(120)}
+      <HomeCard radius={18}>
+        {[0, 1, 2].map((row) => (
+          <View key={row} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderTopWidth: row ? 1 : 0, borderTopColor: palette.divider }}>
+            <Bone width={32} height={32} radius={16} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Bone width="45%" height={11} />
+              <Bone width="70%" height={9} />
+            </View>
+            <Bone width={56} height={14} />
+          </View>
+        ))}
+      </HomeCard>
+    </View>
+  );
+
+  if (tablet && isToday) {
+    return (
+      <SkeletonReveal label={label} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1.15, gap: 12 }}>{hero}{tiles}</View>
+        <View style={{ flex: 0.85, gap: 12 }}>{attention}</View>
+        <View style={{ flex: 1, gap: 12 }}>{tables}</View>
+      </SkeletonReveal>
+    );
+  }
+  return (
+    <SkeletonReveal label={label} style={{ gap: 12 }}>
+      {hero}
+      {tiles}
+      {isToday ? attention : null}
+      {isToday ? tables : orders}
+    </SkeletonReveal>
   );
 }

@@ -36,6 +36,7 @@ import {
   OutcomeLine,
   StreamCaret,
   ThinkingText,
+  ThreadSkeleton,
   UserBubble,
 } from '@/src/components/ai/bubbles';
 import { AIChart } from '@/src/components/ai/chart';
@@ -710,7 +711,7 @@ export default function AIAssistantScreen() {
                 scrollEventThrottle={64}
               >
                 {threadLoading ? (
-                  <AssistantRow><ThinkingText text={copy('กำลังเปิดแชท', 'Opening the chat')} /></AssistantRow>
+                  <ThreadSkeleton label={copy('กำลังเปิดแชท', 'Opening the chat')} />
                 ) : null}
                 {messages.map((message) => (
                   message.role === 'user' ? (
