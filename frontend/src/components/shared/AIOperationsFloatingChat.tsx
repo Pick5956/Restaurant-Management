@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
   ArrowUp,
   X,
@@ -128,8 +128,9 @@ export default function AIOperationsFloatingChat() {
   const { activeMembership, user } = useAuth();
   const { language } = useLanguage();
   const { showAIAssistant } = useTheme();
-  const router = useRouter();
-  const pathname = usePathname();
+  const router = useRestaurantRouter();
+  // The page without its /r/<slug> prefix: navigation matching speaks "/menu".
+  const { pagePath: pathname } = useRestaurantNav();
   const copy = useMemo(() => buildCopy(language), [language]);
   const welcomeText = useWelcome(language);
   const followUpsOn = useFollowUpsEnabled();

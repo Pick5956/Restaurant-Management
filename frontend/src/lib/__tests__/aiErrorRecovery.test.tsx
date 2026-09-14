@@ -37,9 +37,9 @@ describe("AI assistant error recovery", () => {
 
   it("isolates answer rendering in both chat surfaces and provides a route boundary", async () => {
     const [page, floating, routeBoundary] = await Promise.all([
-      readFile(new URL("../../app/(dashboard)/ai-assistant/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../../app/(dashboard)/r/[slug]/ai-assistant/page.tsx", import.meta.url), "utf8"),
       readFile(new URL("../../components/shared/AIOperationsFloatingChat.tsx", import.meta.url), "utf8"),
-      readFile(new URL("../../app/(dashboard)/ai-assistant/error.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../../app/(dashboard)/r/[slug]/ai-assistant/error.tsx", import.meta.url), "utf8"),
     ]);
 
     expect(page).toContain("<SafeAIResponseContent");

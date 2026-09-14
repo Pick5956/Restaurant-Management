@@ -1,7 +1,7 @@
 "use client";
 
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { CalendarClock, MapPin, ReceiptText, Search, ShoppingBag, Users } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -50,7 +50,7 @@ function tableStatusPillClass(status: TableStatus) {
 }
 
 export default function PosTablesPage() {
-  const router = useRouter();
+  const router = useRestaurantRouter();
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { showToast } = useToast();

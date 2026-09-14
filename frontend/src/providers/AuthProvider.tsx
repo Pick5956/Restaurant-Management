@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (inList) {
       setActiveId(inList.restaurant_id);
     } else if (list.length === 1) {
-      restaurantRepository.setActiveId(list[0].restaurant_id);
+      restaurantRepository.setActiveId(list[0].restaurant_id, list[0].restaurant?.slug);
       setActiveId(list[0].restaurant_id);
     } else {
       restaurantRepository.clearActiveId();
@@ -151,8 +151,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const setActiveRestaurant = (restaurantId: number) => {
-    if (!memberships.find((m) => m.restaurant_id === restaurantId)) return;
-    restaurantRepository.setActiveId(restaurantId);
+    const membership = memberships.find((m) => m.restaurant_id === restaurantId);
+    if (!membership) return;
+    restaurantRepository.setActiveId(restaurantId, membership.restaurant?.slug);
     setActiveId(restaurantId);
   };
 

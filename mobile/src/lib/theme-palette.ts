@@ -40,11 +40,14 @@ export const palette = {
   // those devices land near what iOS 26 shows rather than on an unrelated colour.
   navigationDockSurface: '#1C1C1E',
   navigationDockIcon: '#FFFFFF',
-  navigationDockIndicator: 'rgba(255, 255, 255, 0.16)',
+  navigationDockIndicator: 'rgba(255, 255, 255, 0.22)',
   // 0.38, walked up from 0.12 and 0.22: the reference bar carries a visibly
   // lit edge, and the rim is a large part of what reads as gloss on a dark
   // surface. Asked for "a lot more" and this is the lit-edge half of it.
-  navigationDockRim: 'rgba(255, 255, 255, 0.38)',
+  navigationDockRim: 'rgba(255, 255, 255, 0.55)',
+  // The top lip only. An edge light is never even all the way round - the face
+  // turns over into the edge at the top and that is where it burns brightest.
+  navigationDockRimLit: 'rgba(255, 255, 255, 0.85)',
   shadow: '#7C2D12',
   success: '#047857',
   successSoft: '#ECFDF5',

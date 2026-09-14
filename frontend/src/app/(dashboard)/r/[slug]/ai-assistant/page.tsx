@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, X } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
@@ -125,8 +125,9 @@ function buildCopy(language: "th" | "en") {
 export default function AIAssistantPage() {
   const { activeMembership, user } = useAuth();
   const { language } = useLanguage();
-  const router = useRouter();
-  const pathname = usePathname();
+  const router = useRestaurantRouter();
+  // The page without its /r/<slug> prefix: navigation matching speaks "/menu".
+  const { pagePath: pathname } = useRestaurantNav();
   const copy = useMemo(() => buildCopy(language), [language]);
   // The greeting uses whatever the owner asked to be called (settings → ทั่วไป).
   const welcomeText = useWelcome(language);

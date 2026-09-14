@@ -32,7 +32,7 @@ describe("AI snapshot integration", () => {
   // stored and never shown — it must not creep back with the next feature that
   // "just needs the numbers"; whatever needs them should render them.
   it("keeps both chat surfaces off the snapshot endpoint they have nothing to show from", () => {
-    for (const relative of ["../../app/(dashboard)/ai-assistant/page.tsx", "../../components/shared/AIOperationsFloatingChat.tsx"]) {
+    for (const relative of ["../../app/(dashboard)/r/[slug]/ai-assistant/page.tsx", "../../components/shared/AIOperationsFloatingChat.tsx"]) {
       const source = read(relative);
       for (const dead of ["getOperationsSnapshot", "selectOperationsSnapshot", "latestSnapshot"]) {
         expect(source, `${relative} still references ${dead}`).not.toContain(dead);

@@ -16,9 +16,13 @@ import { RESTAURANT_TYPES, getRestaurantTypeLabel } from "@/src/app/restaurants/
 import { Field, SettingsPanel, SettingsShell, TextAreaField } from "../_components/SettingsPrimitives";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { restaurantRepository } from "@/src/app/repositories/restaurantRepository";
+import RestaurantSlugField, { useRestaurantSlugStatus } from "@/src/components/shared/RestaurantSlugField";
+import { apiErrorCode } from "@/src/lib/apiErrors";
+import { isValidRestaurantSlug, restaurantHref } from "@/src/lib/restaurantPath";
 
 type FormState = {
   name: string;
+  slug: string;
   branch_name: string;
   restaurant_type: string;
   phone: string;
@@ -40,7 +44,7 @@ type FormState = {
   order_radius_meters: string;
 };
 
-type FormErrors = Partial<Record<"name" | "branch_name" | "phone" | "open_time" | "close_time" | "table_count" | "service_charge_rate" | "vat_rate" | "latitude" | "order_radius_meters", string>>;
+type FormErrors = Partial<Record<"name" | "slug" | "branch_name" | "phone" | "open_time" | "close_time" | "table_count" | "service_charge_rate" | "vat_rate" | "latitude" | "order_radius_meters", string>>;
 
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
@@ -60,6 +64,7 @@ function validateTime(value: string) {
 function toForm(restaurant?: Partial<Restaurant> | null, language: "th" | "en" = "th"): FormState {
   return {
     name: restaurant?.name ?? "",
+    slug: restaurant?.slug ?? "",
     branch_name: restaurant?.branch_name?.trim() || (language === "th" ? "สาขาหลัก" : "Main branch"),
     restaurant_type: restaurant?.restaurant_type?.trim() || RESTAURANT_TYPES[0],
     phone: normalizePhone(restaurant?.phone ?? ""),
@@ -102,6 +107,7 @@ export default function RestaurantSettingsPage() {
   const canManageRestaurant = can(activeMembership, "manage_restaurant_settings");
   const restaurantId = activeMembership?.restaurant_id;
   const { showToast } = useToast();
+  const slugStatus = useRestaurantSlugStatus(form.slug, { restaurantId, savedSlug: restaurant?.slug });
   const isOwner = activeMembership?.role?.name === "owner";
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -171,6 +177,9 @@ export default function RestaurantSettingsPage() {
         uploadingCover: "กำลังอัปโหลดรูปพื้นหลัง...",
         noCover: "ไม่มีรูปพื้นหลัง (ใช้ภาพตั้งต้น)",
         name: "ชื่อร้าน",
+        slug: "ลิงก์ร้าน",
+        slugTaken: "มีร้านใช้ชื่อนี้แล้ว",
+        slugInvalid: "ใช้ a–z, 0–9 และ - ได้ 3–40 ตัว และต้องมีตัวอักษร",
         branch: "ชื่อสาขา",
         branchHelp: "ถ้ามีร้านเดียวใช้สาขาหลักได้",
         type: "ประเภทร้าน",
@@ -256,6 +265,9 @@ export default function RestaurantSettingsPage() {
         uploadingCover: "Uploading cover...",
         noCover: "No cover image (using default)",
         name: "Restaurant name",
+        slug: "Restaurant link",
+        slugTaken: "Another restaurant already uses this name",
+        slugInvalid: "Use 3–40 of a–z, 0–9 and -, including a letter",
         branch: "Branch name",
         branchHelp: "Use Main branch if this is your only location.",
         type: "Restaurant type",
@@ -424,7 +436,10 @@ export default function RestaurantSettingsPage() {
       if (!Number.isFinite(radius) || radius < 20 || radius > 5000) next.order_radius_meters = copy.validateRadius;
     }
     setErrors(next);
-    return Object.keys(next).length === 0;
+    // A bad or taken slug is already spelled out under its field as it is
+    // typed; it only has to stop the save here.
+    const slugBlocked = form.slug !== restaurant?.slug && (!isValidRestaurantSlug(form.slug) || slugStatus === "taken");
+    return Object.keys(next).length === 0 && !slugBlocked;
   };
 
   const save = async (event: React.FormEvent) => {
@@ -435,8 +450,10 @@ export default function RestaurantSettingsPage() {
     await saveOnceRef.current(async () => {
       setSaving(true);
       try {
+        const slugChanged = form.slug !== restaurant?.slug;
         const res = await updateRestaurant(restaurantId, {
           name: form.name.trim(),
+          ...(slugChanged ? { slug: form.slug } : {}),
           branch_name: form.branch_name.trim(),
           restaurant_type: form.restaurant_type,
           phone: form.phone.trim(),
@@ -455,12 +472,25 @@ export default function RestaurantSettingsPage() {
           longitude: form.geofence_enabled ? Number.parseFloat(form.longitude) : null,
           order_radius_meters: form.geofence_enabled ? Number.parseInt(form.order_radius_meters, 10) : 0,
         });
+        if (slugChanged) {
+          // Every URL this tab could be on just changed. A full load lands on
+          // the new one with fresh memberships; refreshing them in place first
+          // would leave the guard holding a slug that no longer exists.
+          notifySaved();
+          window.location.replace(restaurantHref(res.data.restaurant.slug, "/settings/restaurant"));
+          return;
+        }
         setRestaurant(res.data.restaurant);
         setForm(toForm(res.data.restaurant, language));
         notifySaved();
         await refreshMemberships();
-      } catch {
-        notifyError(copy.saveError);
+      } catch (error) {
+        const code = apiErrorCode(error);
+        if (code === "slug_taken" || code === "slug_invalid") {
+          setErrors((current) => ({ ...current, slug: code === "slug_taken" ? copy.slugTaken : copy.slugInvalid }));
+        } else {
+          notifyError(copy.saveError);
+        }
       } finally {
         setSaving(false);
       }
@@ -565,6 +595,15 @@ export default function RestaurantSettingsPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label={copy.name} value={form.name} onChange={(value) => setField("name", value)} error={errors.name} />
                 <Field label={copy.branch} value={form.branch_name} onChange={(value) => setField("branch_name", value)} error={errors.branch_name} help={copy.branchHelp} />
+                <div className="sm:col-span-2">
+                  <RestaurantSlugField
+                    label={copy.slug}
+                    value={form.slug}
+                    onChange={(value) => setField("slug", value)}
+                    status={slugStatus}
+                    error={errors.slug}
+                  />
+                </div>
                 <label className="block sm:col-span-2">
                   <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.type}</span>
                   <ThemedSelect value={form.restaurant_type} onChange={(value) => setField("restaurant_type", value)} options={RESTAURANT_TYPES.map((item) => ({ value: item, label: getRestaurantTypeLabel(item, language) }))} />

@@ -273,9 +273,13 @@ export function IconButton({
       hitSlop={4}
       onPress={onPress}
       style={({ pressed }) => (isGlass
-        // The glass carries the shape, so the shadow goes on the wrapper: a lift
-        // and a clip on one view is what eats the shadow on Android.
-        ? { ...circle, ...controlShadow, opacity: disabled ? 0.48 : pressed ? 0.78 : 1 }
+        // No shadow under a glass icon button, and nothing else on the wrapper
+        // either. On iOS 26 the glass is INTERACTIVE: it stretches toward a
+        // dragging finger and leaves its own bounds behind - and anything the
+        // wrapper paints stays put while it goes, so the button reads as two
+        // objects, the one being pulled and a round ghost where it started.
+        // The glass is the whole control; it keeps its own edge.
+        ? { ...circle, opacity: disabled ? 0.48 : pressed ? 0.78 : 1 }
         : {
           ...circle,
           borderWidth: 1,
@@ -345,10 +349,15 @@ export function EdgeSectionHeader({
   title,
   detail,
   action,
+  prominent = false,
 }: {
   title: string;
   detail?: string;
   action?: React.ReactNode;
+  /** Lead the screen with it. The quiet default is a label ABOVE content on a
+   *  page that already has a title; where the sections ARE the page's headings
+   *  it has to carry that weight instead. */
+  prominent?: boolean;
 }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md }}>
@@ -356,7 +365,9 @@ export function EdgeSectionHeader({
         <Text
           accessibilityRole="header"
           selectable
-          style={{ color: palette.muted, fontSize: 14, lineHeight: 20, fontWeight: '600' }}
+          style={prominent
+            ? { color: palette.textStrong, fontSize: 16, lineHeight: 24, fontWeight: '700' }
+            : { color: palette.muted, fontSize: 14, lineHeight: 20, fontWeight: '600' }}
         >
           {title}
         </Text>
@@ -518,7 +529,7 @@ export function StatusBadge({
   emphasis = 'soft',
 }: {
   label: string;
-  tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+  tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'muted';
   /** `strong` fills the chip with the tone's own colour and drops the dot.
    *  For a chip that has to hold its own inside a row of content - in front of
    *  an item name, say - where the soft wash reads as decoration and the dot
@@ -543,7 +554,16 @@ export function StatusBadge({
         // line height, because Kanit's own line box is what made the filled
         // version read as a block.
         ...(strong
-          ? { backgroundColor: style.color, borderColor: style.color, paddingHorizontal: 7, paddingVertical: 1 }
+          ? {
+            backgroundColor: style.color,
+            borderColor: style.color,
+            // 6, not the control radius of 12. On a chip this small a 12pt
+            // corner takes most of its height and the shape reads as a pill;
+            // the label wants a tag.
+            borderRadius: 6,
+            paddingHorizontal: 7,
+            paddingVertical: 1,
+          }
           : null),
       }}
     >

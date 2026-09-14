@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useLanguage } from "@/src/providers/LanguageProvider";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 
 export default function PermissionDenied({ title }: { title?: string }) {
   const { language } = useLanguage();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const fallbackTitle = language === "th" ? "ไม่มีสิทธิ์เข้าถึงหน้านี้" : "You do not have access to this page";
 
   return (
@@ -22,7 +24,7 @@ export default function PermissionDenied({ title }: { title?: string }) {
             ? "บัญชีนี้ไม่มี permission สำหรับหน้านี้ในร้านปัจจุบัน"
             : "This account does not have permission to open this page in the current restaurant."}
         </p>
-        <Link href="/home" className="mt-4 inline-flex h-9 items-center rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white">
+        <Link href={restaurantPageHref("/home")} className="mt-4 inline-flex h-9 items-center rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white">
           {language === "th" ? "กลับหน้าภาพรวม" : "Back to overview"}
         </Link>
       </div>

@@ -1,6 +1,6 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { LayoutAnimation, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { kitchenQueue, updateOrderItemStatus } from '@/src/api/order';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
@@ -17,6 +17,7 @@ import {
   TicketItem,
   type DoneRowProps,
 } from '@/src/components/kitchen/parts';
+import { useReducedMotion } from '@/src/components/motion';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { useKitchenOrderEvents } from '@/src/hooks/use-kitchen-order-events';
 import { EmptyState, Feedback, StatusBadge } from '@/src/components/ui';
@@ -137,6 +138,10 @@ export default function KitchenScreen() {
   const pendingQuietRefreshRef = useRef(false);
   const adjacentWarmRequestedRef = useRef(false);
   const primaryTabSceneStatus = usePrimaryTabSceneStatus();
+  // Read inside a callback that must not be rebuilt when the setting changes.
+  const reducedMotion = useReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
   const ordersRef = useRef<Order[]>([]);
   ordersRef.current = orders;
 
@@ -144,6 +149,19 @@ export default function KitchenScreen() {
     try {
       const response = await kitchenQueue();
       if (requestGenerationRef.current.isCurrent(request)) {
+        // Pick's (2dd5a24, carried over in the 14 ก.ย. merge onto the rebuilt
+        // board): the one place the board's contents change, so the one place
+        // the change is animated. A finished dish used to blink out and every
+        // ticket below jumped up a row — at arm's length indistinguishable from
+        // a reload. The row fades, the rest close the gap.
+        if (!reducedMotionRef.current) {
+          LayoutAnimation.configureNext({
+            duration: 260,
+            update: { type: LayoutAnimation.Types.easeInEaseOut },
+            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity, duration: 170 },
+            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity, delay: 110 },
+          });
+        }
         setOrders(response.orders || []);
       }
     } catch (err) {

@@ -37,7 +37,7 @@ describe("menu image crop", () => {
     );
     const menuApiSource = readFileSync(new URL("../menu.ts", import.meta.url), "utf8");
     const menuPageSource = readFileSync(
-      new URL("../../app/(dashboard)/menu/page.tsx", import.meta.url),
+      new URL("../../app/(dashboard)/r/[slug]/menu/page.tsx", import.meta.url),
       "utf8",
     );
 

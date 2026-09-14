@@ -13,6 +13,7 @@ import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import { getDefaultWorkspaceRoute } from "@/src/lib/workMode";
 import { roleLabel } from "@/src/lib/roleLabels";
 import { safeNextPathFromSearch } from "@/src/lib/safeRedirect";
+import { rebaseRestaurantPath, restaurantHref } from "@/src/lib/restaurantPath";
 import { Plus, LogIn, Clock, Grid, ChevronRight, Phone } from "lucide-react";
 import AppWordmark from "@/src/components/shared/AppWordmark";
 
@@ -226,10 +227,15 @@ export default function RestaurantsPage() {
 
 
   const enterDashboardFor = (membership: Membership) => {
-    restaurantRepository.setActiveId(membership.restaurant_id);
+    // The id stands in for a slug only if the membership arrived without one;
+    // /r/<id> resolves to the same restaurant and the guard swaps in the name.
+    const slug = membership.restaurant?.slug || String(membership.restaurant_id);
+    restaurantRepository.setActiveId(membership.restaurant_id, membership.restaurant?.slug);
     setActiveRestaurant(membership.restaurant_id);
-    const next = safeNextPathFromSearch(window.location.search);
-    router.push(next ?? getDefaultWorkspaceRoute(membership));
+    // A page they were sent here from - an old /home link, or another
+    // restaurant's /r/<slug>/orders - opens on the restaurant just chosen.
+    const next = rebaseRestaurantPath(safeNextPathFromSearch(window.location.search), slug);
+    router.push(next ?? restaurantHref(slug, getDefaultWorkspaceRoute(membership)));
   };
 
   if (!loading && !hasRestaurants) {

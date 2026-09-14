@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 describe("a pending write plan survives the next question", () => {
   const sources = [
     ["floating chat", "../../components/shared/AIOperationsFloatingChat.tsx"],
-    ["AI page", "../../app/(dashboard)/ai-assistant/page.tsx"],
+    ["AI page", "../../app/(dashboard)/r/[slug]/ai-assistant/page.tsx"],
   ] as const;
 
   for (const [name, relativePath] of sources) {

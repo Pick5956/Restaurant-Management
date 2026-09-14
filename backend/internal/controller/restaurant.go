@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
@@ -107,6 +108,9 @@ func (ctrl *RestaurantController) Create(c *gin.Context) {
 
 	restaurant, member, err := ctrl.restaurantSvc.CreateRestaurant(userID, &req)
 	if err != nil {
+		if respondRestaurantSlugError(c, err) {
+			return
+		}
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
 	}
@@ -131,6 +135,52 @@ func (ctrl *RestaurantController) ListMyMemberships(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"memberships": service.NewMembershipResponses(memberships)})
+}
+
+// GET /api/v1/restaurants/slug-availability?slug=krua-pick&restaurant_id=12
+//
+// Lets the onboarding and settings forms say "taken" while the owner types.
+// restaurant_id is the restaurant being edited, so its own slug reads as
+// available; it is honoured only for a member of that restaurant.
+func (ctrl *RestaurantController) SlugAvailability(c *gin.Context) {
+	userID, ok := contextUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var excludeID uint
+	if raw := strings.TrimSpace(c.Query("restaurant_id")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || parsed == 0 {
+			respondInvalidRequest(c)
+			return
+		}
+		if _, err := ctrl.restaurantSvc.GetMembership(userID, uint(parsed)); err == nil {
+			excludeID = uint(parsed)
+		}
+	}
+
+	availability, err := ctrl.restaurantSvc.CheckSlugAvailability(c.Query("slug"), excludeID)
+	if err != nil {
+		respondAPIError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, availability)
+}
+
+// respondRestaurantSlugError answers the two slug failures with a code the
+// forms can branch on, and reports whether it did.
+func respondRestaurantSlugError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, service.ErrRestaurantSlugTaken):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "slug_taken"})
+		return true
+	case errors.Is(err, service.ErrRestaurantSlugInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "slug_invalid"})
+		return true
+	}
+	return false
 }
 
 // GET /api/v1/restaurants/:id
@@ -190,6 +240,9 @@ func (ctrl *RestaurantController) Update(c *gin.Context) {
 
 	restaurant, err := ctrl.restaurantSvc.UpdateRestaurant(restaurantID, &req)
 	if err != nil {
+		if respondRestaurantSlugError(c, err) {
+			return
+		}
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
 	}

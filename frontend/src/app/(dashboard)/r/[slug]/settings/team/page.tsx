@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
@@ -10,6 +11,7 @@ import { SettingsPanel, SettingsShell } from "../_components/SettingsPrimitives"
 export default function TeamSettingsPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const allowed = canAccessTeam(activeMembership);
   const copy = language === "th"
     ? {
@@ -38,7 +40,7 @@ export default function TeamSettingsPage() {
   return (
     <SettingsShell eyebrow={copy.eyebrow} title={copy.title} subtitle={copy.subtitle} backLabel={copy.back} hideHeader>
       <SettingsPanel title={copy.panel} hint={copy.hint}>
-        <Link href="/staff" className="ui-press inline-flex h-10 items-center rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white dark:bg-orange-700 dark:text-white">
+        <Link href={restaurantPageHref("/staff")} className="ui-press inline-flex h-10 items-center rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white dark:bg-orange-700 dark:text-white">
           {copy.button}
         </Link>
       </SettingsPanel>

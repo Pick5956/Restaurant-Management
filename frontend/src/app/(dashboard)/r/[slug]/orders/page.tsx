@@ -19,6 +19,7 @@ import OperationalPageShell from "@/src/components/shared/OperationalPageShell";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import { orderPosHref } from "@/src/lib/orderNavigation";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { canReprintReceipt, itemCount, orderTime, statusClass, tableName, zoneName } from "./ordersPageUtils";
 
 const ORDERS_PAGE_SIZE = 25;
@@ -37,6 +38,7 @@ function buildPageList(current: number, totalPages: number): (number | "…")[] 
 export default function OrdersPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const canView = can(activeMembership, "view_orders") || can(activeMembership, "take_order");
   const [orders, setOrders] = useState<Order[]>([]);
   const [query, setQuery] = useState("");
@@ -355,7 +357,7 @@ export default function OrdersPage() {
                         </span>
                       ) : (
                         <Link
-                          href={orderPosHref(order)}
+                          href={restaurantPageHref(orderPosHref(order))}
                           className="ui-press inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 lg:w-auto"
                         >
                           {copy.openOrder}

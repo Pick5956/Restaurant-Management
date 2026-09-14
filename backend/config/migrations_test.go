@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"Project-M/internal/entity"
+	"Project-M/internal/restaurantslug"
 )
 
 func TestSchemaMigrationPlanIsOrderedAndMatchesCurrentVersion(t *testing.T) {
@@ -151,6 +152,10 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// Version 28 adds max_stock and min_percent to Ingredient, both inside
 		// the frozen registry, so the fingerprint advances with the columns.
 		28: "4b8d61e758c577bfaaf189619b263822bd025b716fcf077587b3992ff73ba001",
+		// Version 29 adds slug to Restaurant, inside the frozen registry, so
+		// the fingerprint advances with the column. The BeforeCreate hook that
+		// fills a blank slug is a method, not a field, and does not move it.
+		29: "ad9e66dc6e5c92c1c4791536f4b8fe5512a9064cbbc0e4144dcf12b6040e0cbc",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -166,6 +171,54 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 			want,
 			CurrentSchemaVersion,
 		)
+	}
+}
+
+func TestRestaurantSlugMigrationIsVersionTwentyNine(t *testing.T) {
+	plan := schemaMigrationPlan()
+	migration := plan[len(plan)-1]
+	if migration.Version != 29 || migration.Name != "restaurant_slug" {
+		t.Fatalf("latest migration = %d %q, want 29 restaurant_slug", migration.Version, migration.Name)
+	}
+}
+
+func TestRestaurantSlugBackfillGivesEveryRowAUniqueValidSlug(t *testing.T) {
+	rows := []restaurantSlugRow{
+		{ID: 1, Name: "Krua Pick"},
+		{ID: 2, Name: "Krua Pick"}, // same name, second branch
+		{ID: 3, Name: "ครัวปิ๊ก"},  // nothing Latin to build from
+		{ID: 4, Name: "ครัวปิ๊ก"},
+		{ID: 5, Name: "Noodle Bar", Slug: "noodle-bar"}, // already valid, kept
+		{ID: 6, Name: "Noodle Bar"},                     // would collide with row 5
+		{ID: 7, Name: "Other", Slug: "noodle-bar"},      // a duplicate valid slug is reassigned
+		{ID: 8, Name: "Bad", Slug: "Not Valid"},         // an invalid stored value is replaced
+	}
+
+	assigned := planRestaurantSlugBackfill(rows)
+
+	if _, touched := assigned[5]; touched {
+		t.Fatalf("row 5 already had a valid slug and must be left alone, got %q", assigned[5])
+	}
+	if assigned[1] != "krua-pick" {
+		t.Fatalf("row 1 = %q, want krua-pick", assigned[1])
+	}
+	final := map[uint]string{5: "noodle-bar"}
+	for id, slug := range assigned {
+		final[id] = slug
+	}
+	seen := map[string]uint{}
+	for _, row := range rows {
+		slug, ok := final[row.ID]
+		if !ok {
+			t.Fatalf("row %d got no slug", row.ID)
+		}
+		if !restaurantslug.Valid(slug) {
+			t.Fatalf("row %d slug %q is not valid", row.ID, slug)
+		}
+		if other, dup := seen[slug]; dup {
+			t.Fatalf("rows %d and %d share slug %q", other, row.ID, slug)
+		}
+		seen[slug] = row.ID
 	}
 }
 
@@ -278,7 +331,7 @@ func TestAdditiveMigrationModelFingerprintsStayFrozen(t *testing.T) {
 			// refrozen at v20 (latency_ms on the turn) and again at v23: title,
 			// title_by_owner and trashed_at on the conversation, display_json on
 			// the turn — the chat list and the trash.
-			want:   "2fa35e7062c9b82296f857dfb37e8edcdf3a1956efa7fb8b465e4535e607e63f",
+			want: "2fa35e7062c9b82296f857dfb37e8edcdf3a1956efa7fb8b465e4535e607e63f",
 		},
 		{
 			name:   "version 9 action previews",

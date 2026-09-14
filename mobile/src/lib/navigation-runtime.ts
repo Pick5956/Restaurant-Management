@@ -426,3 +426,30 @@ export function getPagerSceneTranslateXFromPosition(
   const translateX = (sceneIndex - pagerPosition) * viewportWidth;
   return Number.isFinite(translateX) ? translateX : 0;
 }
+
+// The dock's tab-change tick, and when to hold it back.
+//
+// A quick there-and-back - 2 to 3, then 3 back to 2 inside the window - is one
+// gesture that changed nothing, and ticking twice for it was reported as
+// noise. So the return leg is silent when it lands on the tab the previous
+// change LEFT, within the window. Only that exact pair: from 2 the next quick
+// step to 1 ticks, and after a silent return the memory is cleared, so going
+// back out to 3 again ticks too - it is a new change, not an undo.
+export const TAB_CHANGE_RETURN_WINDOW_MS = 600;
+
+export type TabChangeTickMemory = {
+  leftIndex: number;
+  at: number;
+} | null;
+
+export function resolveTabChangeTick(
+  memory: TabChangeTickMemory,
+  change: { from: number; to: number; now: number },
+): { tick: boolean; memory: TabChangeTickMemory } {
+  if (change.from === change.to) return { tick: false, memory };
+  const isQuickReturn = memory !== null
+    && change.to === memory.leftIndex
+    && change.now - memory.at < TAB_CHANGE_RETURN_WINDOW_MS;
+  if (isQuickReturn) return { tick: false, memory: null };
+  return { tick: true, memory: { leftIndex: change.from, at: change.now } };
+}

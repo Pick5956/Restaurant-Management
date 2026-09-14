@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { useRestaurantNav } from '@/src/hooks/useRestaurantNav';
 import { useSidebar } from '@/src/providers/SidebarProvider';
 import { useAuth } from '@/src/providers/AuthProvider';
 import DashboardAccountMenu from '@/src/components/shared/DashboardAccountMenu';
@@ -143,7 +143,10 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
 }
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const pathname = usePathname();
+  // Nav hrefs stay restaurant-relative ("/menu"); `pathname` here is the page
+  // without its /r/<slug> prefix so every comparison below keeps working, and
+  // `href` puts the prefix back on the way out.
+  const { pagePath: pathname, href: restaurantPageHref } = useRestaurantNav();
   const { language } = useLanguage();
   const { activeMembership } = useAuth();
   const nav = buildNav(language);
@@ -253,7 +256,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
                     </span>
                   ) : (
                     <Link
-                      href={href}
+                      href={restaurantPageHref(href)}
                       onClick={onNavigate}
                       title={collapsed ? label : undefined}
                       className={itemClassName}
@@ -281,7 +284,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
                           return (
                             <Link
                               key={sub.href}
-                              href={sub.href}
+                              href={restaurantPageHref(sub.href)}
                               onClick={onNavigate}
                               tabIndex={isExpanded ? 0 : -1}
                               className={`flex items-center rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
@@ -396,6 +399,7 @@ function RestaurantHeader({ collapsed, onNavigate }: { collapsed: boolean; onNav
 }
 
 export default function Sidebar() {
+  const { href: restaurantPageHref } = useRestaurantNav();
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
   const mobileDrawerRef = useRef<HTMLElement>(null);
@@ -483,7 +487,7 @@ export default function Sidebar() {
               </svg>
             </button>
             <Link
-              href="/home"
+              href={restaurantPageHref("/home")}
               aria-label="Dishy"
               tabIndex={collapsed ? -1 : undefined}
               className={`flex min-w-0 items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${

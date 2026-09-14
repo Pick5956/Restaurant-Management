@@ -2,18 +2,20 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { safeInternalPath } from '@/src/lib/safeRedirect';
+import { isLegacyRestaurantPagePath, restaurantHref, RESTAURANT_PATH_PREFIX } from '@/src/lib/restaurantPath';
 
-// หน้าที่ต้อง login ก่อนถึงจะเข้าได้
-const protectedRoutes = ['/restaurants', '/home', '/orders', '/pos', '/kitchen', '/tables', '/menu', '/inventory', '/expenses', '/ai-assistant', '/staff', '/reports', '/settings', '/dashboard', '/profile'];
-const dashboardRoutes = ['/home', '/orders', '/pos', '/kitchen', '/tables', '/menu', '/inventory', '/expenses', '/ai-assistant', '/staff', '/reports', '/settings', '/dashboard', '/profile'];
+// A restaurant URL name or id as the cookie may hold it. Anything else is
+// ignored rather than pasted into a redirect.
+const restaurantSegmentPattern = /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|\d+)$/;
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const token = request.cookies.get('token')?.value;
-  const activeRestaurantId = request.cookies.get('active_restaurant_id')?.value;
 
-  const isProtected = protectedRoutes.some(route => pathname.startsWith(route));
-  const isDashboard = dashboardRoutes.some(route => pathname.startsWith(route));
+  const isRestaurantPath = pathname.startsWith(`${RESTAURANT_PATH_PREFIX}/`);
+  const isLegacyPage = isLegacyRestaurantPagePath(pathname);
+  // หน้าที่ต้อง login ก่อนถึงจะเข้าได้
+  const isProtected = pathname.startsWith('/restaurants') || isRestaurantPath || isLegacyPage;
 
   // ยังไม่ login แล้วพยายามเข้าหน้าที่ต้องล็อค → กลับไปหน้า landing
   if (!token && isProtected) {
@@ -31,7 +33,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/restaurants', request.url));
   }
 
-  if (token && isDashboard && !activeRestaurantId) {
+  // The dashboard pages moved under /r/<slug>. An old link or bookmark such as
+  // /home goes to the restaurant used last, or to the picker when there is
+  // none. Which restaurant a /r/ page belongs to is the URL's business, so
+  // those are not checked against the cookie at all - the client guard
+  // resolves the slug against the user's memberships.
+  if (token && isLegacyPage) {
+    const lastRestaurant = request.cookies.get('active_restaurant_slug')?.value
+      || request.cookies.get('active_restaurant_id')?.value;
+    if (lastRestaurant && restaurantSegmentPattern.test(lastRestaurant)) {
+      return NextResponse.redirect(new URL(`${restaurantHref(lastRestaurant, pathname)}${search}`, request.url));
+    }
     const url = new URL('/restaurants', request.url);
     url.searchParams.set('next', `${pathname}${search}`);
     return NextResponse.redirect(url);

@@ -34,7 +34,7 @@ describe("restaurant-scoped role labels", () => {
   });
 
   it("uses the shared resolver on staff, restaurant selection, and public invitation surfaces", () => {
-    const staffConfig = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/staff/staffPageConfig.ts", import.meta.url)), "utf8");
+    const staffConfig = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/staff/staffPageConfig.ts", import.meta.url)), "utf8");
     const restaurantSelector = readFileSync(fileURLToPath(new URL("../../app/restaurants/page.tsx", import.meta.url)), "utf8");
     const publicInvitation = readFileSync(fileURLToPath(new URL("../../app/invitations/[token]/page.tsx", import.meta.url)), "utf8");
 
@@ -44,7 +44,7 @@ describe("restaurant-scoped role labels", () => {
   });
 
   it("edits manageable role names from the dialog heading instead of a custom-role-only form card", () => {
-    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/staff/page.tsx", import.meta.url)), "utf8");
+    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/staff/page.tsx", import.meta.url)), "utf8");
 
     expect(staffPage).toContain("aria-label={copy.editRoleName}");
     expect(staffPage).toContain("const renameRole = async");
@@ -53,7 +53,7 @@ describe("restaurant-scoped role labels", () => {
   });
 
   it("keeps rename feedback visible and announced beside the inline editor", () => {
-    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/staff/page.tsx", import.meta.url)), "utf8");
+    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/staff/page.tsx", import.meta.url)), "utf8");
 
     expect(staffPage).toContain("roleRenameError");
     expect(staffPage).toContain('aria-live="polite"');
@@ -61,13 +61,13 @@ describe("restaurant-scoped role labels", () => {
   });
 
   it("uses 44px role-name and dialog-close touch targets", () => {
-    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/staff/page.tsx", import.meta.url)), "utf8");
+    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/staff/page.tsx", import.meta.url)), "utf8");
 
     expect(staffPage.match(/h-11 w-11/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
   });
 
   it("refreshes shared memberships after renaming the active role", () => {
-    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/staff/page.tsx", import.meta.url)), "utf8");
+    const staffPage = readFileSync(fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/staff/page.tsx", import.meta.url)), "utf8");
 
     expect(staffPage).toContain("shouldRefreshMembershipsAfterRoleRename(activeMembership, nextRole.ID)");
     expect(staffPage).toContain("void refreshMemberships()");

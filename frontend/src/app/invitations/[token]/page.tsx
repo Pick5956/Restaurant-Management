@@ -8,6 +8,7 @@ import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { acceptInvitation, getInvitationByToken, invitationEmailMismatch } from "@/src/lib/invitation";
 import { restaurantRepository } from "../../repositories/restaurantRepository";
+import { restaurantHref } from "@/src/lib/restaurantPath";
 import type { Invitation } from "@/src/types/restaurant";
 import { Skeleton, SkeletonText } from "@/src/components/shared/Skeleton";
 import { createSingleFlight } from "@/src/lib/singleFlight";
@@ -138,9 +139,11 @@ export default function InvitationAcceptPage() {
       try {
         const res = await acceptInvitation(token);
         const membership = res.data.membership;
-        restaurantRepository.setActiveId(membership.restaurant_id);
-        await refreshMemberships();
-        router.push("/home");
+        const memberships = await refreshMemberships();
+        const joined = memberships.find((item) => item.restaurant_id === membership.restaurant_id);
+        const slug = joined?.restaurant?.slug || membership.restaurant?.slug || String(membership.restaurant_id);
+        restaurantRepository.setActiveId(membership.restaurant_id, slug);
+        router.push(restaurantHref(slug, "/home"));
       } catch {
         setError(copy.acceptError);
       } finally {

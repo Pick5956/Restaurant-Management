@@ -19,8 +19,10 @@ import {
   resolvePagerAnimationSettlement,
   resolvePagerRouteSyncAction,
   resolvePagerSwipeSettlement,
+  resolveTabChangeTick,
   shouldStartPagerHorizontalSwipe,
   shouldOpenSettings,
+  TAB_CHANGE_RETURN_WINDOW_MS,
 } from './navigation-runtime.ts';
 
 test('root-level resets replace without dispatching an unhandled pop-to-top action', () => {
@@ -757,4 +759,39 @@ test('the tab bar dispatches JUMP_TO through getNavigationRouteName', async () =
     /name: \w+\.key/,
     'dispatching an item key asks for a route the navigator does not have',
   );
+});
+
+test('the tab-change tick is held back only for a quick return to the tab just left', () => {
+  const quick = TAB_CHANGE_RETURN_WINDOW_MS - 1;
+  const slow = TAB_CHANGE_RETURN_WINDOW_MS + 1;
+
+  // 2 -> 3 ticks; 3 -> 2 quickly is the undo and is silent.
+  let step = resolveTabChangeTick(null, { from: 2, to: 3, now: 1000 });
+  assert.equal(step.tick, true);
+  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 1000 + quick });
+  assert.equal(step.tick, false);
+  // ...and after the silent return, going back out to 3 quickly is a new change.
+  step = resolveTabChangeTick(step.memory, { from: 2, to: 3, now: 1000 + quick + quick });
+  assert.equal(step.tick, true);
+
+  // 2 -> 3, then quickly on to 1 from 2? No: 3 -> 2 (silent), 2 -> 1 quickly ticks.
+  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 5000 });
+  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 5000 + quick });
+  assert.equal(step.tick, false);
+  step = resolveTabChangeTick(step.memory, { from: 2, to: 1, now: 5000 + quick + quick });
+  assert.equal(step.tick, true);
+
+  // A return that is not quick is an ordinary change.
+  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 9000 });
+  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 9000 + slow });
+  assert.equal(step.tick, true);
+
+  // Going on to a third tab quickly is not a return.
+  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 12000 });
+  step = resolveTabChangeTick(step.memory, { from: 3, to: 4, now: 12000 + quick });
+  assert.equal(step.tick, true);
+
+  // Staying put never ticks and leaves the memory alone.
+  const memory = { leftIndex: 2, at: 15000 };
+  assert.deepEqual(resolveTabChangeTick(memory, { from: 3, to: 3, now: 15001 }), { tick: false, memory });
 });

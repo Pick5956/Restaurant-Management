@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { GlassView } from 'expo-glass-effect';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
@@ -301,7 +302,23 @@ const DOCK_GLASS_STACK = Platform.OS === 'ios';
 // two-thirds darkened, estimated by eye because that screenshot was never
 // written to disk. The lens sits ABOVE this, so raising it costs no gloss.
 // Move this alone for darkness.
-const DOCK_DIM = 'rgba(0, 0, 0, 0.68)';
+const DOCK_DIM = 'rgba(0, 0, 0, 0.26)';
+// The colour the GLASS ITSELF is made of, which is where nearly all of the
+// darkness lives now. Found on 2026-09-12 from the owner's own observation:
+// iOS draws an app WITHOUT live glass in the app switcher, and the reference
+// bar's stand-in there is a pale grey wash - so its darkness cannot be coming
+// from a layer underneath the material, it is IN the material.
+//
+// That is the difference that made ours look flat. A tint is composited into
+// the glass, so the system computes the lensing, the speculars and the edge
+// treatment ON TOP of it; a black veil underneath gives the glass a flat sheet
+// to look at and there is nothing left for it to do. Tinted film in a car
+// window against clear glass laid on black paper: the same darkness, one of
+// them still alive.
+//
+// Neutral, near-black, and NOT the brand orange - that was tried and a
+// translucent brown tint goes mauve over a white page.
+const DOCK_TINT = 'rgba(16, 16, 18, 0.62)';
 // There is NO sheen. A white-to-nothing gradient down the top of the pill
 // (0.30 at the edge, 0.10 at mid-height) was the gloss for a day, and over a
 // busy page it read as light on glass. Over the plain white tables page it was
@@ -323,7 +340,28 @@ const DOCK_DIM = 'rgba(0, 0, 0, 0.68)';
 // and as "leaping" to the next slot the moment a swipe starts - a scaleX about
 // the centre pushes the leading edge ahead of the travel. This is close enough
 // to nothing that the capsule reads as sliding, not stretching.
-const PHONE_ACTIVE_INDICATOR_STRETCH = 1.02;
+const PHONE_ACTIVE_INDICATOR_STRETCH = 1.16;
+// What it gives up in height at the same moment. Roughly volume-conserving:
+// 1 / 1.16 is 0.86, and a little less squash than that keeps the capsule from
+// looking thin as it crosses.
+const PHONE_ACTIVE_INDICATOR_SQUASH = 0.92;
+// The HELD pose - a finger on the pager, one full slot into the drag. These
+// are real dimensions, not scales: the capsule loses 14% of its height from
+// the top and the bottom alike, gains 5% of width, and stays a true pill at
+// every frame, so its corner radius falls WITH its height. That is what makes
+// the corners read as compressed. A scaleY could not do it - it keeps the
+// corner's full horizontal radius while taking the height away, so the ends
+// bulged into ellipses and the whole thing read as a round blob however the
+// numbers were tuned. Measured against the reference held at the same point.
+const PHONE_ACTIVE_INDICATOR_HELD_HEIGHT = 0.86;
+const PHONE_ACTIVE_INDICATOR_HELD_WIDTH = 1.05;
+// How far the whole body leans toward the target at the same point, in slots.
+const PHONE_ACTIVE_INDICATOR_HELD_LEAN = 0.18;
+// How far into the drag, in slots, the compression is FULLY reached. It used
+// to be the whole slot, which meant the pose above was only ever seen with the
+// finger at the far edge; at 0.55 it arrives a little past half way, with a
+// faster-than-linear start so it is felt as soon as the drag moves.
+const PHONE_ACTIVE_INDICATOR_HELD_REACH = 0.55;
 
 // Every other dimension of the dock derives from this one - the pill radius, the
 // active indicator's radius, each tab's minimum height, and the clearance
@@ -335,7 +373,7 @@ const PHONE_ACTIVE_INDICATOR_STRETCH = 1.02;
 // integer.
 // 60. Against the reference at the same crop scale ours measured ~6% shorter at
 // 56 and was reported as visibly smaller; 60 closes that.
-const PHONE_DOCK_HEIGHT = 60;
+const PHONE_DOCK_HEIGHT = 59;
 const PHONE_DOCK_RADIUS = PHONE_DOCK_HEIGHT / 2;
 const PHONE_DOCK_SIDE_MARGIN = spacing.xl;
 // The capsule fills its slot sideways - the reference measures 1.02 slots wide,
@@ -343,7 +381,27 @@ const PHONE_DOCK_SIDE_MARGIN = spacing.xl;
 // the two insets are separate numbers. The metrics helper takes the horizontal
 // one, because that is the one that sets width and travel.
 const PHONE_ACTIVE_INDICATOR_INSET = 0;
+// 6, and it has to stay equal to the gap the capsule leaves at the ends of the
+// pill: PHONE_DOCK_END_PADDING minus PHONE_ACTIVE_INDICATOR_OVERHANG. The
+// capsule sits in a groove, and a groove with a different width on one side
+// reads as the capsule having slipped rather than as a measurement.
 const PHONE_ACTIVE_INDICATOR_VERTICAL_INSET = 4;
+// How far the selection capsule runs past its slot on each side. The metrics
+// helper cannot express this - it takes an INSET and refuses a negative one -
+// so the overhang is added here, symmetrically, which leaves the capsule
+// 0: the capsule is exactly one slot wide. It ran 6pt past its slot on each
+// side for a while and the shape came back as too LONG next to the reference,
+// which is fatter for its height - and the capsule's height is fixed by the
+// bar, so the only way to fatten it is to take the width off. The end padding
+// minus this is the gap left at the first and last tab, and the two are chosen
+// together to land on the vertical inset: 8 - 4 = 4.
+//
+// 4, up from 2, and the end padding went up by the same two points so the end
+// groove did not change. Two points longer at rest so that, when a drag leans
+// it toward the target, its trailing end is still over the icon it started
+// on for longer - at one slot wide the tail was reported as leaving its
+// starting point too soon.
+const PHONE_ACTIVE_INDICATOR_OVERHANG = 4;
 // The bar's own end padding, and the fix for the capsule sinking into the left
 // end on the first tab. On the reference the capsule sits ~8pt in from the
 // bar's end, because the slots do not start at the edge: the row is padded and
@@ -356,6 +414,18 @@ const PHONE_ACTIVE_INDICATOR_VERTICAL_INSET = 4;
 // `left: inset`; on device the capsule sat 8pt left of every glyph. It does
 // not - like CSS, `left` is measured from the parent's border edge.
 const PHONE_DOCK_END_PADDING = 8;
+// Exactly half the capsule's height, which is the pill's radius minus the
+// groove - and that equality is not a style choice, it is the only way the gap
+// can be the same width the whole way round. Two rounded rectangles hold an
+// even gap only when they are concentric AND their radii differ by exactly
+// that gap; the bar is a full pill, so anything inside it with a smaller
+// corner opens a wider gap at the diagonals than it has along the edges -
+// which is the odd curve that showed at the corners when this was 0.46.
+//
+// It still is not a plain capsule: it and the bar are both drawn on
+// `continuous`, Apple's squircle, where the corner eases into the side rather
+// than meeting it at a tangent. The same curve on both is the other half of
+// keeping the gap even.
 const PHONE_ACTIVE_INDICATOR_RADIUS = (
   PHONE_DOCK_HEIGHT - PHONE_ACTIVE_INDICATOR_VERTICAL_INSET * 2
 ) / 2;
@@ -378,6 +448,8 @@ export function PrimaryPhoneNavigation({
   accessibilitySelectedIndex,
   items,
   selectedIndex,
+  markerGesture,
+  markerOrigin,
   markerPosition,
   onSelect,
 }: {
@@ -385,40 +457,184 @@ export function PrimaryPhoneNavigation({
   items: NavItem[];
   selectedIndex: number;
   markerPosition: Animated.Value;
+  /** 1 while a finger is on the pager, eased to 0 after it lets go. */
+  markerGesture?: Animated.Value;
+  /** The tab a drag started on, as the pager wrote it at grant. */
+  markerOrigin?: Animated.Value;
   onSelect: (index: number) => void;
 }) {
   const { copy, language } = useDisplayPreferences();
   const insets = useSafeAreaInsets();
-  const [dockWidth, setDockWidth] = useState(0);
+  // Measured off the FIRST TAB, not computed from the pill's width and the end
+  // padding. Every tab is `flex: 1`, so tab zero's frame IS the slot - its `x`
+  // already carries whatever padding the row is using and its width is the step
+  // between tabs. Deriving those two numbers instead meant the capsule and the
+  // tabs were each laid out against a separate copy of the same geometry, and
+  // any edit that moved one without the other put the capsule off its icon.
+  // There is nothing left to keep in step.
+  const [slotFrame, setSlotFrame] = useState<{ x: number; width: number } | null>(null);
   const indicatorMetrics = resolvePhoneNavigationIndicatorMetrics(
-    dockWidth,
+    slotFrame ? slotFrame.width * items.length : 0,
     items.length,
     PHONE_ACTIVE_INDICATOR_INSET,
   );
   const slotWidth = indicatorMetrics?.slotWidth ?? 0;
-  const markerTranslate = Animated.multiply(markerPosition, slotWidth);
-  // A sawtooth over the marker: 1 at every integer slot, STRETCH at every
-  // half-integer between them. The pager drives `markerPosition` continuously
-  // through a swipe, so this is what makes the capsule elongate toward the
-  // destination and contract on arrival, with no second animation to keep in
-  // step - it cannot lag the travel because it IS the travel.
-  const markerStretch = useMemo(() => {
+  // Two motions, blended by whether a finger is down.
+  //
+  // HELD is what a drag gets: the capsule stays on the tab it started from,
+  // leans a little toward the target, and compresses - see `capsuleShape`
+  // below for the compression, which is real geometry and not a transform. It
+  // deliberately does not arrive: arriving is the release's job, and a drag
+  // held at 99% has still not arrived. Anchored on `markerOrigin`, which the
+  // pager writes at grant and never clears.
+  //
+  // SETTLED is the plain thing: capsule exactly on the marker, one slot wide,
+  // with a stretch-and-squash as it crosses between two. A tap uses it
+  // outright; a release blends into it over 240ms while the pager springs, and
+  // that blend is the snap into place.
+  //
+  // At rest both give the same centre and a scale of 1, so the moment a drag
+  // starts nothing jumps.
+  const markerLastIndex = Math.max(items.length - 1, 1);
+  const markerSawtooth = useCallback((rest: number, peak: number) => {
     const count = items.length;
-    if (count < 2) return 1;
+    if (count < 2) return rest;
     const inputRange: number[] = [];
     const outputRange: number[] = [];
     for (let index = 0; index < count; index += 1) {
       inputRange.push(index);
-      outputRange.push(1);
+      outputRange.push(rest);
       if (index < count - 1) {
         inputRange.push(index + 0.5);
-        outputRange.push(PHONE_ACTIVE_INDICATOR_STRETCH);
+        outputRange.push(peak);
       }
     }
     return markerPosition.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
   }, [items.length, markerPosition]);
-  const onDockLayout = useCallback((event: LayoutChangeEvent) => {
-    setDockWidth(event.nativeEvent.layout.width - PHONE_DOCK_END_PADDING * 2);
+  const markerMotion = useMemo(() => {
+    const settled = {
+      translate: markerPosition.interpolate({
+        inputRange: [0, markerLastIndex],
+        outputRange: [0, markerLastIndex * slotWidth],
+        extrapolate: 'clamp',
+      }),
+      stretch: markerSawtooth(1, PHONE_ACTIVE_INDICATOR_STRETCH),
+      squash: markerSawtooth(1, PHONE_ACTIVE_INDICATOR_SQUASH),
+    };
+    if (!markerGesture || !markerOrigin) return settled;
+
+    // While held the capsule only LEANS toward the target - the whole body,
+    // trailing edge included, by up to PHONE_ACTIVE_INDICATOR_HELD_LEAN of a
+    // slot. Its compression is not a transform at all any more; see
+    // `capsuleShape` below, which animates the real height, width and radius.
+    // Stretch and squash are pinned to 1 here so the two never stack.
+    //
+    // Everything is a function of `u = marker - origin`, computed on the
+    // animation graph from two values the pager writes in the same instant,
+    // so there is no render in between for them to disagree across.
+    const u = Animated.subtract(markerPosition, markerOrigin);
+    const lean = PHONE_ACTIVE_INDICATOR_HELD_LEAN * slotWidth;
+    const held = {
+      translate: Animated.add(
+        Animated.multiply(markerOrigin, slotWidth),
+        u.interpolate({ inputRange: [-1, 0, 1], outputRange: [-lean, 0, lean], extrapolate: 'clamp' }),
+      ),
+      stretch: 1,
+      squash: 1,
+    };
+    const gesture = markerGesture;
+    const released = Animated.subtract(1, gesture);
+    const asNode = (value: Animated.AnimatedInterpolation<number> | number) => (
+      typeof value === 'number' ? new Animated.Value(value) : value
+    );
+    const blend = (
+      during: Animated.AnimatedInterpolation<number> | number,
+      after: Animated.AnimatedInterpolation<number> | number,
+    ) => Animated.add(
+      Animated.multiply(asNode(during), gesture),
+      Animated.multiply(asNode(after), released),
+    );
+    return {
+      translate: blend(held.translate, settled.translate),
+      stretch: blend(held.stretch, settled.stretch),
+      squash: blend(held.squash, settled.squash),
+    };
+  }, [markerGesture, markerLastIndex, markerOrigin, markerPosition, markerSawtooth, slotWidth]);
+  // The capsule's SHAPE while held: real height, width and corner radius.
+  //
+  // The pager drives `markerPosition` on the native driver, which carries
+  // transforms and nothing else - `height` and `borderRadius` cannot hang off
+  // it. So the three values it needs are mirrored onto plain JS-side values
+  // through listeners (a native-driven value still reports every frame to
+  // its JS listeners) and the shape is computed from the mirrors. Only this
+  // small inner view runs on the JS side; the pager, the outer capsule's
+  // travel and its settle stretch stay native, so a swipe is as smooth as it
+  // was.
+  //
+  // It is an INNER view for a reason: an Animated.View whose style holds a
+  // native-driven transform has its whole style claimed by the native
+  // module, and a JS-driven `height` in the same style throws. Nesting keeps
+  // the two drivers on two nodes.
+  //
+  //   pull = |marker - origin| x gesture      0 at rest, 1 a full slot into a
+  //                                          held drag, fading with the release
+  //   height = H -> 0.86 H
+  //   width  = W -> 1.05 W
+  //   radius = H/2 -> 0.86 H/2               always half the height: a pill
+  const mirror = useRef({
+    marker: new Animated.Value(Math.max(selectedIndex, 0)),
+    origin: new Animated.Value(Math.max(selectedIndex, 0)),
+    gesture: new Animated.Value(0),
+  }).current;
+  useEffect(() => {
+    if (!markerGesture || !markerOrigin) return undefined;
+    const pairs: Array<[Animated.Value, Animated.Value]> = [
+      [markerPosition, mirror.marker],
+      [markerOrigin, mirror.origin],
+      [markerGesture, mirror.gesture],
+    ];
+    const subscriptions = pairs.map(([source, target]) => (
+      [source, source.addListener(({ value }) => target.setValue(value))] as const
+    ));
+    return () => {
+      subscriptions.forEach(([source, id]) => source.removeListener(id));
+    };
+  }, [markerGesture, markerOrigin, markerPosition, mirror]);
+  const capsuleShape = useMemo(() => {
+    const height = PHONE_DOCK_HEIGHT - PHONE_ACTIVE_INDICATOR_VERTICAL_INSET * 2;
+    const width = (indicatorMetrics?.indicatorWidth ?? 0) + PHONE_ACTIVE_INDICATOR_OVERHANG * 2;
+    const rest = { height, width, radius: PHONE_ACTIVE_INDICATOR_RADIUS };
+    if (!markerGesture || !markerOrigin) return rest;
+    // Ease-out into the full pose by PHONE_ACTIVE_INDICATOR_HELD_REACH of a
+    // slot, then flat: 60% of the compression is there at a third of the reach.
+    const reach = PHONE_ACTIVE_INDICATOR_HELD_REACH;
+    const pull = Animated.multiply(
+      Animated.subtract(mirror.marker, mirror.origin).interpolate({
+        inputRange: [-1, -reach, -reach / 3, 0, reach / 3, reach, 1],
+        outputRange: [1, 1, 0.6, 0, 0.6, 1, 1],
+        extrapolate: 'clamp',
+      }),
+      mirror.gesture,
+    );
+    const between = (from: number, to: number) => pull.interpolate({
+      inputRange: [0, 1],
+      outputRange: [from, to],
+      extrapolate: 'clamp',
+    });
+    const heldHeight = height * PHONE_ACTIVE_INDICATOR_HELD_HEIGHT;
+    return {
+      height: between(height, heldHeight),
+      width: between(width, width * PHONE_ACTIVE_INDICATOR_HELD_WIDTH),
+      radius: between(PHONE_ACTIVE_INDICATOR_RADIUS, heldHeight / 2),
+    };
+  }, [indicatorMetrics?.indicatorWidth, markerGesture, markerOrigin, mirror]);
+  const onSlotLayout = useCallback((event: LayoutChangeEvent) => {
+    const { x, width: slot } = event.nativeEvent.layout;
+    setSlotFrame((current) => (
+      current && Math.abs(current.x - x) < 0.5 && Math.abs(current.width - slot) < 0.5
+        ? current
+        : { x, width: slot }
+    ));
   }, []);
   // Press feedback belongs to the WHOLE plate, not to the glyph under the
   // thumb. Dimming one icon reads as that icon being a different colour from
@@ -504,6 +720,7 @@ export function PrimaryPhoneNavigation({
             height: PHONE_DOCK_HEIGHT,
             marginHorizontal: PHONE_DOCK_SIDE_MARGIN,
             borderRadius: PHONE_DOCK_RADIUS,
+            borderCurve: 'continuous',
             // Transparent under the material, or the glass refracts a solid
             // plate and nothing behind the dock is ever visible. Android keeps
             // the fill: there is no material there, so the fill IS the dock, and
@@ -550,18 +767,22 @@ export function PrimaryPhoneNavigation({
           <View
             accessibilityLabel={copy('แถบนำทางหลัก ปัดหน้าจอซ้ายหรือขวาเพื่อเปลี่ยนแท็บ', 'Main navigation. Swipe the screen left or right to change tabs.')}
             accessibilityRole="tablist"
-            onLayout={onDockLayout}
             style={{
               height: PHONE_DOCK_HEIGHT,
               flexDirection: 'row',
               overflow: 'hidden',
               borderRadius: PHONE_DOCK_RADIUS,
+              borderCurve: 'continuous',
               paddingHorizontal: PHONE_DOCK_END_PADDING,
               backgroundColor: DOCK_GLASS_STACK ? 'transparent' : palette.navigationDockSurface,
               // The hairline rim the reference bar carries: a lighter edge that
               // is what separates dark glass from the dark content behind it.
               borderWidth: StyleSheet.hairlineWidth,
               borderColor: palette.navigationDockRim,
+              // The top lip catches the most light on a real edge, so it is the
+              // brightest line on the bar rather than one quarter of an even
+              // outline.
+              borderTopColor: palette.navigationDockRimLit,
             }}
           >
             {/* The dim. See DOCK_DIM.
@@ -592,21 +813,8 @@ export function PrimaryPhoneNavigation({
                 a frost, and it turned the bar into a flat grey slab.
                 `clear` bends light and glints and frosts nothing.
 
-                DARK scheme. The light scheme was tried first for its louder
-                glint, and its highlight is the "white band" that survived
-                three fixes aimed at other layers: the light scheme paints a
-                pronounced white specular strip along the inside of the top
-                edge and a bright line along the bottom, with a hard edge, and
-                over a plain white page - nothing behind the bar to break it
-                up - that read as a bug, not gloss. Smoothing the sheen, fixing
-                the corner clip and removing the plate shadow each changed
-                nothing, which is what isolated it: this is the one layer that
-                draws a highlight of its own. The dark scheme's highlights are
-                grey and faint; the gloss lives in the rim, the glint in
-                `isInteractive`. It adds no frost in `clear`, so the darkness
-                still comes only from the dim beneath.
-                No tint, because a wash on top is what "a bar that has a colour"
-                looked like. `isInteractive` is what makes
+                Tinted with DOCK_TINT - see its comment for why the darkness
+                lives in the material. `isInteractive` is what makes
                 it render as glass at all - without it the surface goes flat -
                 and it does not interfere with the tabs: RN's touch handler is a
                 recogniser on the surface root with `delaysTouchesBegan = NO`,
@@ -614,11 +822,49 @@ export function PrimaryPhoneNavigation({
                 (compact-table-tile.tsx ships the same arrangement). Its own
                 `borderRadius`, because a GlassView draws its own shape and a
                 square one reads as a slab inside the pill. */}
+            {/* The edge lights. A real piece of glass is brightest where its
+                face turns over into its edge, and that lip is most of what reads
+                as wet. This is NOT the sheen that was deleted: that was white
+                0.30 falling across the whole height, which over a plain white
+                page turned into a lighter top half with a seam through it. These
+                are 5pt and 3pt of light ON the lip, at the top and the bottom,
+                with the middle of the bar untouched - the reference bar has
+                exactly this and nothing across its face.
+
+                Under the lens on purpose, so the glass refracts them instead of
+                laying them flat on top. */}
+            {DOCK_GLASS_STACK ? (
+              <>
+                <LinearGradient
+                  colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0)']}
+                  end={{ x: 0.5, y: 1 }}
+                  pointerEvents="none"
+                  start={{ x: 0.5, y: 0 }}
+                  style={{ position: 'absolute', top: -1, right: -1, left: -1, height: 6, zIndex: 0 }}
+                />
+                <LinearGradient
+                  colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.22)']}
+                  end={{ x: 0.5, y: 1 }}
+                  pointerEvents="none"
+                  start={{ x: 0.5, y: 0 }}
+                  style={{ position: 'absolute', bottom: -1, right: -1, left: -1, height: 4, zIndex: 0 }}
+                />
+              </>
+            ) : null}
             {LIQUID_GLASS ? (
               <GlassView
-                colorScheme="dark"
+                // LIGHT scheme, over a dark dim, for the gloss. The light
+                // scheme's speculars are white and pronounced where the dark
+                // scheme's are grey and faint, and the specular IS the shine -
+                // asked for "as glossy as theirs" on 2026-09-12. It was on dark
+                // while a white band was being hunted; the band turned out to be
+                // a sheen gradient that has since been deleted, so the scheme was
+                // never the cause. If a band ever comes back over a plain white
+                // page, this is the first thing to put back to `dark`.
+                colorScheme="light"
                 glassEffectStyle="clear"
                 isInteractive
+                tintColor={DOCK_TINT}
                 // Bleeds 1pt like the layers under it, and keeps a radius only
                 // because a GlassView draws its own outline: one point larger
                 // than the pill's so the two arcs stay concentric, the clip
@@ -630,6 +876,7 @@ export function PrimaryPhoneNavigation({
                   bottom: -1,
                   left: -1,
                   borderRadius: PHONE_DOCK_RADIUS + 1,
+                  borderCurve: 'continuous',
                   zIndex: 0,
                 }}
               />
@@ -641,17 +888,32 @@ export function PrimaryPhoneNavigation({
                   position: 'absolute',
                   top: PHONE_ACTIVE_INDICATOR_VERTICAL_INSET,
                   bottom: PHONE_ACTIVE_INDICATOR_VERTICAL_INSET,
-                  left: PHONE_DOCK_END_PADDING + indicatorMetrics.indicatorInset,
-                  width: indicatorMetrics.indicatorWidth,
-                  borderRadius: PHONE_ACTIVE_INDICATOR_RADIUS,
-                  // Translucent white, not a solid fill: on the reference it is
-                  // a paler patch of the same glass, so the content behind the
-                  // dock shows through the capsule too.
-                  backgroundColor: palette.navigationDockIndicator,
-                  transform: [{ translateX: markerTranslate }, { scaleX: markerStretch }],
+                  left: (slotFrame?.x ?? 0) + indicatorMetrics.indicatorInset - PHONE_ACTIVE_INDICATOR_OVERHANG,
+                  width: indicatorMetrics.indicatorWidth + PHONE_ACTIVE_INDICATOR_OVERHANG * 2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transform: [
+                    { translateX: markerMotion.translate },
+                    { scaleX: markerMotion.stretch },
+                    { scaleY: markerMotion.squash },
+                  ],
                   zIndex: 0,
                 }}
-              />
+              >
+                <Animated.View
+                  style={{
+                    height: capsuleShape.height,
+                    width: capsuleShape.width,
+                    borderRadius: capsuleShape.radius,
+                    // iOS only; Android draws the plain circular corner.
+                    borderCurve: 'continuous',
+                    // Translucent white, not a solid fill: on the reference it
+                    // is a paler patch of the same glass, so the content
+                    // behind the dock shows through the capsule too.
+                    backgroundColor: palette.navigationDockIndicator,
+                  }}
+                />
+              </Animated.View>
             ) : null}
             {items.map((item, index) => {
               const active = index === selectedIndex;
@@ -663,6 +925,7 @@ export function PrimaryPhoneNavigation({
                 <Pressable
                   accessibilityLabel={label}
                   accessibilityRole="tab"
+                  onLayout={index === 0 ? onSlotLayout : undefined}
                   accessibilityState={{ selected: accessibilitySelected }}
                   aria-selected={accessibilitySelected}
                   key={item.key}
@@ -685,7 +948,7 @@ export function PrimaryPhoneNavigation({
                     <AppIcon
                       color={palette.navigationDockIcon}
                       name={active ? item.activeIcon : item.icon}
-                      size={27}
+                      size={26}
                     />
                   </View>
                 </Pressable>
@@ -839,8 +1102,11 @@ export function AppScreen({
   contentStyle,
   contentMaxWidth,
   stickyHeading = false,
+  tightHeading = false,
+  hideTitle = false,
   stickyContent,
   onScrollStart,
+  onScrollBlocked,
   onTouchOutsideStickyContent,
   centerTitle = false,
   immersive = false,
@@ -864,6 +1130,15 @@ export function AppScreen({
    *  scrolls under them. Opt-in: it costs permanent vertical space, which is
    *  only worth paying on a screen long enough to lose your place in. */
   stickyHeading?: boolean;
+  /** Sit the pinned heading flush under the status bar instead of a spacing.lg
+   *  below it, and bring `floatingTrailing` up with it. The two are one line and
+   *  have to move together; a screen whose header carries a control on the
+   *  trailing side reads as broken the moment they part company. */
+  tightHeading?: boolean;
+  /** Drop the heading row while keeping `title` as the screen's name for screen
+   *  readers. For a screen whose content carries its own headings and whose
+   *  title only repeated the tab that opened it. */
+  hideTitle?: boolean;
   /** Controls that stay pinned under the heading — filters a long list is read
    *  through, which are useless once they have scrolled away. Needs
    *  `stickyHeading`, since it renders inside that same pinned block. */
@@ -872,6 +1147,11 @@ export function AppScreen({
    *  not every scroll event: focusing a field can scroll the view on its own,
    *  and a screen that reacts to that would undo what the reader just opened. */
   onScrollStart?: () => void;
+  /** When set, the page does NOT scroll and a vertical drag calls this instead.
+   *  For a screen holding something a scroll would strand - an open swipe rail,
+   *  say: the drag that would have moved the page is spent putting it away, and
+   *  the next one scrolls. Undefined leaves scrolling alone. */
+  onScrollBlocked?: () => void;
   /** Turns the pinned sticky content into a stage: while this is set, a
    *  transparent catcher covers everything below the pinned header, and the
    *  first touch anywhere on it spends itself calling this instead of reaching
@@ -928,6 +1208,7 @@ export function AppScreen({
   // Lets the dock go inert too - it is mounted a level up, beside the pager.
   usePublishPrimaryTabStage(onTouchOutsideStickyContent ?? null);
   const scrollRef = useRef<ScrollView>(null);
+  const blockedTouchStart = useRef<number | null>(null);
   // Read back by `scrollBy`. RN offers no way to ask a ScrollView where it is,
   // and every alternative for "move this field up by exactly its overlap" needs
   // the number anyway.
@@ -1193,17 +1474,17 @@ export function AppScreen({
   if (!user) return <Redirect href="/login" />;
   if (!activeMembership) return <Redirect href="/restaurants" />;
 
-  const heading = (
+  const heading = hideTitle && !beforeHeading ? null : (
     <MotionReveal style={{ gap: spacing.xl }}>
       {beforeHeading}
-      <ScreenHeading
+      {hideTitle ? null : <ScreenHeading
         action={action}
         centerTitle={centerTitle}
         showBack={!topLevel}
         subtitle={subtitle}
         title={title}
         titleContent={titleContent}
-      />
+      />}
     </MotionReveal>
   );
   // A pinned header pays for its own top inset instead of letting the shell
@@ -1212,12 +1493,15 @@ export function AppScreen({
   // what a header separator is meant to be, drawn in the wrong place. Reaching
   // the top of the display deletes the join outright.
   const headerOwnsTopInset = scroll && stickyHeading && !immersive;
+  // The one number the pinned heading and the trailing control both sit on, so
+  // they cannot drift apart.
+  const headingTopGap = tightHeading ? 0 : spacing.lg;
   const pinnedHeading = scroll && stickyHeading ? (
     <View
       style={{
         alignItems: 'center',
         paddingHorizontal: horizontalPadding,
-        paddingTop: (headerOwnsTopInset ? insets.top : 0) + spacing.lg,
+        paddingTop: (headerOwnsTopInset ? insets.top : 0) + headingTopGap,
         paddingBottom: spacing.md,
         backgroundColor: screenBackground,
         // Above the touch catcher below, so the sticky content stays live while
@@ -1289,6 +1573,11 @@ export function AppScreen({
       contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: immersive ? 0 : spacing.lg, paddingBottom: topLevel && !isTablet ? phoneDockClearance : spacing.xxxl }}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
+      // No scroll bar. It is drawn OVER the content at the right edge, which is
+      // exactly where a swipe-to-delete rail opens, and a grey stripe down a red
+      // rail is the bar winning an argument with the screen. Every list long
+      // enough to need one already says where it is by what is in it.
+      showsVerticalScrollIndicator={false}
       onMomentumScrollBegin={reportVerticalScrollNow}
       onMomentumScrollEnd={reportVerticalScrollNow}
       onScroll={(event) => {
@@ -1302,6 +1591,20 @@ export function AppScreen({
       onScrollEndDrag={reportVerticalScrollNow}
       ref={scrollRef}
       refreshControl={refreshControl}
+      scrollEnabled={!onScrollBlocked}
+      // Where the finger landed, kept so a DRAG can be told from a press. A
+      // touchmove fires for the pixel or two a finger travels while tapping a
+      // button, and treating that as a scroll attempt would close the rail out
+      // from under the very button being pressed.
+      onTouchStart={onScrollBlocked ? (event) => {
+        blockedTouchStart.current = event.nativeEvent.pageY;
+      } : undefined}
+      onTouchMove={onScrollBlocked ? (event) => {
+        const start = blockedTouchStart.current;
+        if (start === null || Math.abs(event.nativeEvent.pageY - start) < 8) return;
+        blockedTouchStart.current = null;
+        onScrollBlocked();
+      } : undefined}
       scrollEventThrottle={32}
     >
       <View style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle]}>
@@ -1376,7 +1679,7 @@ export function AppScreen({
           // first line of the heading instead of above it.
           style={{
             position: 'absolute',
-            top: insets.top + (headerOwnsTopInset ? spacing.lg : 0),
+            top: insets.top + (headerOwnsTopInset ? headingTopGap : 0),
             right: horizontalPadding,
             zIndex: 10,
           }}
