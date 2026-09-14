@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View, type DimensionValue, type ViewStyle } from 'react-native';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { HomeCard } from '@/src/components/home/parts';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { ChipGroup, TextField } from '@/src/components/ui';
 import { formatKitchenMinutes, kitchenClockLabel, ticketProgress, type KitchenSortMode, type KitchenUrgency } from '@/src/lib/kitchen-board';
@@ -521,5 +522,99 @@ export function DonePanel({ rows, average, language, empty }: {
       </View>
       {rows.length ? rows.map((row, index) => <DoneRow key={row.key} row={row} language={language} first={index === 0} />) : <View style={{ paddingVertical: 10 }}>{empty}</View>}
     </View>
+  );
+}
+
+// ---------------------------------------------------------------- skeleton
+
+/**
+ * The board before its first snapshot arrives: three tiles, the heading, and
+ * tickets in the same outline as real ones — a dark header block with the
+ * minutes capsule on the right, dish rows beneath. Only the first load draws
+ * it; a refresh over a board already on screen keeps the tickets, because
+ * swapping live tickets for grey shapes every time the tab is opened would
+ * hide the thing the cook is looking at.
+ */
+export function KitchenSkeleton({ tablet, label }: { tablet: boolean; label: string }) {
+  const tile = (key: string, labelWidth: DimensionValue) => (
+    <HomeCard key={key} radius={16} style={{ flex: 1 }}>
+      <View style={{ paddingVertical: 10, paddingHorizontal: 10, gap: 7 }}>
+        <Bone width={26} height={26} radius={9} />
+        <Bone width={labelWidth} height={8} />
+        <Bone width="45%" height={16} radius={6} />
+      </View>
+    </HomeCard>
+  );
+
+  const ticket = (key: string, rows: number) => (
+    <View key={key} style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
+      <View style={{ backgroundColor: palette.surfaceSubtle, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flex: 1, gap: 8 }}>
+          <Bone width={110} height={24} radius={8} />
+          <Bone width={150} height={10} />
+        </View>
+        <Bone width={70} height={36} radius={18} />
+      </View>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: palette.divider }}>
+          <Bone width={28} height={28} radius={9} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <Bone width={index % 2 ? '55%' : '70%'} height={13} />
+            {index === 0 ? <Bone width="35%" height={9} /> : null}
+          </View>
+          <Bone width={64} height={34} radius={12} />
+        </View>
+      ))}
+    </View>
+  );
+
+  const heading = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 6 }}>
+      <Bone width={16} height={16} radius={5} />
+      <Bone width={58} height={12} />
+    </View>
+  );
+
+  const tiles = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {tile('a', '60%')}
+      {tile('b', '55%')}
+      {tile('c', '65%')}
+    </View>
+  );
+
+  return (
+    <SkeletonReveal label={label} style={{ gap: 12 }}>
+      {tiles}
+      {heading}
+      {tablet ? (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 14 }}>
+            <View style={{ flex: 1, gap: 12 }}>{ticket('a', 3)}{ticket('c', 1)}</View>
+            <View style={{ flex: 1, gap: 12 }}>{ticket('b', 2)}</View>
+          </View>
+          <View style={{ width: 300, borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, paddingHorizontal: 14, paddingVertical: 14, gap: 14 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Bone width={96} height={14} />
+              <Bone width={70} height={10} />
+            </View>
+            {[0, 1, 2, 3].map((row) => (
+              <View key={row} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Bone width={row % 2 ? '50%' : '65%'} height={12} />
+                  <Bone width="40%" height={9} />
+                </View>
+                <Bone width={44} height={12} />
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : (
+        <View style={{ gap: 12 }}>
+          {ticket('a', 3)}
+          {ticket('b', 2)}
+        </View>
+      )}
+    </SkeletonReveal>
   );
 }

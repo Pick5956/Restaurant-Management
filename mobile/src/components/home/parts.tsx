@@ -64,6 +64,19 @@ export function HomeHeading({ icon, title, trailing, onPress }: { icon: AppIconN
 
 // ---------------------------------------------------------------- day strip
 
+/**
+ * A small round mark drawn as a vector circle. A 4–5 pt View with a half-width
+ * corner radius is snapped to whole pixels on Android and comes out as a
+ * square there (the owner saw squares under the days, 14 ก.ย. 2569).
+ */
+function Dot({ size, color, style }: { size: number; color: string; style?: ViewStyle }) {
+  return (
+    <Svg width={size} height={size} style={style}>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={color} />
+    </Svg>
+  );
+}
+
 const WEEKDAYS_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -94,7 +107,7 @@ export function DayStrip({ days, language, onSelect }: { days: HomeDay[]; langua
         >
           <Text allowFontScaling={false} style={{ fontSize: 10, fontWeight: '600', color: day.selected ? 'rgba(255,255,255,0.7)' : palette.muted }}>{names[day.weekday]}</Text>
           <Text allowFontScaling={false} style={{ fontSize: 14, fontWeight: '700', lineHeight: 18, color: day.selected ? '#ffffff' : palette.textStrong, fontVariant: ['tabular-nums'] }}>{day.dayOfMonth}</Text>
-          <View style={{ width: 4, height: 4, borderRadius: 2, marginTop: 2, backgroundColor: day.hasSales ? (day.selected ? palette.accentMuted : palette.primary) : 'transparent' }} />
+          <Dot size={5} color={day.hasSales ? (day.selected ? palette.accentMuted : palette.primary) : 'transparent'} style={{ marginTop: 2 }} />
         </Pressable>
       ))}
     </View>
@@ -354,7 +367,7 @@ export function TableMap({ cells, columns, legend, onPress }: {
                 >
                   <View style={{ aspectRatio: 1.5, borderRadius: 11, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: look.bg, borderWidth: 1, borderColor: look.border, shadowColor: '#7C2D12', shadowOpacity: cell.state === 'free' ? 0 : 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: cell.state === 'free' ? 0 : 2 }}>
                     <Text allowFontScaling={false} numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: look.ink }}>{cell.label}</Text>
-                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: look.dot }} />
+                    <Dot size={5} color={look.dot} />
                   </View>
                 </Pressable>
               );
@@ -364,7 +377,7 @@ export function TableMap({ cells, columns, legend, onPress }: {
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
           {([['busy', cellLook.busy.dot], ['bill', cellLook.bill.dot], ...(hasReserved ? [['reserved', cellLook.reserved.dot] as const] : []), ['free', cellLook.free.dot]] as Array<[HomeTableCell['state'], string]>).map(([state, dot]) => (
             <View key={state} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: dot }} />
+              <Dot size={7} color={dot} />
               <Text style={{ fontSize: 11, color: palette.muted }}>{legend[state]}</Text>
             </View>
           ))}

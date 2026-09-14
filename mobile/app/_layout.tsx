@@ -5,7 +5,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
-import { Platform, View, useWindowDimensions } from 'react-native';
+import { Platform, StatusBar as SystemStatusBar, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { TabletWorkspaceFrame } from '@/src/components/app-shell';
@@ -162,6 +162,12 @@ export default function RootLayout() {
           edge-to-edge, so the bar is transparent and the view behind it shows
           through. The wrapping View already paints colors.surface there. */}
       <StatusBar style="dark" />
+      {/* Android 14 and older still let the host paint that bar. Expo Go on
+          Android 9 painted it solid black over the app, and the dark icons on
+          it disappeared (14 ก.ย. 2569). Making it transparent there gives the
+          same page-behind-the-bar look Android 15 has by default; on 15+ these
+          two props do nothing. */}
+      {Platform.OS === 'android' ? <SystemStatusBar backgroundColor="transparent" translucent /> : null}
       <SafeAreaProvider>
         <DisplayPreferencesProvider>
           <ToastProvider>

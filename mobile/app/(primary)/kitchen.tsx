@@ -14,6 +14,7 @@ import {
   LiveChip,
   Ticket,
   TicketButton,
+  KitchenSkeleton,
   TicketItem,
   type DoneRowProps,
 } from '@/src/components/kitchen/parts';
@@ -117,6 +118,9 @@ export default function KitchenScreen() {
   const canUpdate = access.canUpdate;
   const canView = access.canView;
   const [orders, setOrders] = useState<Order[]>([]);
+  // False until the first snapshot lands. Only then does a load draw the
+  // skeleton; later loads keep the tickets on screen.
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [completedOpen, setCompletedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
@@ -163,6 +167,7 @@ export default function KitchenScreen() {
           });
         }
         setOrders(response.orders || []);
+        setHasSnapshot(true);
       }
     } catch (err) {
       if (requestGenerationRef.current.isCurrent(request)) throw err;
@@ -642,6 +647,11 @@ export default function KitchenScreen() {
         />
       ) : null}
 
+      {loading && !hasSnapshot ? (
+        <KitchenSkeleton tablet={isTablet} label={copy('กำลังโหลดคิวครัว', 'Loading the kitchen queue')} />
+      ) : null}
+
+      {loading && !hasSnapshot ? null : (<>
       <View style={styles.tiles}>
         <KitchenTile
           icon="flame-outline"
@@ -691,6 +701,7 @@ export default function KitchenScreen() {
           {emptyBoard ?? cookingTickets.map(renderTicket)}
         </View>
       )}
+      </>)}
 
       <CancelSheet
         open={cancelTarget !== null}
