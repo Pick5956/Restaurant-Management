@@ -10,6 +10,7 @@ import { playBeep } from "@/src/lib/browserAudio";
 import { can } from "@/src/lib/rbac";
 import { kitchenQueue, updateOrderItemStatus } from "@/src/lib/order";
 import { kitchenTicketKey } from "@/src/lib/homeDashboard";
+import { sortKitchenTickets, type KitchenSortMode } from "@/src/lib/kitchenSort";
 import type { Order, OrderItem } from "@/src/types/order";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { Skeleton } from "@/src/components/shared/Skeleton";
@@ -133,6 +134,9 @@ export default function KitchenPage() {
         ready: "เสร็จแล้ว",
         cooking: "กำลังทำ",
         cookingZone: "กำลังปรุงอาหาร",
+        sortLabel: "เรียงตั๋ว",
+        sortWaiting: "รอนานสุด",
+        sortLatest: "ล่าสุด",
         readyZone: "โซนเสร็จแล้ว",
         cookingEmpty: "ยังไม่มีรายการกำลังทำ",
         readyEmpty: "ยังไม่มีรายการที่ทำเสร็จ",
@@ -179,6 +183,9 @@ export default function KitchenPage() {
         ready: "Done",
         cooking: "Cooking",
         cookingZone: "Cooking",
+        sortLabel: "Sort tickets",
+        sortWaiting: "Longest wait",
+        sortLatest: "Latest",
         readyZone: "Done",
         cookingEmpty: "No items are being prepared",
         readyEmpty: "No completed items",
@@ -215,9 +222,15 @@ export default function KitchenPage() {
     () => orders.filter((order) => order.items?.some((item) => item.status === "cooking" || item.status === "ready")),
     [orders],
   );
+  // Same two orders as the app's kitchen (14 ก.ย.): longest wait first by
+  // default, or the round that just came in first.
+  const [sortMode, setSortMode] = useState<KitchenSortMode>("waiting");
   const cookingOrders = useMemo(
-    () => visibleOrders.filter((order) => order.items?.some((item) => item.status === "cooking")),
-    [visibleOrders],
+    () => sortKitchenTickets(
+      visibleOrders.filter((order) => order.items?.some((item) => item.status === "cooking")),
+      sortMode,
+    ),
+    [sortMode, visibleOrders],
   );
   const readyOrders = useMemo(
     () => visibleOrders.filter((order) => order.items?.some((item) => item.status === "ready")),
@@ -793,7 +806,37 @@ export default function KitchenPage() {
         ) : (
           <div className="flex min-h-[52px] w-full items-center justify-between gap-3 bg-gray-100 px-4 py-1.5 text-gray-900 dark:bg-gray-800 dark:text-white">
             {zoneIconLabel}
-            <span className="flex shrink-0 items-center gap-2 pr-1">
+            <span className="flex shrink-0 items-center gap-3 pr-1">
+              {laneOrders.length > 1 ? (
+                <span
+                  role="radiogroup"
+                  aria-label={copy.sortLabel}
+                  className="inline-flex rounded-full border border-gray-200 bg-white/60 p-0.5 dark:border-gray-700 dark:bg-gray-900/60"
+                >
+                  {([
+                    ["waiting", copy.sortWaiting],
+                    ["latest", copy.sortLatest],
+                  ] as const).map(([mode, label]) => {
+                    const on = sortMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setSortMode(mode)}
+                        className={`rounded-full px-3 py-1 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                          on
+                            ? "bg-white text-gray-950 shadow-sm dark:bg-gray-700 dark:text-white"
+                            : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </span>
+              ) : null}
               {zoneCount}
             </span>
           </div>

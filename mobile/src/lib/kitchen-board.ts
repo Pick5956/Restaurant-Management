@@ -1,6 +1,7 @@
 import {
   kitchenRoundDurationSeconds,
   kitchenRoundFinishedAt,
+  kitchenTicketStartedAt,
   kitchenTicketTiming,
   type KitchenUrgency,
 } from './kitchen-workflow.ts';
@@ -33,6 +34,34 @@ export function sortTicketsByWait<T extends BoardTicket>(tickets: readonly T[], 
     .map((ticket, index) => ({ ticket, index, minutes: kitchenTicketTiming(ticket, now).minutes }))
     .sort((left, right) => right.minutes - left.minutes || left.index - right.index)
     .map((entry) => entry.ticket);
+}
+
+/**
+ * The board's two orders. "รอนานสุด" (the default) puts the ticket that has
+ * waited longest on top — what to cook next. "ล่าสุด" puts the round that just
+ * came in on top — what was just ordered, for checking a table's order the
+ * moment it lands. The owner asked for the second on 14 ก.ย.
+ */
+export type KitchenSortMode = 'waiting' | 'latest';
+
+/**
+ * Newest round first, by the moment it reached the kitchen. Rounds with no
+ * stamp at all sink to the bottom; ties keep the queue's own order.
+ */
+export function sortTicketsByLatest<T extends BoardTicket>(tickets: readonly T[]): T[] {
+  return tickets
+    .map((ticket, index) => ({ ticket, index, at: kitchenTicketStartedAt(ticket) }))
+    .sort((left, right) => {
+      if (left.at === right.at) return left.index - right.index;
+      if (left.at === null) return 1;
+      if (right.at === null) return -1;
+      return right.at - left.at;
+    })
+    .map((entry) => entry.ticket);
+}
+
+export function sortTickets<T extends BoardTicket>(tickets: readonly T[], mode: KitchenSortMode, now = Date.now()): T[] {
+  return mode === 'latest' ? sortTicketsByLatest(tickets) : sortTicketsByWait(tickets, now);
 }
 
 /** 0 at the moment the round reached the kitchen, 1 at ten minutes, never more. */

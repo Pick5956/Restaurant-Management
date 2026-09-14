@@ -4,8 +4,8 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { kitchenQueue, updateOrderItemStatus } from '@/src/api/order';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
-import { HomeHeading } from '@/src/components/home/parts';
 import {
+  BoardHeading,
   CancelSheet,
   CompletedSheet,
   DonePanel,
@@ -26,7 +26,8 @@ import {
   formatKitchenMinutes,
   kitchenBoardStats,
   latestFinishedAt,
-  sortTicketsByWait,
+  sortTickets,
+  type KitchenSortMode,
 } from '@/src/lib/kitchen-board';
 import {
   createKitchenMutationGate,
@@ -233,12 +234,14 @@ export default function KitchenScreen() {
     };
   }, [load]));
 
+  const [sortMode, setSortMode] = useState<KitchenSortMode>('waiting');
   const cookingTickets = useMemo(
-    () => sortTicketsByWait(
+    () => sortTickets(
       orders.filter((order) => (order.items || []).some((item) => isCookingItem(item.status))),
+      sortMode,
       clock,
     ),
-    [clock, orders],
+    [clock, orders, sortMode],
   );
   const doneTickets = useMemo(
     () => sortKitchenRoundsByFinish(
@@ -646,10 +649,12 @@ export default function KitchenScreen() {
         />
       </View>
 
-      <HomeHeading
-        icon="flame-outline"
+      <BoardHeading
         title={copy('กำลังทำ', 'Cooking')}
-        trailing={cookingTickets.length ? copy('เรียงจากรอนานสุด', 'Longest wait first') : undefined}
+        sort={sortMode}
+        onSort={setSortMode}
+        showSort={cookingTickets.length > 1}
+        language={language}
       />
 
       {isTablet ? (

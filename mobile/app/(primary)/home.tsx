@@ -292,15 +292,20 @@ export default function HomeScreen() {
         ...(isToday && canViewKitchen && kitchenResponse.failed ? ['kitchen' as const] : []),
         ...(isToday && canViewInventory && ingredientResponse.failed ? ['inventory' as const] : []),
       ]);
-      if (!quiet) {
-        setManagerReport(shouldLoadReports ? managerReportResponse.response : null);
-        setTopMenuReport(shouldLoadReports ? topMenuResponse.response : null);
-        setReportFailures(shouldLoadReports
-          ? [
-            ...(managerReportResponse.failed ? ['trend' as const] : []),
-            ...(topMenuResponse.failed ? ['top-menu' as const] : []),
-          ]
-          : []);
+      // The reports are fetched only while today is on screen, and KEPT when
+      // the owner taps back to an earlier day. They cover the last fourteen
+      // days ending today whichever day is selected, so there is nothing to
+      // refetch — and clearing them here (as this did until 14 ก.ย.) took the
+      // sales dots off every day in the strip and the "vs last week" line off
+      // the sales card the moment a past day was tapped, then put both back
+      // on returning to today.
+      if (shouldLoadReports) {
+        setManagerReport(managerReportResponse.response);
+        setTopMenuReport(topMenuResponse.response);
+        setReportFailures([
+          ...(managerReportResponse.failed ? ['trend' as const] : []),
+          ...(topMenuResponse.failed ? ['top-menu' as const] : []),
+        ]);
       }
       setDayExpense(expenseTotal);
       setLoadedDate(selectedDate);
@@ -313,9 +318,13 @@ export default function HomeScreen() {
         setKitchenOrders([]);
         setIngredients([]);
         setOptionalFailures([]);
-        setManagerReport(null);
-        setTopMenuReport(null);
-        setReportFailures([]);
+        // Only a failed load of today drops the reports; an earlier day failing
+        // to load says nothing about the fourteen-day window already on hand.
+        if (isToday) {
+          setManagerReport(null);
+          setTopMenuReport(null);
+          setReportFailures([]);
+        }
         setDayExpense(null);
         setLoadedDate(selectedDate);
       }

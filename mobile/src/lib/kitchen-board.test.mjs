@@ -7,6 +7,8 @@ import {
   kitchenBoardStats,
   kitchenClockLabel,
   latestFinishedAt,
+  sortTickets,
+  sortTicketsByLatest,
   sortTicketsByWait,
   ticketProgress,
 } from './kitchen-board.ts';
@@ -92,4 +94,23 @@ test('tickets are dealt across the columns in order', () => {
   assert.deepEqual(dealIntoColumns([1, 2, 3, 4, 5], 2), [[1, 3, 5], [2, 4]]);
   assert.deepEqual(dealIntoColumns([], 2), [[], []]);
   assert.deepEqual(dealIntoColumns([1, 2], 0), [[1, 2]]);
+});
+
+test('latest puts the round that just arrived on top', () => {
+  const sorted = sortTicketsByLatest([ticket(18), ticket(2), ticket(7)]);
+  assert.deepEqual(sorted.map((t) => t.kitchen_sent_at), [minutesAgo(2), minutesAgo(7), minutesAgo(18)]);
+});
+
+test('latest sinks a round with no time stamp and keeps ties in queue order', () => {
+  const a = { ...ticket(5), tag: 'a' };
+  const b = { ...ticket(5), tag: 'b' };
+  const unstamped = { kitchen_sent_at: null, opened_at: null, items: [{ status: 'cooking' }], tag: 'x' };
+  const sorted = sortTicketsByLatest([unstamped, b, a]);
+  assert.deepEqual(sorted.map((t) => t.tag), ['b', 'a', 'x']);
+});
+
+test('the sort mode picks the order, and waiting is the reverse of latest', () => {
+  const tickets = [ticket(7), ticket(18), ticket(2)];
+  assert.deepEqual(sortTickets(tickets, 'waiting', NOW).map((t) => t.kitchen_sent_at), [minutesAgo(18), minutesAgo(7), minutesAgo(2)]);
+  assert.deepEqual(sortTickets(tickets, 'latest', NOW).map((t) => t.kitchen_sent_at), [minutesAgo(2), minutesAgo(7), minutesAgo(18)]);
 });

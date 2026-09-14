@@ -178,9 +178,10 @@ function ToastCard({ toast, offscreen, onGone, onHold, onRelease, onRequestDismi
     >
       <GlassPanel
         radius={CAPSULE_RADIUS}
-        // Light enough to read as glass over a white page, enough to keep dark
-        // text legible over a red ticket header scrolling under it.
-        tint="rgba(255,255,255,0.5)"
+        // Frosted: the owner asked for it cloudier (14 ก.ย.) after 0.5 read too
+        // clear — a red ticket header showed straight through behind the text.
+        // Still the regular glass underneath, so the edge keeps its refraction.
+        tint="rgba(255,255,255,0.8)"
         fallback="#FFFFFF"
         fallbackBorder={CAPSULE_EDGE}
       >

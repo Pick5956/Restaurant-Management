@@ -7,7 +7,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { HomeCard } from '@/src/components/home/parts';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { ChipGroup, TextField } from '@/src/components/ui';
-import { formatKitchenMinutes, kitchenClockLabel, ticketProgress, type KitchenUrgency } from '@/src/lib/kitchen-board';
+import { formatKitchenMinutes, kitchenClockLabel, ticketProgress, type KitchenSortMode, type KitchenUrgency } from '@/src/lib/kitchen-board';
 import { palette } from '@/src/theme';
 
 // The kitchen board's pieces, in the overview's language: white canvas, a
@@ -46,6 +46,64 @@ export function LiveChip({ live, language }: { live: boolean; language: 'th' | '
       <Text style={{ fontSize: 12, fontWeight: '600', color: ink }}>
         {live ? (language === 'th' ? 'สด' : 'Live') : (language === 'th' ? 'หลุด' : 'Offline')}
       </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- board heading
+
+/**
+ * "กำลังทำ" with the order switch beside it. Two words, not "เรียงจาก…": the
+ * heading already says what is being ordered, and the switch has to fit next
+ * to it on a phone.
+ */
+export function BoardHeading({ title, sort, onSort, showSort, language }: {
+  title: string;
+  sort: KitchenSortMode;
+  onSort: (mode: KitchenSortMode) => void;
+  showSort: boolean;
+  language: 'th' | 'en';
+}) {
+  const options: { mode: KitchenSortMode; label: string }[] = [
+    { mode: 'waiting', label: language === 'th' ? 'รอนานสุด' : 'Longest wait' },
+    { mode: 'latest', label: language === 'th' ? 'ล่าสุด' : 'Latest' },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingLeft: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <AppIcon name="flame-outline" size={16} color={palette.placeholder} />
+        <Text accessibilityRole="header" style={{ fontSize: 14.5, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
+      </View>
+      {showSort ? (
+        <View
+          accessibilityRole="radiogroup"
+          accessibilityLabel={language === 'th' ? 'เรียงตั๋ว' : 'Sort tickets'}
+          style={{ flexDirection: 'row', padding: 3, gap: 2, borderRadius: 999, backgroundColor: palette.surfaceSubtle, borderWidth: 1, borderColor: palette.divider }}
+        >
+          {options.map((option) => {
+            const on = option.mode === sort;
+            return (
+              <Pressable
+                key={option.mode}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                onPress={() => onSort(option.mode)}
+                hitSlop={4}
+                style={({ pressed }) => ({
+                  paddingVertical: 5,
+                  paddingHorizontal: 12,
+                  borderRadius: 999,
+                  backgroundColor: on ? palette.surface : 'transparent',
+                  opacity: pressed && !on ? 0.6 : 1,
+                  ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}),
+                })}
+              >
+                <Text style={{ fontSize: 12.5, fontWeight: on ? '700' : '600', color: on ? palette.textStrong : palette.muted }}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }
