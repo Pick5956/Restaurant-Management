@@ -50,6 +50,7 @@ import { kitchenAccess } from '@/src/lib/permission-parity';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast, type ToastInput } from '@/src/providers/toast-provider';
 import { spacing } from '@/src/theme';
 import type { Order, OrderItem } from '@/src/types/order';
 
@@ -59,6 +60,20 @@ import type { Order, OrderItem } from '@/src/types/order';
 // pieces and Agent_testing for the design rounds behind them.
 
 const TABLET_WIDTH = 900;
+
+type Copy = (th: string, en: string) => string;
+
+/** "โต๊ะ F03", or the customer's name on a takeaway ticket. */
+function ticketTitleOf(order: Order, copy: Copy) {
+  const tableLabel = order.table?.display_label
+    || order.table?.table_number
+    || (order.table_id ? String(order.table_id) : '−');
+  if (order.order_type === 'takeaway') {
+    const customer = order.customer_name?.trim();
+    return { title: customer || copy('ซื้อกลับบ้าน', 'Takeaway'), icon: 'bag-handle-outline' as const };
+  }
+  return { title: copy(`โต๊ะ ${tableLabel}`, `Table ${tableLabel}`), icon: undefined };
+}
 
 const styles = StyleSheet.create({
   tiles: {
@@ -103,8 +118,12 @@ export default function KitchenScreen() {
   const [completedOpen, setCompletedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  // Only a failed queue load lives in the page: it is a state, true until the
+  // next load succeeds. What a button did — done, cancelled, recalled, or
+  // failed — is an event, and goes out as a toast (14 ก.ย.). The green bar that
+  // used to sit above the tiles pushed the whole board down on every tap.
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const { showToast } = useToast();
   const [cancelTarget, setCancelTarget] = useState<{ order: Order; item: OrderItem } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
@@ -117,6 +136,8 @@ export default function KitchenScreen() {
   const pendingQuietRefreshRef = useRef(false);
   const adjacentWarmRequestedRef = useRef(false);
   const primaryTabSceneStatus = usePrimaryTabSceneStatus();
+  const ordersRef = useRef<Order[]>([]);
+  ordersRef.current = orders;
 
   const requestQueueSnapshot = useCallback(async (request: number) => {
     try {
@@ -235,33 +256,56 @@ export default function KitchenScreen() {
     }
   }
 
+  function failed(title: string, detail: string) {
+    showToast({ tone: 'error', title, message: detail });
+  }
+
   async function setItemStatus(
     orderId: number,
     item: OrderItem,
     status: 'cooking' | 'ready' | 'cancelled',
     reason?: string,
-    success?: string,
+    success?: ToastInput,
   ) {
     if (!canUpdate || !mutationGateRef.current.tryAcquire()) return false;
     requestGenerationRef.current.invalidate();
     const actionKey = `${status}:${item.ID}`;
     setSubmittingKey(actionKey);
-    setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(
         () => updateOrderItemStatus(orderId, item.ID, status, reason),
         reconcileQueue,
       );
-      if (success) setMessage(success);
+      if (success) showToast(success);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('อัปเดตสถานะอาหารไม่สำเร็จ', 'Could not update the item status'));
+      failed(
+        copy('อัปเดตสถานะอาหารไม่สำเร็จ', 'Could not update the item'),
+        err instanceof Error ? err.message : copy('ลองอีกครั้ง', 'Try again'),
+      );
       return false;
     } finally {
       setSubmittingKey(null);
       releaseMutationGate();
     }
+  }
+
+  function markItemDone(order: Order, item: OrderItem) {
+    const where = ticketTitleOf(order, copy).title;
+    void setItemStatus(order.ID, item, 'ready', undefined, {
+      title: copy(`${item.menu_name} เสร็จแล้ว`, `${item.menu_name} done`),
+      message: where,
+      action: {
+        label: copy('ดึงกลับ', 'Undo'),
+        onPress: () => {
+          void setItemStatus(order.ID, item, 'cooking', undefined, {
+            tone: 'info',
+            title: copy(`ดึง ${item.menu_name} กลับไปทำ`, `${item.menu_name} back to cooking`),
+            message: where,
+          });
+        },
+      },
+    });
   }
 
   async function markAllDone(order: Order) {
@@ -270,11 +314,10 @@ export default function KitchenScreen() {
     if (!items.length) return;
     if (!mutationGateRef.current.tryAcquire()) return;
     requestGenerationRef.current.invalidate();
-    const actionKey = `all:${kitchenTicketKey(order)}`;
+    const ticketKey = kitchenTicketKey(order);
+    const actionKey = `all:${ticketKey}`;
     let updatedCount = 0;
     setSubmittingKey(actionKey);
-    setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(async () => {
         for (const item of items) {
@@ -282,7 +325,11 @@ export default function KitchenScreen() {
           updatedCount += 1;
         }
       }, reconcileQueue);
-      setMessage(copy('บันทึกว่าครัวทำเสร็จทั้งรอบแล้ว', 'Marked the entire kitchen batch as done'));
+      showToast({
+        title: copy('ทำรอบนี้เสร็จแล้ว', 'Round done'),
+        message: `${ticketTitleOf(order, copy).title} · ${copy(`${items.length} รายการ`, `${items.length} items`)}`,
+        action: { label: copy('ดึงกลับ', 'Undo'), onPress: () => recallByKey(ticketKey) },
+      });
     } catch (err) {
       const mutationFailed = !(err instanceof KitchenMutationError) || err.mutationFailed;
       const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
@@ -295,12 +342,12 @@ export default function KitchenScreen() {
         const reconciliationDetail = reconciliationError instanceof Error
           ? reconciliationError.message
           : copy('โหลดคิวครัวล่าสุดไม่สำเร็จ', 'Could not load the latest kitchen queue');
-        setError(copy(
+        failed(copy('ทำทั้งรอบไม่ครบ', 'Round only partly done'), copy(
           `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ แต่ยังตรวจสอบคิวล่าสุดไม่ได้${mutationFailed ? ` · หยุดอัปเดตเพราะ: ${detail}` : ''} · โหลดคิวไม่สำเร็จ: ${reconciliationDetail}`,
           `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items, but the latest queue could not be verified${mutationFailed ? ` · Update stopped: ${detail}` : ''} · Queue load failed: ${reconciliationDetail}`,
         ));
       } else {
-        setError(updatedCount > 0
+        failed(copy('ทำทั้งรอบไม่สำเร็จ', 'Could not complete the round'), updatedCount > 0
           ? copy(
             `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ และตรวจคิวล่าสุดแล้ว · ${detail}`,
             `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items and reconciled the latest queue · ${detail}`,
@@ -327,8 +374,6 @@ export default function KitchenScreen() {
     const actionKey = `recall:${kitchenTicketKey(order)}`;
     let updatedCount = 0;
     setSubmittingKey(actionKey);
-    setError(null);
-    setMessage(null);
     try {
       await runKitchenMutation(async () => {
         for (const item of items) {
@@ -336,13 +381,17 @@ export default function KitchenScreen() {
           updatedCount += 1;
         }
       }, reconcileQueue);
-      setMessage(copy('ดึงทั้งรอบกลับไปกำลังทำแล้ว', 'The whole round was moved back to Cooking'));
+      showToast({
+        tone: 'info',
+        title: copy('ดึงกลับไปกำลังทำแล้ว', 'Moved back to cooking'),
+        message: ticketTitleOf(order, copy).title,
+      });
     } catch (err) {
       const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
       const detail = mutationError instanceof Error
         ? mutationError.message
         : copy('ดึงรอบกลับไม่สำเร็จ', 'Could not move the round back');
-      setError(updatedCount > 0
+      failed(copy('ดึงกลับไม่สำเร็จ', 'Could not move it back'), updatedCount > 0
         ? copy(
           `ย้ายกลับสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ · ${detail}`,
           `Moved back ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items · ${detail}`,
@@ -352,6 +401,20 @@ export default function KitchenScreen() {
       setSubmittingKey(null);
       releaseMutationGate();
     }
+  }
+
+  /**
+   * The toast's undo. By the time it is pressed the queue has been reloaded, so
+   * the order object the toast was raised with still lists its items as
+   * cooking; the round is looked up again by its ticket key.
+   */
+  function recallByKey(ticketKey: string) {
+    const round = ordersRef.current.find((order) => kitchenTicketKey(order) === ticketKey);
+    if (!round || !(round.items || []).some((item) => isKitchenDoneItem(item.status))) {
+      showToast({ tone: 'warning', title: copy('ดึงกลับไม่ได้', 'Cannot undo'), message: copy('รอบนี้เสิร์ฟหรือปิดบิลไปแล้ว', 'This round was already served or closed') });
+      return;
+    }
+    void recallRound(round);
   }
 
   function startCancel(order: Order, item: OrderItem) {
@@ -380,7 +443,11 @@ export default function KitchenScreen() {
       cancelTarget.item,
       'cancelled',
       validation.reason,
-      copy('ยกเลิกรายการอาหารแล้ว', 'Kitchen item cancelled'),
+      {
+        tone: 'info',
+        title: copy(`ยกเลิก ${cancelTarget.item.menu_name} แล้ว`, `${cancelTarget.item.menu_name} cancelled`),
+        message: ticketTitleOf(cancelTarget.order, copy).title,
+      },
     );
     if (succeeded) {
       setCancelTarget(null);
@@ -395,16 +462,7 @@ export default function KitchenScreen() {
 
   // ---------------------------------------------------------------- labels
 
-  const ticketTitle = (order: Order) => {
-    const tableLabel = order.table?.display_label
-      || order.table?.table_number
-      || (order.table_id ? String(order.table_id) : '−');
-    if (order.order_type === 'takeaway') {
-      const customer = order.customer_name?.trim();
-      return { title: customer || copy('ซื้อกลับบ้าน', 'Takeaway'), icon: 'bag-handle-outline' as const };
-    }
-    return { title: copy(`โต๊ะ ${tableLabel}`, `Table ${tableLabel}`), icon: undefined };
-  };
+  const ticketTitle = (order: Order) => ticketTitleOf(order, copy);
   const batchLabel = (order: Order) => (order.kitchen_batch
     ? copy(`รอบ ${order.kitchen_batch.toLocaleString('th-TH')}`, `Batch ${order.kitchen_batch.toLocaleString('en-US')}`)
     : copy('รอบครัว', 'Kitchen batch'));
@@ -445,7 +503,7 @@ export default function KitchenScreen() {
         <TicketButton
           icon="checkmark"
           label={copy('เสร็จ', 'Done')}
-          onPress={() => setItemStatus(order.ID, items[0], 'ready', undefined, copy('ย้ายรายการไปโซนทำเสร็จแล้ว', 'Item moved to Kitchen done'))}
+          onPress={() => markItemDone(order, items[0])}
           loading={submittingKey === `ready:${items[0].ID}`}
           disabled={submittingKey !== null}
         />
@@ -491,7 +549,7 @@ export default function KitchenScreen() {
                 </View>
               ) : undefined}
               showDone={canUpdate && !single}
-              onDone={() => setItemStatus(order.ID, item, 'ready', undefined, copy('ย้ายรายการไปโซนทำเสร็จแล้ว', 'Item moved to Kitchen done'))}
+              onDone={() => markItemDone(order, item)}
               doneLoading={submittingKey === `ready:${item.ID}`}
               onCancel={canUpdate ? () => startCancel(order, item) : undefined}
               disabled={submittingKey !== null}
@@ -545,7 +603,6 @@ export default function KitchenScreen() {
       contentStyle={{ gap: spacing.md }}
     >
       {error ? <Feedback title={copy('คิวครัวมีปัญหา', 'Kitchen queue issue')} detail={error} tone="danger" /> : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
       {realtimeStatus === 'offline' ? (
         <Feedback
           tone="warning"

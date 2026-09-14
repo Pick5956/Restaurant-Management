@@ -48,6 +48,7 @@ import {
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { palette } from '@/src/theme';
 import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
 
@@ -80,7 +81,9 @@ export default function InventoryScreen() {
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // What a sheet just did is a toast now (14 ก.ย.); only a failed load stays in the list.
+  const { showToast } = useToast();
+  const setNotice = (title: string) => showToast({ title });
 
   const [search, setSearch] = useState('');
   // The overview's "out of stock" and "low stock" cards arrive with the filter
@@ -124,12 +127,6 @@ export default function InventoryScreen() {
   }, [canView, copy]);
 
   useFocusEffect(useCallback(() => { void load(ingredients.length > 0); }, [load])); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(null), 2600);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   // A new filter is a new selection context; a stale pick must never be batch-restocked.
   useEffect(() => { setSelected(new Set()); }, [search, status, category]);
@@ -324,7 +321,6 @@ export default function InventoryScreen() {
         contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true, true), paddingHorizontal: 12, paddingBottom: dockBottom + 12, gap: 10 }}
       >
         {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
-        {notice ? <Feedback title={notice} tone="success" /> : null}
 
         {/* The totals are the whole inventory's, whatever the rail is showing, so
             they stay put across all three tabs. Only a search or select mode
