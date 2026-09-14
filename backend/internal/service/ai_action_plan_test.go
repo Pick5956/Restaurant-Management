@@ -266,3 +266,73 @@ func TestAllowedAIActionTypes(t *testing.T) {
 		}
 	}
 }
+
+// The app's confirm card draws the change from these parts, not from the
+// sentence in Change, so every kind must fill the parts its layout reads: a
+// value that moves carries from/to/unit/delta, a new row carries facts.
+func TestActionPreviewCarriesTheChangeInParts(t *testing.T) {
+	port := newAIActionPortFixture()
+
+	_, stock, err := validateAdjustStock(port, 1, AIAdjustStockCommand{IngredientID: 1, Kind: "in", Quantity: 2.2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stock.Field != "สต๊อก" || stock.From != "500" || stock.To != "502.2" || stock.ValueUnit != "กรัม" || stock.Delta != "+2.2" {
+		t.Errorf("stock parts = %+v", stock)
+	}
+
+	_, out, err := validateAdjustStock(port, 1, AIAdjustStockCommand{IngredientID: 2, Kind: "out", Quantity: 150})
+	if err != nil || out.Delta != "-150" {
+		t.Errorf("stock-out delta = %q err=%v", out.Delta, err)
+	}
+
+	_, cost, err := validateSetIngredientField(port, 1, 2, entity.AIActionTypeSetIngredientCost, 0.2)
+	if err != nil || cost.Field != "ราคาต่อกรัม" || cost.From != "0.18" || cost.To != "0.2" || cost.ValueUnit != "บาท" || cost.Delta != "+0.02" {
+		t.Errorf("cost parts = %+v err=%v", cost, err)
+	}
+
+	shelf, _ := port.ListIngredients(1)
+	payload, created, err := validateCreateIngredient(shelf, "หมูสามชั้นต้ม", "กิโล", 3, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Unit != "กิโลกรัม" || created.Unit != "กิโลกรัม" {
+		t.Errorf("unit should be written the standard way: payload %q preview %q", payload.Unit, created.Unit)
+	}
+	want := []AIActionPreviewFact{{Label: "หน่วย", Value: "กิโลกรัม"}, {Label: "สต๊อกเริ่มต้น", Value: "3 กิโลกรัม"}}
+	if len(created.Facts) != len(want) || created.Facts[0] != want[0] || created.Facts[1] != want[1] {
+		t.Errorf("create facts = %+v", created.Facts)
+	}
+	if created.From != "" || created.To != "" {
+		t.Errorf("a new row has nothing to change from: %+v", created)
+	}
+
+	_, expense, err := validateCreateExpense(AIAdjustStockCommand{Category: "utilities", Quantity: 850, Date: "2026-09-14"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expense.Facts) != 3 || expense.Facts[0].Value != "850 บาท" || expense.Facts[2].Value != "14 กันยายน 2569" {
+		t.Errorf("expense facts = %+v", expense.Facts)
+	}
+}
+
+func TestStandardUnitSpellingKeepsCountingWords(t *testing.T) {
+	cases := map[string]string{"กิโล": "กิโลกรัม", "กก.": "กิโลกรัม", "kg": "กิโลกรัม", " กรัม ": "กรัม", "ลิตร": "ลิตร", "ฟอง": "ฟอง", "ถุง": "ถุง", "แพ็ค": "แพ็ค"}
+	for in, want := range cases {
+		if got := standardUnitSpelling(in); got != want {
+			t.Errorf("standardUnitSpelling(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildPlanStampsTheActionKind(t *testing.T) {
+	port := newAIActionPortFixture()
+	draft := BuildAdjustStockPlan(AIActionPorts{Ingredients: port}, 1, []AIAdjustStockCommand{{IngredientID: 1, Kind: "in", Quantity: 5}}, nil)
+	if len(draft.Previews) != 1 || draft.Previews[0].Kind != entity.AIActionTypeAdjustIngredientStock {
+		t.Fatalf("previews = %+v", draft.Previews)
+	}
+	var stored AIActionItemPreview
+	if err := json.Unmarshal([]byte(draft.Items[0].PreviewJSON), &stored); err != nil || stored.Kind != entity.AIActionTypeAdjustIngredientStock || stored.Delta != "+5" {
+		t.Errorf("stored preview = %+v err=%v", stored, err)
+	}
+}

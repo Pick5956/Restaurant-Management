@@ -33,6 +33,14 @@ export type AIActionPlanItem = {
   change: string;
   unit?: string;
   side_effects?: string[];
+  /** The change in parts, for the confirm card's layout (backend 14 Sep 2026). */
+  kind?: string;
+  field?: string;
+  from?: string;
+  to?: string;
+  value_unit?: string;
+  delta?: string;
+  facts?: { label: string; value: string }[];
 };
 export type AIActionPlan = {
   id: string;

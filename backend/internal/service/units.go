@@ -75,6 +75,25 @@ var unitFamilyLabels = map[string][]string{
 	"ml": {"มิลลิลิตร", "ช้อนชา", "ช้อนโต๊ะ", "ลิตร"},
 }
 
+// unitSpelling is the one way a new ingredient's unit is written when the owner
+// named a measuring unit in any of its forms. "หมูสามชั้น 3 กิโล" created a row
+// whose unit read "กิโล" beside rows reading "กิโลกรัม" — one unit under two
+// names on the inventory screen.
+var unitSpelling = map[string]string{
+	"g": "กรัม", "hg": "ขีด", "kg": "กิโลกรัม", "oz": "ออนซ์", "lb": "ปอนด์", "t": "ตัน",
+	"ml": "มิลลิลิตร", "tsp": "ช้อนชา", "tbsp": "ช้อนโต๊ะ", "l": "ลิตร",
+}
+
+// standardUnitSpelling writes a measuring unit the standard way and leaves
+// every other word — ฟอง, ถุง, ขวด — exactly as it was typed.
+func standardUnitSpelling(unit string) string {
+	clean := strings.TrimSpace(unit)
+	if spelled, ok := unitSpelling[canonicalUnit(clean)]; ok {
+		return spelled
+	}
+	return clean
+}
+
 func canonicalUnit(unit string) string {
 	key := strings.ToLower(strings.TrimSpace(unit))
 	key = strings.TrimSuffix(key, ".")

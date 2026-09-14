@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -187,11 +188,51 @@ func aiFloatsDiffer(expected *float64, actual float64) bool {
 }
 
 // AIActionItemPreview is what the owner reads before confirming.
+//
+// Change is the whole change as one sentence, which the web confirm bar prints.
+// The fields after it say the same thing in parts, for a card that lays the
+// change out instead of printing it: the app's confirm card (14 ก.ย. 2569) puts
+// the old value struck through beside the new one and lists what a new row will
+// hold as label/value lines. They are filled here, where the numbers are known,
+// so no client has to take "200 → 2,200 กรัม" apart again.
 type AIActionItemPreview struct {
 	Title       string   `json:"title"`
 	Change      string   `json:"change"`
 	Unit        string   `json:"unit,omitempty"`
 	SideEffects []string `json:"side_effects,omitempty"`
+
+	// Kind is the action type (entity.AIActionType*), set when the plan is built.
+	Kind string `json:"kind,omitempty"`
+	// Field names what From and To are values of: "สต๊อก", "ราคา", "สถานะ".
+	Field string `json:"field,omitempty"`
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+	// ValueUnit is the unit From and To are read in ("กรัม", "บาท"); empty for
+	// a value with no unit, such as a menu's open/closed state.
+	ValueUnit string `json:"value_unit,omitempty"`
+	// Delta is the signed difference ("+2", "-150"); empty when the value is
+	// not a number.
+	Delta string `json:"delta,omitempty"`
+	// Facts is what a create action will write, one line per value.
+	Facts []AIActionPreviewFact `json:"facts,omitempty"`
+}
+
+// AIActionPreviewFact is one "label: value" line of a create preview.
+type AIActionPreviewFact struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// aiPreviewDelta prints next-current with its sign, or "" when nothing moves.
+func aiPreviewDelta(current, next float64) string {
+	diff := math.Round((next-current)*1e6) / 1e6
+	if diff == 0 {
+		return ""
+	}
+	if diff > 0 {
+		return "+" + formatStockNumber(diff)
+	}
+	return "-" + formatStockNumber(-diff)
 }
 
 // --- Validation --------------------------------------------------------------
@@ -239,9 +280,14 @@ func validateAdjustStock(port AIActionIngredientPort, restaurantID uint, command
 	}
 
 	preview := AIActionItemPreview{
-		Title:  ingredient.Name,
-		Change: fmt.Sprintf("%s → %s", formatStockNumber(ingredient.Stock), formatStockNumber(next)),
-		Unit:   ingredient.Unit,
+		Title:     ingredient.Name,
+		Change:    fmt.Sprintf("%s → %s", formatStockNumber(ingredient.Stock), formatStockNumber(next)),
+		Unit:      ingredient.Unit,
+		Field:     "สต๊อก",
+		From:      formatStockNumber(ingredient.Stock),
+		To:        formatStockNumber(next),
+		ValueUnit: ingredient.Unit,
+		Delta:     aiPreviewDelta(ingredient.Stock, next),
 	}
 	if amount > 0 {
 		preview.SideEffects = append(preview.SideEffects,
@@ -313,6 +359,11 @@ func validateSetIngredientField(port AIActionIngredientPort, restaurantID uint, 
 		payload.ExpectedMinStock = &currentMin
 		preview.Change = fmt.Sprintf("ขั้นต่ำ %s → %s", formatStockNumber(ingredient.MinStock), formatStockNumber(value))
 		preview.Unit = ingredient.Unit
+		preview.Field = "ขั้นต่ำ"
+		preview.From = formatStockNumber(ingredient.MinStock)
+		preview.To = formatStockNumber(value)
+		preview.ValueUnit = ingredient.Unit
+		preview.Delta = aiPreviewDelta(ingredient.MinStock, value)
 		if ingredient.Stock < value {
 			preview.SideEffects = append(preview.SideEffects, "สต๊อกตอนนี้ต่ำกว่าขั้นต่ำใหม่ · จะขึ้นเตือนว่าใกล้หมด")
 		}
@@ -321,6 +372,11 @@ func validateSetIngredientField(port AIActionIngredientPort, restaurantID uint, 
 		currentCost := ingredient.CostPerUnit
 		payload.ExpectedCostPerUnit = &currentCost
 		preview.Change = fmt.Sprintf("ราคาต่อ%s %s → %s บาท", ingredient.Unit, formatStockNumber(ingredient.CostPerUnit), formatStockNumber(value))
+		preview.Field = "ราคาต่อ" + ingredient.Unit
+		preview.From = formatStockNumber(ingredient.CostPerUnit)
+		preview.To = formatStockNumber(value)
+		preview.ValueUnit = "บาท"
+		preview.Delta = aiPreviewDelta(ingredient.CostPerUnit, value)
 		preview.SideEffects = append(preview.SideEffects, "กระทบต้นทุนและกำไรของเมนูที่ใช้วัตถุดิบนี้")
 	default:
 		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("ยังไม่รองรับคำสั่งชนิด %q", actionType)
@@ -333,7 +389,7 @@ func validateSetIngredientField(port AIActionIngredientPort, restaurantID uint, 
 // it would misread every recipe that later uses this item.
 func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stock, minStock, cost float64) (AIActionItemPayload, AIActionItemPreview, error) {
 	cleanName := strings.TrimSpace(name)
-	cleanUnit := strings.TrimSpace(unit)
+	cleanUnit := standardUnitSpelling(unit)
 	if cleanName == "" {
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ต้องมีชื่อวัตถุดิบ")
 	}
@@ -348,6 +404,16 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 		Title:  cleanName,
 		Change: fmt.Sprintf("เพิ่มเข้าคลัง · หน่วย%s · เริ่มที่ %s", cleanUnit, formatStockNumber(stock)),
 		Unit:   cleanUnit,
+		Facts: []AIActionPreviewFact{
+			{Label: "หน่วย", Value: cleanUnit},
+			{Label: "สต๊อกเริ่มต้น", Value: formatStockNumber(stock) + " " + cleanUnit},
+		},
+	}
+	if minStock > 0 {
+		preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "ขั้นต่ำ", Value: formatStockNumber(minStock) + " " + cleanUnit})
+	}
+	if cost > 0 {
+		preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "ราคาต่อ" + cleanUnit, Value: formatStockNumber(cost) + " บาท"})
 	}
 	if stock > 0 && cost > 0 {
 		preview.SideEffects = append(preview.SideEffects,
@@ -382,6 +448,9 @@ func validateSetMenuAvailability(port AIActionMenuPort, restaurantID, menuItemID
 		Title: item.Name,
 		Change: fmt.Sprintf("%s → %s",
 			aiAvailabilityStateWord(item.IsAvailable), aiAvailabilityStateWord(available)),
+		Field: "สถานะ",
+		From:  aiAvailabilityStateWord(item.IsAvailable),
+		To:    aiAvailabilityStateWord(available),
 	}
 	if available {
 		preview.SideEffects = append(preview.SideEffects, "ลูกค้าจะสั่งเมนูนี้ได้ทันที")
@@ -420,6 +489,14 @@ func validateCreateExpense(command AIAdjustStockCommand) (AIActionItemPayload, A
 		// editable — worth saying, because the owner has been told the opposite
 		// about the automatic one.
 		SideEffects: []string{"แก้หรือลบทีหลังได้ที่หน้ารายจ่าย"},
+		Facts: []AIActionPreviewFact{
+			{Label: "จำนวนเงิน", Value: formatStockNumber(roundBaht(command.Quantity)) + " บาท"},
+			{Label: "หมวด", Value: aiExpenseCategoryLabel(category)},
+			{Label: "วันที่", Value: formatThaiDate(command.Date)},
+		},
+	}
+	if note != "" {
+		preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "หมายเหตุ", Value: note})
 	}
 	return AIActionItemPayload{
 		Category: category,
@@ -471,6 +548,10 @@ func validateCreateMenuItem(port AIActionMenuPort, restaurantID uint, command AI
 		SideEffects: []string{
 			"เปิดขายทันที ยังไม่มีสูตร รูป และตัวเลือก — เติมได้ที่หน้าจัดการเมนู",
 		},
+		Facts: []AIActionPreviewFact{
+			{Label: "ราคา", Value: formatStockNumber(price) + " บาท"},
+			{Label: "หมวด", Value: category},
+		},
 	}
 	return AIActionItemPayload{Name: name, Amount: price, CategoryID: command.CategoryID}, preview, nil
 }
@@ -492,8 +573,13 @@ func validateSetMenuPrice(port AIActionMenuPort, restaurantID, menuItemID uint, 
 	}
 
 	preview := AIActionItemPreview{
-		Title:  item.Name,
-		Change: fmt.Sprintf("ราคา %s → %s บาท", formatStockNumber(item.Price), formatStockNumber(next)),
+		Title:     item.Name,
+		Change:    fmt.Sprintf("ราคา %s → %s บาท", formatStockNumber(item.Price), formatStockNumber(next)),
+		Field:     "ราคา",
+		From:      formatStockNumber(item.Price),
+		To:        formatStockNumber(next),
+		ValueUnit: "บาท",
+		Delta:     aiPreviewDelta(item.Price, next),
 	}
 	if cost := aiMenuRecipeCost(item); cost > 0 {
 		preview.SideEffects = append(preview.SideEffects, fmt.Sprintf(
@@ -594,6 +680,7 @@ func BuildAdjustStockPlan(ports AIActionPorts, restaurantID uint, commands []AIA
 			draft.Rejected = append(draft.Rejected, AIActionRejectedItem{Title: title, Reason: err.Error()})
 			continue
 		}
+		preview.Kind = actionType
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			draft.Rejected = append(draft.Rejected, AIActionRejectedItem{Title: preview.Title, Reason: "สร้างคำสั่งไม่สำเร็จ"})
