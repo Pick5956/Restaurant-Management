@@ -13,6 +13,10 @@ export interface RestaurantTable {
   customer_token?: string;
   reservation_name?: string;
   reservation_phone?: string;
+  /** The next booking for later on this table, from an hour back to twelve
+   *  hours ahead. Attached by the table list; a hold is the table's status. */
+  upcoming_reservation_at?: string | null;
+  upcoming_reservation_name?: string | null;
   table_zone?: TableZone | null;
   tags?: TableTag[];
   CreatedAt?: string;

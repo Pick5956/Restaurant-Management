@@ -35,6 +35,8 @@ export default defineConfig({
       "src/lib/__tests__/safeRedirect.test.ts",
       "src/lib/__tests__/restaurantPath.test.ts",
       "src/lib/__tests__/restaurantScopedNavigation.test.ts",
+      "src/lib/__tests__/reservationSchedule.test.ts",
+      "src/lib/__tests__/reservation.test.ts",
       "src/lib/__tests__/singleFlight.test.ts",
       "src/lib/__tests__/chatComposer.test.ts",
       "src/lib/__tests__/aiPendingPlanStorage.test.ts",

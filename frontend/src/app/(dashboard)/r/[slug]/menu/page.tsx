@@ -830,12 +830,12 @@ export default function MenuPage() {
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder={copy.searchPlaceholder}
                       aria-label={copy.searchPlaceholder}
-                      className="h-10 w-full min-w-0 rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white pl-7 pr-3 text-[15px] outline-none focus:border-orange-500 shadow-[0_0_2px_rgba(15,23,42,0.04),0_0_16px_rgba(15,23,42,0.06)] dark:shadow-[0_0_2px_rgba(0,0,0,0.25),0_0_16px_rgba(0,0,0,0.35)] placeholder:text-[15px] dark:bg-gray-800"
+                      className="h-10 w-full min-w-0 rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white pl-7 pr-3 text-[15px] outline-none focus:border-orange-500 shadow-(--dashboard-control-shadow) placeholder:text-[15px] dark:bg-gray-800"
                     />
                   </label>
                   <div className="w-full sm:w-40">
                     <ThemedSelect
-                      triggerClassName="rounded-xl shadow-[0_0_2px_rgba(15,23,42,0.04),0_0_16px_rgba(15,23,42,0.06)] dark:shadow-[0_0_2px_rgba(0,0,0,0.25),0_0_16px_rgba(0,0,0,0.35)]"
+                      triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
                       aria-label={copy.allCategories}
                       value={String(filterCategory)}
                       onChange={(next) => setFilterCategory(Number(next))}
@@ -845,10 +845,10 @@ export default function MenuPage() {
                 </div>
                 {canManage ? (
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => { setCategoryModalClosing(false); setCategoryModalOpen(true); }} className="ui-press h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-[0_0_2px_rgba(15,23,42,0.04),0_0_16px_rgba(15,23,42,0.06)] dark:shadow-[0_0_2px_rgba(0,0,0,0.25),0_0_16px_rgba(0,0,0,0.35)] hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
+                    <button type="button" onClick={() => { setCategoryModalClosing(false); setCategoryModalOpen(true); }} className="ui-press h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
                       {copy.categoryManager}
                     </button>
-                    <button type="button" onClick={startCreateItem} className="ui-press h-10 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-[0_0_2px_rgba(15,23,42,0.04),0_0_16px_rgba(15,23,42,0.06)] dark:shadow-[0_0_2px_rgba(0,0,0,0.25),0_0_16px_rgba(0,0,0,0.35)] hover:bg-orange-800 dark:bg-orange-700 dark:text-white">
+                    <button type="button" onClick={startCreateItem} className="ui-press h-10 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) hover:bg-orange-800 dark:bg-orange-700 dark:text-white">
                       + {copy.createItem}
                     </button>
                   </div>
