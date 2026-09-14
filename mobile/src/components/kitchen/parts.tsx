@@ -138,12 +138,19 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
           <View
             accessible
             accessibilityLabel={language === 'th' ? `รอมา ${minutes} นาที` : `Waiting ${minutes} min`}
-            style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}
+            style={{ height: 36, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 18, borderCurve: 'continuous', backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}
           >
-            <Text style={{ fontSize: 21, lineHeight: 24, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] }}>
-              {minutes.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
-            </Text>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>{language === 'th' ? 'นาที' : 'min'}</Text>
+            {/* Kanit keeps room under its glyphs for Thai marks that digits never
+                use, so a number centred by its line box sits high — "90" showed
+                about 4pt above the capsule's middle (14 ก.ย.). The capsule has a
+                fixed height, the row is centred in it, and the row is nudged down
+                by the part of the box the digits leave empty. */}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, transform: [{ translateY: 2.5 }] }}>
+              <Text style={{ fontSize: 20, lineHeight: 24, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] }}>
+                {minutes.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+              </Text>
+              <Text style={{ fontSize: 11, lineHeight: 16, fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>{language === 'th' ? 'นาที' : 'min'}</Text>
+            </View>
           </View>
           {urgencyLabel ? <Text style={{ fontSize: 10.5, fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>{urgencyLabel}</Text> : null}
         </View>

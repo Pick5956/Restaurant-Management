@@ -59,6 +59,9 @@ test('the toast is the glass capsule the owner chose, with room for one undo', a
   assert.match(provider, /action\?: ToastAction/);
   // An error is read, a success glanced at.
   assert.match(provider, /const ERROR_DURATION = 6000;/);
+  // It slides, never fades: fading the parent of a glass view makes the
+  // material vanish, which is how the first build shipped (14 ก.ย.).
+  assert.doesNotMatch(provider, /opacity: enter/);
   // Flick up to dismiss; the invisible container still passes touches through.
   assert.match(provider, /PanResponder\.create/);
 });

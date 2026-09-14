@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AccessibilityInfo, Animated, Easing, PanResponder, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GlassPanel } from '@/src/components/ai/chrome';
+import { GlassPanel, LIQUID_GLASS } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { useReducedMotion } from '@/src/components/motion';
@@ -28,6 +28,15 @@ import { palette, spacing } from '@/src/theme';
 //     a 28 pt × beside an action pill left the text too little room.
 //   - Errors stay longer (6 s) and may wrap to two lines: an error is read, a
 //     success is glanced at.
+//   - It moves, it never fades. The first build faded the capsule in by
+//     animating its parent's opacity, and on iOS 26 the glass never appeared:
+//     the text floated over the page with nothing behind it (reported 14 ก.ย.).
+//     A glass view mounted under a fading parent loses its material — the
+//     settings sheet learned the same thing. So it slides down from above the
+//     screen and back up, at full opacity the whole way.
+//   - No drop shadow under real glass. A shadow sits behind the layer and shows
+//     through translucent material as a dark band (the dock's notes, app-shell).
+//     The opaque stand-in keeps one, since it has no material to separate it.
 //
 // Messages that describe a STATE — the live feed dropping, a view-only
 // account, a page that failed to load — are not toasts. They must stay on
@@ -87,8 +96,10 @@ function durationFor(input: ToastInput, tone: ToastTone) {
   return DEFAULT_DURATION;
 }
 
-function ToastCard({ toast, onGone, onHold, onRelease, onRequestDismiss }: {
+function ToastCard({ toast, offscreen, onGone, onHold, onRelease, onRequestDismiss }: {
   toast: Toast;
+  /** How far up the capsule starts and leaves to: clear of the status bar. */
+  offscreen: number;
   /** Called once the exit animation has finished. */
   onGone: () => void;
   /** A finger is on the toast: stop its clock. */
@@ -103,12 +114,11 @@ function ToastCard({ toast, onGone, onHold, onRelease, onRequestDismiss }: {
   const urgent = toast.tone === 'error' || toast.tone === 'warning';
 
   useEffect(() => {
-    Animated.timing(enter, {
-      toValue: 1,
-      duration: reducedMotion ? 0 : 220,
-      easing: Easing.bezier(0.16, 1, 0.3, 1),
-      useNativeDriver: true,
-    }).start();
+    if (reducedMotion) {
+      enter.setValue(1);
+    } else {
+      Animated.spring(enter, { toValue: 1, damping: 20, stiffness: 240, mass: 0.8, useNativeDriver: true }).start();
+    }
     // liveRegion is Android's; VoiceOver needs the announcement spelled out.
     AccessibilityInfo.announceForAccessibility(toast.message ? `${toast.title}. ${toast.message}` : toast.title);
   }, [enter, reducedMotion, toast.message, toast.title]);
@@ -117,8 +127,8 @@ function ToastCard({ toast, onGone, onHold, onRelease, onRequestDismiss }: {
     if (!toast.leaving) return;
     Animated.timing(enter, {
       toValue: 0,
-      duration: reducedMotion ? 0 : 170,
-      easing: Easing.in(Easing.quad),
+      duration: reducedMotion ? 0 : 220,
+      easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => { if (finished) onGone(); });
   }, [enter, onGone, reducedMotion, toast.leaving]);
@@ -152,22 +162,25 @@ function ToastCard({ toast, onGone, onHold, onRelease, onRequestDismiss }: {
       style={{
         width: '100%',
         maxWidth: 520,
-        opacity: enter,
         transform: [
-          { translateY: Animated.add(enter.interpolate({ inputRange: [0, 1], outputRange: [-28, 0] }), drag) },
-          { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
+          { translateY: Animated.add(enter.interpolate({ inputRange: [0, 1], outputRange: [-offscreen, 0] }), drag) },
+          { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
         ],
         borderRadius: CAPSULE_RADIUS,
-        shadowColor: '#21130C',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.16,
-        shadowRadius: 22,
-        elevation: 10,
+        ...(LIQUID_GLASS ? {} : {
+          shadowColor: '#21130C',
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.16,
+          shadowRadius: 22,
+          elevation: 10,
+        }),
       }}
     >
       <GlassPanel
         radius={CAPSULE_RADIUS}
-        tint="rgba(255,255,255,0.72)"
+        // Light enough to read as glass over a white page, enough to keep dark
+        // text legible over a red ticket header scrolling under it.
+        tint="rgba(255,255,255,0.5)"
         fallback="#FFFFFF"
         fallbackBorder={CAPSULE_EDGE}
       >
@@ -302,6 +315,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <ToastCard
                 key={toast.id}
                 toast={toast}
+                offscreen={insets.top + spacing.lg + 72}
                 onGone={() => removeToast(toast.id)}
                 onHold={() => clearTimer(toast.id)}
                 onRelease={() => startTimer(toast.id, Math.min(2000, durationsRef.current.get(toast.id) ?? DEFAULT_DURATION))}
