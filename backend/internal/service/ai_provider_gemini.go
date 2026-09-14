@@ -314,6 +314,11 @@ func (s *AIService) getGeminiTools() []geminiTool {
 					Parameters:  geminiParameters{Type: "OBJECT"},
 				},
 				{
+					Name:        "get_best_sales_day",
+					Description: "Name the calendar date with the highest and the lowest paid sales in the recent analysis period, with the amount and order count for each. Answers \"which date sold the most\" — distinct from get_peak_periods, which ranks days of the week by order count.",
+					Parameters:  geminiParameters{Type: "OBJECT"},
+				},
+				{
 					Name:        "get_average_order_value",
 					Description: "Get the average revenue per order (average check size) over the recent analysis period.",
 					Parameters:  geminiParameters{Type: "OBJECT"},

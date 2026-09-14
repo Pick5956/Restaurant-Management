@@ -43,6 +43,7 @@ import {
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
 import type { Membership, MembershipStatus, Role } from '@/src/types/restaurant';
 
@@ -69,7 +70,10 @@ export default function StaffMemberScreen() {
   const [saving, setSaving] = useState(false);
   const [confirmStatus, setConfirmStatus] = useState<MembershipStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  // `error` is the member failing to load, and gates the not-found screen.
+  // Save reports through a toast (14 ก.ย.).
+  const { showToast } = useToast();
+  const actionFailed = (detail: string) => showToast({ tone: 'error', title: copy('ทำรายการไม่ได้', 'Unable to complete action'), message: detail });
   const [expandedPermissionGroup, setExpandedPermissionGroup] = useState(0);
 
   useEffect(() => {
@@ -176,7 +180,7 @@ export default function StaffMemberScreen() {
         || !can(activeMembership, permission)
       ))
     ) {
-      setError(copy(
+      actionFailed(copy(
         'บันทึกสิทธิ์ไม่ได้ เพราะมีสิทธิ์ที่บัญชีนี้มอบต่อไม่ได้ กรุณาให้ผู้มีสิทธิ์สูงกว่าเป็นผู้แก้ไข',
         'These permissions exceed your grant scope. Ask a higher-privileged account to edit them.',
       ));
@@ -184,8 +188,6 @@ export default function StaffMemberScreen() {
     }
 
     setSaving(true);
-    setError(null);
-    setMessage(null);
     try {
       let updated = member;
       if (roleChanged) {
@@ -214,9 +216,9 @@ export default function StaffMemberScreen() {
         updated.role?.name,
       ));
       setConfirmStatus(null);
-      setMessage(copy('บันทึกข้อมูลพนักงานแล้ว', 'Staff details saved'));
+      showToast({ title: copy('บันทึกข้อมูลพนักงานแล้ว', 'Staff details saved') });
     } catch (err) {
-      setError(err instanceof Error
+      actionFailed(err instanceof Error
         ? err.message
         : copy('บันทึกพนักงานไม่สำเร็จ', 'Unable to save staff details'));
     } finally {
@@ -308,12 +310,11 @@ export default function StaffMemberScreen() {
     >
       {error ? (
         <Feedback
-          title={copy('ทำรายการไม่ได้', 'Unable to complete action')}
+          title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')}
           detail={error}
           tone="danger"
         />
       ) : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
       {canEditMemberRole
         && member
         && roleId !== member.role_id

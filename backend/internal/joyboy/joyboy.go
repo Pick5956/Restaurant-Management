@@ -19,10 +19,21 @@ type Assistant struct {
 	chat  Chat
 	tools Tools
 	log   func(format string, args ...any)
+	// scope, when set, is asked whether a question the model found no tool for
+	// is still the assistant's business. Nil means everything is.
+	scope Scope
+}
+
+// Option adjusts an assistant at construction.
+type Option func(*Assistant)
+
+// WithScope installs the boundary check. See Scope.
+func WithScope(scope Scope) Option {
+	return func(a *Assistant) { a.scope = scope }
 }
 
 // New wires an assistant. log may be nil.
-func New(chat Chat, tools Tools, log func(string, ...any)) (*Assistant, error) {
+func New(chat Chat, tools Tools, log func(string, ...any), options ...Option) (*Assistant, error) {
 	if chat == nil {
 		return nil, errors.New("joyboy needs a chat provider")
 	}
@@ -32,7 +43,11 @@ func New(chat Chat, tools Tools, log func(string, ...any)) (*Assistant, error) {
 	if log == nil {
 		log = func(string, ...any) {}
 	}
-	return &Assistant{chat: chat, tools: tools, log: log}, nil
+	assistant := &Assistant{chat: chat, tools: tools, log: log}
+	for _, option := range options {
+		option(assistant)
+	}
+	return assistant, nil
 }
 
 // Ask runs one question end to end.
@@ -59,6 +74,23 @@ func (a *Assistant) Ask(ctx context.Context, request Request) (Answer, error) {
 	// this version exists to find out.
 	requested = dedupe(requested)
 	a.log("joyboy: model asked for %d tool(s): %s", len(requested), strings.Join(requested, ", "))
+
+	// A question the model found a tool for is about the shop by definition.
+	// One it found nothing for is the only kind that might be about something
+	// else entirely — a poem, a Python loop — and that is the one the boundary
+	// is asked about. Asking on every question would cost a call each time to
+	// confirm what the tool choice already said.
+	if len(requested) == 0 && a.scope != nil {
+		verdict, err := a.scope.Check(ctx, question, request.History)
+		if err != nil {
+			// The boundary being unreachable must not take the answer down with
+			// it; the question proceeds as it always has, and the log says so.
+			a.log("joyboy: scope check failed (%v) → answering without it", err)
+		} else if !verdict.InScope {
+			a.log("joyboy: out of scope (%s) → steering back", verdict.Reason)
+			return Answer{Text: verdict.Steer}, nil
+		}
+	}
 
 	results, err := a.tools.Run(ctx, requested, question)
 	if err != nil {

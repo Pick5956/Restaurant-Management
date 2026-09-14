@@ -3,9 +3,10 @@ import { useWindowDimensions, View } from 'react-native';
 
 import { updateProfile } from '@/src/api/auth';
 import { AppScreen } from '@/src/components/app-shell';
-import { ActionDock, Button, EdgeRow, EdgeSection, EdgeSectionHeader, Feedback, TextField } from '@/src/components/ui';
+import { ActionDock, Button, EdgeRow, EdgeSection, EdgeSectionHeader, TextField } from '@/src/components/ui';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, spacing } from '@/src/theme';
 
 export default function AccountSettingsScreen() {
@@ -18,8 +19,10 @@ export default function AccountSettingsScreen() {
   const [nickname, setNickname] = useState('');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  // Nothing on this form loads on its own, so every message is the outcome of
+  // pressing Save — a toast (14 ก.ย.).
+  const { showToast } = useToast();
+  const setError = (detail: string) => showToast({ tone: 'error', title: copy('บันทึกไม่ได้', 'Unable to save'), message: detail });
 
   useEffect(() => {
     setFirstName(user?.first_name || '');
@@ -37,8 +40,6 @@ export default function AccountSettingsScreen() {
       return;
     }
     setSaving(true);
-    setError(null);
-    setMessage(null);
     try {
       await updateProfile({
         first_name: firstName.trim(),
@@ -47,7 +48,7 @@ export default function AccountSettingsScreen() {
         phone: phone.trim(),
       });
       await refreshProfile();
-      setMessage(copy('บันทึกข้อมูลบัญชีแล้ว', 'Account information saved'));
+      showToast({ title: copy('บันทึกข้อมูลบัญชีแล้ว', 'Account information saved') });
     } catch (err) {
       setError(err instanceof Error
         ? err.message
@@ -73,14 +74,6 @@ export default function AccountSettingsScreen() {
         </ActionDock>
       ) : undefined}
     >
-      {error ? (
-        <Feedback
-          title={copy('บันทึกไม่ได้', 'Unable to save')}
-          detail={error}
-          tone="danger"
-        />
-      ) : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
       <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
         <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.45 : undefined, gap: spacing.sm }}>
           <EdgeSectionHeader title={copy('ข้อมูลส่วนตัว', 'Personal information')} />

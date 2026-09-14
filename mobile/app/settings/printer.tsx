@@ -19,6 +19,7 @@ import {
 } from '@/src/lib/printer';
 import { usePrinter } from '@/src/providers/printer-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { palette, radius, spacing, typeScale } from '@/src/theme';
 
 export default function PrinterSettingsScreen() {
@@ -39,8 +40,11 @@ export default function PrinterSettingsScreen() {
   const [printers, setPrinters] = useState<DiscoveredPrinter[]>([]);
   const [scanning, setScanning] = useState(false);
   const [testingAddress, setTestingAddress] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Scan, test, choose and forget are all taps; each reports through a toast
+  // (14 ก.ย.). The two info panels about the platform stay in the page.
+  const { showToast } = useToast();
+  const setError = (detail: string) => showToast({ tone: 'error', title: copy('เชื่อมต่อไม่สำเร็จ', 'Connection failed'), message: detail });
+  const setNotice = (detail: string) => showToast({ title: detail });
 
   useEffect(() => {
     if (!supported) return;
@@ -48,8 +52,6 @@ export default function PrinterSettingsScreen() {
   }, [refreshBluetoothState, supported]);
 
   const runScan = useCallback(async () => {
-    setError(null);
-    setNotice(null);
     setScanning(true);
     try {
       const state = await refreshBluetoothState();
@@ -72,10 +74,10 @@ export default function PrinterSettingsScreen() {
       }
       setPrinters(result.printers);
       if (!result.printers.length) {
-        setNotice(copy(
+        showToast({ tone: 'info', title: copy(
           'ยังไม่พบอุปกรณ์ ลองจับคู่เครื่องพิมพ์ในการตั้งค่าบลูทูธของเครื่องก่อน',
           'No devices yet. Pair the printer in your phone Bluetooth settings first.',
-        ));
+        ) });
       }
     } finally {
       setScanning(false);
@@ -83,8 +85,6 @@ export default function PrinterSettingsScreen() {
   }, [copy, enableBluetooth, language, refreshBluetoothState, scanPrinters]);
 
   async function choose(printer: DiscoveredPrinter) {
-    setError(null);
-    setNotice(null);
     setTestingAddress(printer.address);
     try {
       const result = await testPrinter(printer.address);
@@ -128,8 +128,6 @@ export default function PrinterSettingsScreen() {
       subtitle={copy('เชื่อมต่อเครื่องพิมพ์ความร้อน 58 มม. ผ่านบลูทูธ', 'Connect a 58 mm thermal printer over Bluetooth')}
       topLevel={false}
     >
-      {error ? <Feedback tone="danger" title={copy('เชื่อมต่อไม่สำเร็จ', 'Connection failed')} detail={error} /> : null}
-      {notice ? <Feedback tone="success" title={copy('อัปเดตแล้ว', 'Updated')} detail={notice} /> : null}
 
       <View style={{ gap: spacing.sm }}>
         <EdgeSectionHeader
@@ -160,8 +158,6 @@ export default function PrinterSettingsScreen() {
                     label={copy('ทดสอบการเชื่อมต่อ', 'Test connection')}
                     disabled={printing || testingAddress === selectedPrinter.address}
                     onPress={async () => {
-                      setError(null);
-                      setNotice(null);
                       setTestingAddress(selectedPrinter.address);
                       try {
                         const result = await testPrinter(selectedPrinter.address);

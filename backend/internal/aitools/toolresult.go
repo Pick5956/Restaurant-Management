@@ -19,6 +19,7 @@ type AIToolResult struct {
 	OrderTypeBreakdown  []repository.AIOrderTypeSummary
 	MenuRevenueRanking  []repository.AIMenuSummary
 	PeakPeriods         *AIPeakPeriods
+	BestSalesDay        *AIBestSalesDay
 	SlowMovingMenus     []repository.AIMenuSummary
 	MenuEngineering     *AIMenuEngineering
 	ReorderForecast     []AIReorderItem

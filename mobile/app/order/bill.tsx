@@ -103,9 +103,14 @@ export default function BillScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [printError, setPrintError] = useState<string | null>(null);
-  const [printNotice, setPrintNotice] = useState<string | null>(null);
+  // `error` is the bill failing to load. A button that failed, succeeded or
+  // printed says so in a toast (14 ก.ย.): the bar it used to be pushed the
+  // whole bill down to report one tap.
+  const actionFailed = (detail: string) => showToast({
+    tone: 'error',
+    title: copy('ทำรายการไม่สำเร็จ', 'Could not complete this action'),
+    message: detail,
+  });
   const slipRef = useRef<View>(null);
   const {
     printReceiptView,
@@ -207,14 +212,14 @@ export default function BillScreen() {
   // disappear, and a green banner announcing it pushes the whole list down to
   // report something the eye has already seen.
   async function refreshBillAfterMutation(successMessage: string | null) {
-    setMessage(successMessage);
+    if (successMessage) showToast({ title: successMessage });
     try {
       setBill(await getBill(orderId));
       setBillStale(false);
     } catch (err) {
       setBillStale(true);
       const done = successMessage ?? copy('ทำรายการแล้ว', 'Done');
-      setError(err instanceof Error
+      actionFailed(err instanceof Error
         ? copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ: ${err.message}`, `${done}, but the latest bill could not be loaded: ${err.message}`)
         : copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${done}, but the latest bill could not be loaded`));
     }
@@ -228,7 +233,6 @@ export default function BillScreen() {
     if (!bill || !canSendRound || saving) return;
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await sendOrderToKitchen(orderId);
       // Back to the menu, with no banner. The round has left: there is nothing
@@ -238,7 +242,9 @@ export default function BillScreen() {
       // The order screen reloads on focus, so its basket is empty on arrival.
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
+      // Pick's go-back on success (14 ก.ย. merge) with this branch's toast on
+      // failure. `saving` is released only here: on success the screen leaves.
+      actionFailed(err instanceof Error ? err.message : copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
       setSaving(false);
     }
   }
@@ -263,7 +269,6 @@ export default function BillScreen() {
   async function deletePendingItem(item: OrderItem) {
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await deleteOrderItem(orderId, item.ID);
       await refreshBillAfterMutation(null);
@@ -273,7 +278,7 @@ export default function BillScreen() {
         copy(`ลบ ${item.menu_name} แล้ว`, `${item.menu_name} deleted`),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
+      actionFailed(err instanceof Error ? err.message : copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
     } finally {
       setSaving(false);
     }
@@ -283,7 +288,6 @@ export default function BillScreen() {
     if (!bill || !canEditBill || saving || !item.is_available || hasRequiredOptions(item)) return;
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await addOrderItem(orderId, {
         menu_id: item.ID,
@@ -293,7 +297,7 @@ export default function BillScreen() {
       });
       await refreshBillAfterMutation(copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Served item added'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('เพิ่มรายการไม่สำเร็จ', 'Could not add the item'));
+      actionFailed(err instanceof Error ? err.message : copy('เพิ่มรายการไม่สำเร็จ', 'Could not add the item'));
     } finally {
       setSaving(false);
     }
@@ -303,23 +307,22 @@ export default function BillScreen() {
     if (!cancelTarget || !canEditBill || saving) return;
     const validation = validateKitchenCancelReason(cancelReason);
     if (validation.error === 'required') {
-      setError(copy('กรอกเหตุผลที่นำรายการออกจากบิล', 'Enter a reason for removing the item from the bill.'));
+      actionFailed(copy('กรอกเหตุผลที่นำรายการออกจากบิล', 'Enter a reason for removing the item from the bill.'));
       return;
     }
     if (validation.error === 'too_long') {
-      setError(copy('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'The reason must be 500 characters or fewer.'));
+      actionFailed(copy('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'The reason must be 500 characters or fewer.'));
       return;
     }
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await updateOrderItemStatus(orderId, cancelTarget.ID, 'cancelled', validation.reason);
       setCancelTarget(null);
       setCancelReason('');
       await refreshBillAfterMutation(copy('นำรายการออกจากบิลแล้ว', 'Item removed from the bill'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
+      actionFailed(err instanceof Error ? err.message : copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
     } finally {
       setSaving(false);
     }
@@ -328,7 +331,7 @@ export default function BillScreen() {
   async function pay() {
     if (!bill || !canPay || !paymentReady) return;
     if (method === 'promptpay_qr' && !bill.promptpay_qr_image) {
-      setError(copy(
+      actionFailed(copy(
         'ร้านยังไม่ได้ตั้งค่า QR PromptPay จึงยังรับเงินด้วยวิธีนี้ไม่ได้',
         'PromptPay QR is not configured, so this payment method is unavailable.',
       ));
@@ -336,7 +339,6 @@ export default function BillScreen() {
     }
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await payOrder(orderId, {
         method,
@@ -354,7 +356,7 @@ export default function BillScreen() {
       showToast({ title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
       resetRouteStack(router, billExitRoute(canTakeOrder, canViewOrders));
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('บันทึกการชำระเงินไม่สำเร็จ', 'Could not record the payment'));
+      actionFailed(err instanceof Error ? err.message : copy('บันทึกการชำระเงินไม่สำเร็จ', 'Could not record the payment'));
     } finally {
       setSaving(false);
     }
@@ -362,23 +364,26 @@ export default function BillScreen() {
 
   async function printReceipt() {
     if (!bill || !canAccessBill) return;
-    setPrintNotice(null);
-    setPrintError(null);
+    const printFailed = (detail: string) => showToast({
+      tone: 'error',
+      title: copy('พิมพ์ใบเสร็จไม่สำเร็จ', 'Could not print'),
+      message: detail,
+    });
 
     if (!selectedPrinter) {
-      setPrintError(describePrinterFailure('NO_PRINTER_SELECTED', language));
+      printFailed(describePrinterFailure('NO_PRINTER_SELECTED', language));
       return;
     }
 
     const result = await printReceiptView(slipRef.current);
     if (result.ok) {
-      setPrintNotice(copy(
-        `ส่งใบเสร็จไปที่ ${selectedPrinter.name} แล้ว`,
-        `Receipt sent to ${selectedPrinter.name}.`,
-      ));
+      showToast({
+        title: copy('ส่งไปเครื่องพิมพ์แล้ว', 'Sent to printer'),
+        message: selectedPrinter.name,
+      });
       return;
     }
-    setPrintError(describePrinterFailure(result.code, language, result.message));
+    printFailed(describePrinterFailure(result.code, language, result.message));
   }
 
   if (!canAccessBill) {
@@ -872,8 +877,6 @@ export default function BillScreen() {
         detail={copy('ออเดอร์ปิดแล้ว พิมพ์ใบเสร็จให้ลูกค้า หรือกลับไปทำรายการถัดไป', 'The order is closed. Print the receipt or continue to the next task.')}
         action={<StatusBadge label={copy('ชำระแล้ว', 'Paid')} tone="success" />}
       />
-      {printError ? <Feedback title={copy('พิมพ์ใบเสร็จไม่สำเร็จ', 'Could not print')} detail={printError} tone="danger" /> : null}
-      {printNotice ? <Feedback title={copy('ส่งไปเครื่องพิมพ์แล้ว', 'Sent to printer')} detail={printNotice} tone="success" /> : null}
       {printerSupported ? (
         <Button
           icon="print-outline"
@@ -1008,8 +1011,7 @@ export default function BillScreen() {
         />
       ) : undefined}
     >
-      {error ? <Feedback title={copy('ทำรายการไม่สำเร็จ', 'Could not complete this action')} detail={error} tone="danger" /> : null}
-      {message && paymentStage === 'due' ? <Feedback title={message} tone="success" /> : null}
+      {error ? <Feedback title={copy('โหลดบิลล่าสุดไม่สำเร็จ', 'Could not load the latest bill')} detail={error} tone="danger" /> : null}
 
       {/*
         The printable slip is laid out off-screen rather than conditionally

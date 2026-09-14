@@ -786,3 +786,13 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
   assert.doesNotMatch(itemSource, /addListener\('keyboardDidShow'/);
   assert.match(itemSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - keyboardTop;/);
 });
+
+test('the overview keeps its fourteen-day report when an earlier day is picked', async () => {
+  const home = await readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8');
+
+  // Clearing it on a past day took the sales dots off every day in the strip
+  // and the "vs last week" line off the sales card, until today was tapped
+  // again (reported 14 ก.ย. 2569). The window ends today whatever is selected.
+  assert.doesNotMatch(home, /setManagerReport\(shouldLoadReports \?/);
+  assert.match(home, /if \(shouldLoadReports\) \{\s*setManagerReport\(managerReportResponse\.response\)/);
+});
