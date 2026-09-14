@@ -15,7 +15,7 @@ import type { Order } from "../../types/order";
 import type { RestaurantTable } from "../../types/table";
 
 const homePageSource = readFileSync(
-  fileURLToPath(new URL("../../app/(dashboard)/home/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../../app/(dashboard)/r/[slug]/home/page.tsx", import.meta.url)),
   "utf8",
 );
 

@@ -84,7 +84,10 @@ type starterOption struct {
 }
 
 type CreateRestaurantRequest struct {
-	Name                 string  `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required"`
+	// Slug is the URL name the owner chose. Optional: when empty the service
+	// derives one from the name, and the owner can change it in settings.
+	Slug                 string  `json:"slug"`
 	BranchName           string  `json:"branch_name" binding:"required"`
 	RestaurantType       string  `json:"restaurant_type" binding:"required"`
 	Address              string  `json:"address"`
@@ -107,11 +110,14 @@ type CreateRestaurantRequest struct {
 }
 
 type UpdateRestaurantRequest struct {
-	Name           string `json:"name" binding:"required"`
-	BranchName     string `json:"branch_name" binding:"required"`
-	RestaurantType string `json:"restaurant_type" binding:"required"`
-	Address        string `json:"address"`
-	Phone          string `json:"phone"`
+	Name string `json:"name" binding:"required"`
+	// Slug is opt-in like Logo: nil keeps the stored slug, so a client that
+	// never shows the field (the mobile app) cannot clear or change it.
+	Slug           *string `json:"slug"`
+	BranchName     string  `json:"branch_name" binding:"required"`
+	RestaurantType string  `json:"restaurant_type" binding:"required"`
+	Address        string  `json:"address"`
+	Phone          string  `json:"phone"`
 	// Logo is opt-in: a payload that omits it keeps the stored logo rather than
 	// clearing it. Sending an explicit "" still clears it, as before.
 	Logo                 *string `json:"logo"`
@@ -133,6 +139,7 @@ type UpdateRestaurantRequest struct {
 
 type restaurantFields struct {
 	Name                 string
+	Slug                 string
 	BranchName           string
 	RestaurantType       string
 	Address              string
@@ -174,6 +181,15 @@ func (s *RestaurantService) CreateRestaurant(userID uint, req *CreateRestaurantR
 		return nil, nil, err
 	}
 
+	if strings.TrimSpace(req.Slug) != "" {
+		fields.Slug, err = resolveRequestedSlug(req.Slug, 0, s.restaurantRepo.SlugTaken)
+	} else {
+		fields.Slug, err = generateRestaurantSlug(fields.Name, s.restaurantRepo.SlugTaken)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
 	ownerRole, err := s.roleRepo.FindByName(DefaultOwnerRoleName)
 	if err != nil {
 		return nil, nil, errors.New("owner role is not configured")
@@ -207,6 +223,7 @@ func createRestaurantWithStarterData(
 	err := setupRepo.Transaction(func(tx repository.RestaurantSetupWriter) error {
 		restaurant = &entity.Restaurant{
 			Name:                 fields.Name,
+			Slug:                 fields.Slug,
 			BranchName:           fields.BranchName,
 			RestaurantType:       fields.RestaurantType,
 			Address:              fields.Address,
@@ -515,6 +532,14 @@ func (s *RestaurantService) UpdateRestaurant(restaurantID uint, req *UpdateResta
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if req.Slug != nil && restaurantslugChanged(restaurant.Slug, *req.Slug) {
+		slug, err := resolveRequestedSlug(*req.Slug, restaurant.ID, s.restaurantRepo.SlugTaken)
+		if err != nil {
+			return nil, err
+		}
+		restaurant.Slug = slug
 	}
 
 	restaurant.Name = fields.Name

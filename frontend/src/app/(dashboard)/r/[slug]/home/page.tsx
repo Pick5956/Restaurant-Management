@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
   AlertTriangle,
   ArrowRight,
@@ -536,6 +536,7 @@ function CollapsibleCard({
 }) {
   // A face with figures on it needs its title marked off as a header band; a
   // face that is only a name does not — the name is the whole tile.
+  const { href: restaurantPageHref } = useRestaurantNav();
   const hasFaceTable = Boolean(rows?.length || summary?.length);
   // Opening, closing and switching cards all happen in one render — no fades,
   // no deferred unmount, no FLIP on the tabs that shuffle around them. Every
@@ -737,7 +738,7 @@ function CollapsibleCard({
                 </>
               );
               return item.href ? (
-                <Link key={item.key} href={item.href} className={className}>{content}</Link>
+                <Link key={item.key} href={restaurantPageHref(item.href)} className={className}>{content}</Link>
               ) : (
                 <div key={item.key} className={className}>{content}</div>
               );
@@ -763,7 +764,8 @@ function orderStatusClass(status: OrderStatus) {
 }
 
 export default function Home() {
-  const router = useRouter();
+  const router = useRestaurantRouter();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const { activeMembership } = useAuth();
   const restaurantId = activeMembership?.restaurant_id ?? null;
   const canViewExpenses = can(activeMembership, "manage_expenses") || can(activeMembership, "view_reports");
@@ -1937,7 +1939,7 @@ export default function Home() {
                         </>
                       );
                       return stat.href ? (
-                        <Link key={stat.key} href={stat.href} className={tileClass}>{body}</Link>
+                        <Link key={stat.key} href={restaurantPageHref(stat.href)} className={tileClass}>{body}</Link>
                       ) : (
                         <div key={stat.key} className={tileClass}>{body}</div>
                       );

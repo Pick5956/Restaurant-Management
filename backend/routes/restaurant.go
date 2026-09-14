@@ -20,6 +20,7 @@ func SetupRestaurantRoutes(api *gin.RouterGroup, v1 *gin.RouterGroup) {
 	// private (require auth)
 	v1.POST("/restaurants", ctrl.Create)
 	v1.GET("/restaurants/me", ctrl.ListMyMemberships)
+	v1.GET("/restaurants/slug-availability", rateLimitRequests(120, time.Minute), ctrl.SlugAvailability)
 	v1.GET("/restaurants/:id", ctrl.Get)
 	v1.PATCH("/restaurants/:id", ctrl.Update)
 	v1.DELETE("/restaurants/:id", ctrl.Delete)

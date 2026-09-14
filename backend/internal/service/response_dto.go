@@ -33,6 +33,7 @@ type RoleResponse struct {
 type RestaurantResponse struct {
 	ID                   uint    `json:"ID"`
 	Name                 string  `json:"name"`
+	Slug                 string  `json:"slug"`
 	BranchName           string  `json:"branch_name"`
 	RestaurantType       string  `json:"restaurant_type"`
 	Address              string  `json:"address"`
@@ -254,6 +255,7 @@ func newRestaurantResponse(restaurant *entity.Restaurant) *RestaurantResponse {
 	return &RestaurantResponse{
 		ID:                   restaurant.ID,
 		Name:                 restaurant.Name,
+		Slug:                 restaurant.Slug,
 		BranchName:           restaurant.BranchName,
 		RestaurantType:       restaurant.RestaurantType,
 		Address:              restaurant.Address,

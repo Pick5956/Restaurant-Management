@@ -3,6 +3,9 @@ import { Membership, MembershipStatus, Restaurant, RestaurantAuditLog } from "..
 
 export interface CreateRestaurantInput {
   name: string;
+  /** URL name for /r/<slug>. Optional on create (derived from the name when
+   *  empty); on update, omit it to keep the stored one. */
+  slug?: string;
   branch_name: string;
   restaurant_type: string;
   address?: string;
@@ -33,6 +36,18 @@ export const createRestaurant = (data: CreateRestaurantInput) =>
     "/api/v1/restaurants",
     data
   );
+
+export type RestaurantSlugAvailability = {
+  slug: string;
+  available: boolean;
+  reason?: "invalid" | "taken";
+};
+
+/** Advisory check while the owner types; create and update check again. */
+export const checkRestaurantSlug = (slug: string, restaurantId?: number) =>
+  apiClient.get<RestaurantSlugAvailability>("/api/v1/restaurants/slug-availability", {
+    params: restaurantId ? { slug, restaurant_id: restaurantId } : { slug },
+  });
 
 export const getMyMemberships = () =>
   apiClient.get<{ memberships: Membership[] }>("/api/v1/restaurants/me");

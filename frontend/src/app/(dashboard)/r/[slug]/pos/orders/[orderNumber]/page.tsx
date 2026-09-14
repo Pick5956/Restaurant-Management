@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { AlertTriangle, ArrowLeft, ArrowRight, MapPin, Minus, Plus, Printer, ReceiptText, Search, ShoppingBasket, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -71,7 +72,7 @@ function fulfillmentSections(groups: OrderItemGroup[]): FulfillmentSection[] {
 
 export default function PosOrderDetailPage() {
   const params = useParams<{ orderNumber: string }>();
-  const router = useRouter();
+  const router = useRestaurantRouter();
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { showToast } = useToast();

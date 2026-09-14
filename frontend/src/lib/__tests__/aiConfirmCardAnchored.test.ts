@@ -20,7 +20,7 @@ const read = (relative: string) => readFileSync(join(root, relative), "utf8");
 
 const surfaces = {
   "floating chat": read("src/components/shared/AIOperationsFloatingChat.tsx"),
-  "AI assistant page": read("src/app/(dashboard)/ai-assistant/page.tsx"),
+  "AI assistant page": read("src/app/(dashboard)/r/[slug]/ai-assistant/page.tsx"),
 };
 
 describe("pending confirmation cards", () => {

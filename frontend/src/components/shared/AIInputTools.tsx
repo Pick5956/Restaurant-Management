@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { Loader2, Mic, Plus, Receipt, X } from "lucide-react";
 import { extractReceipt } from "@/src/lib/ai";
 import HoverTip from "@/src/components/shared/HoverTip";
@@ -72,7 +72,7 @@ export default function AIInputTools({
   voiceControlsRef,
   tools = ["voice", "scan"],
 }: Props) {
-  const router = useRouter();
+  const router = useRestaurantRouter();
   const [listening, setListening] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

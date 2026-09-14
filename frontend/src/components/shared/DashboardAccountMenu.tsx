@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, Languages, LogOut, Moon, Sparkles, Sun } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
 import UserAvatar from "@/src/components/shared/UserAvatar";
@@ -72,6 +73,7 @@ export default function DashboardAccountMenu({
   variant?: "icon" | "rail";
 } = {}) {
   const { user, logout, activeMembership } = useAuth();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const { language, setLanguage } = useLanguage();
   const { theme, mounted, toggle, showAIAssistant, setShowAIAssistant } = useTheme();
   const [open, setOpen] = useState(false);
@@ -254,7 +256,7 @@ export default function DashboardAccountMenu({
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-semibold text-gray-950 dark:text-white">{displayName}</p>
                   <p className="truncate text-[12px] text-gray-500 dark:text-gray-400">{user?.email ?? ""}</p>
-                  <Link href="/settings/account" onClick={() => setOpen(false)} className="mt-1 inline-flex text-[12px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
+                  <Link href={restaurantPageHref("/settings/account")} onClick={() => setOpen(false)} className="mt-1 inline-flex text-[12px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
                     {copy.profile}
                   </Link>
                 </div>

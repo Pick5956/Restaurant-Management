@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { splitRestaurantPath } from "@/src/lib/restaurantPath";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { pageTitle } from "@/src/lib/documentTitle";
@@ -15,7 +16,7 @@ export default function DocumentTitle() {
 
     const restaurantName = activeMembership?.restaurant?.name?.trim();
     const orderReference = new URLSearchParams(window.location.search).get("ref") || undefined;
-    const title = pageTitle(pathname, language, restaurantName || "Dishy", orderReference);
+    const title = pageTitle(splitRestaurantPath(pathname).path, language, restaurantName || "Dishy", orderReference);
     const syncTitle = () => {
       if (document.title !== title) document.title = title;
     };

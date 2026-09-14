@@ -10,6 +10,9 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import ThemedTimeInput from "@/src/components/shared/ThemedTimeInput";
 import { restaurantRepository } from "../../repositories/restaurantRepository";
+import { isValidRestaurantSlug, restaurantHref, suggestRestaurantSlug } from "@/src/lib/restaurantPath";
+import RestaurantSlugField, { useRestaurantSlugStatus } from "@/src/components/shared/RestaurantSlugField";
+import { apiErrorCode } from "@/src/lib/apiErrors";
 import {
   BackToRestaurants,
   RESTAURANT_TYPES,
@@ -19,6 +22,7 @@ import {
 
 type FormErrors = Partial<{
   name: string;
+  slug: string;
   branch: string;
   phone: string;
   address: string;
@@ -177,7 +181,7 @@ function isValidTime(value: string) {
 }
 
 function firstStepForErrors(errors: FormErrors): SetupStepId {
-  if (errors.name || errors.branch) {
+  if (errors.name || errors.slug || errors.branch) {
     return "identity";
   }
 
@@ -200,6 +204,11 @@ export default function NewRestaurantPage() {
   const initialType = RESTAURANT_TYPES[0] ?? "restaurant";
   const [type, setType] = useState<RestaurantType>(initialType);
   const [name, setName] = useState("");
+  // Follows the name until the owner types in it; after that it is theirs.
+  // Empty is allowed - the server then picks one, changeable in settings.
+  const [slugInput, setSlugInput] = useState<string | null>(null);
+  const slug = slugInput ?? suggestRestaurantSlug(name);
+  const slugStatus = useRestaurantSlugStatus(slug);
   const [branch, setBranch] = useState(language === "th" ? "สาขาหลัก" : "Main branch");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -272,6 +281,8 @@ export default function NewRestaurantPage() {
           "โต๊ะเริ่มต้นสำหรับรับออเดอร์",
           "สิทธิ์เจ้าของร้านสำหรับบัญชีนี้",
         ],
+        slug: "ลิงก์ร้าน",
+        slugAuto: "ระบบตั้งให้ แก้ได้ในตั้งค่า",
         emptyName: "ยังไม่ได้ตั้งชื่อร้าน",
         emptyBranch: "ยังไม่ได้ตั้งชื่อสาขา",
         emptyPhone: "ยังไม่ใส่เบอร์โทร",
@@ -282,6 +293,8 @@ export default function NewRestaurantPage() {
         validation: {
           nameRequired: "กรุณากรอกชื่อร้าน",
           nameTooLong: "ชื่อร้านต้องไม่เกิน 120 ตัวอักษร",
+          slugInvalid: "ใช้ a–z, 0–9 และ - ได้ 3–40 ตัว และต้องมีตัวอักษร",
+          slugTaken: "มีร้านใช้ชื่อนี้แล้ว",
           branchRequired: "กรุณากรอกชื่อสาขา",
           branchTooLong: "ชื่อสาขาต้องไม่เกิน 80 ตัวอักษร",
           phoneInvalid: "เบอร์โทรควรมี 9-15 หลัก",
@@ -340,6 +353,8 @@ export default function NewRestaurantPage() {
           "Starter tables for taking orders",
           "Owner access for this account",
         ],
+        slug: "Restaurant link",
+        slugAuto: "Set automatically; change it in settings",
         emptyName: "Restaurant name not set",
         emptyBranch: "Branch name not set",
         emptyPhone: "Phone not added",
@@ -350,6 +365,8 @@ export default function NewRestaurantPage() {
         validation: {
           nameRequired: "Restaurant name is required",
           nameTooLong: "Restaurant name must be 120 characters or less",
+          slugInvalid: "Use 3–40 of a–z, 0–9 and -, including a letter",
+          slugTaken: "Another restaurant already uses this name",
           branchRequired: "Branch name is required",
           branchTooLong: "Branch name must be 80 characters or less",
           phoneInvalid: "Phone number should contain 9-15 digits",
@@ -410,6 +427,12 @@ export default function NewRestaurantPage() {
         nextErrors.name = copy.validation.nameTooLong;
       }
 
+      if (slug && !isValidRestaurantSlug(slug)) {
+        nextErrors.slug = copy.validation.slugInvalid;
+      } else if (slugStatus === "taken") {
+        nextErrors.slug = copy.validation.slugTaken;
+      }
+
       if (!trimmedBranch) {
         nextErrors.branch = copy.validation.branchRequired;
       } else if (trimmedBranch.length > 80) {
@@ -445,11 +468,12 @@ export default function NewRestaurantPage() {
     setErrors((current) => {
       const merged = { ...current };
       const keysByStep: Record<SetupStepId, (keyof FormErrors)[]> = {
-        identity: ["name", "branch"],
+        identity: ["name", "slug", "branch"],
         service: ["openTime", "closeTime", "initialTables"],
         contact: ["phone", "address"],
         review: [
           "name",
+          "slug",
           "branch",
           "openTime",
           "closeTime",
@@ -505,6 +529,7 @@ export default function NewRestaurantPage() {
       try {
         const payload: CreateRestaurantInput = {
           name: trimmedName,
+          ...(slug ? { slug } : {}),
           branch_name: trimmedBranch,
           restaurant_type: type,
           phone: trimmedPhone || undefined,
@@ -517,14 +542,22 @@ export default function NewRestaurantPage() {
 
         const res = await createRestaurant(payload);
         const membership = res.data.membership;
-        restaurantRepository.setActiveId(membership.restaurant_id);
+        const createdSlug = res.data.restaurant?.slug || membership.restaurant?.slug || String(membership.restaurant_id);
+        restaurantRepository.setActiveId(membership.restaurant_id, createdSlug);
         setActiveRestaurant(membership.restaurant_id);
         await refreshMemberships();
-        router.push("/home");
+        router.push(restaurantHref(createdSlug, "/home"));
       } catch (error) {
-        console.error(error);
-        setErrors({ submit: copy.createFailed });
-        setActiveStep("review");
+        const code = apiErrorCode(error);
+        if (code === "slug_taken" || code === "slug_invalid") {
+          // Someone took the name between the check and the submit.
+          setErrors({ slug: code === "slug_taken" ? copy.validation.slugTaken : copy.validation.slugInvalid });
+          setActiveStep("identity");
+        } else {
+          console.error(error);
+          setErrors({ submit: copy.createFailed });
+          setActiveStep("review");
+        }
       } finally {
         setSubmitting(false);
       }
@@ -584,6 +617,19 @@ export default function NewRestaurantPage() {
                     required
                   />
                 </div>
+
+                <RestaurantSlugField
+                  variant="onboarding"
+                  label={copy.slug}
+                  value={slug}
+                  onChange={(value) => {
+                    setSlugInput(value);
+                    setErrors((current) => ({ ...current, slug: undefined }));
+                  }}
+                  status={slugStatus}
+                  error={errors.slug}
+                  placeholder="kruapick"
+                />
 
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{copy.type}</span>
@@ -679,6 +725,7 @@ export default function NewRestaurantPage() {
 
                 <div className="rounded-md border border-gray-200 px-4 dark:border-gray-800">
                   <SummaryRow label={copy.name} value={trimmedName || copy.emptyName} />
+                  <SummaryRow label={copy.slug} value={slug ? `/r/${slug}` : copy.slugAuto} />
                   <SummaryRow label={copy.branch} value={trimmedBranch || copy.emptyBranch} />
                   <SummaryRow label={copy.type} value={restaurantTypeLabel} />
                   <SummaryRow label={copy.openTime} value={openTime} />

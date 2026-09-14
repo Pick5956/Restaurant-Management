@@ -4,6 +4,8 @@ import { User } from "./auth";
 export interface Restaurant {
   ID: number;
   name: string;
+  /** URL name: the `krua-pick` in /r/krua-pick/home. */
+  slug: string;
   branch_name: string;
   restaurant_type: string;
   address: string;

@@ -8,12 +8,13 @@ import (
 
 	"Project-M/config/seed"
 	"Project-M/internal/entity"
+	"Project-M/internal/restaurantslug"
 
 	"gorm.io/gorm"
 )
 
 const (
-	CurrentSchemaVersion int64 = 28
+	CurrentSchemaVersion int64 = 29
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -596,7 +597,89 @@ func schemaMigrationPlan() []SchemaMigration {
 				return nil
 			},
 		},
+		{
+			Version: 29,
+			Name:    "restaurant_slug",
+			Up: func(ctx *MigrationContext) error {
+				// The web dashboard moves to /r/<slug>/..., so every restaurant
+				// needs a URL name before the index that makes it unique can
+				// exist. The backfill is planned in Go rather than SQL because
+				// the rules live in restaurantslug and have to be the SAME rules
+				// the service applies to a new restaurant - a slug SQL could
+				// produce but the service would reject is a URL nobody can save.
+				//
+				// Soft-deleted rows are backfilled too: the CHECK below covers
+				// every row. The unique index does not - a deleted shop frees
+				// its name, and only a member can open a restaurant URL anyway.
+				if err := ctx.DB.Exec(
+					`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS slug VARCHAR(40) NOT NULL DEFAULT ''`,
+				).Error; err != nil {
+					return fmt.Errorf("add restaurant slug column: %w", err)
+				}
+				var rows []restaurantSlugRow
+				if err := ctx.DB.Raw(`SELECT id, name, slug FROM restaurants ORDER BY id`).Scan(&rows).Error; err != nil {
+					return fmt.Errorf("read restaurants for slug backfill: %w", err)
+				}
+				for id, slug := range planRestaurantSlugBackfill(rows) {
+					if err := ctx.DB.Exec(`UPDATE restaurants SET slug = ? WHERE id = ?`, slug, id).Error; err != nil {
+						return fmt.Errorf("backfill restaurant %d slug: %w", id, err)
+					}
+				}
+				for _, statement := range []string{
+					`CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_slug_live
+					     ON restaurants (slug) WHERE deleted_at IS NULL`,
+					`ALTER TABLE restaurants DROP CONSTRAINT IF EXISTS chk_restaurants_slug_shape`,
+					`ALTER TABLE restaurants ADD CONSTRAINT chk_restaurants_slug_shape
+					     CHECK (char_length(slug) BETWEEN 3 AND 40
+					        AND slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+					        AND slug ~ '[a-z]')`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("constrain restaurant slug: %w", err)
+					}
+				}
+				return nil
+			},
+		},
 	}
+}
+
+type restaurantSlugRow struct {
+	ID   uint
+	Name string
+	Slug string
+}
+
+// planRestaurantSlugBackfill returns the slug to write for every row that
+// needs one, keyed by id. Rows are taken in id order, so when two restaurants
+// would want the same name the older one keeps it. A row keeps a stored slug
+// only if it is valid and no earlier row already holds it.
+func planRestaurantSlugBackfill(rows []restaurantSlugRow) map[uint]string {
+	taken := map[string]bool{}
+	keep := map[uint]bool{}
+	for _, row := range rows {
+		if restaurantslug.Valid(row.Slug) && !taken[row.Slug] {
+			taken[row.Slug] = true
+			keep[row.ID] = true
+		}
+	}
+	assigned := map[uint]string{}
+	for _, row := range rows {
+		if keep[row.ID] {
+			continue
+		}
+		base := restaurantslug.FromName(row.Name)
+		candidate := base
+		if base == "" {
+			base = restaurantslug.FallbackBase
+		}
+		for candidate == "" || taken[candidate] {
+			candidate = restaurantslug.WithSuffix(base, restaurantslug.RandomSuffix())
+		}
+		taken[candidate] = true
+		assigned[row.ID] = candidate
+	}
+	return assigned
 }
 
 var aiActionPreviewForeignKeys = []string{"Restaurant", "Owner", "Conversation", "Turn", "TargetMenuItem"}

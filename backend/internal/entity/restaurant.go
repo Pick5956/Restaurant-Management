@@ -1,10 +1,18 @@
 package entity
 
-import "gorm.io/gorm"
+import (
+	"Project-M/internal/restaurantslug"
+
+	"gorm.io/gorm"
+)
 
 type Restaurant struct {
 	gorm.Model
-	Name                 string  `json:"name" gorm:"not null" binding:"required"`
+	Name string `json:"name" gorm:"not null" binding:"required"`
+	// Slug is the restaurant's URL name: dishy.pro/r/<slug>/home. Unique among
+	// live restaurants (a partial index, so a deleted shop frees its name) and
+	// shaped by restaurantslug.Valid, which a CHECK constraint enforces too.
+	Slug                 string  `json:"slug" gorm:"size:40;not null;default:''"`
 	BranchName           string  `json:"branch_name" gorm:"size:120;default:'สาขาหลัก'"`
 	RestaurantType       string  `json:"restaurant_type" gorm:"size:80;default:'ร้านอาหาร'"`
 	Address              string  `json:"address"`
@@ -49,4 +57,15 @@ type Restaurant struct {
 
 	OwnerID uint  `json:"owner_id" gorm:"not null"`
 	Owner   *User `json:"owner,omitempty" gorm:"foreignKey:OwnerID"`
+}
+
+// BeforeCreate gives a restaurant a slug when whoever is inserting it did not
+// choose one. The service always chooses; this covers every other writer -
+// seeds, fixtures, tests - so no row can ever reach the unique index or the
+// CHECK constraint with an empty slug.
+func (restaurant *Restaurant) BeforeCreate(*gorm.DB) error {
+	if restaurant.Slug == "" {
+		restaurant.Slug = restaurantslug.Random()
+	}
+	return nil
 }

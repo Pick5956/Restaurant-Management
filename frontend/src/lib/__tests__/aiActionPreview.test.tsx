@@ -110,7 +110,7 @@ describe("getAIActionCancellationErrorMessage", () => {
 describe("AI action request invalidation", () => {
   it("clears both mutation busy states when either chat resets its request generation", () => {
     const chatSources = [
-      new URL("../../app/(dashboard)/ai-assistant/page.tsx", import.meta.url),
+      new URL("../../app/(dashboard)/r/[slug]/ai-assistant/page.tsx", import.meta.url),
       new URL("../../components/shared/AIOperationsFloatingChat.tsx", import.meta.url),
     ].map((url) => readFileSync(fileURLToPath(url), "utf8"));
 

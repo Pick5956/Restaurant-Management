@@ -66,7 +66,7 @@ describe("local customer QR generation", () => {
 
   it("never delegates customer QR rendering or download to a third party", () => {
     const pagePath = fileURLToPath(
-      new URL("../../app/(dashboard)/tables/page.tsx", import.meta.url),
+      new URL("../../app/(dashboard)/r/[slug]/tables/page.tsx", import.meta.url),
     );
     const pageSource = readFileSync(pagePath, "utf8");
 

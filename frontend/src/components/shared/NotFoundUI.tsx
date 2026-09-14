@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useTheme } from "@/src/providers/ThemeProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
 import AppLogo from "@/src/components/shared/AppLogo";
 import AppWordmark from "@/src/components/shared/AppWordmark";
@@ -36,12 +37,13 @@ function ThemeButton() {
 
 export default function NotFoundUI() {
   const { language } = useLanguage();
+  const { href: restaurantPageHref } = useRestaurantNav();
 
   const quickLinks = [
     { label: language === "th" ? "เลือกร้าน" : "Restaurants", href: "/restaurants" },
     { label: language === "th" ? "สร้างร้าน" : "Create restaurant", href: "/restaurants/new" },
     { label: language === "th" ? "เข้าร่วมร้าน" : "Join restaurant", href: "/restaurants/join" },
-    { label: language === "th" ? "ตั้งค่า" : "Settings", href: "/settings/account" },
+    { label: language === "th" ? "ตั้งค่า" : "Settings", href: restaurantPageHref("/settings/account") },
   ];
 
   return (

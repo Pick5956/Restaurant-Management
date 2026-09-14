@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, TrendingUp, Wallet } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
@@ -13,13 +14,14 @@ import { can } from "@/src/lib/rbac";
 import { getManagerReport, getSalesDetail } from "@/src/lib/report";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { tableName } from "@/src/app/(dashboard)/orders/ordersPageUtils";
+import { tableName } from "@/src/app/(dashboard)/r/[slug]/orders/ordersPageUtils";
 import type { Bill } from "@/src/types/order";
 import type { ManagerReport, SalesDetailReport } from "@/src/types/report";
 
 export default function ReportsPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
+  const { href: restaurantPageHref } = useRestaurantNav();
   const lang = language as "th" | "en";
   const canView = can(activeMembership, "view_reports");
   const [report, setReport] = useState<ManagerReport | null>(null);
@@ -169,7 +171,7 @@ export default function ReportsPage() {
     <div className="min-h-dvh bg-slate-100 px-4 py-4 text-gray-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:py-6">
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0"><h1 className="sr-only">{copy.title}</h1></div>
-        <Link href="/home" className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
+        <Link href={restaurantPageHref("/home")} className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {copy.back}
         </Link>

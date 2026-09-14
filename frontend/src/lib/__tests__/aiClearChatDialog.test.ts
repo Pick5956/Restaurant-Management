@@ -23,7 +23,7 @@ const styles = read("src/app/globals.css");
 const chatList = read("src/components/shared/AIChatList.tsx");
 const surfaces = {
   "floating chat": read("src/components/shared/AIOperationsFloatingChat.tsx"),
-  "AI assistant page": read("src/app/(dashboard)/ai-assistant/page.tsx"),
+  "AI assistant page": read("src/app/(dashboard)/r/[slug]/ai-assistant/page.tsx"),
 };
 
 describe("chat deletion confirmation", () => {
