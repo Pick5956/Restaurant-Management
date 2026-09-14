@@ -111,9 +111,10 @@ const HEADER_ROW_PADDING_BOTTOM = 8;
  * the buttons and stopped. On 14 ก.ย. 2569 they asked for the pane to come down
  * further — at 15 a bubble scrolling up showed sharp right under the chat's
  * name — and accepted the first message starting 15pt lower as the cost.
+ * The same day they took it to 36 (a 130pt pane on an iPhone 11) to try.
  * Change it only when the owner asks; both directions have been their call.
  */
-const HEADER_FADE = 30;
+const HEADER_FADE = 36;
 
 const SUGGESTIONS_TH = ['สรุปร้าน', 'เมนูขายดี', 'วัตถุดิบใกล้หมด', 'มูลค่าสต๊อก'];
 const SUGGESTIONS_EN = ['Shop summary', 'Best sellers', 'Low stock', 'Stock value'];
