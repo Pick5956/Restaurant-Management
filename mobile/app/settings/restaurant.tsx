@@ -26,6 +26,7 @@ import {
 } from '@/src/lib/restaurant-types';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, palette, spacing } from '@/src/theme';
 
 type RestaurantSection = 'general' | 'hours' | 'ordering' | 'billing' | 'promptpay';
@@ -112,7 +113,11 @@ export default function RestaurantSettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  // `error` is the restaurant failing to load. Save and delete report through a
+  // toast (14 ก.ย.) — the form is long, and a bar at the top of it was out of
+  // sight of the Save button that raised it.
+  const { showToast } = useToast();
+  const actionFailed = (detail: string) => showToast({ tone: 'error', title: copy('ทำรายการไม่ได้', 'Unable to complete action'), message: detail });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expandedSection, setExpandedSection] = useState<RestaurantSection>('general');
 
@@ -170,7 +175,7 @@ export default function RestaurantSettingsScreen() {
     if (!restaurantId || !canManageRestaurant || saving) return;
     if (!name.trim() || !branch.trim()) {
       setExpandedSection('general');
-      setError(copy(
+      actionFailed(copy(
         'กรอกชื่อร้านและชื่อสาขาให้ครบ',
         'Enter both the restaurant and branch names',
       ));
@@ -184,7 +189,7 @@ export default function RestaurantSettingsScreen() {
     );
     if (geofence.error) {
       setExpandedSection('ordering');
-      setError(geofence.error === 'coordinates'
+      actionFailed(geofence.error === 'coordinates'
         ? copy(
           'ละติจูดหรือลองจิจูดไม่ถูกต้อง',
           'The latitude or longitude is invalid',
@@ -197,8 +202,6 @@ export default function RestaurantSettingsScreen() {
     }
 
     setSaving(true);
-    setError(null);
-    setMessage(null);
     try {
       await updateRestaurant(restaurantId, {
         name: name.trim(),
@@ -220,9 +223,9 @@ export default function RestaurantSettingsScreen() {
         ...geofence.value,
       });
       await refreshMemberships();
-      setMessage(copy('บันทึกข้อมูลร้านแล้ว', 'Restaurant information saved'));
+      showToast({ title: copy('บันทึกข้อมูลร้านแล้ว', 'Restaurant information saved') });
     } catch (err) {
-      setError(err instanceof Error
+      actionFailed(err instanceof Error
         ? err.message
         : copy('บันทึกร้านไม่สำเร็จ', 'Could not save restaurant information'));
     } finally {
@@ -237,13 +240,12 @@ export default function RestaurantSettingsScreen() {
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       await deleteRestaurant(restaurantId);
       await refreshMemberships();
       router.replace('/restaurants');
     } catch (err) {
-      setError(err instanceof Error
+      actionFailed(err instanceof Error
         ? err.message
         : copy('ลบร้านไม่สำเร็จ', 'Could not delete the restaurant'));
       setSaving(false);
@@ -281,12 +283,11 @@ export default function RestaurantSettingsScreen() {
     >
       {error ? (
         <Feedback
-          title={copy('ทำรายการไม่ได้', 'Unable to complete action')}
+          title={copy('โหลดข้อมูลร้านไม่สำเร็จ', 'Could not load restaurant information')}
           detail={error}
           tone="danger"
         />
       ) : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
       {loading ? (
         <Feedback
           title={copy('กำลังโหลดข้อมูลร้าน', 'Loading restaurant information')}

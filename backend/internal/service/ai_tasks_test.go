@@ -113,7 +113,7 @@ func TestSecondRoundUsesConfiguredProviderAdapter(t *testing.T) {
 func TestGetGeminiToolsSchema(t *testing.T) {
 	svc := &AIService{}
 	tools := svc.getGeminiTools()
-	if len(tools) == 0 || len(tools[0].FunctionDeclarations) != 20 {
+	if len(tools) == 0 || len(tools[0].FunctionDeclarations) != 21 {
 		t.Fatalf("getGeminiTools returned invalid schema: %+v", tools)
 	}
 	expectedNames := map[string]bool{
@@ -125,6 +125,7 @@ func TestGetGeminiToolsSchema(t *testing.T) {
 		"get_order_type_breakdown":        true,
 		"get_menu_revenue_ranking":        true,
 		"get_peak_periods":                true,
+		"get_best_sales_day":             true,
 		"get_slow_moving_menus":           true,
 		"get_menu_engineering":            true,
 		"get_ingredient_reorder_forecast": true,
@@ -151,7 +152,7 @@ func TestGetGeminiToolsSchema(t *testing.T) {
 func TestGetGroqToolsSchema(t *testing.T) {
 	svc := &AIService{}
 	tools := svc.getGroqTools()
-	if len(tools) != 20 {
+	if len(tools) != 21 {
 		t.Fatalf("getGroqTools returned invalid schema: %+v", tools)
 	}
 	expectedNames := map[string]bool{
@@ -163,6 +164,7 @@ func TestGetGroqToolsSchema(t *testing.T) {
 		"get_order_type_breakdown":        true,
 		"get_menu_revenue_ranking":        true,
 		"get_peak_periods":                true,
+		"get_best_sales_day":             true,
 		"get_slow_moving_menus":           true,
 		"get_menu_engineering":            true,
 		"get_ingredient_reorder_forecast": true,

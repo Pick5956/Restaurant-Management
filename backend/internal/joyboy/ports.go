@@ -95,6 +95,27 @@ type Tools interface {
 	Run(ctx context.Context, names []string, question string) ([]ToolResult, error)
 }
 
+// Scope is the assistant's boundary: what it is for, and what it turns away.
+//
+// It is consulted only for a question the model chose no tool for. The verdict
+// is read by a model, not matched by word lists in Go — the owner's rule — and
+// the implementation lives with the wiring, where the shop's policy is written.
+//
+// InScope true means answer as normal. False means the reply is Steer: a short
+// turn back toward what the assistant can do, already written for the owner.
+type Scope interface {
+	Check(ctx context.Context, question string, history []Turn) (ScopeVerdict, error)
+}
+
+// ScopeVerdict is the boundary's answer for one question.
+type ScopeVerdict struct {
+	InScope bool
+	// Reason is a short label for the log ("unrelated_content"), never shown.
+	Reason string
+	// Steer is what the owner reads when InScope is false.
+	Steer string
+}
+
 // Turn is one exchange already in the conversation, oldest first.
 type Turn struct {
 	Role    string

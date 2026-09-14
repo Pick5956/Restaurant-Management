@@ -16,7 +16,7 @@ Response format:
   "needs_restaurant_data": true | false,
   "needs_tool": true | false,
   "risk": "low" | "medium" | "high",
-  "suggested_tool": "get_lowest_margin_menu" | "get_highest_margin_menu" | "get_low_stock_ingredients" | "get_top_selling_menus" | "get_inventory_valuation" | "get_sales_summary" | "get_lowest_cost_menu" | "get_sales_trend" | "get_average_order_value" | "get_order_type_breakdown" | "get_menu_revenue_ranking" | "get_peak_periods" | "get_slow_moving_menus" | "get_menu_engineering" | "get_ingredient_reorder_forecast" | "get_dead_stock" | "get_top_cost_ingredients" | "get_store_summary" | "get_sales_for_period" | "get_most_expensive_menu" | "search_system_docs" | "read_system_doc" | ""
+  "suggested_tool": "get_lowest_margin_menu" | "get_highest_margin_menu" | "get_low_stock_ingredients" | "get_top_selling_menus" | "get_inventory_valuation" | "get_sales_summary" | "get_lowest_cost_menu" | "get_sales_trend" | "get_average_order_value" | "get_order_type_breakdown" | "get_menu_revenue_ranking" | "get_peak_periods" | "get_best_sales_day" | "get_slow_moving_menus" | "get_menu_engineering" | "get_ingredient_reorder_forecast" | "get_dead_stock" | "get_top_cost_ingredients" | "get_store_summary" | "get_sales_for_period" | "get_most_expensive_menu" | "search_system_docs" | "read_system_doc" | ""
 }
 
 Task descriptions:
@@ -49,6 +49,7 @@ Rules:
    - "get_order_type_breakdown": when the query asks about the split between dine-in, takeaway, and delivery (e.g. "กินที่ร้านกับซื้อกลับสัดส่วนเท่าไหร่", "ยอดเดลิเวอรีเทียบหน้าร้าน", "dine-in vs takeaway", "order type breakdown").
    - "get_menu_revenue_ranking": when the query asks which menus make the most revenue/money (not just quantity sold) (e.g. "เมนูไหนทำรายได้เยอะสุด", "เมนูทำเงินมากสุด", "menu by revenue", "top revenue menus").
    - "get_peak_periods": when the query asks about the busiest day of the week or busiest time/hour of day (e.g. "วันไหนขายดีสุด", "ช่วงเวลาไหนคนเยอะ", "ร้านพีคตอนไหน", "busiest day", "peak hours").
+   - "get_best_sales_day": when the query asks WHICH CALENDAR DATE sold the most or the least, or for the highest/lowest daily takings in the window (e.g. "วันไหนขายดีที่สุด", "วันที่เท่าไหร่ขายดีสุด", "ยอดขายวันไหนสูงสุด", "วันไหนขายแย่สุด", "best day", "which date sold the most"). This answers with a date and an amount in baht. Do NOT use "get_peak_periods" for these: that one answers with a day of the WEEK counted in bills, which is a different question.
    - "get_slow_moving_menus": when the query asks which menus rarely sell, are not selling, or should be removed (e.g. "เมนูไหนขายไม่ออก", "เมนูไหนไม่มีคนสั่ง", "เมนูควรถอด", "slow moving menu", "menus not selling").
    - "get_menu_engineering": when the query asks for a menu analysis by popularity and profit, or which menus are stars/dogs, or which to promote vs remove (e.g. "วิเคราะห์เมนู", "เมนูไหนดาวเด่นเมนูไหนตัวถ่วง", "เมนูไหนควรดันควรถอด", "menu engineering", "star or dog menus").
    - "get_ingredient_reorder_forecast": when the query asks which ingredients will run out soon or when to reorder, based on usage rate (e.g. "วัตถุดิบไหนจะหมดก่อน", "ควรสั่งของเมื่อไหร่", "วัตถุดิบพอใช้อีกกี่วัน", "reorder forecast", "when to restock").

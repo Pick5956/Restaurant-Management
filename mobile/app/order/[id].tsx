@@ -27,6 +27,7 @@ import { createRequestGeneration } from '@/src/lib/request-generation';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, controlShadow, palette, radius, spacing, typeScale } from '@/src/theme';
 import type { Category, MenuItem } from '@/src/types/menu';
 import type { Order, OrderItem } from '@/src/types/order';
@@ -190,7 +191,8 @@ export default function OrderDetailScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  // `error` is the order failing to load; a tap's outcome is a toast (14 ก.ย.).
+  const { showToast } = useToast();
   const [confirmEmptyClose, setConfirmEmptyClose] = useState(false);
   const requestGuardRef = useRef(createOrderDetailRequestGuard(createRequestGeneration()));
   const foregroundLoadRef = useRef<number | null>(null);
@@ -296,13 +298,17 @@ export default function OrderDetailScreen() {
     if (foregroundLoadRef.current !== null) {
       foregroundLoadRef.current = null;
     }
-    setSubmitting(true); setError(null); setMessage(null);
+    setSubmitting(true);
     try {
       setOrder(await action());
-      if (success) setMessage(success);
+      if (success) showToast({ title: success });
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('ทำรายการไม่สำเร็จ', 'Could not complete this action'));
+      showToast({
+        tone: 'error',
+        title: copy('ทำรายการไม่สำเร็จ', 'Could not complete this action'),
+        message: err instanceof Error ? err.message : undefined,
+      });
       return false;
     }
     finally {
@@ -584,8 +590,7 @@ export default function OrderDetailScreen() {
         />
       ) : undefined}
     >
-      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Could not complete this action')} detail={error} tone="danger" /> : null}
-      {message ? <Feedback title={message} tone="success" /> : null}
+      {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
 
       {order ? (
         <>

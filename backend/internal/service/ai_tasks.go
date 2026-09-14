@@ -44,6 +44,7 @@ const (
 	AIToolGetSalesSummary        = aitools.AIToolGetSalesSummary
 	AIToolGetLowestCostMenu      = aitools.AIToolGetLowestCostMenu
 	AIToolGetSalesTrend          = aitools.AIToolGetSalesTrend
+	AIToolGetBestSalesDay        = aitools.AIToolGetBestSalesDay
 	AIToolGetAverageOrderValue   = aitools.AIToolGetAverageOrderValue
 	AIToolGetOrderTypeBreakdown  = aitools.AIToolGetOrderTypeBreakdown
 	AIToolGetMenuRevenueRanking  = aitools.AIToolGetMenuRevenueRanking
@@ -92,8 +93,8 @@ type AIAverageOrderValue = aitools.AIAverageOrderValue
 type AISalesSummary = aitools.AISalesSummary
 type AISalesTrend = aitools.AISalesTrend
 
-func supportedReadOnlyToolNames() [23]AIToolName {
-	return [23]AIToolName{
+func supportedReadOnlyToolNames() [24]AIToolName {
+	return [24]AIToolName{
 		AIToolGetLowestMarginMenu,
 		AIToolGetHighestMarginMenu,
 		AIToolGetLowStockIngredients,
@@ -102,6 +103,7 @@ func supportedReadOnlyToolNames() [23]AIToolName {
 		AIToolGetSalesSummary,
 		AIToolGetLowestCostMenu,
 		AIToolGetSalesTrend,
+		AIToolGetBestSalesDay,
 		AIToolGetAverageOrderValue,
 		AIToolGetOrderTypeBreakdown,
 		AIToolGetMenuRevenueRanking,
@@ -394,6 +396,26 @@ func localToolAnswer(result AIToolResult) (string, bool) {
 			formatMoney(trend.PriorRevenue), trend.PriorOrders,
 			trend.RevenueChangePct,
 		), true
+	case AIToolGetBestSalesDay:
+		best := result.BestSalesDay
+		if best == nil || !best.HasData {
+			return "ช่วงนี้ยังไม่มีวันไหนที่มียอดขายเลยครับ จึงยังบอกวันที่ขายดีที่สุดไม่ได้", true
+		}
+		highest := fmt.Sprintf(
+			"วันที่ขายดีที่สุดในรอบนี้คือ %s (%s) ยอด %s บาท จาก %d บิลครับ",
+			formatThaiDate(best.BestDate), thaiWeekdayName(int(best.BestWeekday)),
+			formatMoney(best.BestRevenue), best.BestOrders,
+		)
+		if best.BestDate == best.WorstDate {
+			return highest + " รอบนี้มีวันที่ขายได้เพียงวันเดียว", true
+		}
+		lowest := fmt.Sprintf(
+			"ส่วนวันที่ขายได้น้อยที่สุดคือ %s (%s) ยอด %s บาท จาก %d บิล นับเฉพาะวันที่มีการขาย รวม %d วันจากช่วง %d วัน",
+			formatThaiDate(best.WorstDate), thaiWeekdayName(int(best.WorstWeekday)),
+			formatMoney(best.WorstRevenue), best.WorstOrders,
+			best.DaysWithSales, best.Days,
+		)
+		return highest + "\n\n" + lowest, true
 	case AIToolGetAverageOrderValue:
 		aov := result.AverageOrderValue
 		if aov == nil || aov.Orders <= 0 {
