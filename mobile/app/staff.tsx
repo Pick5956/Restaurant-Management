@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Share, useWindowDimensions, View } from 'react-native';
 
+import { getRoles } from '@/src/api/auth';
 import {
   listAuditLogs,
   listMembers,
@@ -14,9 +15,10 @@ import { AppText as Text } from '@/src/components/app-text';
 import { HeadingAction } from '@/src/components/heading-action';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
 import { Bone, SkeletonReveal } from '@/src/components/skeleton';
-import { ActivityRow, GhostButton, LinkRow, MemberRow, shortDateTime, StaffTabs } from '@/src/components/staff/parts';
+import { ActivityRow, GhostButton, MemberRow, RoleRow, shortDateTime, StaffTabs, TeamStats } from '@/src/components/staff/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
+  allowedRoleOptions,
   auditAttribution,
   auditMessage,
   canAccessTeam,
@@ -30,6 +32,7 @@ import {
   roleLabel,
   staffStatusLabel,
   teamActivityCopy,
+  teamRoleGroups,
   userDisplayName,
 } from '@/src/lib/staff-workflow';
 import { invitationUrl } from '@/src/lib/public-web-url';
@@ -40,18 +43,22 @@ import type {
   AdminInvitation,
   Membership,
   RestaurantAuditLog,
+  Role,
 } from '@/src/types/restaurant';
 
 // Staff and permissions, redrawn on 15 ก.ย. 2569 from the three-screens design.
 // Members, invitations, roles and activity had been stacked down one page, the
 // roles button floated beside the members heading, and the assistant's menu
 // switches showed as the raw key "ai_set_menu_availability". Now a phone gets
-// three tabs — members (with the latest activity under them), invitations,
-// activity — and a tablet shows members and invitations on the left with the
-// activity beside them, no tabs.
+// three tabs — members, invitations, activity — and a tablet shows members,
+// invitations and roles on the left with the activity beside them, no tabs.
+//
+// The members tab first carried the latest three activities too, the same rows
+// the activity tab opens with. The owner chose design B instead the same day:
+// the team's counts, and every role in the shop with who holds it — empty
+// roles included, since "เชฟ · ยังไม่มีใคร" is the useful thing to see.
 
 const auditPageSize = 10;
-const activityPreview = 3;
 
 type StaffTab = 'members' | 'invitations' | 'activity';
 
@@ -80,6 +87,7 @@ export default function StaffScreen() {
   const canViewAudit = canViewTeamAudit(activeMembership);
   const [members, setMembers] = useState<Membership[]>([]);
   const [invitations, setInvitations] = useState<AdminInvitation[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [auditLogs, setAuditLogs] = useState<RestaurantAuditLog[]>([]);
   const [auditHasMore, setAuditHasMore] = useState(false);
   const [auditOffset, setAuditOffset] = useState(0);
@@ -102,14 +110,17 @@ export default function StaffScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [memberResponse, invitationResponse, auditResponse] = await Promise.all([
+      const [memberResponse, invitationResponse, auditResponse, roleResponse] = await Promise.all([
         listMembers(restaurantId),
         canInvite ? listPendingInvitations(restaurantId) : Promise.resolve({ invitations: [] }),
         canViewAudit
           ? listAuditLogs(restaurantId, auditPageSize, 0)
           : Promise.resolve({ logs: [], has_more: false, next_offset: 0 }),
+        // The roles card can still draw from the members' own roles without this.
+        getRoles().catch(() => ({ data: [] as Role[] })),
       ]);
       setMembers(memberResponse.members || []);
+      setRoles(roleResponse.data || []);
       setInvitations(invitationResponse.invitations || []);
       setAuditLogs(auditResponse.logs || []);
       setAuditHasMore(Boolean(auditResponse.has_more));
@@ -243,10 +254,45 @@ export default function StaffScreen() {
           {canInvite ? copy('ยังไม่มีสมาชิกในทีม · แตะเชิญเพื่อเพิ่มพนักงาน', 'No team members yet · tap Invite to add staff') : copy('ยังไม่มีสมาชิกในทีม', 'No team members yet')}
         </Text>
       )}
-      {canEditRoles && !tablet ? (
-        <LinkRow icon="key-outline" title={copy('บทบาทและสิทธิ์', 'Roles and permissions')} detail={copy('แต่ละบทบาททำอะไรได้บ้าง', 'What each role can do')} onPress={openRoles} />
-      ) : null}
     </ReportCard>
+  );
+
+  // ---------------------------------------------------------------- roles
+
+  const roleGroups = teamRoleGroups(roles, members);
+  const rolesCard = roleGroups.length ? (
+    <ReportCard>
+      <CardHeading
+        title={copy('บทบาทในร้าน', 'Roles in the shop')}
+        detail={canEditRoles ? copy('แตะบทบาทเพื่อดูและแก้สิทธิ์', 'Tap a role to see its permissions') : copy('แต่ละบทบาทมีใครบ้าง', 'Who holds each role')}
+        trailing={canEditRoles ? <GhostButton icon="settings-outline" label={copy('จัดการ', 'Manage')} onPress={openRoles} /> : undefined}
+      />
+      {roleGroups.map((group, index) => {
+        const editable = canEditRoles
+          && allowedRoleOptions(actorRole, [group.role], true).length > 0
+          && canGrantRole(activeMembership, group.role);
+        return (
+          <RoleRow
+            key={group.role.ID}
+            first={index === 0}
+            title={roleLabel(group.role, language)}
+            people={group.members.map((member) => ({ seed: member.user_id ?? member.ID, name: userDisplayName(member.user, language) }))}
+            onPress={editable ? () => router.push({ pathname: '/staff/role' as never, params: { id: String(group.role.ID) } } as never) : undefined}
+            language={language}
+          />
+        );
+      })}
+    </ReportCard>
+  ) : null;
+  const suspendedCount = members.filter((member) => member.status === 'suspended').length;
+  const teamStats = (
+    <TeamStats
+      stats={[
+        { key: 'active', label: copy('ใช้งาน', 'Active'), value: activeCount, tone: 'good' },
+        { key: 'suspended', label: copy('ระงับ', 'Suspended'), value: suspendedCount },
+        ...(canInvite ? [{ key: 'invites', label: copy('คำเชิญรอ', 'Invites waiting'), value: invitations.length, tone: 'wait' as const }] : []),
+      ]}
+    />
   );
 
   // ---------------------------------------------------------------- invitations
@@ -369,18 +415,9 @@ export default function StaffScreen() {
 
   const phoneBody = shownTab === 'members' ? (
     <>
+      {teamStats}
       {membersCard}
-      {canViewAudit ? (
-        <View style={{ gap: spacing.sm }}>
-          <Text accessibilityRole="header" style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder, paddingHorizontal: 6 }}>{copy('กิจกรรมล่าสุด', 'Latest activity')}</Text>
-          <ReportCard>
-            {auditLogs.length ? activityRows(auditLogs.slice(0, activityPreview)) : activityEmpty}
-            {auditLogs.length > activityPreview || auditHasMore ? (
-              <LinkRow centered title={copy('ดูทั้งหมด', 'See all')} onPress={() => setTab('activity')} />
-            ) : null}
-          </ReportCard>
-        </View>
-      ) : null}
+      {rolesCard}
     </>
   ) : shownTab === 'invitations' ? invitationsCard : activityCard;
 
@@ -388,13 +425,13 @@ export default function StaffScreen() {
     <View style={{ gap: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
         <Text style={{ flex: 1, fontSize: 14, color: palette.muted }}>{teamSummary}</Text>
-        {canEditRoles ? <GhostButton icon="key-outline" label={copy('บทบาทและสิทธิ์', 'Roles and permissions')} onPress={openRoles} /> : null}
         {canInvite ? <HeadingAction compact={false} icon="person-add-outline" label={copy('เชิญพนักงาน', 'Invite staff')} onPress={inviteStaff} /> : null}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
         <View style={{ flex: 1, minWidth: 0, gap: spacing.lg }}>
           {membersCard}
           {canInvite ? invitationsCard : null}
+          {rolesCard}
         </View>
         {canViewAudit ? <View style={{ flex: 1.1, minWidth: 0 }}>{activityCard}</View> : null}
       </View>

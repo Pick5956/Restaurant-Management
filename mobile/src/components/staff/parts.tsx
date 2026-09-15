@@ -96,33 +96,6 @@ export function MemberRow({ seed, name, email, role, status, statusLabel, first,
   );
 }
 
-/** A plain row that opens something: "บทบาทและสิทธิ์" at the foot of the members card, "ดูทั้งหมด" under a preview. */
-export function LinkRow({ icon, title, detail, onPress, centered }: { icon?: AppIconName; title: string; detail?: string; onPress: () => void; centered?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={detail ? `${title}, ${detail}` : title}
-      onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: centered ? 'center' : 'flex-start', gap: 12, minHeight: centered ? 44 : 56, paddingVertical: 8, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: palette.divider, backgroundColor: pressed ? palette.surfaceSubtle : palette.surface })}
-    >
-      {icon ? (
-        <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F0ED' }}>
-          <AppIcon name={icon} size={19} color="#5B3A2B" />
-        </View>
-      ) : null}
-      {centered ? (
-        <Text style={{ fontSize: 13.5, fontWeight: '700', color: palette.primaryInk }}>{title}</Text>
-      ) : (
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontSize: 14.5, lineHeight: 20, fontWeight: '600', color: palette.textStrong }}>{title}</Text>
-          {detail ? <Text numberOfLines={1} style={{ fontSize: 12, lineHeight: 17, color: palette.placeholder }}>{detail}</Text> : null}
-        </View>
-      )}
-      <AppIcon name="chevron-forward" size={centered ? 14 : 16} color={centered ? palette.primaryInk : palette.placeholder} />
-    </Pressable>
-  );
-}
-
 export function ActivityRow({ action, message, attribution, when, first }: { action: string; message: string; attribution: string; when: string; first: boolean }) {
   const look = ACTIVITY_LOOK[auditKind(action)];
   return (
@@ -167,6 +140,69 @@ export function GhostButton({ icon, label, onPress, tone = 'accent' }: { icon: A
     >
       <AppIcon name={icon} size={16} color={ink} />
       <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: '600', color: ink }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** Three counts over the members card: active, suspended, invitations waiting. */
+export function TeamStats({ stats }: { stats: { key: string; label: string; value: number; tone?: 'good' | 'wait' }[] }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {stats.map((stat) => (
+        <View key={stat.key} accessible accessibilityLabel={`${stat.label} ${stat.value}`} style={{ flex: 1, minWidth: 0, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
+          <Text numberOfLines={1} style={{ fontSize: 12, color: palette.placeholder }}>{stat.label}</Text>
+          <Text style={{ fontSize: 21, lineHeight: 27, fontWeight: '700', fontVariant: ['tabular-nums'], color: stat.value > 0 && stat.tone === 'good' ? palette.success : stat.value > 0 && stat.tone === 'wait' ? palette.warning : palette.textStrong }}>{stat.value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One role in "บทบาทในร้าน": its name, the faces of who holds it and how many,
+ * or "ยังไม่มีใคร" when nobody does. Opens the role's permissions when this
+ * person may edit it.
+ */
+export function RoleRow({ title, people, first, onPress, language }: {
+  title: string;
+  people: { seed: number; name: string }[];
+  first: boolean;
+  onPress?: () => void;
+  language: Language;
+}) {
+  const th = language === 'th';
+  const shown = people.slice(0, 3);
+  const has = people.length > 0;
+  return (
+    <Pressable
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={`${title}, ${has ? (th ? `${people.length} คน` : `${people.length} people`) : (th ? 'ยังไม่มีใคร' : 'nobody yet')}`}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingVertical: 8, paddingHorizontal: 14, borderTopWidth: first ? 0 : 1, borderTopColor: '#F3EDE7', backgroundColor: pressed ? palette.surfaceSubtle : palette.surface })}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: has ? palette.surfaceSubtle : '#F3F0ED' }}>
+        <AppIcon name="key-outline" size={17} color={has ? palette.primaryInk : '#8B6F5F'} />
+      </View>
+      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{title}</Text>
+      {has ? (
+        <>
+          <View style={{ flexDirection: 'row', paddingLeft: 6 }}>
+            {shown.map((person) => {
+              const tint = avatarTint(person.seed);
+              return (
+                <View key={person.seed} style={{ width: 26, height: 26, borderRadius: 13, marginLeft: -6, borderWidth: 2, borderColor: palette.surface, alignItems: 'center', justifyContent: 'center', backgroundColor: tint.wash }}>
+                  <Text style={{ fontSize: 9.5, fontWeight: '700', color: tint.ink }}>{memberInitials(person.name)}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text style={{ fontSize: 12.5, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>{th ? `${people.length} คน` : `${people.length}`}</Text>
+        </>
+      ) : (
+        <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.warning }}>{th ? 'ยังไม่มีใคร' : 'Nobody yet'}</Text>
+      )}
+      {onPress ? <AppIcon name="chevron-forward" size={15} color={palette.placeholder} /> : <View style={{ width: 15 }} />}
     </Pressable>
   );
 }

@@ -442,3 +442,34 @@ export function auditAttribution(
     ? `${actorName} · เป้าหมาย ${userDisplayName(log.target_user, language)}`
     : `${actorName} · Target: ${userDisplayName(log.target_user, language)}`;
 }
+
+export type TeamRoleGroup = { role: Role; members: Membership[] };
+
+const ROLE_ORDER = ['owner', 'manager', 'chef', 'cashier', 'waiter'];
+
+/**
+ * Who holds each role, for the "บทบาทในร้าน" card (15 ก.ย. 2569, design B):
+ * every role the shop has — empty ones too, which is the point, since "เชฟ ·
+ * ยังไม่มีใคร" is what the owner needs to see — owner first, the standard roles
+ * in the order a shop is staffed, then the shop's own. A member whose role the
+ * role list did not include still gets a row, and removed members are not counted.
+ */
+export function teamRoleGroups(roles: readonly Role[], members: readonly Membership[]): TeamRoleGroup[] {
+  const byId = new Map<number, TeamRoleGroup>();
+  for (const role of roles) byId.set(role.ID, { role, members: [] });
+  for (const member of members) {
+    if (member.status === 'removed') continue;
+    const roleId = member.role?.ID ?? member.role_id;
+    let group = byId.get(roleId);
+    if (!group && member.role) {
+      group = { role: member.role, members: [] };
+      byId.set(roleId, group);
+    }
+    group?.members.push(member);
+  }
+  const rank = (role: Role) => {
+    const index = ROLE_ORDER.indexOf(role.name);
+    return index >= 0 ? index : role.is_system ? ROLE_ORDER.length : ROLE_ORDER.length + 1;
+  };
+  return [...byId.values()].sort((a, b) => rank(a.role) - rank(b.role) || a.role.ID - b.role.ID);
+}
