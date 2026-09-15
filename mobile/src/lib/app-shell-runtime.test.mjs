@@ -159,76 +159,59 @@ test('staff warnings are announced and only describe a real custom-access reset'
     uiSource,
     /accessibilityLiveRegion=\{tone === 'danger' \? 'assertive' : tone === 'neutral' \? 'none' : 'polite'\}/,
   );
-  assert.match(
-    memberSource,
-    /roleId !== member\.role_id\s*&& member\.permissions_override != null/,
-  );
+  // The warning sits under the role chips (15 ก.ย. 2569) and still fires only
+  // when the role really changed for a member who had custom access.
+  assert.match(memberSource, /const roleChanged = Boolean\(canEditMemberRole && member && roleId !== member\.role_id\)/);
+  assert.match(memberSource, /roleChanged && member\.permissions_override != null/);
 });
 
-test('role editor animates local state changes without stacked boxes or extra rules', async () => {
-  const [roleSource, motionSource, uiSource, shellSource] = await Promise.all([
+// The role editor was redrawn on 15 ก.ย. 2569: every permission group is an
+// open card of switches shared with the member page, deleting is a quiet red
+// line that expands into its question, and the name still edits in the title.
+test('role editor uses the shared permission cards and the quiet delete line', async () => {
+  const [roleSource, formSource, memberSource, shellSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'app', 'staff', 'role.tsx'), 'utf8')
       .then((source) => source.replace(/\r\n/g, '\n')),
-    readFile(path.join(mobileRoot, 'src', 'components', 'motion.tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'src', 'components', 'ui.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'form', 'parts.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'staff', 'member.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8'),
   ]);
 
-  assert.match(roleSource, /<AnimatedCollapse expanded=\{expanded\}>/);
-  assert.match(roleSource, /<AnimatedDisclosureIcon expanded=\{expanded\}/);
-  assert.doesNotMatch(roleSource, /\{expanded \? group\.rows\.map/);
-  assert.match(motionSource, /export function AnimatedCollapse/);
-  assert.match(motionSource, /height\.stopAnimation\(\)/);
-  assert.match(motionSource, /accessibilityElementsHidden=\{!expanded\}/);
-  assert.match(motionSource, /export function MotionCrossfade/);
-  assert.match(motionSource, /const reduced = useReducedMotion\(\)/);
+  // One implementation of the permission groups for both screens.
+  assert.match(formSource, /export function PermissionGroups\(/);
+  assert.match(formSource, /<SwitchRow key=\{row\.key\}/);
+  assert.match(roleSource, /<PermissionGroups/);
+  assert.match(memberSource, /<PermissionGroups/);
+  assert.doesNotMatch(roleSource, /expandedPermissionGroup/);
+  assert.doesNotMatch(memberSource, /expandedPermissionGroup/);
+  // Turning a permission off still drops what depended on it.
+  assert.match(roleSource, /togglePermissionSelection\(selection, key\)/);
 
-  assert.doesNotMatch(roleSource, /\{confirmDelete \? \(\s*<Feedback/);
-  const deleteBlockStart = roleSource.indexOf('const deleteActions =');
-  const deleteBlockEnd = roleSource.indexOf('\n\n  return (', deleteBlockStart);
-  assert.ok(deleteBlockStart >= 0 && deleteBlockEnd > deleteBlockStart);
-  const deleteBlock = roleSource.slice(deleteBlockStart, deleteBlockEnd);
-  assert.match(deleteBlock, /<MotionCrossfade/);
-  assert.doesNotMatch(deleteBlock, /<Surface|<Feedback/);
-  assert.match(deleteBlock, /deleteError \|\|/);
-
-  assert.match(roleSource, /if \(editing && loading\) \{/);
-  assert.match(roleSource, /<ActivityIndicator/);
+  // Deleting: the red line, then the question with two buttons, never a box
+  // stacked on a box. The failure message replaces the question in place.
+  assert.match(formSource, /export function DangerAction\(/);
+  assert.match(roleSource, /<DangerAction/);
+  assert.match(roleSource, /error=\{deleteError\}/);
   assert.match(roleSource, /setDeleteError\(err instanceof Error/);
+  assert.doesNotMatch(roleSource, /<Feedback[^>]*confirmDelete/);
+  assert.match(roleSource, /if \(editing && loading\) \{/);
+  assert.match(roleSource, /<SkeletonReveal/);
 
-  assert.match(
-    roleSource,
-    /borderTopWidth: tabletWorkspace \? 0 : groupIndex \? 1 : 0/,
-  );
-  assert.doesNotMatch(roleSource, /borderTopWidth: 1,/);
-  assert.match(motionSource, /height: containerHeight/);
-  assert.match(motionSource, /onLayout=\{\(event\) => \{/);
-  // The dock separates itself from the content it sits over with an upward
-  // shadow, not a hairline: a line reads as the end of the content, a shadow
-  // reads as a bar resting on top of it, and the list really does keep scrolling
-  // underneath. A screen that already ends in its own divider opts out so the
-  // two do not stack — which is what the role editor does.
-  assert.match(uiSource, /separated = true/);
-  assert.match(uiSource, /boxShadow: separated \?/);
-  assert.doesNotMatch(uiSource, /borderTopWidth: separated/);
-  assert.match(roleSource, /<ActionDock separated=\{false\}>/);
-
+  // The name edits in the centred title; the glass pencil becomes a tick.
   assert.match(shellSource, /titleContent\?: React\.ReactNode/);
   assert.match(shellSource, /titleContent \?\? \(/);
-  assert.match(roleSource, /titleContent=\{roleTitleContent\}/);
-  const roleTitleStart = roleSource.indexOf('const roleTitleContent =');
-  const roleTitleEnd = roleSource.indexOf('const roleNameAction =', roleTitleStart);
-  assert.ok(roleTitleStart >= 0 && roleTitleEnd > roleTitleStart);
-  const roleTitleBlock = roleSource.slice(roleTitleStart, roleTitleEnd);
-  assert.match(roleTitleBlock, /<TextInput/);
-  assert.match(roleTitleBlock, /typeScale\.hero/);
-  assert.match(roleTitleBlock, /minHeight: 44/);
-  assert.match(roleTitleBlock, /numberOfLines=\{1\}/);
+  assert.match(roleSource, /titleContent=\{titleContent\}/);
+  const titleStart = roleSource.indexOf('const titleContent =');
+  const titleEnd = roleSource.indexOf('const nameAction =', titleStart);
+  assert.ok(titleStart >= 0 && titleEnd > titleStart);
+  const titleBlock = roleSource.slice(titleStart, titleEnd);
+  assert.match(titleBlock, /<TextInput/);
+  assert.match(titleBlock, /typeScale\.hero/);
+  assert.match(titleBlock, /minHeight: 44/);
+  assert.match(titleBlock, /numberOfLines=\{1\}/);
   assert.match(roleSource, /accessibilityLabel=\{copy\('ชื่อบทบาท', 'Role name'\)\}/);
-  assert.match(roleSource, /width: 44,[\s\S]{0,120}height: 44/);
-  assert.match(roleSource, /name=\{editingName \? 'checkmark' : 'create-outline'\}/);
+  assert.match(roleSource, /icon=\{editingName \? 'checkmark' : 'create-outline'\}/);
   assert.doesNotMatch(roleSource, /!role\?\.is_system/);
-  assert.doesNotMatch(roleSource, /<Surface>\s*<TextField[\s\S]{0,180}ชื่อบทบาท/);
   assert.match(roleSource, /function finishNameEditing\(\): boolean/);
   assert.match(roleSource, /if \(!canFinishRoleNameEdit\(name\)\)/);
   assert.match(roleSource, /setEditingName\(true\)[\s\S]{0,160}nameInputRef\.current\?\.focus\(\)/);
@@ -585,7 +568,9 @@ test('native stack keeps edge-swipe Back on pushed screens but disables it for t
   assert.doesNotMatch(rootLayoutSource, /name="inventory(\/categories)?"\s+options=\{\{[^}]*gestureEnabled:\s*false/);
 });
 
-test('detail heading Back is a bare chevron with an accessible 44 point target', async () => {
+// Both Back buttons were bare chevrons until 15 ก.ย. 2569, when the owner asked
+// for the assistant screen's round glass button on every screen.
+test('detail heading Back is the round glass button from the assistant screen', async () => {
   const appShellSource = await readFile(
     path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'),
     'utf8',
@@ -596,20 +581,14 @@ test('detail heading Back is a bare chevron with an accessible 44 point target',
   assert.ok(headingStart >= 0 && headingEnd > headingStart, 'ScreenHeading must exist');
   const headingSource = appShellSource.slice(headingStart, headingEnd);
 
-  assert.match(headingSource, /accessibilityLabel=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
-  assert.match(headingSource, /accessibilityRole="button"/);
-  assert.match(headingSource, /width:\s*44/);
-  assert.match(headingSource, /height:\s*44/);
-  assert.match(headingSource, /name="chevron-back-outline"/);
+  assert.match(headingSource, /<GlassButton icon="chevron-back" label=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
+  assert.doesNotMatch(headingSource, /name="chevron-back-outline"/);
   assert.doesNotMatch(headingSource, /name="arrow-back"/);
-  assert.doesNotMatch(
-    headingSource,
-    /backgroundColor|borderRadius/,
-    'Back must not have a filled or rounded background treatment',
-  );
+  // The spacer that keeps a centred title centred matches the button's 46pt.
+  assert.match(headingSource, /width: 46/);
 });
 
-test('auth flow Back uses the same bare chevron treatment', async () => {
+test('auth flow Back uses the same glass button', async () => {
   const authScreenSource = await readFile(
     path.join(mobileRoot, 'src', 'components', 'auth-screen.tsx'),
     'utf8',
@@ -620,13 +599,8 @@ test('auth flow Back uses the same bare chevron treatment', async () => {
   assert.ok(backStart >= 0 && backEnd > backStart, 'Auth BackButton must exist');
   const backSource = authScreenSource.slice(backStart, backEnd);
 
-  assert.match(backSource, /accessibilityLabel=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
-  assert.match(backSource, /accessibilityRole="button"/);
-  assert.match(backSource, /width:\s*44/);
-  assert.match(backSource, /height:\s*44/);
-  assert.match(backSource, /name="chevron-back-outline"/);
-  assert.doesNotMatch(backSource, /name="arrow-back"/);
-  assert.doesNotMatch(backSource, /backgroundColor|borderRadius/);
+  assert.match(backSource, /<GlassButton icon="chevron-back" label=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
+  assert.doesNotMatch(backSource, /name="chevron-back-outline"/);
 });
 
 test('app routes use the manual refresh control instead of binding native refresh to loading', async () => {
@@ -795,4 +769,24 @@ test('the overview keeps its fourteen-day report when an earlier day is picked',
   // again (reported 14 ก.ย. 2569). The window ends today whatever is selected.
   assert.doesNotMatch(home, /setManagerReport\(shouldLoadReports \?/);
   assert.match(home, /if \(shouldLoadReports\) \{\s*setManagerReport\(managerReportResponse\.response\)/);
+});
+
+test('loading shows the shape of the screen, not a one-line loading box', async () => {
+  const [home, chat, skeleton] = await Promise.all([
+    readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'ai-assistant.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'skeleton.tsx'), 'utf8'),
+  ]);
+
+  // 14 ก.ย. 2569: the overview grew from a 60pt "กำลังโหลด..." box into a full
+  // page the moment data landed, and an old chat opened as one lonely bubble.
+  assert.match(home, /\{dateLoading \? \(\s*<HomeSkeleton/);
+  assert.doesNotMatch(home, /กำลังโหลดข้อมูลของวันที่เลือก\.\.\./);
+  assert.match(chat, /\{threadLoading \? \(\s*<ThreadSkeleton/);
+
+  // One sweep for every bone, stopped under reduced motion, and a short hold so
+  // a fast load never flashes a skeleton for a frame.
+  assert.match(skeleton, /let sharedLoop/);
+  assert.match(skeleton, /useSharedShimmer\(!reducedMotion\)/);
+  assert.match(skeleton, /delay: 120/);
 });

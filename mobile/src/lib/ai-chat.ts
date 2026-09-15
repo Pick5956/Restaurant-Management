@@ -1,5 +1,6 @@
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import type { AIGuidedAction } from '@/src/lib/ai-actions';
+import type { ConfirmItem } from '@/src/lib/ai-confirm';
 import type {
   AIChartData,
   AIConversationTurn,
@@ -70,6 +71,17 @@ export type AIChatMessage = {
   actions?: AIGuidedAction[];
   /** A one-line outcome under a command bubble ("บันทึกลงระบบแล้ว"). */
   outcome?: { tone: 'good' | 'muted' | 'bad'; text: string };
+  /**
+   * The confirm card after it was answered, kept in the bubble so its details
+   * and result stay readable when the owner scrolls back. Held on screen only;
+   * a reopened chat shows the outcome line.
+   */
+  resolvedAction?: {
+    state: 'done' | 'cancelled' | 'expired';
+    summary: string;
+    items: ConfirmItem[];
+    at: number;
+  };
 };
 
 /**

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { GlassButton } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { BrandMark } from '@/src/components/brand-mark';
@@ -52,21 +53,7 @@ function LanguageControl() {
 function BackButton() {
   const { copy } = useDisplayPreferences();
   return (
-    <Pressable
-      accessibilityLabel={copy('ย้อนกลับ', 'Go back')}
-      accessibilityRole="button"
-      hitSlop={3}
-      onPress={() => router.back()}
-      style={({ pressed }) => ({
-        width: 44,
-        height: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: pressed ? 0.5 : 1,
-      })}
-    >
-      <AppIcon color={palette.textStrong} name="chevron-back-outline" size={30} />
-    </Pressable>
+    <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />
   );
 }
 

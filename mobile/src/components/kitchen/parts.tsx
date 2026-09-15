@@ -1,13 +1,16 @@
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, Pressable, ScrollView, View, type DimensionValue, type ViewStyle } from 'react-native';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { HomeCard } from '@/src/components/home/parts';
+import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { ChipGroup, TextField } from '@/src/components/ui';
-import { formatKitchenMinutes, kitchenClockLabel, ticketProgress, type KitchenSortMode, type KitchenUrgency } from '@/src/lib/kitchen-board';
+import { formatKitchenMinutes, kitchenClockLabel, lanesOutOfSight, ticketProgress, type KitchenSortMode, type KitchenUrgency } from '@/src/lib/kitchen-board';
 import { palette } from '@/src/theme';
 
 // The kitchen board's pieces, in the overview's language: white canvas, a
@@ -18,6 +21,10 @@ import { palette } from '@/src/theme';
 
 const CARD_RADIUS = 20;
 const CARD_EDGE = '#E4D8CD';
+
+/** One ticket lane on the tablet board, and the space between two. */
+export const LANE_WIDTH = 300;
+export const LANE_GAP = 12;
 
 /**
  * A ticket that has not reached five minutes. Not green: most tickets on the
@@ -64,46 +71,55 @@ export function BoardHeading({ title, sort, onSort, showSort, language }: {
   showSort: boolean;
   language: 'th' | 'en';
 }) {
-  const options: { mode: KitchenSortMode; label: string }[] = [
-    { mode: 'waiting', label: language === 'th' ? 'รอนานสุด' : 'Longest wait' },
-    { mode: 'latest', label: language === 'th' ? 'ล่าสุด' : 'Latest' },
-  ];
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingLeft: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <AppIcon name="flame-outline" size={16} color={palette.placeholder} />
         <Text accessibilityRole="header" style={{ fontSize: 14.5, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
       </View>
-      {showSort ? (
-        <View
-          accessibilityRole="radiogroup"
-          accessibilityLabel={language === 'th' ? 'เรียงตั๋ว' : 'Sort tickets'}
-          style={{ flexDirection: 'row', padding: 3, gap: 2, borderRadius: 999, backgroundColor: palette.surfaceSubtle, borderWidth: 1, borderColor: palette.divider }}
-        >
-          {options.map((option) => {
-            const on = option.mode === sort;
-            return (
-              <Pressable
-                key={option.mode}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: on }}
-                onPress={() => onSort(option.mode)}
-                hitSlop={4}
-                style={({ pressed }) => ({
-                  paddingVertical: 5,
-                  paddingHorizontal: 12,
-                  borderRadius: 999,
-                  backgroundColor: on ? palette.surface : 'transparent',
-                  opacity: pressed && !on ? 0.6 : 1,
-                  ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}),
-                })}
-              >
-                <Text style={{ fontSize: 12.5, fontWeight: on ? '700' : '600', color: on ? palette.textStrong : palette.muted }}>{option.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
+      {showSort ? <SortSwitch sort={sort} onSort={onSort} language={language} /> : null}
+    </View>
+  );
+}
+
+/** "รอนานสุด | ล่าสุด". On the tablet it sits on the heading row by itself. */
+export function SortSwitch({ sort, onSort, language }: {
+  sort: KitchenSortMode;
+  onSort: (mode: KitchenSortMode) => void;
+  language: 'th' | 'en';
+}) {
+  const options: { mode: KitchenSortMode; label: string }[] = [
+    { mode: 'waiting', label: language === 'th' ? 'รอนานสุด' : 'Longest wait' },
+    { mode: 'latest', label: language === 'th' ? 'ล่าสุด' : 'Latest' },
+  ];
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={language === 'th' ? 'เรียงตั๋ว' : 'Sort tickets'}
+      style={{ flexDirection: 'row', padding: 3, gap: 2, borderRadius: 999, backgroundColor: palette.surfaceSubtle, borderWidth: 1, borderColor: palette.divider }}
+    >
+      {options.map((option) => {
+        const on = option.mode === sort;
+        return (
+          <Pressable
+            key={option.mode}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on }}
+            onPress={() => onSort(option.mode)}
+            hitSlop={4}
+            style={({ pressed }) => ({
+              paddingVertical: 5,
+              paddingHorizontal: 12,
+              borderRadius: 999,
+              backgroundColor: on ? palette.surface : 'transparent',
+              opacity: pressed && !on ? 0.6 : 1,
+              ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}),
+            })}
+          >
+            <Text style={{ fontSize: 12.5, fontWeight: on ? '700' : '600', color: on ? palette.textStrong : palette.muted }}>{option.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -146,6 +162,40 @@ export function KitchenTile({ icon, label, value, suffix, tone, onPress }: {
   );
 }
 
+// ---------------------------------------------------------------- count chips
+
+/**
+ * The tablet's three counts, as chips on the heading row. They replaced the
+ * three tiles there (15 ก.ย. 2569): a tile 290pt wide held a 60pt number, and
+ * the row they took cost the lanes 125pt of height.
+ */
+export function CountChip({ icon, label, value, suffix, tone, onPress }: {
+  icon: AppIconName;
+  label: string;
+  value: string;
+  suffix?: string;
+  tone: 'brand' | 'danger' | 'success';
+  onPress?: () => void;
+}) {
+  const ink = tone === 'danger' ? palette.danger : tone === 'success' ? palette.success : palette.primaryInk;
+  const wash = tone === 'danger' ? palette.dangerSoft : tone === 'success' ? palette.successSoft : palette.surfaceSubtle;
+  return (
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={`${label} ${value}${suffix ? ` ${suffix}` : ''}`}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 12, borderRadius: 999, backgroundColor: wash, opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppIcon name={icon} size={16} color={ink} />
+      <Text style={{ fontSize: 13, fontWeight: '600', color: palette.muted }}>{label}</Text>
+      <Text style={{ fontSize: 18, lineHeight: 22, fontWeight: '700', color: ink, fontVariant: ['tabular-nums'] }}>{value}</Text>
+      {suffix ? <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{suffix}</Text> : null}
+      {onPress ? <AppIcon name="chevron-forward" size={14} color={palette.placeholder} /> : null}
+    </Pressable>
+  );
+}
+
 // ---------------------------------------------------------------- ticket
 
 /**
@@ -154,7 +204,7 @@ export function KitchenTile({ icon, label, value, suffix, tone, onPress }: {
  * bar along the header's bottom edge that fills at ten. Items and the footer
  * sit on white beneath it.
  */
-export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel, language, children, footer, style }: {
+export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel, language, children, footer, style, fill = false }: {
   title: string;
   titleIcon?: AppIconName;
   meta: string;
@@ -165,6 +215,12 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
   children: ReactNode;
   footer?: ReactNode;
   style?: ViewStyle;
+  /**
+   * A lane on the tablet board: the ticket takes the lane's full height, the
+   * dishes scroll inside it, and the footer stays on the bottom edge where the
+   * same thumb finds it on every lane.
+   */
+  fill?: boolean;
 }) {
   const color = headerColor(urgency);
   const overdue = urgency === 'overdue';
@@ -182,7 +238,7 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
         shadowRadius: overdue ? 14 : 10,
         shadowOffset: { width: 0, height: 6 },
         elevation: overdue ? 4 : 2,
-      }, style]}
+      }, fill ? { flexDirection: 'column' } : null, style]}
     >
       <View style={{ backgroundColor: color, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -216,8 +272,53 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
           <View style={{ width: `${Math.round(ticketProgress(minutes) * 100)}%`, height: 4, backgroundColor: 'rgba(255,255,255,0.75)' }} />
         </View>
       </View>
-      {children}
+      {fill ? <LaneItems language={language}>{children}</LaneItems> : children}
       {footer ? <View style={{ borderTopWidth: 1, borderTopColor: palette.divider, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10, paddingLeft: 14 }}>{footer}</View> : null}
+    </View>
+  );
+}
+
+/**
+ * The dishes of a lane, scrolling inside the lane when there are more than fit.
+ *
+ * The list ends on a hairline. On the phone the footer's top border sat right
+ * under the last dish and closed the list; in a lane the footer is pinned to
+ * the bottom edge, so without its own line the last dish ran straight into
+ * the empty space below it (the owner saw it under "ลาบหมู", 15 ก.ย. 2569).
+ *
+ * When dishes run past the bottom, a chip says so until the list is scrolled to
+ * its end: a dish nobody scrolls to is a dish nobody cooks.
+ */
+function LaneItems({ children, language }: { children: ReactNode; language: 'th' | 'en' }) {
+  const [viewport, setViewport] = useState(0);
+  const [content, setContent] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const moreBelow = viewport > 0 && content - viewport - offset > 8;
+  return (
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={32}
+        onLayout={(event) => setViewport(event.nativeEvent.layout.height)}
+        onContentSizeChange={(_, height) => setContent(height)}
+        onScroll={(event) => setOffset(event.nativeEvent.contentOffset.y)}
+      >
+        <View style={{ borderBottomWidth: 1, borderBottomColor: palette.divider }}>{children}</View>
+      </ScrollView>
+      {moreBelow ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 }}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.96)']}
+            locations={[0, 0.6]}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: palette.surfaceStrong }}>
+            <AppIcon name="chevron-down" size={14} color={palette.primaryInk} />
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: palette.primaryInk }}>{language === 'th' ? 'เลื่อนดูรายการที่เหลือ' : 'More dishes below'}</Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -321,17 +422,84 @@ export function TicketButton({ label, icon, onPress, loading, disabled }: {
   );
 }
 
+// ---------------------------------------------------------------- lanes
+
+/**
+ * The tablet board, chosen by the owner on 15 ก.ย. 2569: one lane per ticket,
+ * the full height of the screen, in queue order from left to right. A lane that
+ * does not fit is one swipe away, and the right edge says how many are waiting
+ * there.
+ *
+ * The strip lives inside the tab pager, which also reads horizontal drags; the
+ * exclusion handlers give a drag that starts on a lane to the lanes.
+ */
+export function TicketLanes({ count, children, language }: { count: number; children: (height: number) => ReactNode; language: 'th' | 'en' }) {
+  const tabSwipeExclusionHandlers = useTabSwipeExclusionHandlers();
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [scrollX, setScrollX] = useState(0);
+  const hidden = lanesOutOfSight(count, LANE_WIDTH, LANE_GAP, scrollX, size.width);
+  // Room under the lanes for the tickets' shadow, which a clipped strip would cut off.
+  const laneHeight = Math.max(0, size.height - 14);
+  return (
+    <View
+      style={{ flex: 1, minHeight: 0 }}
+      onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
+    >
+      {size.height > 0 ? (
+        <ScrollView
+          {...tabSwipeExclusionHandlers}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={32}
+          onScroll={(event) => setScrollX(event.nativeEvent.contentOffset.x)}
+          contentContainerStyle={{ gap: LANE_GAP, paddingBottom: 14, paddingRight: hidden > 0 || scrollX > 0 ? 40 : 0 }}
+        >
+          {children(laneHeight)}
+        </ScrollView>
+      ) : null}
+      {hidden > 0 ? (
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', top: 0, right: 0, bottom: 14, width: 96, alignItems: 'flex-end', justifyContent: 'center' }}
+        >
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.94)']}
+            locations={[0, 0.55]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View
+            accessible
+            accessibilityLabel={language === 'th' ? `อีก ${hidden} ตั๋วทางขวา` : `${hidden} more tickets to the right`}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: 4, paddingVertical: 6, paddingLeft: 12, paddingRight: 8, borderRadius: 999, backgroundColor: palette.surfaceStrong }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '700', color: palette.primaryInk, fontVariant: ['tabular-nums'] }}>+{hidden}</Text>
+            <AppIcon name="chevron-forward" size={16} color={palette.primaryInk} />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------- empty board
 
-export function EmptyKitchen({ latestFinishedAt, language }: { latestFinishedAt: number | null; language: 'th' | 'en' }) {
+/**
+ * `fill` is the tablet: the notice takes the whole board, the height and width
+ * the lanes would have, with its words in the middle. As a 600pt card pinned to
+ * the top-left it left two thirds of the screen bare and sat off-centre from
+ * everything around it (15 ก.ย. 2569).
+ */
+export function EmptyKitchen({ latestFinishedAt, language, fill = false }: { latestFinishedAt: number | null; language: 'th' | 'en'; fill?: boolean }) {
   const detail = latestFinishedAt !== null
     ? (language === 'th' ? `ทุกโต๊ะได้อาหารครบแล้ว · รอบล่าสุดเสร็จ ${kitchenClockLabel(latestFinishedAt, language)}` : `Every table is served · last round finished ${kitchenClockLabel(latestFinishedAt, language)}`)
     : (language === 'th' ? 'ยังไม่มีรอบเข้าครัว' : 'No rounds have reached the kitchen yet');
   return (
-    <View style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: palette.border, backgroundColor: palette.surfaceSubtle, paddingVertical: 26, paddingHorizontal: 18, alignItems: 'center', gap: 4 }}>
-      <AppIcon name="flame-outline" size={34} color={palette.primaryInk} />
-      <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textStrong, marginTop: 4 }}>{language === 'th' ? 'ครัวว่าง' : 'Kitchen is clear'}</Text>
-      <Text style={{ fontSize: 12.5, color: palette.muted, textAlign: 'center' }}>{detail}</Text>
+    <View style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: palette.border, backgroundColor: palette.surfaceSubtle, paddingVertical: 26, paddingHorizontal: 18, alignItems: 'center', gap: fill ? 6 : 4, ...(fill ? { flex: 1, justifyContent: 'center' as const, marginBottom: 14 } : null) }}>
+      <AppIcon name="flame-outline" size={fill ? 48 : 34} color={palette.primaryInk} />
+      <Text style={{ fontSize: fill ? 22 : 16, fontWeight: '700', color: palette.textStrong, marginTop: 4 }}>{language === 'th' ? 'ครัวว่าง' : 'Kitchen is clear'}</Text>
+      <Text style={{ fontSize: fill ? 15 : 12.5, color: palette.muted, textAlign: 'center' }}>{detail}</Text>
     </View>
   );
 }
@@ -503,23 +671,83 @@ export function CompletedSheet({ open, onClose, rows, average, slowest, language
   );
 }
 
-/** Tablet: the same list as a standing column beside the tickets. */
-export function DonePanel({ rows, average, language, empty }: {
-  rows: DoneRowProps[];
-  average: number | null;
-  language: 'th' | 'en';
-  empty: ReactNode;
-}) {
-  const t = (th: string, en: string) => (language === 'th' ? th : en);
-  return (
-    <View style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, paddingHorizontal: 14, paddingTop: 6, paddingBottom: 4 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingTop: 8, paddingBottom: 4 }}>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong }}>{t('เสร็จแล้ววันนี้', 'Finished today')}</Text>
-        <Text style={{ fontSize: 12, color: palette.placeholder }}>
-          {t(`${rows.length} รอบ`, `${rows.length} rounds`)}{average !== null ? t(` · เฉลี่ย ${formatKitchenMinutes(average, language)}`, ` · avg ${formatKitchenMinutes(average, language)}`) : ''}
-        </Text>
+
+// ---------------------------------------------------------------- skeleton
+
+/**
+ * The board before its first snapshot arrives: three tiles, the heading, and
+ * tickets in the same outline as real ones — a dark header block with the
+ * minutes capsule on the right, dish rows beneath. Only the first load draws
+ * it; a refresh over a board already on screen keeps the tickets, because
+ * swapping live tickets for grey shapes every time the tab is opened would
+ * hide the thing the cook is looking at.
+ */
+export function KitchenSkeleton({ tablet, label }: { tablet: boolean; label: string }) {
+  const tile = (key: string, labelWidth: DimensionValue) => (
+    <HomeCard key={key} radius={16} style={{ flex: 1 }}>
+      <View style={{ paddingVertical: 10, paddingHorizontal: 10, gap: 7 }}>
+        <Bone width={26} height={26} radius={9} />
+        <Bone width={labelWidth} height={8} />
+        <Bone width="45%" height={16} radius={6} />
       </View>
-      {rows.length ? rows.map((row, index) => <DoneRow key={row.key} row={row} language={language} first={index === 0} />) : <View style={{ paddingVertical: 10 }}>{empty}</View>}
+    </HomeCard>
+  );
+
+  const ticket = (key: string, rows: number) => (
+    <View key={key} style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
+      <View style={{ backgroundColor: palette.surfaceSubtle, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flex: 1, gap: 8 }}>
+          <Bone width={110} height={24} radius={8} />
+          <Bone width={150} height={10} />
+        </View>
+        <Bone width={70} height={36} radius={18} />
+      </View>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: palette.divider }}>
+          <Bone width={28} height={28} radius={9} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <Bone width={index % 2 ? '55%' : '70%'} height={13} />
+            {index === 0 ? <Bone width="35%" height={9} /> : null}
+          </View>
+          <Bone width={64} height={34} radius={12} />
+        </View>
+      ))}
     </View>
+  );
+
+  const heading = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 6 }}>
+      <Bone width={16} height={16} radius={5} />
+      <Bone width={58} height={12} />
+    </View>
+  );
+
+  const tiles = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {tile('a', '60%')}
+      {tile('b', '55%')}
+      {tile('c', '65%')}
+    </View>
+  );
+
+  return (
+    <SkeletonReveal label={label} style={tablet ? { flex: 1 } : { gap: 12 }}>
+      {tablet ? (
+        <View style={{ flex: 1, flexDirection: 'row', gap: LANE_GAP, overflow: 'hidden' }}>
+          {[3, 2, 2, 1].map((rows, index) => (
+            <View key={index} style={{ width: LANE_WIDTH }}>{ticket(String(index), rows)}</View>
+          ))}
+        </View>
+      ) : (
+        <>
+          {tiles}
+          {heading}
+          <View style={{ gap: 12 }}>
+            {ticket('a', 3)}
+            {ticket('b', 2)}
+          </View>
+        </>
+      )}
+    </SkeletonReveal>
   );
 }

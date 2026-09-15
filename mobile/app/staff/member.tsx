@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 
 import { getRoles } from '@/src/api/auth';
 import {
@@ -9,18 +9,12 @@ import {
   updateMemberRole,
   updateMemberStatus,
 } from '@/src/api/restaurant';
-import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
-import {
-  ActionDock,
-  Button,
-  ChipGroup,
-  EmptyState,
-  Feedback,
-  SectionHeader,
-  Surface,
-} from '@/src/components/ui';
+import { ChoiceChips, FORM_MAX_WIDTH, FormBody, FormCard, Note, PermissionGroups, PillTabs, SaveDock } from '@/src/components/form/parts';
+import { HeadingAction } from '@/src/components/heading-action';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   allPermissions,
   normalizePermissionSelection,
@@ -37,15 +31,23 @@ import {
   canManageMembers,
   canManageRoles,
   canManageTarget,
+  memberInitials,
   roleLabel,
+  staffStatusLabel,
   userDisplayName,
 } from '@/src/lib/staff-workflow';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { useToast } from '@/src/providers/toast-provider';
-import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
+import { breakpoints, palette, spacing } from '@/src/theme';
 import type { Membership, MembershipStatus, Role } from '@/src/types/restaurant';
+
+// Staff details, redrawn on 15 ก.ย. 2569: the person as a card at the top
+// (initials, name, email, when they joined, status), the role as chips with
+// the "changing the role clears custom access" warning right under them, the
+// permissions behind a "ตามบทบาท | กำหนดเอง" pill with the same switch cards
+// the role editor uses, and the status last.
 
 export default function StaffMemberScreen() {
   const { width } = useWindowDimensions();
@@ -59,7 +61,7 @@ export default function StaffMemberScreen() {
   const canEditStatus = canManageMembers(activeMembership);
   const canEditRole = canManageRoles(activeMembership);
   const allowed = canEditStatus || canEditRole;
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const tablet = width >= breakpoints.tabletWorkspace;
   const [member, setMember] = useState<Membership | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [roleId, setRoleId] = useState(0);
@@ -74,7 +76,6 @@ export default function StaffMemberScreen() {
   // Save reports through a toast (14 ก.ย.).
   const { showToast } = useToast();
   const actionFailed = (detail: string) => showToast({ tone: 'error', title: copy('ทำรายการไม่ได้', 'Unable to complete action'), message: detail });
-  const [expandedPermissionGroup, setExpandedPermissionGroup] = useState(0);
 
   useEffect(() => {
     if (!restaurantId || !allowed || memberId === null) {
@@ -146,9 +147,18 @@ export default function StaffMemberScreen() {
     }
   }
 
+  const grantable = (key: string) => canEditMemberRole && permissionCanBeGranted(key, grantablePermissions);
+
   function toggle(key: string) {
-    if (!canEditMemberRole || !permissionCanBeGranted(key, grantablePermissions)) return;
+    if (!grantable(key)) return;
     setPermissions((current) => togglePermissionSelection(current, key));
+  }
+
+  function toggleGroup(keys: string[], on: boolean) {
+    setPermissions((current) => {
+      if (on) return normalizePermissionSelection([...current, ...keys]);
+      return keys.reduce((selection, key) => (selection.includes(key) ? togglePermissionSelection(selection, key) : selection), current);
+    });
   }
 
   async function save() {
@@ -226,276 +236,165 @@ export default function StaffMemberScreen() {
     }
   }
 
+  const title = copy('ข้อมูลพนักงาน', 'Staff details');
+  const goBack = <Button variant="secondary" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />;
+
   if (routeId.kind !== 'valid') {
     return (
-      <AppScreen title={copy('ข้อมูลพนักงาน', 'Staff details')} topLevel={false}>
-        <EmptyState
-          title={copy('ไม่พบพนักงาน', 'Staff member not found')}
-          detail={copy(
-            'ลิงก์พนักงานนี้ไม่ถูกต้อง กรุณากลับไปเลือกรายการจากหน้าทีมงาน',
-            'This staff link is invalid. Go back and choose a member from the team list.',
-          )}
-          action={(
-            <Button
-              variant="secondary"
-              label={copy('ย้อนกลับ', 'Go back')}
-              onPress={() => router.back()}
-            />
-          )}
-        />
+      <AppScreen title={title} topLevel={false} centerTitle>
+        <EmptyState title={copy('ไม่พบพนักงาน', 'Staff member not found')} detail={copy('ลิงก์พนักงานนี้ไม่ถูกต้อง กรุณากลับไปเลือกรายการจากหน้าทีมงาน', 'This staff link is invalid. Go back and choose a member from the team list.')} action={goBack} />
       </AppScreen>
     );
   }
 
   if (!allowed) {
     return (
-      <AppScreen title={copy('ข้อมูลพนักงาน', 'Staff details')} topLevel={false}>
-        <EmptyState
-          title={copy('ไม่มีสิทธิ์จัดการทีม', 'No team management access')}
-          detail={copy(
-            'บัญชีนี้ไม่ได้รับสิทธิ์จัดการสถานะหรือบทบาทของพนักงาน',
-            'This account cannot manage staff status or roles.',
-          )}
-        />
+      <AppScreen title={title} topLevel={false} centerTitle>
+        <EmptyState title={copy('ไม่มีสิทธิ์จัดการทีม', 'No team management access')} detail={copy('บัญชีนี้ไม่ได้รับสิทธิ์จัดการสถานะหรือบทบาทของพนักงาน', 'This account cannot manage staff status or roles.')} />
       </AppScreen>
     );
   }
 
   if (!loading && !error && (!member || !manageable)) {
     return (
-      <AppScreen title={copy('ข้อมูลพนักงาน', 'Staff details')} topLevel={false}>
+      <AppScreen title={title} topLevel={false} centerTitle>
         <EmptyState
-          title={member
-            ? copy('จัดการสมาชิกคนนี้ไม่ได้', 'This member cannot be managed')
-            : copy('ไม่พบพนักงาน', 'Staff member not found')}
+          title={member ? copy('จัดการสมาชิกคนนี้ไม่ได้', 'This member cannot be managed') : copy('ไม่พบพนักงาน', 'Staff member not found')}
           detail={member
-            ? copy(
-              'แก้ไขตนเอง เจ้าของร้าน ผู้จัดการ หรือสิทธิ์ที่สูงกว่าขอบเขตของบัญชีนี้ไม่ได้',
-              'You cannot edit yourself, protected managers, owners, or access above your grant scope.',
-            )
-            : copy(
-              'พนักงานอาจถูกนำออกหรือไม่ได้อยู่ในร้านนี้',
-              'This staff member may have been removed or is not in this restaurant.',
-            )}
-          action={(
-            <Button
-              variant="secondary"
-              label={copy('ย้อนกลับ', 'Go back')}
-              onPress={() => router.back()}
-            />
-          )}
+            ? copy('แก้ไขตนเอง เจ้าของร้าน ผู้จัดการ หรือสิทธิ์ที่สูงกว่าขอบเขตของบัญชีนี้ไม่ได้', 'You cannot edit yourself, protected managers, owners, or access above your grant scope.')
+            : copy('พนักงานอาจถูกนำออกหรือไม่ได้อยู่ในร้านนี้', 'This staff member may have been removed or is not in this restaurant.')}
+          action={goBack}
         />
       </AppScreen>
     );
   }
 
+  const selectedRole = roles.find((role) => role.ID === roleId);
+  const roleChanged = Boolean(canEditMemberRole && member && roleId !== member.role_id);
+  const saveLabel = confirmStatus ? copy('ยืนยันบันทึก', 'Confirm save') : copy('บันทึกข้อมูลพนักงาน', 'Save staff details');
+  const saveVariant = confirmStatus === 'removed' ? 'danger' : 'primary';
+  const statusOptions: { key: MembershipStatus; label: string }[] = [
+    { key: 'active', label: copy('ใช้งาน', 'Active') },
+    { key: 'suspended', label: copy('ระงับ', 'Suspended') },
+    { key: 'removed', label: copy('นำออกจากร้าน', 'Remove from shop') },
+  ];
+  const joined = member?.joined_at ? new Date(member.joined_at) : null;
+  const joinedLabel = joined && !Number.isNaN(joined.getTime())
+    ? joined.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' })
+    : '';
+  const statusLook = member?.status === 'active'
+    ? { wash: palette.successSoft, ink: palette.success }
+    : member?.status === 'suspended' ? { wash: palette.warningSoft, ink: palette.warning } : { wash: '#F3F4F6', ink: '#4B5563' };
+
+  const personCard = member ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 22, borderCurve: 'continuous', backgroundColor: palette.surfaceSubtle, paddingVertical: 14, paddingHorizontal: 14 }}>
+      <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F0ED' }}>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#5B3A2B' }}>{memberInitials(userDisplayName(member.user, language))}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: palette.textStrong }}>{userDisplayName(member.user, language)}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted }}>{[member.user?.email, joinedLabel ? copy(`เข้าร่วม ${joinedLabel}`, `joined ${joinedLabel}`) : ''].filter(Boolean).join(' · ')}</Text>
+        <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1, backgroundColor: statusLook.wash }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusLook.ink }} />
+          <Text style={{ fontSize: 11.5, fontWeight: '600', color: statusLook.ink }}>{staffStatusLabel(member.status, language)}</Text>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
+  const roleCard = member ? (
+    <FormCard title={copy('บทบาท', 'Role')} detail={canEditMemberRole ? undefined : copy('บัญชีนี้เปลี่ยนบทบาทของคนนี้ไม่ได้', 'This account cannot change the role of this person')}>
+      <FormBody>
+        {canEditMemberRole ? (
+          <ChoiceChips options={roles.map((role) => ({ key: role.ID, label: roleLabel(role, language) }))} value={roleId} onChange={changeRole} />
+        ) : (
+          <Text style={{ fontSize: 15, fontWeight: '600', color: palette.textStrong }}>{roleLabel(member.role, language)}</Text>
+        )}
+        {roleChanged && member.permissions_override != null ? (
+          <Note icon="alert-circle-outline" tone="warning" text={copy('เปลี่ยนบทบาทแล้วสิทธิ์ที่กำหนดเองไว้จะถูกล้าง กลับไปใช้ของบทบาทใหม่ ถ้าเลือก "กำหนดเอง" ด้านล่าง รายการนั้นจะถูกบันทึกเป็นชุดใหม่', 'Changing the role clears the custom permissions and uses the new role defaults; if Custom is chosen below, that list is saved as the new set')} />
+        ) : null}
+      </FormBody>
+    </FormCard>
+  ) : null;
+
+  const permissionCard = member && canEditMemberRole ? (
+    <FormCard
+      title={copy('สิทธิ์การใช้งาน', 'Permissions')}
+      detail={useRolePermissions
+        ? copy(`ตอนนี้: ตามบทบาท ${roleLabel(selectedRole, language)}`, `Now: the ${roleLabel(selectedRole, language)} role defaults`)
+        : copy(`กำหนดเอง · เปิด ${permissions.length} สิทธิ์`, `Custom · ${permissions.length} on`)}
+    >
+      <FormBody>
+        <PillTabs
+          role="radiogroup"
+          tabs={[{ key: 'role', label: copy('ตามบทบาท', 'Role defaults') }, { key: 'custom', label: copy('กำหนดเอง', 'Custom') }]}
+          value={useRolePermissions ? 'role' : 'custom'}
+          onChange={(value) => {
+            const useRole = value === 'role';
+            setUseRolePermissions(useRole);
+            if (!useRole) setPermissions(parsePermissionsForRole(selectedRole?.permissions, selectedRole?.name));
+          }}
+        />
+      </FormBody>
+    </FormCard>
+  ) : null;
+
+  const permissionGroupCards = member && canEditMemberRole && !useRolePermissions ? (
+    <PermissionGroups groups={permissionGroups} selected={permissions} grantable={grantable} onToggle={toggle} onToggleGroup={toggleGroup} columns={tablet} language={language} />
+  ) : null;
+
+  const statusCard = member && canEditStatus ? (
+    <FormCard title={copy('สถานะ', 'Status')} detail={copy('ระงับ = เข้าแอปไม่ได้จนกว่าจะเปิดกลับ · นำออก = ต้องเชิญใหม่', 'Suspended = locked out until reactivated · removed = must be invited again')}>
+      <FormBody>
+        <ChoiceChips options={statusOptions} value={status} onChange={(value) => { setStatus(value); setConfirmStatus(null); }} />
+        {confirmStatus ? (
+          <Note icon="alert-circle-outline" tone={confirmStatus === 'removed' ? 'danger' : 'warning'} text={confirmStatus === 'removed'
+            ? copy('กดบันทึกอีกครั้งเพื่อนำพนักงานออกจากร้าน คนนี้จะเข้าร้านไม่ได้จนกว่าจะได้รับคำเชิญใหม่', 'Tap save again to remove this person; they cannot open the shop until invited again')
+            : copy('กดบันทึกอีกครั้งเพื่อระงับ คนนี้จะเข้าร้านไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง', 'Tap save again to suspend; they cannot open the shop until reactivated')} />
+        ) : null}
+      </FormBody>
+    </FormCard>
+  ) : null;
+
+  const skeleton = (
+    <SkeletonReveal label={copy('กำลังโหลดข้อมูลพนักงาน', 'Loading staff details')} style={{ gap: spacing.md }}>
+      <Bone height={84} radius={22} />
+      <Bone height={120} radius={18} />
+      <Bone height={100} radius={18} />
+    </SkeletonReveal>
+  );
+
   return (
     <AppScreen
-      title={member
-        ? userDisplayName(member.user, language)
-        : copy('ข้อมูลพนักงาน', 'Staff details')}
-      subtitle={member?.user?.email || copy('กำลังโหลดข้อมูล', 'Loading details')}
+      title={title}
       topLevel={false}
-      footer={!tabletWorkspace && member ? (
-        <ActionDock>
-          <Button
-            icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'}
-            variant={confirmStatus === 'removed' ? 'danger' : 'primary'}
-            label={confirmStatus ? copy('ยืนยันบันทึก', 'Confirm save') : copy('บันทึกพนักงาน', 'Save staff')}
-            onPress={save}
-            loading={saving}
-          />
-        </ActionDock>
-      ) : undefined}
+      centerTitle
+      contentMaxWidth={tablet ? 1180 : undefined}
+      action={tablet && member ? <HeadingAction compact={false} icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'} label={saveLabel} onPress={save} /> : undefined}
+      footer={!tablet && member ? <SaveDock icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'} variant={saveVariant} label={saveLabel} onPress={save} loading={saving} /> : undefined}
     >
-      {error ? (
-        <Feedback
-          title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')}
-          detail={error}
-          tone="danger"
-        />
-      ) : null}
-      {canEditMemberRole
-        && member
-        && roleId !== member.role_id
-        && member.permissions_override != null ? (
-        <Feedback
-          title={copy('การเปลี่ยนบทบาทจะล้างสิทธิ์เดิม', 'Changing role resets old custom access')}
-          detail={copy(
-            'เมื่อบันทึก ระบบจะล้างสิทธิ์เฉพาะคนชุดเดิม หากเลือกกำหนดเอง รายการด้านล่างจะถูกบันทึกเป็นชุดใหม่',
-            'Saving clears the previous member override. If Customize is selected, the permissions below become the new override.',
-          )}
-          tone="warning"
-        />
-      ) : null}
-      {confirmStatus ? (
-        <Feedback
-          title={confirmStatus === 'removed'
-            ? copy('ยืนยันนำพนักงานออกจากร้าน', 'Confirm removing staff')
-            : copy('ยืนยันระงับการใช้งาน', 'Confirm suspension')}
-          detail={confirmStatus === 'removed'
-            ? copy(
-              'พนักงานจะเข้าใช้งานร้านนี้ไม่ได้จนกว่าจะได้รับคำเชิญใหม่',
-              'This staff member cannot access the restaurant until invited again.',
-            )
-            : copy(
-              'พนักงานจะเข้าใช้งานร้านนี้ไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง',
-              'This staff member cannot access the restaurant until reactivated.',
-            )}
-          tone={confirmStatus === 'removed' ? 'danger' : 'warning'}
-        />
-      ) : null}
-
-      {member ? (
-        <>
-          <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
-          <Surface style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined }}>
-            <SectionHeader title={copy('บทบาทและสถานะ', 'Role & status')} />
-            {canEditMemberRole ? <ChipGroup
-              label={copy('บทบาท', 'Role')}
-              value={roleId}
-              onChange={changeRole}
-              options={roleOptions}
-            /> : (
-              <Text selectable style={typeScale.cardTitle}>
-                {roleLabel(member.role, language)}
-              </Text>
-            )}
-            {canEditStatus ? <ChipGroup
-              label={copy('สถานะ', 'Status')}
-              value={status}
-              onChange={(value) => {
-                setStatus(value);
-                setConfirmStatus(null);
-              }}
-              options={[
-                { label: copy('เปิดใช้งาน', 'Active'), value: 'active' },
-                { label: copy('ระงับ', 'Suspended'), value: 'suspended' },
-                { label: copy('นำออกจากร้าน', 'Remove from restaurant'), value: 'removed' },
-              ]}
-            /> : null}
-          </Surface>
-
-          {canEditMemberRole ? <Surface style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.2 : undefined }}>
-            <SectionHeader
-              title={copy('สิทธิ์การใช้งาน', 'Permissions')}
-              detail={useRolePermissions
-                ? copy(
-                  `ใช้สิทธิ์เริ่มต้นจากบทบาท ${roleLabel(roles.find((role) => role.ID === roleId), language)}`,
-                  `Using defaults from the ${roleLabel(roles.find((role) => role.ID === roleId), language)} role`,
-                )
-                : copy(
-                  `กำหนดเอง ${permissions.length.toLocaleString('th-TH')} สิทธิ์`,
-                  `${permissions.length.toLocaleString('en-US')} custom permissions`,
-                )}
-            />
-            <ChipGroup
-              value={useRolePermissions ? 'role' : 'custom'}
-              onChange={(value) => {
-                const useRole = value === 'role';
-                setUseRolePermissions(useRole);
-                if (!useRole) {
-                  const selectedRole = roles.find((role) => role.ID === roleId);
-                  setPermissions(parsePermissionsForRole(
-                    selectedRole?.permissions,
-                    selectedRole?.name,
-                  ));
-                }
-              }}
-              options={[
-                { label: copy('ตามบทบาท', 'Use role defaults'), value: 'role' },
-                { label: copy('กำหนดเอง', 'Customize'), value: 'custom' },
-              ]}
-            />
-            {!useRolePermissions ? permissionGroups.map((group, groupIndex) => {
-              const expanded = tabletWorkspace || expandedPermissionGroup === groupIndex;
-              const selectedCount = group.rows.filter((row) => permissions.includes(row.key)).length;
-              return (
-              <View key={group.title} style={{ borderTopWidth: 1, borderTopColor: palette.border }}>
-                <Pressable
-                  accessible={!tabletWorkspace}
-                  accessibilityRole={tabletWorkspace ? undefined : 'button'}
-                  accessibilityState={tabletWorkspace ? undefined : { expanded }}
-                  disabled={tabletWorkspace}
-                  onPress={() => setExpandedPermissionGroup((current) => current === groupIndex ? -1 : groupIndex)}
-                  style={({ pressed }) => ({ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, opacity: pressed ? 0.72 : 1 })}
-                >
-                  <Text style={[typeScale.cardTitle, { flex: 1 }]}>{group.title}</Text>
-                  <Text style={[typeScale.caption, { color: palette.muted }]}>{selectedCount}/{group.rows.length}</Text>
-                  {!tabletWorkspace ? <AppIcon color={palette.muted} name={expanded ? 'chevron-up' : 'chevron-down'} size={17} /> : null}
-                </Pressable>
-                {expanded ? group.rows.map((row) => {
-                  const active = permissions.includes(row.key);
-                  const grantable = permissionCanBeGranted(row.key, grantablePermissions);
-                  return (
-                    <Pressable
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: active, disabled: !grantable }}
-                      disabled={!grantable}
-                      key={row.key}
-                      onPress={() => toggle(row.key)}
-                      style={({ pressed }) => ({
-                        minHeight: 50,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: spacing.md,
-                        borderTopWidth: 1,
-                        borderTopColor: palette.border,
-                        backgroundColor: pressed ? palette.surfaceSubtle : palette.surface,
-                        paddingVertical: spacing.sm,
-                        opacity: !grantable ? 0.5 : pressed ? 0.76 : 1,
-                      })}
-                    >
-                      <Text style={{
-                        flex: 1,
-                        color: palette.text,
-                        fontSize: 14,
-                        fontWeight: '600',
-                      }}>
-                        {row.label}
-                      </Text>
-                      <AppIcon color={active ? palette.accent : palette.muted} name={active ? 'checkbox' : 'square-outline'} size={22} />
-                    </Pressable>
-                  );
-                }) : null}
-              </View>
-              );
-            }) : null}
-          </Surface> : null}
+      {error ? <Feedback title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')} detail={error} tone="danger" /> : null}
+      {!member ? (loading ? skeleton : null) : tablet ? (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
+          <View style={{ width: 360, gap: spacing.md }}>
+            {personCard}
+            {roleCard}
+            {statusCard}
           </View>
-
-          {tabletWorkspace || confirmStatus ? <Surface>
-            {confirmStatus ? (
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <Button
-                  variant="secondary"
-                  label={copy('ยกเลิก', 'Cancel')}
-                  onPress={() => {
-                    setStatus(member.status);
-                    setConfirmStatus(null);
-                  }}
-                  style={{ flex: 1 }}
-                />
-                {tabletWorkspace ? <Button
-                  variant={confirmStatus === 'removed' ? 'danger' : 'primary'}
-                  icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'}
-                  label={copy('ยืนยันบันทึก', 'Confirm save')}
-                  onPress={save}
-                  loading={saving}
-                  style={{ flex: 1 }}
-                /> : null}
-              </View>
-            ) : tabletWorkspace ? (
-              <Button
-                icon="checkmark"
-                label={copy('บันทึกข้อมูลพนักงาน', 'Save staff details')}
-                onPress={save}
-                loading={saving}
-              />
-            ) : null}
-          </Surface> : null}
-        </>
-      ) : null}
+          <View style={{ flex: 1, minWidth: 0, gap: spacing.md }}>
+            {permissionCard}
+            {permissionGroupCards}
+          </View>
+        </View>
+      ) : (
+        <View style={{ gap: spacing.md, maxWidth: FORM_MAX_WIDTH, width: '100%', alignSelf: 'center' }}>
+          {personCard}
+          {roleCard}
+          {permissionCard}
+          {permissionGroupCards}
+          {statusCard}
+        </View>
+      )}
     </AppScreen>
   );
 }

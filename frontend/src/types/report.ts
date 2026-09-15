@@ -75,11 +75,20 @@ export type TopMenuItemsReport = {
 export type ManagerReport = {
   generated_at: string;
   days: number;
+  from?: string;
+  to?: string;
   sales_days: ReportSalesDay[];
   menu_margins: ReportMenuMargin[];
   stock_risks: ReportStockRisk[];
   summary: {
     orders: number;
+    /** Bills before discounts ("รายได้รวม"); servers from 15 Sep 2026. */
+    gross_revenue?: number;
+    discount?: number;
+    expenses?: number;
+    expense_count?: number;
+    operating_expenses?: number;
+    net_profit?: number;
     revenue: number;
     cost: number;
     profit: number;

@@ -32,41 +32,19 @@ test('paying a bill announces itself before navigating away', async () => {
   assert.ok(toastAt < leaveAt, 'the toast must be raised before the route is reset');
 });
 
-test('toast timing and stacking match the web', async () => {
+test('the toast is out of the app until the owner designs its replacement', async () => {
   const provider = await read('src', 'providers', 'toast-provider.tsx');
 
-  // frontend/src/components/shared/FeedbackProvider.tsx: 3600ms, last four.
-  assert.match(provider, /const DEFAULT_DURATION = 3600;/);
-  assert.match(provider, /const MAX_VISIBLE = 4;/);
+  // Pulled 14 ก.ย. 2569: the glass capsule never rendered on iOS 26. Nothing is
+  // drawn over the screens now...
+  assert.doesNotMatch(provider, /<GlassPanel|Animated\.View|position: 'absolute'/);
+  // ...but an error must still reach the person who caused it.
+  assert.match(provider, /tone === 'error' \|\| tone === 'warning'[\s\S]{0,80}Alert\.alert\(/);
+  // A success is still spoken for screen readers.
+  assert.match(provider, /AccessibilityInfo\.announceForAccessibility\(/);
 });
 
-test('the toast is anchored to the top, clear of the bottom docks', async () => {
-  const provider = await read('src', 'providers', 'toast-provider.tsx');
-
-  assert.match(provider, /top: insets\.top \+ spacing\.lg/);
-  assert.doesNotMatch(provider, /bottom: insets\.bottom/);
-
-  // box-none, or the invisible full-width container would swallow every touch
-  // on the screen underneath it.
-  assert.match(provider, /pointerEvents="box-none"/);
-});
-
-test('the toast is the glass capsule the owner chose, with room for one undo', async () => {
-  const provider = await read('src', 'providers', 'toast-provider.tsx');
-
-  // 14 ก.ย. 2569: design B, the dock's material.
-  assert.match(provider, /<GlassPanel/);
-  assert.match(provider, /action\?: ToastAction/);
-  // An error is read, a success glanced at.
-  assert.match(provider, /const ERROR_DURATION = 6000;/);
-  // It slides, never fades: fading the parent of a glass view makes the
-  // material vanish, which is how the first build shipped (14 ก.ย.).
-  assert.doesNotMatch(provider, /opacity: enter/);
-  // Flick up to dismiss; the invisible container still passes touches through.
-  assert.match(provider, /PanResponder\.create/);
-});
-
-test('screens report what a tap did with a toast, not a banner that pushes the page down', async () => {
+test('screens report what a tap did through the feedback seam, not a banner that pushes the page down', async () => {
   const screens = [
     ['app', '(primary)', 'kitchen.tsx'],
     ['app', 'inventory.tsx'],
@@ -86,7 +64,7 @@ test('screens report what a tap did with a toast, not a banner that pushes the p
   }
 });
 
-test('the kitchen keeps its states inline and offers undo on the toast', async () => {
+test('the kitchen keeps its states inline and still routes outcomes through the seam', async () => {
   const kitchen = await read('app', '(primary)', 'kitchen.tsx');
 
   // A dropped live feed and a view-only account are true until they are not,

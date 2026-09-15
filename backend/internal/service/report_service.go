@@ -17,20 +17,72 @@ func ProvideReportService(repo *repository.ReportRepository) *ReportService {
 }
 
 type ManagerReportResponse struct {
-	GeneratedAt string                        `json:"generated_at"`
-	Days        int                           `json:"days"`
+	GeneratedAt string `json:"generated_at"`
+	Days        int    `json:"days"`
+	// From and To are the first and last calendar day covered, YYYY-MM-DD.
+	From        string                        `json:"from"`
+	To          string                        `json:"to"`
 	SalesDays   []repository.ReportSalesDay   `json:"sales_days"`
 	MenuMargins []repository.ReportMenuMargin `json:"menu_margins"`
-	StockRisks  []ManagerReportStockRisk      `json:"stock_risks"`
-	Summary     ManagerReportSummary          `json:"summary"`
+	// TopMenuItems is quantity sold per menu over the same days, most first.
+	TopMenuItems []repository.ReportTopMenuItem `json:"top_menu_items"`
+	StockRisks   []ManagerReportStockRisk       `json:"stock_risks"`
+	Summary      ManagerReportSummary           `json:"summary"`
+}
+
+// ManagerReportMaxDays caps a chosen range: a daily chart of more than about a
+// quarter stops being readable, and the queries scan every order in it.
+const ManagerReportMaxDays = 93
+
+// ErrReportRange is a from/to pair the report cannot cover.
+var ErrReportRange = errors.New("ช่วงวันที่ไม่ถูกต้อง")
+
+// ParseManagerReportRange reads a from/to pair of YYYY-MM-DD days in Bangkok
+// time. A range that ends after today is cut at today; one that starts after
+// it ends, starts in the future, or spans more than ManagerReportMaxDays is
+// refused.
+func ParseManagerReportRange(from, to string, now time.Time) (time.Time, time.Time, error) {
+	loc := now.Location()
+	start, err := time.ParseInLocation("2006-01-02", from, loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, ErrReportRange
+	}
+	end, err := time.ParseInLocation("2006-01-02", to, loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, ErrReportRange
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	if end.After(today) {
+		end = today
+	}
+	if start.After(end) {
+		return time.Time{}, time.Time{}, ErrReportRange
+	}
+	if int(end.Sub(start).Hours()/24)+1 > ManagerReportMaxDays {
+		return time.Time{}, time.Time{}, ErrReportRange
+	}
+	return start, end, nil
 }
 
 type ManagerReportSummary struct {
-	Orders  int64   `json:"orders"`
-	Revenue float64 `json:"revenue"`
-	Cost    float64 `json:"cost"`
-	Profit  float64 `json:"profit"`
-	Margin  float64 `json:"margin"`
+	Orders int64 `json:"orders"`
+	// GrossRevenue is "รายได้รวม": the bills before their discounts, service
+	// charge and VAT still in, so GrossRevenue − Discount = Revenue.
+	GrossRevenue float64 `json:"gross_revenue"`
+	Discount     float64 `json:"discount"`
+	// Expenses is "รายจ่ายรวม": the expense ledger over the same days, every
+	// category, ingredient purchases included. It is kept apart from Cost (the
+	// recipe cost of what sold); subtracting both would count the same pork twice.
+	Expenses     float64 `json:"expenses"`
+	ExpenseCount int64   `json:"expense_count"`
+	// OperatingExpenses is the expenses that are not ingredient purchases, and
+	// NetProfit ("กำไรสุทธิ") is Profit minus them.
+	OperatingExpenses float64 `json:"operating_expenses"`
+	NetProfit         float64 `json:"net_profit"`
+	Revenue           float64 `json:"revenue"`
+	Cost              float64 `json:"cost"`
+	Profit            float64 `json:"profit"`
+	Margin            float64 `json:"margin"`
 }
 
 type ManagerReportStockRisk struct {
@@ -44,6 +96,15 @@ type ManagerReportStockRisk struct {
 	Status          string  `json:"status"`
 }
 
+// managerReportSince is midnight at the start of the first of `days` calendar
+// days ending today. It used to be now minus days×24h, so a 14-day report
+// opened at 15:11 on 15 Sep started at 15:11 on 1 Sep: fifteen dates, the first
+// holding only an afternoon, and every total carried that part-day with it.
+func managerReportSince(now time.Time, days int) time.Time {
+	start := now.AddDate(0, 0, -(days - 1))
+	return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, now.Location())
+}
+
 func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerReportResponse, error) {
 	if days < 1 {
 		days = 7
@@ -51,12 +112,40 @@ func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerRepo
 	if days > 90 {
 		days = 90
 	}
-	since := repository.BangkokNow().AddDate(0, 0, -days)
-	sales, err := s.repo.SalesByDay(restaurantID, since)
+	now := repository.BangkokNow()
+	since := managerReportSince(now, days)
+	return s.ManagerReportRange(restaurantID, since, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()))
+}
+
+// ManagerReportRange covers the calendar days from `from` to `to`, both whole
+// days. Nothing completed after this moment counts, so today stops at now.
+func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time) (*ManagerReportResponse, error) {
+	now := repository.BangkokNow()
+	since := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, now.Location())
+	until := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, 1)
+	if until.After(now) {
+		until = now
+	}
+	days := int(time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, now.Location()).Sub(since).Hours()/24) + 1
+	sales, err := s.repo.SalesByDayBetween(restaurantID, since, until)
 	if err != nil {
 		return nil, err
 	}
-	margins, err := s.repo.MenuMargins(restaurantID, since)
+	margins, err := s.repo.MenuMarginsBetween(restaurantID, since, until)
+	if err != nil {
+		return nil, err
+	}
+	topItems, err := s.repo.TopMenuItemsByMonth(restaurantID, since, until)
+	if err != nil {
+		return nil, err
+	}
+	if topItems == nil {
+		topItems = []repository.ReportTopMenuItem{}
+	}
+	if len(topItems) > 10 {
+		topItems = topItems[:10]
+	}
+	expenseTotal, operatingExpenses, expenseCount, err := s.repo.ExpenseTotal(restaurantID, since, until)
 	if err != nil {
 		return nil, err
 	}
@@ -80,12 +169,28 @@ func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerRepo
 	for _, day := range sales {
 		summary.Orders += day.Orders
 		summary.Revenue += day.Revenue
+		summary.Discount += day.Discount
 		summary.Cost += day.Cost
 	}
+	summary.Discount = roundMoney(summary.Discount)
+	summary.Expenses = roundMoney(expenseTotal)
+	summary.ExpenseCount = expenseCount
+	summary.GrossRevenue = roundMoney(summary.Revenue + summary.Discount)
 	summary.Cost = roundMoney(summary.Cost)
 	summary.Profit = roundMoney(summary.Revenue - summary.Cost)
 	if summary.Revenue > 0 {
 		summary.Margin = roundMoney(summary.Profit / summary.Revenue * 100)
+	}
+	summary.OperatingExpenses = roundMoney(operatingExpenses)
+	// The owner's call (15 ก.ย. 2569): one net figure that takes off everything
+	// the ledger holds, ingredient purchases included, rather than gross profit
+	// less the non-ingredient part. Cost (recipe cost of what sold) still goes
+	// out on the menu tab; Margin is the share of revenue this net keeps.
+	summary.NetProfit = roundMoney(summary.Revenue - summary.Expenses)
+	if summary.Revenue > 0 {
+		summary.Margin = roundMoney(summary.NetProfit / summary.Revenue * 100)
+	} else {
+		summary.Margin = 0
 	}
 
 	risks := make([]ManagerReportStockRisk, 0, len(ingredients))
@@ -94,12 +199,15 @@ func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerRepo
 	}
 
 	return &ManagerReportResponse{
-		GeneratedAt: repository.BangkokNow().Format(time.RFC3339),
-		Days:        days,
-		SalesDays:   sales,
-		MenuMargins: margins,
-		StockRisks:  risks,
-		Summary:     summary,
+		GeneratedAt:  now.Format(time.RFC3339),
+		Days:         days,
+		From:         since.Format("2006-01-02"),
+		To:           to.Format("2006-01-02"),
+		SalesDays:    sales,
+		MenuMargins:  margins,
+		TopMenuItems: topItems,
+		StockRisks:   risks,
+		Summary:      summary,
 	}, nil
 }
 

@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  dealIntoColumns,
   formatKitchenMinutes,
   kitchenBoardStats,
   kitchenClockLabel,
+  lanesOutOfSight,
   latestFinishedAt,
   sortTickets,
   sortTicketsByLatest,
@@ -90,10 +90,15 @@ test('the latest finished round is the newest ready stamp across rounds', () => 
   assert.equal(latestFinishedAt([]), null);
 });
 
-test('tickets are dealt across the columns in order', () => {
-  assert.deepEqual(dealIntoColumns([1, 2, 3, 4, 5], 2), [[1, 3, 5], [2, 4]]);
-  assert.deepEqual(dealIntoColumns([], 2), [[], []]);
-  assert.deepEqual(dealIntoColumns([1, 2], 0), [[1, 2]]);
+test('a lane is out of sight once less than half of it shows', () => {
+  // 300-wide lanes, 12 apart, on a 1000-wide board: 0-300, 312-612, 624-924, 936-1236.
+  assert.equal(lanesOutOfSight(5, 300, 12, 0, 1000), 2);
+  // The fourth lane's middle (1086) comes into view after 86 of scroll.
+  assert.equal(lanesOutOfSight(5, 300, 12, 86, 1000), 1);
+  assert.equal(lanesOutOfSight(5, 300, 12, 400, 1000), 0);
+  assert.equal(lanesOutOfSight(3, 300, 12, 0, 1000), 0);
+  assert.equal(lanesOutOfSight(0, 300, 12, 0, 1000), 0);
+  assert.equal(lanesOutOfSight(4, 300, 12, 0, 0), 0);
 });
 
 test('latest puts the round that just arrived on top', () => {

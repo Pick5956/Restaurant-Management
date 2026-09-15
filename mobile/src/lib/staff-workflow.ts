@@ -362,7 +362,47 @@ export function auditMessage(
       ? `ลบบทบาท${roleName ? ` ${roleLabel(roleName, language)}` : ''}`
       : `Deleted role${roleName ? ` ${roleLabel(roleName, language)}` : ''}`;
   }
+  if (log.action === 'ai_set_menu_availability') {
+    // Written when the owner confirms the assistant's switch. It showed as the
+    // raw key "ai_set_menu_availability" until 15 ก.ย. 2569.
+    const menuName = typeof details.target_menu_item_name === 'string' ? details.target_menu_item_name.trim() : '';
+    const on = details.is_available === true;
+    if (language === 'th') return `AI ${on ? 'เปิดขาย' : 'ปิดขาย'}เมนู${menuName ? ` "${menuName}"` : ''}`;
+    return `AI ${on ? 'turned on' : 'turned off'} ${menuName ? `"${menuName}"` : 'a menu item'}`;
+  }
   return log.action;
+}
+
+export type AuditKind = 'ai' | 'invitation' | 'member' | 'role' | 'other';
+
+/** Which icon an activity row gets. */
+export function auditKind(action: string): AuditKind {
+  if (action.startsWith('ai_')) return 'ai';
+  if (action.startsWith('invitation_')) return 'invitation';
+  if (action.startsWith('member_')) return 'member';
+  if (action.startsWith('role_')) return 'role';
+  return 'other';
+}
+
+const LEADING_VOWELS = new Set(['เ', 'แ', 'โ', 'ใ', 'ไ']);
+
+function firstLetter(word: string): string {
+  const letters = Array.from(word);
+  if (!letters.length) return '';
+  if (LEADING_VOWELS.has(letters[0]) && letters.length > 1) return letters[1];
+  return letters[0].toLocaleUpperCase();
+}
+
+/**
+ * The letters in a member's circle: the first of the first and last words,
+ * "กรกุล สุนทร" → "กส", "Test Owner" → "TO". A Thai vowel written before its
+ * consonant is skipped, so "เอก" gives "อ".
+ */
+export function memberInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return firstLetter(words[0]);
+  return firstLetter(words[0]) + firstLetter(words[words.length - 1]);
 }
 
 export function userDisplayName(
@@ -401,4 +441,35 @@ export function auditAttribution(
   return language === 'th'
     ? `${actorName} · เป้าหมาย ${userDisplayName(log.target_user, language)}`
     : `${actorName} · Target: ${userDisplayName(log.target_user, language)}`;
+}
+
+export type TeamRoleGroup = { role: Role; members: Membership[] };
+
+const ROLE_ORDER = ['owner', 'manager', 'chef', 'cashier', 'waiter'];
+
+/**
+ * Who holds each role, for the "บทบาทในร้าน" card (15 ก.ย. 2569, design B):
+ * every role the shop has — empty ones too, which is the point, since "เชฟ ·
+ * ยังไม่มีใคร" is what the owner needs to see — owner first, the standard roles
+ * in the order a shop is staffed, then the shop's own. A member whose role the
+ * role list did not include still gets a row, and removed members are not counted.
+ */
+export function teamRoleGroups(roles: readonly Role[], members: readonly Membership[]): TeamRoleGroup[] {
+  const byId = new Map<number, TeamRoleGroup>();
+  for (const role of roles) byId.set(role.ID, { role, members: [] });
+  for (const member of members) {
+    if (member.status === 'removed') continue;
+    const roleId = member.role?.ID ?? member.role_id;
+    let group = byId.get(roleId);
+    if (!group && member.role) {
+      group = { role: member.role, members: [] };
+      byId.set(roleId, group);
+    }
+    group?.members.push(member);
+  }
+  const rank = (role: Role) => {
+    const index = ROLE_ORDER.indexOf(role.name);
+    return index >= 0 ? index : role.is_system ? ROLE_ORDER.length : ROLE_ORDER.length + 1;
+  };
+  return [...byId.values()].sort((a, b) => rank(a.role) - rank(b.role) || a.role.ID - b.role.ID);
 }
