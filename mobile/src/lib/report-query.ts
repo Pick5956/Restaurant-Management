@@ -12,6 +12,16 @@ export function buildManagerReportPath(days = 14): string {
   return `/api/v1/reports/manager?days=${boundedInteger(days, 1, 90)}`;
 }
 
+/** A chosen range, both days inclusive, YYYY-MM-DD. */
+export function buildManagerReportRangePath(from: string, to: string): string {
+  const query = new URLSearchParams({ from, to });
+  return `/api/v1/reports/manager?${query.toString()}`;
+}
+
+export function buildSalesByHourPath(date: string): string {
+  return `/api/v1/reports/sales-by-hour?${new URLSearchParams({ date }).toString()}`;
+}
+
 export function buildTopMenuItemsPath(month: ReportMonth): string {
   const query = new URLSearchParams({
     year: String(boundedInteger(month.year, 2000, 2100)),
