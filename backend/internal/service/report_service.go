@@ -44,6 +44,15 @@ type ManagerReportStockRisk struct {
 	Status          string  `json:"status"`
 }
 
+// managerReportSince is midnight at the start of the first of `days` calendar
+// days ending today. It used to be now minus days×24h, so a 14-day report
+// opened at 15:11 on 15 Sep started at 15:11 on 1 Sep: fifteen dates, the first
+// holding only an afternoon, and every total carried that part-day with it.
+func managerReportSince(now time.Time, days int) time.Time {
+	start := now.AddDate(0, 0, -(days - 1))
+	return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, now.Location())
+}
+
 func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerReportResponse, error) {
 	if days < 1 {
 		days = 7
@@ -51,7 +60,7 @@ func (s *ReportService) ManagerReport(restaurantID uint, days int) (*ManagerRepo
 	if days > 90 {
 		days = 90
 	}
-	since := repository.BangkokNow().AddDate(0, 0, -days)
+	since := managerReportSince(repository.BangkokNow(), days)
 	sales, err := s.repo.SalesByDay(restaurantID, since)
 	if err != nil {
 		return nil, err
