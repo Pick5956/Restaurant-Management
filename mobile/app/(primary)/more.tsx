@@ -5,6 +5,7 @@ import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { appNavigation, AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
+import { ToolRow } from '@/src/components/tool-row';
 import { groupMoreItems, MORE_DETAILS, restaurantMark, type MoreGroupKey } from '@/src/lib/more-screen';
 import { getWorkModeCopy } from '@/src/lib/work-mode';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -24,43 +25,6 @@ function rowLook(groupKey: MoreGroupKey, itemKey: string) {
   if (itemKey === 'ai') return { wash: palette.surfaceStrong, ink: palette.primary, title: palette.primary };
   if (groupKey === 'shop') return { wash: palette.surfaceSubtle, ink: palette.primaryInk, title: palette.textStrong };
   return { wash: '#F3F0ED', ink: '#5B3A2B', title: palette.textStrong };
-}
-
-function ToolRow({ icon, title, detail, first, look, onPress }: {
-  icon: AppIconName;
-  title: string;
-  detail?: string;
-  first: boolean;
-  look: { wash: string; ink: string; title: string };
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={detail ? `${title}, ${detail}` : title}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        minHeight: 64,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderTopWidth: first ? 0 : 1,
-        borderTopColor: palette.divider,
-        backgroundColor: pressed ? palette.surfaceSubtle : palette.surface,
-      })}
-    >
-      <View style={{ width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', backgroundColor: look.wash }}>
-        <AppIcon name={icon} size={21} color={look.ink} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 16, lineHeight: 21, fontWeight: '600', color: look.title }}>{title}</Text>
-        {detail ? <Text numberOfLines={1} style={{ fontSize: 12.5, lineHeight: 17, color: palette.muted }}>{detail}</Text> : null}
-      </View>
-      <AppIcon name="chevron-forward" size={19} color={palette.placeholder} />
-    </Pressable>
-  );
 }
 
 export default function MoreScreen() {

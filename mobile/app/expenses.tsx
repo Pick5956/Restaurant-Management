@@ -1,238 +1,232 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
 import { listExpenses } from '@/src/api/expense';
+import { AppIcon } from '@/src/components/app-icon';
+import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
-import { Button, ChipGroup, EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, SectionHeader, Surface } from '@/src/components/ui';
+import { ExpenseBreakdown, ExpenseChips, ExpenseHero, ExpenseList } from '@/src/components/expenses/parts';
+import { HeadingAction } from '@/src/components/heading-action';
+import { CardHeading, PeriodButton, PeriodSheet, ReportCard } from '@/src/components/reports/parts';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { EmptyState, Feedback } from '@/src/components/ui';
+import { elapsedDays, expenseChipCategories, expenseShares, groupExpensesByDay } from '@/src/lib/expense-view';
 import { money } from '@/src/lib/format';
+import { formatBangkokDate } from '@/src/lib/order-query';
 import { can } from '@/src/lib/rbac';
+import { matchPreset, presetLabel, presetRange, reportRangeLabel, type ReportRange } from '@/src/lib/report-view';
 import { createRequestGeneration } from '@/src/lib/request-generation';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
-import { expenseCategories, type ExpenseCategory, type ExpenseCategoryTotal, type Expense } from '@/src/types/expense';
+import { breakpoints, palette, spacing } from '@/src/theme';
+import type { Expense, ExpenseCategory, ExpenseCategoryTotal, ExpenseDailyTotal } from '@/src/types/expense';
 
-function categoryLabel(category: string, copy: (th: string, en: string) => string) {
-  switch (category) {
-    case 'ingredient': return copy('วัตถุดิบ', 'Ingredients');
-    case 'labor': return copy('ค่าแรง', 'Labor');
-    case 'rent': return copy('ค่าเช่า', 'Rent');
-    case 'utilities': return copy('สาธารณูปโภค', 'Utilities');
-    case 'equipment': return copy('อุปกรณ์', 'Equipment');
-    default: return copy('อื่นๆ', 'Other');
-  }
-}
+// The expenses screen, redrawn on 15 ก.ย. 2569 from the three-screens design.
+// It had been a month stepper, two plain figures and a list whose every row
+// began with its category's name. Now the page is locked like the reports
+// screen: the period, one orange block with the total and each category's
+// share, the category chips, and the entries grouped by day filling the rest.
+// On a tablet the block and a per-category breakdown sit on the left and the
+// list takes the right at full height.
 
-function iso(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
+type ExpenseData = {
+  expenses: Expense[];
+  categories: ExpenseCategoryTotal[];
+  daily: ExpenseDailyTotal[];
+  total: number;
+  entries: number;
+  hasMore: boolean;
+};
 
 export default function ExpensesScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
-  const locale = language === 'th' ? 'th-TH' : 'en-US';
   const canEdit = can(activeMembership, 'manage_expenses');
   const canView = canEdit || can(activeMembership, 'view_reports');
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const tablet = width >= breakpoints.tabletWorkspace;
 
-  const [monthOffset, setMonthOffset] = useState(0);
+  const [today, setToday] = useState(() => formatBangkokDate());
+  const [range, setRange] = useState<ReportRange>(() => presetRange('thisMonth', formatBangkokDate()));
+  const [periodOpen, setPeriodOpen] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory | 'all'>('all');
-  const requestGenerationRef = useRef(createRequestGeneration());
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [totals, setTotals] = useState<ExpenseCategoryTotal[]>([]);
-  const [grandTotal, setGrandTotal] = useState(0);
-  const [entries, setEntries] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [data, setData] = useState<ExpenseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestGenerationRef = useRef(createRequestGeneration());
 
-  const monthDate = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-  }, [monthOffset]);
-  const monthLabel = monthDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
-  const range = useMemo(() => ({
-    from: iso(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)),
-    until: iso(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1)),
-  }), [monthDate]);
-
-  // The month and the category are both server-side filters, so changing either
-  // fires a new request while the previous one may still be in flight. Without a
-  // generation guard the slower answer wins whichever order they were asked in,
-  // and the screen shows one month's expenses under another month's heading.
+  // The period and the category are both server-side filters, so changing one
+  // can fire a request while the last is still out. The generation guard keeps
+  // the slower answer from landing under the newer choice.
   const load = useCallback(async () => {
     if (!canView) { setLoading(false); return; }
     const request = requestGenerationRef.current.begin();
     setLoading(true);
     setError(null);
     try {
-      const response = await listExpenses({ from: range.from, until: range.until, category: category === 'all' ? undefined : category });
+      const response = await listExpenses({ from: range.from, until: range.to, category: category === 'all' ? undefined : category });
       if (!requestGenerationRef.current.isCurrent(request)) return;
-      setExpenses(response.expenses || []);
-      setTotals(response.categories || []);
-      setGrandTotal(response.total || 0);
-      setEntries(response.entries || 0);
-      setHasMore(Boolean(response.has_more));
+      setData({
+        expenses: response.expenses || [],
+        categories: response.categories || [],
+        daily: response.daily || [],
+        total: response.total || 0,
+        entries: response.entries || 0,
+        hasMore: Boolean(response.has_more),
+      });
+      setToday(formatBangkokDate());
     } catch (err) {
       if (!requestGenerationRef.current.isCurrent(request)) return;
       setError(err instanceof Error ? err.message : copy('โหลดค่าใช้จ่ายไม่สำเร็จ', 'Could not load expenses.'));
     } finally {
       if (requestGenerationRef.current.isCurrent(request)) setLoading(false);
     }
-  }, [canView, category, copy, range.from, range.until]);
+  }, [canView, category, copy, range.from, range.to]);
 
+  // Reload on focus: coming back from adding or editing an entry.
   useFocusEffect(useCallback(() => {
     void load();
-    return () => {
-      requestGenerationRef.current.invalidate();
-    };
+    const generation = requestGenerationRef.current;
+    return () => generation.invalidate();
   }, [load]));
+
+  const groups = useMemo(() => groupExpensesByDay(data?.expenses ?? [], data?.daily ?? []), [data]);
+  const { total: periodTotal, entries: periodEntries, shares } = useMemo(() => expenseShares(data?.categories ?? []), [data]);
+  const chipCategories = expenseChipCategories(shares, category);
+  const counts = Object.fromEntries(shares.map((share) => [share.category, share.entries])) as Partial<Record<ExpenseCategory, number>>;
+  const days = elapsedDays(range, today);
+  const perDay = days > 1 ? periodTotal / days : 0;
+
+  const preset = matchPreset(range, today);
+  const rangeLabel = reportRangeLabel(range, language);
+  const periodLabel = preset ? `${presetLabel(preset, language)} · ${rangeLabel}` : rangeLabel;
 
   if (!canView) {
     return (
-      <AppScreen title={copy('ค่าใช้จ่าย', 'Expenses')} topLevel={false}>
+      <AppScreen title={copy('ค่าใช้จ่าย', 'Expenses')} topLevel={false} centerTitle>
         <EmptyState title={copy('ไม่มีสิทธิ์ดูค่าใช้จ่าย', 'Expense access unavailable')} detail={copy('บัญชีนี้ต้องมีสิทธิ์จัดการค่าใช้จ่ายหรือดูรายงาน', 'This account needs permission to manage expenses or view reports.')} />
       </AppScreen>
     );
   }
 
-  const categoryOptions: Array<{ label: string; value: ExpenseCategory | 'all' }> = [
-    { label: copy('ทั้งหมด', 'All'), value: 'all' },
-    ...expenseCategories.map((value) => ({ label: categoryLabel(value, copy), value })),
-  ];
+  const addExpense = () => router.push('/expenses/item' as never);
+  const openExpense = canEdit
+    ? (item: Expense) => router.push({ pathname: '/expenses/item' as never, params: { id: String(item.ID), category: item.category, amount: String(item.amount), spent_at: item.spent_at, note: item.note ?? '' } } as never)
+    : undefined;
 
-  const summaryPanel = (
-    <Surface style={{ gap: 0, padding: 0, overflow: 'hidden' }}>
-      <View style={{ flexDirection: tabletWorkspace ? 'column' : 'row' }}>
-        {[
-          { label: copy('รวมเดือนนี้', 'Month total'), value: money(grandTotal, language) },
-          { label: copy('จำนวนรายการ', 'Entries'), value: entries.toLocaleString(locale) },
-        ].map((stat, index) => (
-          <View
-            key={stat.label}
-            style={{
-              minWidth: 0,
-              flex: 1,
-              gap: 3,
-              borderLeftWidth: !tabletWorkspace && index ? 1 : 0,
-              borderTopWidth: tabletWorkspace && index ? 1 : 0,
-              borderColor: palette.border,
-              padding: spacing.md,
-            }}
-          >
-            <Text adjustsFontSizeToFit minimumFontScale={0.76} numberOfLines={1} selectable style={typeScale.number}>{stat.value}</Text>
-            <Text selectable numberOfLines={2} style={[typeScale.caption, { color: palette.muted }]}>{stat.label}</Text>
-          </View>
-        ))}
+  const empty = (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: spacing.xl }}>
+      <View style={{ width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
+        <AppIcon name="receipt-outline" size={26} color={palette.primaryInk} />
       </View>
-    </Surface>
-  );
-
-  const monthBar = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-      <Button compact variant="secondary" icon="chevron-back" label={copy('ก่อนหน้า', 'Prev')} onPress={() => setMonthOffset((prev) => prev - 1)} />
-      <View style={{ minWidth: 0, flex: 1, alignItems: 'center' }}>
-        <Text numberOfLines={1} style={typeScale.cardTitle}>{monthLabel}</Text>
-      </View>
-      <Button compact variant="secondary" icon="chevron-forward" label={copy('ถัดไป', 'Next')} disabled={monthOffset >= 0} onPress={() => setMonthOffset((prev) => Math.min(0, prev + 1))} />
+      <Text style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong, textAlign: 'center' }}>
+        {category === 'all' ? copy('ยังไม่มีค่าใช้จ่ายในช่วงนี้', 'No expenses in this period') : copy('หมวดนี้ยังไม่มีรายการในช่วงนี้', 'Nothing in this category for this period')}
+      </Text>
+      {canEdit ? (
+        <Pressable accessibilityRole="button" onPress={addExpense} hitSlop={6} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, height: 38, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: palette.accentMuted, backgroundColor: palette.surface, opacity: pressed ? 0.7 : 1 })}>
+          <AppIcon name="add" size={17} color={palette.primaryInk} />
+          <Text style={{ fontSize: 13.5, fontWeight: '600', color: palette.primaryInk }}>{copy('เพิ่มค่าใช้จ่าย', 'Add expense')}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
-  const totalsPanel = totals.length ? (
-    <Surface>
-      <SectionHeader title={copy('แยกตามหมวด', 'By category')} detail={monthLabel} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-        {totals.map((total) => (
-          <View
-            key={total.category}
-            style={{
-              minWidth: 0,
-              flexGrow: 1,
-              flexBasis: tabletWorkspace ? '31%' : '47%',
-              gap: 2,
-              borderWidth: 1,
-              borderColor: palette.border,
-              borderRadius: 12,
-              backgroundColor: palette.surfaceSubtle,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <Text numberOfLines={1} style={[typeScale.caption, { color: palette.muted }]}>{categoryLabel(total.category, copy)}</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={typeScale.number}>{money(total.amount, language)}</Text>
-            <Text numberOfLines={1} style={[typeScale.caption, { color: palette.muted }]}>{copy(`${total.entries.toLocaleString('th-TH')} รายการ`, `${total.entries.toLocaleString('en-US')} entries`)}</Text>
+  const listedCount = data?.entries ?? 0;
+  const listDetail = data?.hasMore
+    ? copy(`แสดง ${data.expenses.length} จาก ${listedCount} รายการ · เลือกช่วงให้แคบลงเพื่อดูครบ`, `Showing ${data.expenses.length} of ${listedCount} · narrow the period to see all`)
+    : copy(`${listedCount.toLocaleString('th-TH')} รายการ · ล่าสุดก่อน`, `${listedCount.toLocaleString('en-US')} entries · newest first`);
+  const list = (
+    <ExpenseList
+      groups={groups}
+      today={today}
+      onOpen={openExpense}
+      onRefresh={load}
+      empty={empty}
+      footer={tablet ? { label: category === 'all' ? copy(`รวม · ${listedCount} รายการ`, `Total · ${listedCount} entries`) : copy(`รวมหมวดนี้ · ${listedCount} รายการ`, `This category · ${listedCount} entries`), value: money(data?.total ?? 0, language) } : undefined}
+      language={language}
+    />
+  );
+  const hero = (
+    <ExpenseHero
+      label={copy(`รวม · ${preset ? presetLabel(preset, language) : rangeLabel}`, `Total · ${preset ? presetLabel(preset, language) : rangeLabel}`)}
+      total={periodTotal}
+      entries={periodEntries}
+      perDay={perDay}
+      shares={shares}
+      language={language}
+    />
+  );
+  const chips = <ExpenseChips categories={chipCategories} counts={counts} total={periodEntries} value={category} onChange={setCategory} language={language} />;
+  const periodButton = <PeriodButton label={periodLabel} onPress={() => setPeriodOpen(true)} language={language} />;
+
+  const skeleton = (
+    <SkeletonReveal label={copy('กำลังโหลดค่าใช้จ่าย', 'Loading expenses')} style={{ flex: 1, gap: spacing.md }}>
+      {tablet ? (
+        <View style={{ flex: 1, flexDirection: 'row', gap: spacing.md }}>
+          <View style={{ width: 360, gap: spacing.md }}>
+            <Bone height={132} radius={20} />
+            <Bone height={260} radius={18} />
           </View>
-        ))}
+          <View style={{ flex: 1 }}><Bone height={1} radius={18} style={{ flex: 1, height: undefined }} /></View>
+        </View>
+      ) : (
+        <>
+          <Bone height={120} radius={20} />
+          <Bone width="70%" height={30} radius={999} />
+          <View style={{ flex: 1 }}><Bone height={1} radius={18} style={{ flex: 1, height: undefined }} /></View>
+        </>
+      )}
+    </SkeletonReveal>
+  );
+
+  const body = !data ? null : tablet ? (
+    <View style={{ flex: 1, minHeight: 0, flexDirection: 'row', gap: spacing.md, opacity: loading ? 0.55 : 1 }}>
+      <View style={{ width: 360, gap: spacing.md }}>
+        {hero}
+        {shares.length ? (
+          <ReportCard style={{ flexShrink: 1 }}>
+            <CardHeading title={copy('แยกตามหมวด', 'By category')} detail={copy('เทียบกับหมวดที่จ่ายมากสุด', 'Against the biggest category')} />
+            <ExpenseBreakdown shares={shares} language={language} />
+          </ReportCard>
+        ) : null}
       </View>
-    </Surface>
-  ) : null;
-
-  const rows = expenses.map((item) => {
-    const dateLabel = item.spent_at ? new Date(item.spent_at).toLocaleDateString(locale, { day: 'numeric', month: 'short' }) : '—';
-    const detail = `${dateLabel} · ${item.note?.trim() || copy('ไม่มีหมายเหตุ', 'No note')}`;
-    const auto = item.ingredient_transaction_id ? copy(' · จากสต็อก', ' · from stock') : '';
-    return (
-      <EdgeRow
-        key={item.ID}
-        icon="cash-outline"
-        iconColor={palette.muted}
-        title={`${categoryLabel(item.category, copy)}${auto}`}
-        detail={detail}
-        onPress={canEdit ? () => router.push({ pathname: '/expenses/item' as never, params: { id: String(item.ID), category: item.category, amount: String(item.amount), spent_at: item.spent_at, note: item.note ?? '' } } as never) : undefined}
-        showChevron={canEdit}
-        trailing={<Text selectable numberOfLines={1} style={typeScale.number}>{money(item.amount, language)}</Text>}
-      />
-    );
-  });
-
-  const emptyRows = !loading && !expenses.length ? (
-    <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.lg }}>
-      <EmptyState
-        title={copy('ยังไม่มีค่าใช้จ่ายเดือนนี้', 'No expenses this month')}
-        detail={canEdit ? copy('เพิ่มรายการค่าใช้จ่ายรายการแรก', 'Add the first expense entry.') : copy('ยังไม่มีข้อมูลในช่วงที่เลือก', 'Nothing recorded for this period yet.')}
-      />
+      <ReportCard style={{ flex: 1 }}>
+        <CardHeading title={copy('รายการค่าใช้จ่าย', 'Expense entries')} detail={listDetail} />
+        {list}
+      </ReportCard>
     </View>
-  ) : null;
-
-  const listPanel = (
-    <View style={{ width: '100%', gap: spacing.sm }}>
-      <EdgeSectionHeader
-        title={copy('รายการค่าใช้จ่าย', 'Expense entries')}
-        detail={hasMore ? copy('แสดงบางส่วน — แคบช่วงเวลาเพื่อดูครบ', 'Showing a subset — narrow the range to see all.') : copy(`${expenses.length.toLocaleString('th-TH')} รายการ`, `${expenses.length.toLocaleString('en-US')} entries`)}
-      />
-      <EdgeSection>
-        {rows}
-        {emptyRows}
-      </EdgeSection>
+  ) : (
+    <View style={{ flex: 1, minHeight: 0, gap: spacing.md, opacity: loading ? 0.55 : 1 }}>
+      {hero}
+      {chips}
+      {data.hasMore ? <Text style={{ fontSize: 12, color: palette.placeholder, textAlign: 'center' }}>{listDetail}</Text> : null}
+      <ReportCard style={{ flex: 1 }}>{list}</ReportCard>
     </View>
   );
 
   return (
     <AppScreen
       title={copy('ค่าใช้จ่าย', 'Expenses')}
-      subtitle={copy('บันทึกและติดตามค่าใช้จ่ายของร้าน', 'Record and track restaurant spending.')}
       topLevel={false}
-      refreshControl={<AppRefreshControl onRefresh={load} />}
-      action={canEdit ? <Button compact icon="add-outline" label={copy('เพิ่มค่าใช้จ่าย', 'Add expense')} onPress={() => router.push('/expenses/item' as never)} /> : undefined}
+      centerTitle
+      scroll={false}
+      contentMaxWidth={tablet ? 1180 : undefined}
+      contentStyle={{ gap: spacing.sm }}
+      action={canEdit && !tablet ? <HeadingAction compact icon="add" label={copy('เพิ่มค่าใช้จ่าย', 'Add expense')} onPress={addExpense} /> : undefined}
     >
-      {error ? <Feedback title={copy('โหลดค่าใช้จ่ายไม่ได้', 'Could not load expenses')} detail={error} tone="danger" /> : null}
-      <View style={{ gap: spacing.lg }}>
-        {monthBar}
-        <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
-          <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.6 : undefined, gap: spacing.lg }}>
-            {!tabletWorkspace ? summaryPanel : null}
-            <ChipGroup scrollable value={category} onChange={setCategory} options={categoryOptions} />
-            {listPanel}
+      <View style={{ flex: 1, minHeight: 0, gap: spacing.md, paddingBottom: tablet ? spacing.lg : spacing.sm }}>
+        {tablet ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            {periodButton}
+            <View style={{ flex: 1, minWidth: 0, alignItems: 'flex-end' }}>{data ? chips : null}</View>
+            {canEdit ? <HeadingAction compact={false} icon="add" label={copy('เพิ่มค่าใช้จ่าย', 'Add expense')} onPress={addExpense} /> : null}
           </View>
-          <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.95 : undefined, gap: spacing.lg }}>
-            {tabletWorkspace ? summaryPanel : null}
-            {totalsPanel}
-          </View>
-        </View>
+        ) : periodButton}
+        {error ? <Feedback title={copy('โหลดค่าใช้จ่ายไม่ได้', 'Could not load expenses')} detail={error} tone="danger" /> : null}
+        {loading && !data ? skeleton : body}
       </View>
+      <PeriodSheet open={periodOpen} onClose={() => setPeriodOpen(false)} range={range} today={today} onApply={setRange} language={language} />
     </AppScreen>
   );
 }
