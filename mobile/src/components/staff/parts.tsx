@@ -163,8 +163,10 @@ export function TeamStats({ stats }: { stats: { key: string; label: string; valu
  * or "ยังไม่มีใคร" when nobody does. Opens the role's permissions when this
  * person may edit it.
  */
-export function RoleRow({ title, people, first, onPress, language }: {
+export function RoleRow({ title, detail, people, first, onPress, language }: {
   title: string;
+  /** Under the name: "มาตรฐาน · 18 สิทธิ์". */
+  detail?: string;
   people: { seed: number; name: string }[];
   first: boolean;
   onPress?: () => void;
@@ -184,7 +186,10 @@ export function RoleRow({ title, people, first, onPress, language }: {
       <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: has ? palette.surfaceSubtle : '#F3F0ED' }}>
         <AppIcon name="key-outline" size={17} color={has ? palette.primaryInk : '#8B6F5F'} />
       </View>
-      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{title}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{title}</Text>
+        {detail ? <Text numberOfLines={1} style={{ fontSize: 11.5, color: palette.placeholder }}>{detail}</Text> : null}
+      </View>
       {has ? (
         <>
           <View style={{ flexDirection: 'row', paddingLeft: 6 }}>

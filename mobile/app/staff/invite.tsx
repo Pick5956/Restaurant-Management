@@ -1,20 +1,15 @@
+import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Share, useWindowDimensions, View } from 'react-native';
 
 import { getRoles } from '@/src/api/auth';
 import { createInvitation } from '@/src/api/restaurant';
-import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
-import {
-  ActionDock,
-  Button,
-  ChipGroup,
-  EmptyState,
-  Feedback,
-  SectionHeader,
-  Surface,
-  TextField,
-} from '@/src/components/ui';
+import { AppText as Text } from '@/src/components/app-text';
+import { ChoiceChips, Field, FORM_MAX_WIDTH, FormBody, FormCard, Note, PillTabs, SaveDock } from '@/src/components/form/parts';
+import { GhostButton } from '@/src/components/staff/parts';
+import { ActionDock, Button, EmptyState, Feedback } from '@/src/components/ui';
+import { parsePermissionsForRole } from '@/src/lib/permissions';
 import {
   allowedRoleOptions,
   canGrantRole,
@@ -23,12 +18,25 @@ import {
   invitationExpiryLabel,
   INVITATION_EXPIRY_DAY_OPTIONS,
   roleLabel,
+  roleListMeta,
 } from '@/src/lib/staff-workflow';
 import { invitationUrl } from '@/src/lib/public-web-url';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, spacing } from '@/src/theme';
 import type { Role } from '@/src/types/restaurant';
+
+// Invite staff, redrawn on 15 ก.ย. 2569: the role comes first and the chosen
+// one says what it can do, the link's lifetime is one pill with the real
+// expiry date under it, and a link that was made stays on this page in a
+// green card with Share — with "เชิญอีกคน" to make the next one.
+
+function expiryDate(days: number, language: 'th' | 'en'): string {
+  if (!days) return language === 'th' ? 'ไม่หมดอายุ' : 'Never expires';
+  const at = new Date();
+  at.setDate(at.getDate() + days);
+  return at.toLocaleString(language === 'th' ? 'th-TH' : 'en-US', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+}
 
 export default function InviteStaffScreen() {
   const { width } = useWindowDimensions();
@@ -37,12 +45,14 @@ export default function InviteStaffScreen() {
   const restaurantId = activeMembership?.restaurant_id;
   const actorRole = activeMembership?.role?.name;
   const allowed = canManageInvitations(activeMembership);
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const tablet = width >= breakpoints.tabletWorkspace;
   const [roles, setRoles] = useState<Role[]>([]);
   const [roleId, setRoleId] = useState(0);
   const [email, setEmail] = useState('');
   const [days, setDays] = useState(DEFAULT_INVITATION_EXPIRY_DAYS);
   const [link, setLink] = useState('');
+  const [linkRole, setLinkRole] = useState('');
+  const [linkExpiry, setLinkExpiry] = useState('');
   const [shareTitle, setShareTitle] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -74,17 +84,17 @@ export default function InviteStaffScreen() {
       .finally(() => setLoadingRoles(false));
   }, [activeMembership, actorRole, allowed, copy, restaurantId]);
 
-  const roleOptions = useMemo(
-    () => roles.map((role) => ({ label: roleLabel(role, language), value: role.ID })),
-    [language, roles],
-  );
+  const selectedRole = roles.find((role) => role.ID === roleId);
+  const roleSummary = useMemo(() => {
+    if (!selectedRole) return '';
+    const keys = parsePermissionsForRole(selectedRole.permissions, selectedRole.name);
+    const meta = roleListMeta(selectedRole, language);
+    return copy(`${roleLabel(selectedRole, language)} · ${meta.permissionLabel}${keys.length ? ' · แก้ได้ทีหลังที่ข้อมูลพนักงาน' : ''}`, `${roleLabel(selectedRole, language)} · ${meta.permissionLabel}${keys.length ? ' · adjustable later on the staff page' : ''}`);
+  }, [copy, language, selectedRole]);
 
   async function create() {
     if (!restaurantId || !roleId) {
-      setError(copy(
-        'เลือกรายการบทบาทก่อนสร้างคำเชิญ',
-        'Select a role before creating an invitation.',
-      ));
+      setError(copy('เลือกบทบาทก่อนสร้างคำเชิญ', 'Choose a role before creating an invitation.'));
       return;
     }
     setSaving(true);
@@ -96,118 +106,114 @@ export default function InviteStaffScreen() {
         expires_in_days: days,
       });
       const invitationLink = invitationUrl(invitation.token);
-      const restaurantName = activeMembership?.restaurant?.name
-        || copy('ร้านอาหาร', 'Restaurant');
-      const selectedRole = roles.find((role) => role.ID === roleId);
+      const restaurantName = activeMembership?.restaurant?.name || copy('ร้านอาหาร', 'Restaurant');
       setLink(invitationLink);
-      setShareTitle(copy(
-        `คำเชิญเข้าร่วมร้าน ${restaurantName} บน Dishy`,
-        `Invitation to join ${restaurantName} on Dishy`,
+      setLinkRole(roleLabel(selectedRole, language));
+      setLinkExpiry(expiryDate(days, language));
+      setShareTitle(copy(`คำเชิญเข้าร่วมร้าน ${restaurantName} บน Dishy`, `Invitation to join ${restaurantName} on Dishy`));
+      setShareMessage(copy(
+        `คุณได้รับคำเชิญเข้าร่วมร้าน ${restaurantName} ในบทบาท ${roleLabel(selectedRole, language)}\n${invitationLink}`,
+        `You have been invited to join ${restaurantName} as ${roleLabel(selectedRole, language)}.\n${invitationLink}`,
       ));
-      setShareMessage(
-        copy(
-          `คุณได้รับคำเชิญเข้าร่วมร้าน ${restaurantName} ในบทบาท ${roleLabel(selectedRole, language)}\n${invitationLink}`,
-          `You have been invited to join ${restaurantName} as ${roleLabel(selectedRole, language)}.\n${invitationLink}`,
-        ),
-      );
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('สร้างคำเชิญไม่สำเร็จ', 'Unable to create invitation'));
+      setError(err instanceof Error ? err.message : copy('สร้างคำเชิญไม่สำเร็จ', 'Unable to create invitation'));
     } finally {
       setSaving(false);
     }
   }
 
+  const title = copy('เชิญพนักงาน', 'Invite staff');
+
   if (!allowed) {
     return (
-      <AppScreen title={copy('เชิญพนักงาน', 'Invite staff')} topLevel={false}>
-        <EmptyState
-          title={copy('ไม่มีสิทธิ์สร้างคำเชิญ', 'No invitation access')}
-          detail={copy(
-            'บัญชีนี้ไม่ได้รับสิทธิ์สร้างและจัดการคำเชิญ',
-            'This account cannot create or manage invitations.',
-          )}
-        />
+      <AppScreen title={title} topLevel={false} centerTitle>
+        <EmptyState title={copy('ไม่มีสิทธิ์สร้างคำเชิญ', 'No invitation access')} detail={copy('บัญชีนี้ไม่ได้รับสิทธิ์สร้างและจัดการคำเชิญ', 'This account cannot create or manage invitations.')} />
+      </AppScreen>
+    );
+  }
+
+  const share = () => Share.share({ title: shareTitle, message: shareMessage || link });
+  const another = () => { setLink(''); setShareMessage(''); setEmail(''); };
+
+  if (link) {
+    return (
+      <AppScreen
+        title={title}
+        topLevel={false}
+        centerTitle
+        contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}
+        footer={!tablet ? (
+          <ActionDock separated={false}>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}><Button variant="secondary" icon="person-add-outline" label={copy('เชิญอีกคน', 'Invite another')} onPress={another} /></View>
+              <View style={{ flex: 1 }}><Button icon="checkmark" label={copy('เสร็จสิ้น', 'Done')} onPress={() => router.back()} /></View>
+            </View>
+          </ActionDock>
+        ) : undefined}
+      >
+        <View style={{ gap: spacing.md }}>
+          <FormCard style={{ borderColor: '#A7F3D0' }} title={copy('ลิงก์พร้อมส่ง', 'Link ready to send')} detail={copy(`${linkRole} · ${days ? `ใช้ได้ถึง ${linkExpiry}` : linkExpiry}`, `${linkRole} · ${days ? `valid until ${linkExpiry}` : linkExpiry}`)} icon="checkmark-circle-outline">
+            <FormBody>
+              <View style={{ borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.accentMuted, backgroundColor: '#FFFAF5', paddingVertical: 10, paddingHorizontal: 12 }}>
+                <Text selectable style={{ fontSize: 12.5, lineHeight: 18, color: palette.primaryInk }}>{link}</Text>
+              </View>
+              <Button icon="share-social-outline" label={copy('แชร์ลิงก์เชิญ', 'Share the link')} onPress={share} />
+              {tablet ? (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}><Button variant="secondary" icon="person-add-outline" label={copy('เชิญอีกคน', 'Invite another')} onPress={another} /></View>
+                  <View style={{ flex: 1 }}><Button variant="secondary" icon="checkmark" label={copy('เสร็จสิ้น', 'Done')} onPress={() => router.back()} /></View>
+                </View>
+              ) : null}
+            </FormBody>
+          </FormCard>
+          <Note text={copy('ลิงก์นี้อยู่ในแท็บ "คำเชิญ" จนกว่าจะมีคนรับหรือคุณยกเลิก', 'This link stays in the Invitations tab until someone accepts it or you revoke it')} />
+        </View>
       </AppScreen>
     );
   }
 
   return (
     <AppScreen
-      title={copy('เชิญพนักงาน', 'Invite staff')}
-      subtitle={copy('สร้างลิงก์ตามบทบาทและวันหมดอายุ', 'Create a role-based invitation link')}
+      title={title}
+      subtitle={copy('ส่งลิงก์ให้พนักงานเปิดในแอป Dishy', 'Send a link for staff to open in the Dishy app')}
       topLevel={false}
-      footer={!tabletWorkspace && !link ? (
-        <ActionDock>
-          <Button icon="link-outline" label={copy('สร้างลิงก์เชิญ', 'Create invitation')} onPress={create} loading={saving || loadingRoles} disabled={!roleId} />
-        </ActionDock>
-      ) : undefined}
+      centerTitle
+      contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}
+      footer={!tablet ? <SaveDock icon="link-outline" label={copy('สร้างลิงก์เชิญ', 'Create the link')} onPress={create} loading={saving || loadingRoles} disabled={!roleId} /> : undefined}
     >
-      {error ? (
-        <Feedback
-          title={copy('สร้างคำเชิญไม่ได้', 'Unable to create invitation')}
-          detail={error}
-          tone="danger"
-        />
-      ) : null}
-      {link ? (
-        <Surface style={{ maxWidth: tabletWorkspace ? 620 : undefined, alignSelf: tabletWorkspace ? 'center' : undefined, width: '100%' }}>
-          <SectionHeader
-            title={copy('ลิงก์พร้อมใช้งาน', 'Invitation link ready')}
-            detail={copy('ส่งให้ผู้รับโดยตรง ลิงก์นี้ให้สิทธิ์ตามบทบาทที่เลือก', 'Send this directly. It grants the selected role.')}
-            action={<AppIcon color={palette.success} name="checkmark-circle" size={24} />}
-          />
-          <Button
-            icon="share-social-outline"
-            label={copy('แชร์ลิงก์เชิญ', 'Share invitation link')}
-            onPress={() => Share.share({ title: shareTitle, message: shareMessage || link })}
-          />
-          <Button
-            icon="add-outline"
-            variant="secondary"
-            label={copy('สร้างลิงก์ใหม่', 'Create another link')}
-            onPress={() => {
-              setLink('');
-              setShareMessage('');
-            }}
-          />
-        </Surface>
-      ) : (
-        <Surface>
-          <SectionHeader
-            title={copy('ข้อมูลคำเชิญ', 'Invitation details')}
-            detail={copy('อีเมลไม่บังคับ ลิงก์ที่ผูกอีเมลจะใช้ได้เฉพาะบัญชีนั้น', 'Email is optional. Email-bound links work only for that account.')}
-            action={<AppIcon color={palette.muted} name="person-add-outline" size={22} />}
-          />
-          <TextField
-            label={copy('อีเมลผู้รับ (ไม่บังคับ)', 'Recipient email (optional)')}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            placeholder="staff@example.com"
-          />
-          <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
-            <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: 1 }}>
-          {roleOptions.length ? (
-              <ChipGroup label={copy('บทบาท', 'Role')} value={roleId} onChange={setRoleId} options={roleOptions} />
-          ) : !loadingRoles ? (
-            <EmptyState
-              title={copy('ไม่มีบทบาทที่เชิญได้', 'No roles available')}
-              detail={copy(
-                'บัญชีนี้มอบได้เฉพาะบทบาทที่มีสิทธิ์ไม่เกินขอบเขตของตนเอง',
-                'You can invite only to roles within your own permission scope.',
-              )}
-            />
-          ) : null}
+      {error ? <Feedback title={copy('สร้างคำเชิญไม่ได้', 'Unable to create invitation')} detail={error} tone="danger" /> : null}
+      <View style={{ gap: spacing.md }}>
+        <FormCard title={copy('บทบาทที่จะได้รับ', 'Role they will get')}>
+          <FormBody>
+            {roles.length ? (
+              <>
+                <ChoiceChips options={roles.map((role) => ({ key: role.ID, label: roleLabel(role, language) }))} value={roleId} onChange={setRoleId} />
+                {roleSummary ? <Note icon="shield-checkmark-outline" text={roleSummary} /> : null}
+              </>
+            ) : !loadingRoles ? (
+              <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{copy('บัญชีนี้มอบได้เฉพาะบทบาทที่มีสิทธิ์ไม่เกินของตัวเอง ตอนนี้ไม่มีบทบาทแบบนั้น', 'You can only invite to roles within your own permissions, and there are none right now')}</Text>
+            ) : (
+              <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{copy('กำลังโหลดบทบาท…', 'Loading roles…')}</Text>
+            )}
+          </FormBody>
+        </FormCard>
+
+        <FormCard title={copy('ลิงก์', 'The link')}>
+          <FormBody>
+            <Field label={copy('อีเมลผู้รับ (ไม่บังคับ)', 'Recipient email (optional)')} value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail-outline" placeholder={copy('ผูกลิงก์กับบัญชีนี้เท่านั้น', 'Ties the link to this account only')} />
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{copy('อายุลิงก์', 'Link lifetime')}</Text>
+              <PillTabs role="radiogroup" tabs={INVITATION_EXPIRY_DAY_OPTIONS.map((value) => ({ key: value, label: value ? invitationExpiryLabel(value, language) : copy('ไม่หมด', 'Never') }))} value={days} onChange={setDays} />
             </View>
-            <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: 1 }}>
-              <ChipGroup label={copy('อายุลิงก์', 'Link lifetime')} value={days} onChange={setDays} options={INVITATION_EXPIRY_DAY_OPTIONS.map((value) => ({ label: invitationExpiryLabel(value, language), value }))} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{copy('หมดอายุ', 'Expires')}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: palette.textStrong }}>{expiryDate(days, language)}</Text>
             </View>
-          </View>
-          {tabletWorkspace ? <Button icon="link-outline" label={copy('สร้างลิงก์เชิญ', 'Create invitation')} onPress={create} loading={saving || loadingRoles} disabled={!roleId} /> : null}
-        </Surface>
-      )}
+            {tablet ? <Button icon="link-outline" label={copy('สร้างลิงก์เชิญ', 'Create the link')} onPress={create} loading={saving || loadingRoles} disabled={!roleId} /> : null}
+          </FormBody>
+        </FormCard>
+        {!tablet ? null : <View style={{ flexDirection: 'row', justifyContent: 'center' }}><GhostButton icon="chevron-back" label={copy('กลับไปหน้าทีม', 'Back to the team')} onPress={() => router.back()} /></View>}
+      </View>
     </AppScreen>
   );
 }

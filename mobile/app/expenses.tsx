@@ -112,7 +112,7 @@ export default function ExpensesScreen() {
 
   const addExpense = () => router.push('/expenses/item' as never);
   const openExpense = canEdit
-    ? (item: Expense) => router.push({ pathname: '/expenses/item' as never, params: { id: String(item.ID), category: item.category, amount: String(item.amount), spent_at: item.spent_at, note: item.note ?? '' } } as never)
+    ? (item: Expense) => router.push({ pathname: '/expenses/item' as never, params: { id: String(item.ID), category: item.category, amount: String(item.amount), spent_at: item.spent_at, note: item.note ?? '', from_stock: item.ingredient_transaction_id ? '1' : '0' } } as never)
     : undefined;
 
   const empty = (
