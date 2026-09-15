@@ -75,6 +75,8 @@ export type TopMenuItemsReport = {
 export type ManagerReport = {
   generated_at: string;
   days: number;
+  from?: string;
+  to?: string;
   sales_days: ReportSalesDay[];
   menu_margins: ReportMenuMargin[];
   stock_risks: ReportStockRisk[];
