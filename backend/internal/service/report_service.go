@@ -70,6 +70,11 @@ type ManagerReportSummary struct {
 	// charge and VAT still in, so GrossRevenue − Discount = Revenue.
 	GrossRevenue float64 `json:"gross_revenue"`
 	Discount     float64 `json:"discount"`
+	// Expenses is "รายจ่ายรวม": the expense ledger over the same days, every
+	// category, ingredient purchases included. It is kept apart from Cost (the
+	// recipe cost of what sold); subtracting both would count the same pork twice.
+	Expenses     float64 `json:"expenses"`
+	ExpenseCount int64   `json:"expense_count"`
 	Revenue      float64 `json:"revenue"`
 	Cost         float64 `json:"cost"`
 	Profit       float64 `json:"profit"`
@@ -136,6 +141,10 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 	if len(topItems) > 10 {
 		topItems = topItems[:10]
 	}
+	expenseTotal, expenseCount, err := s.repo.ExpenseTotal(restaurantID, since, until)
+	if err != nil {
+		return nil, err
+	}
 	ingredients, err := s.repo.StockRisks(restaurantID)
 	if err != nil {
 		return nil, err
@@ -160,6 +169,8 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 		summary.Cost += day.Cost
 	}
 	summary.Discount = roundMoney(summary.Discount)
+	summary.Expenses = roundMoney(expenseTotal)
+	summary.ExpenseCount = expenseCount
 	summary.GrossRevenue = roundMoney(summary.Revenue + summary.Discount)
 	summary.Cost = roundMoney(summary.Cost)
 	summary.Profit = roundMoney(summary.Revenue - summary.Cost)

@@ -309,6 +309,21 @@ func (r *ReportRepository) ExpenseDetail(restaurantID uint, since, until time.Ti
 	return rows, err
 }
 
+// ExpenseTotal adds up the expense ledger over [since, until): every row a
+// person typed or a stock-in wrote, whatever its category. It is money that
+// left the shop, not the recipe cost of food sold — see entity.Expense.
+func (r *ReportRepository) ExpenseTotal(restaurantID uint, since, until time.Time) (float64, int64, error) {
+	var row struct {
+		Total float64
+		Count int64
+	}
+	err := r.db.Model(&entity.Expense{}).
+		Select("COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count").
+		Where("restaurant_id = ? AND spent_at >= ? AND spent_at < ?", restaurantID, since, until).
+		Scan(&row).Error
+	return row.Total, row.Count, err
+}
+
 func (r *ReportRepository) MenuMargins(restaurantID uint, since time.Time) ([]ReportMenuMargin, error) {
 	return r.MenuMarginsBetween(restaurantID, since, time.Time{})
 }

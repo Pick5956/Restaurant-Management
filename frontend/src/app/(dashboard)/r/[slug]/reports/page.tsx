@@ -73,11 +73,13 @@ export default function ReportsPage() {
         close: "ปิด",
         receiptError: "เปิดใบเสร็จไม่สำเร็จ",
         grossRevenue: "รายได้รวม",
+        expenses: "รายจ่ายรวม",
+        entries: (n: number) => `${n} รายการ`,
         beforeDiscount: "ก่อนหักส่วนลด",
         discountNote: (value: string) => `ส่วนลด −${value}`,
         marginInfo: "มาร์จินคืออะไร",
         marginExplain: (per100: string, revenue: string, cost: string, profit: string, margin: string) =>
-          `มาร์จินคือส่วนที่เหลือเป็นกำไรเมื่อเทียบกับยอดขาย · ช่วงนี้ขายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${per100} บาท · ยอดขาย ${revenue} − ต้นทุนวัตถุดิบ ${cost} = กำไรขั้นต้น ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · ยังไม่หักค่าแรง ค่าเช่า ค่าน้ำไฟ และเมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0`,
+          `มาร์จินคือส่วนที่เหลือเป็นกำไรเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${per100} บาท · รายได้หลังหักส่วนลด ${revenue} − ต้นทุนวัตถุดิบ ${cost} = กำไรขั้นต้น ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · ยังไม่หักค่าแรง ค่าเช่า ค่าน้ำไฟ และเมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0`,
         period: "ช่วงเวลา",
         custom: "กำหนดเอง",
         from: "ตั้งแต่",
@@ -114,6 +116,8 @@ export default function ReportsPage() {
         close: "Close",
         receiptError: "Could not open that receipt.",
         grossRevenue: "Gross revenue",
+        expenses: "Total expenses",
+        entries: (n: number) => `${n} entries`,
         beforeDiscount: "Before discounts",
         discountNote: (value: string) => `Discounts −${value}`,
         marginInfo: "What is margin?",
@@ -288,10 +292,20 @@ export default function ReportsPage() {
               {
                 label: copy.grossRevenue,
                 value: formatCurrency(report.summary.gross_revenue ?? report.summary.revenue, lang),
-                note: (report.summary.discount ?? 0) > 0 ? copy.discountNote(formatCurrency(report.summary.discount ?? 0, lang)) : copy.beforeDiscount,
+                // "ยอดขาย" used to sit beside this card with the same figure
+                // whenever no bill had a discount (15 ก.ย. 2569); a discount is
+                // now the line under it.
+                note: (report.summary.discount ?? 0) > 0
+                  ? `${copy.discountNote(formatCurrency(report.summary.discount ?? 0, lang))} · ${formatCurrency(report.summary.revenue, lang)}`
+                  : undefined,
                 icon: <Wallet className="h-4 w-4" />,
               },
-              { label: copy.revenue, value: formatCurrency(report.summary.revenue, lang), icon: <Wallet className="h-4 w-4" /> },
+              {
+                label: copy.expenses,
+                value: formatCurrency(report.summary.expenses ?? 0, lang),
+                note: copy.entries(report.summary.expense_count ?? 0),
+                icon: <AlertTriangle className="h-4 w-4" />,
+              },
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
               { label: copy.foodCost, value: formatCurrency(report.summary.cost, lang), icon: <AlertTriangle className="h-4 w-4" /> },
               { label: copy.profit, value: formatCurrency(report.summary.profit, lang), icon: <TrendingUp className="h-4 w-4" /> },

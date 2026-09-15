@@ -139,17 +139,25 @@ export default function ReportsScreen() {
   const discount = Number(summary?.discount ?? 0);
   const figures: ReportFigure[] = summary ? [
     {
+      // One card since 15 ก.ย. 2569: "ยอดขาย" beside "รายได้รวม" showed the same
+      // figure twice whenever no bill had a discount, which is every bill so far.
+      // A discount, when there is one, is the line under the figure.
       key: 'gross',
       label: copy('รายได้รวม', 'Gross revenue'),
       value: money(summary.gross_revenue ?? summary.revenue, language),
-      note: discount > 0 ? copy(`ส่วนลด −${money(discount, language)}`, `Discounts −${money(discount, language)}`) : copy('ก่อนหักส่วนลด', 'Before discounts'),
+      note: discount > 0
+        ? copy(`ส่วนลด −${money(discount, language)} · รับจริง ${money(summary.revenue, language)}`, `Discounts −${money(discount, language)} · took ${money(summary.revenue, language)}`)
+        : !singleDay && average > 0 ? copy(`เฉลี่ยวันละ ${money(average, language)}`, `${money(average, language)} a day`) : undefined,
+      tone: 'hero',
     },
     {
-      key: 'revenue',
-      label: copy('ยอดขาย', 'Sales'),
-      value: money(summary.revenue, language),
-      note: !singleDay && average > 0 ? copy(`เฉลี่ยวันละ ${money(average, language)}`, `${money(average, language)} a day`) : undefined,
-      tone: 'hero',
+      // Asked for on 15 ก.ย. 2569 in the place "ยอดขาย" left. Everything the
+      // expense ledger holds for these days, restocks included.
+      key: 'expenses',
+      label: copy('รายจ่ายรวม', 'Total expenses'),
+      value: money(summary.expenses ?? 0, language),
+      note: copy(`${(summary.expense_count ?? 0).toLocaleString(locale)} รายการ`, `${(summary.expense_count ?? 0).toLocaleString(locale)} entries`),
+      tone: 'bad',
     },
     { key: 'orders', label: copy('ออเดอร์', 'Orders'), value: summary.orders.toLocaleString(locale), note: summary.orders > 0 ? copy(`เฉลี่ยบิลละ ${money(summary.revenue / summary.orders, language)}`, `${money(summary.revenue / summary.orders, language)} a bill`) : undefined },
     { key: 'cost', label: copy('ต้นทุนวัตถุดิบ', 'Ingredient cost'), value: money(summary.cost, language) },

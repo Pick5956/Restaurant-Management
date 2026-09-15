@@ -64,7 +64,7 @@ export type ReportFigure = {
   label: string;
   value: string;
   note?: string;
-  tone?: 'hero' | 'good';
+  tone?: 'hero' | 'good' | 'bad';
   /** Puts an ⓘ beside the label that explains the figure. */
   onInfo?: () => void;
   infoLabel?: string;
@@ -93,7 +93,7 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
             </Pressable>
           ) : null}
         </View>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ fontSize: tablet ? 20 : 17, lineHeight: tablet ? 26 : 22, fontWeight: '700', color: hero ? '#fff' : figure.tone === 'good' ? palette.success : palette.textStrong, fontVariant: ['tabular-nums'] }}>{figure.value}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ fontSize: tablet ? 20 : 17, lineHeight: tablet ? 26 : 22, fontWeight: '700', color: hero ? '#fff' : figure.tone === 'good' ? palette.success : figure.tone === 'bad' ? palette.danger : palette.textStrong, fontVariant: ['tabular-nums'] }}>{figure.value}</Text>
         <Text numberOfLines={1} style={{ fontSize: 11, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.note ?? ' '}</Text>
       </>
     );
@@ -143,7 +143,7 @@ export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 14 }}>
         <Text style={{ fontSize: 15, lineHeight: 23, color: palette.text }}>
           {th
-            ? `มาร์จินคือส่วนที่เหลือเป็นกำไร เมื่อเทียบกับยอดขาย · ช่วงนี้ขายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${perHundred} บาท`
+            ? `มาร์จินคือส่วนที่เหลือเป็นกำไร เมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${perHundred} บาท`
             : `Margin is the share of sales left as profit. In this period, every 100 baht of sales left ${perHundred} baht after ingredients.`}
         </Text>
         <ReportCard>
@@ -151,10 +151,10 @@ export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, 
             <View style={{ paddingVertical: 8 }}>
               <Text style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder }}>{th ? 'คิดจากตัวเลขของช่วงนี้' : 'Worked out from this period'}</Text>
             </View>
-            {line(th ? 'ยอดขาย' : 'Sales', money(revenue, language))}
+            {line(th ? 'รายได้ (หลังหักส่วนลด)' : 'Revenue (after discounts)', money(revenue, language))}
             {line(th ? 'ต้นทุนวัตถุดิบ' : 'Ingredient cost', `− ${money(cost, language)}`)}
             {line(th ? 'กำไรขั้นต้น' : 'Gross profit', money(profit, language))}
-            {line(th ? `มาร์จิน = กำไรขั้นต้น ÷ ยอดขาย × 100` : 'Margin = gross profit ÷ sales × 100', percent, true)}
+            {line(th ? `มาร์จิน = กำไรขั้นต้น ÷ รายได้ × 100` : 'Margin = gross profit ÷ revenue × 100', percent, true)}
           </View>
         </ReportCard>
         <View style={{ gap: 6 }}>
@@ -170,8 +170,8 @@ export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, 
           </Text>
           <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
             {th
-              ? '• ยอดขายคือเงินที่ลูกค้าจ่ายจริง หลังหักส่วนลดแล้ว'
-              : '• Sales is what customers actually paid, after discounts.'}
+              ? '• รายได้ในสูตรคือเงินที่ลูกค้าจ่ายจริง หลังหักส่วนลดแล้ว'
+              : '• Revenue here is what customers actually paid, after discounts.'}
           </Text>
         </View>
       </ScrollView>

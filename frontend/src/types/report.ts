@@ -85,6 +85,8 @@ export type ManagerReport = {
     /** Bills before discounts ("รายได้รวม"); servers from 15 Sep 2026. */
     gross_revenue?: number;
     discount?: number;
+    expenses?: number;
+    expense_count?: number;
     revenue: number;
     cost: number;
     profit: number;
