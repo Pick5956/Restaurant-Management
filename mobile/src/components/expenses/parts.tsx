@@ -174,9 +174,15 @@ export function ExpenseList({ groups, today, onOpen, onRefresh, empty, footer, l
   for (const group of groups) {
     sticky.push(children.length);
     children.push(
-      <View key={`d${group.date}`} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 30, paddingHorizontal: 14, backgroundColor: palette.accentSoft, borderBottomWidth: 1, borderBottomColor: '#EFD9C6' }}>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: '#8B5E44' }}>{expenseDayLabel(group.date, today, language)}</Text>
-        <Text style={{ fontSize: 12, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{money(group.amount, language)}</Text>
+      // Two Views on purpose: a sticky header's own style is moved onto the
+      // wrapper React Native puts around it, and the child is left with only
+      // flex 1 — so a row set on the outer View came out as a column, the date
+      // above the amount, cropped at 30pt (seen on iOS, 15 ก.ย. 2569).
+      <View key={`d${group.date}`}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 30, paddingHorizontal: 14, backgroundColor: palette.accentSoft, borderBottomWidth: 1, borderBottomColor: '#EFD9C6' }}>
+          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '600', color: '#8B5E44' }}>{expenseDayLabel(group.date, today, language)}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{money(group.amount, language)}</Text>
+        </View>
       </View>,
     );
     for (const expense of group.items) {

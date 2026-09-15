@@ -82,7 +82,7 @@ export default function MoreScreen() {
   const groupViews = groups.map((group) => (
     <View key={group.key} style={{ flex: columns ? 1 : undefined, minWidth: 0, gap: spacing.sm }}>
       <Text accessibilityRole="header" style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder, paddingHorizontal: 6 }}>
-        {group.key === 'shop' ? copy('งานร้าน', 'Shop') : copy('ทีม ข้อมูล และบัญชี', 'Team, insights and account')}
+        {group.key === 'shop' ? copy('งานร้าน', 'Shop') : copy('ข้อมูลและบัญชี', 'Insights and account')}
       </Text>
       <View style={{ borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
         {group.items.map((item, index) => {

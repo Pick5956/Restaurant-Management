@@ -585,7 +585,9 @@ test('native stack keeps edge-swipe Back on pushed screens but disables it for t
   assert.doesNotMatch(rootLayoutSource, /name="inventory(\/categories)?"\s+options=\{\{[^}]*gestureEnabled:\s*false/);
 });
 
-test('detail heading Back is a bare chevron with an accessible 44 point target', async () => {
+// Both Back buttons were bare chevrons until 15 ก.ย. 2569, when the owner asked
+// for the assistant screen's round glass button on every screen.
+test('detail heading Back is the round glass button from the assistant screen', async () => {
   const appShellSource = await readFile(
     path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'),
     'utf8',
@@ -596,20 +598,14 @@ test('detail heading Back is a bare chevron with an accessible 44 point target',
   assert.ok(headingStart >= 0 && headingEnd > headingStart, 'ScreenHeading must exist');
   const headingSource = appShellSource.slice(headingStart, headingEnd);
 
-  assert.match(headingSource, /accessibilityLabel=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
-  assert.match(headingSource, /accessibilityRole="button"/);
-  assert.match(headingSource, /width:\s*44/);
-  assert.match(headingSource, /height:\s*44/);
-  assert.match(headingSource, /name="chevron-back-outline"/);
+  assert.match(headingSource, /<GlassButton icon="chevron-back" label=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
+  assert.doesNotMatch(headingSource, /name="chevron-back-outline"/);
   assert.doesNotMatch(headingSource, /name="arrow-back"/);
-  assert.doesNotMatch(
-    headingSource,
-    /backgroundColor|borderRadius/,
-    'Back must not have a filled or rounded background treatment',
-  );
+  // The spacer that keeps a centred title centred matches the button's 46pt.
+  assert.match(headingSource, /width: 46/);
 });
 
-test('auth flow Back uses the same bare chevron treatment', async () => {
+test('auth flow Back uses the same glass button', async () => {
   const authScreenSource = await readFile(
     path.join(mobileRoot, 'src', 'components', 'auth-screen.tsx'),
     'utf8',
@@ -620,13 +616,8 @@ test('auth flow Back uses the same bare chevron treatment', async () => {
   assert.ok(backStart >= 0 && backEnd > backStart, 'Auth BackButton must exist');
   const backSource = authScreenSource.slice(backStart, backEnd);
 
-  assert.match(backSource, /accessibilityLabel=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
-  assert.match(backSource, /accessibilityRole="button"/);
-  assert.match(backSource, /width:\s*44/);
-  assert.match(backSource, /height:\s*44/);
-  assert.match(backSource, /name="chevron-back-outline"/);
-  assert.doesNotMatch(backSource, /name="arrow-back"/);
-  assert.doesNotMatch(backSource, /backgroundColor|borderRadius/);
+  assert.match(backSource, /<GlassButton icon="chevron-back" label=\{copy\('ย้อนกลับ', 'Go back'\)\}/);
+  assert.doesNotMatch(backSource, /name="chevron-back-outline"/);
 });
 
 test('app routes use the manual refresh control instead of binding native refresh to loading', async () => {

@@ -5,11 +5,16 @@ import { MORE_DETAILS, MORE_GROUPS, groupMoreItems, restaurantMark } from './mor
 
 const ALL = ['menu', 'inventory', 'tables-manage', 'staff', 'reports', 'expenses', 'ai', 'settings'].map((key) => ({ key }));
 
-test('an owner sees two groups of four, in the chosen order', () => {
+test('an owner sees the shop group then insights and account, in the chosen order', () => {
   const groups = groupMoreItems(ALL);
   assert.deepEqual(groups.map((group) => group.key), ['shop', 'team']);
   assert.deepEqual(groups[0].items.map((item) => item.key), ['menu', 'inventory', 'tables-manage', 'expenses']);
-  assert.deepEqual(groups[1].items.map((item) => item.key), ['staff', 'reports', 'ai', 'settings']);
+  assert.deepEqual(groups[1].items.map((item) => item.key), ['reports', 'ai', 'settings']);
+});
+
+test('staff is not listed: it opens from settings only', () => {
+  const keys = groupMoreItems(ALL).flatMap((group) => group.items.map((item) => item.key));
+  assert.equal(keys.includes('staff'), false);
 });
 
 test('items a person may not open are left out, and an empty group disappears', () => {

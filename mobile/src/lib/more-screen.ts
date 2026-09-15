@@ -12,7 +12,9 @@ export type MoreGroupKey = 'shop' | 'team';
  */
 export const MORE_GROUPS: { key: MoreGroupKey; itemKeys: string[] }[] = [
   { key: 'shop', itemKeys: ['menu', 'inventory', 'tables-manage', 'expenses'] },
-  { key: 'team', itemKeys: ['staff', 'reports', 'ai', 'settings'] },
+  // Staff left this list on 15 ก.ย. 2569: it opened the same page as
+  // "ทีมและสิทธิ์" in settings, so it lives there alone now.
+  { key: 'team', itemKeys: ['reports', 'ai', 'settings'] },
 ];
 
 export const MORE_DETAILS: Record<string, { th: string; en: string }> = {
@@ -23,7 +25,7 @@ export const MORE_DETAILS: Record<string, { th: string; en: string }> = {
   staff: { th: 'สมาชิก บทบาท คำเชิญ', en: 'Members, roles, invitations' },
   reports: { th: 'ยอดขาย กำไร เมนูขายดี', en: 'Sales, profit, best sellers' },
   ai: { th: 'ถามเรื่องร้าน หรือสั่งแก้ข้อมูล', en: 'Ask about the shop or make changes' },
-  settings: { th: 'บัญชี · ร้าน · ภาษา · เครื่องพิมพ์', en: 'Account · shop · language · printer' },
+  settings: { th: 'บัญชี · ร้าน · ทีมและสิทธิ์ · เครื่องพิมพ์', en: 'Account · shop · team · printer' },
 };
 
 /** Groups with only the items this person may open, empty groups dropped. */

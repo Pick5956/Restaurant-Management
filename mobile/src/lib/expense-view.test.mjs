@@ -74,3 +74,9 @@ test('a row without a note is titled by its category', () => {
   assert.equal(expenseTitle({ note: 'ซื้อพริกป่น', category: 'ingredient' }, 'th'), 'ซื้อพริกป่น');
   assert.equal(expenseCategoryLabel('mystery', 'en'), 'Other');
 });
+
+test('the demo seeder tag is not part of the title', () => {
+  assert.equal(expenseTitle({ note: '[daily_activity 2026-09-15] ซื้อพริกป่น', category: 'ingredient' }, 'th'), 'ซื้อพริกป่น');
+  assert.equal(expenseTitle({ note: '[daily_activity 2026-09-15]', category: 'utilities' }, 'th'), 'สาธารณูปโภค');
+  assert.equal(expenseTitle({ note: 'ค่าไฟ [daily_activity 2026-09-15]', category: 'utilities' }, 'th'), 'ค่าไฟ [daily_activity 2026-09-15]');
+});

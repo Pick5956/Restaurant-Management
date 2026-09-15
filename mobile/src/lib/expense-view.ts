@@ -31,9 +31,17 @@ export function expenseDay(spentAt: string): string {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
+/**
+ * The tag the daily demo seeder (backend/cmd/seed_daily_activity) writes at the
+ * front of every note, "[daily_activity 2026-09-15] ซื้อพริกป่น", so it can find
+ * and purge its own rows. It is bookkeeping for that tool, not something the
+ * shop wrote, and it pushed what was bought off the end of every row.
+ */
+const SEED_MARKER = /^\[daily_activity \d{4}-\d{2}-\d{2}\]\s*/;
+
 /** A row's first line: what was bought, or the category when nobody wrote a note. */
 export function expenseTitle(expense: Pick<Expense, 'note' | 'category'>, language: DisplayLanguage): string {
-  return expense.note?.trim() || expenseCategoryLabel(expense.category, language);
+  return (expense.note ?? '').replace(SEED_MARKER, '').trim() || expenseCategoryLabel(expense.category, language);
 }
 
 const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
