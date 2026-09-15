@@ -182,7 +182,16 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 		summary.Margin = roundMoney(summary.Profit / summary.Revenue * 100)
 	}
 	summary.OperatingExpenses = roundMoney(operatingExpenses)
-	summary.NetProfit = roundMoney(summary.Profit - summary.OperatingExpenses)
+	// The owner's call (15 ก.ย. 2569): one net figure that takes off everything
+	// the ledger holds, ingredient purchases included, rather than gross profit
+	// less the non-ingredient part. Cost (recipe cost of what sold) still goes
+	// out on the menu tab; Margin is the share of revenue this net keeps.
+	summary.NetProfit = roundMoney(summary.Revenue - summary.Expenses)
+	if summary.Revenue > 0 {
+		summary.Margin = roundMoney(summary.NetProfit / summary.Revenue * 100)
+	} else {
+		summary.Margin = 0
+	}
 
 	risks := make([]ManagerReportStockRisk, 0, len(ingredients))
 	for _, ingredient := range ingredients {

@@ -164,12 +164,12 @@ function FigureStrip({ children }: { children: ReactNode }) {
  * What the margin is, worked through with the period's own numbers rather than
  * a textbook line: the owner asked for an ⓘ on the figure (15 ก.ย. 2569).
  */
-export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, language }: {
+export function MarginInfoSheet({ open, onClose, revenue, expenses, netProfit, margin, language }: {
   open: boolean;
   onClose: () => void;
   revenue: number;
-  cost: number;
-  profit: number;
+  expenses: number;
+  netProfit: number;
   margin: number;
   language: Language;
 }) {
@@ -189,8 +189,8 @@ export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 14 }}>
         <Text style={{ fontSize: 15, lineHeight: 23, color: palette.text }}>
           {th
-            ? `มาร์จินคือส่วนที่เหลือเป็นกำไร เมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${perHundred} บาท`
-            : `Margin is the share of sales left as profit. In this period, every 100 baht of sales left ${perHundred} baht after ingredients.`}
+            ? `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิ เมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${perHundred} บาทหลังหักรายจ่ายทั้งหมด`
+            : `Margin is the share of revenue left as net profit. In this period, every 100 baht of revenue left ${perHundred} baht after all expenses.`}
         </Text>
         <ReportCard>
           <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 }}>
@@ -198,21 +198,26 @@ export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, 
               <Text style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder }}>{th ? 'คิดจากตัวเลขของช่วงนี้' : 'Worked out from this period'}</Text>
             </View>
             {line(th ? 'รายได้ (หลังหักส่วนลด)' : 'Revenue (after discounts)', money(revenue, language))}
-            {line(th ? 'ต้นทุนวัตถุดิบ' : 'Ingredient cost', `− ${money(cost, language)}`)}
-            {line(th ? 'กำไรขั้นต้น' : 'Gross profit', money(profit, language))}
-            {line(th ? `มาร์จิน = กำไรขั้นต้น ÷ รายได้ × 100` : 'Margin = gross profit ÷ revenue × 100', percent, true)}
+            {line(th ? 'รายจ่ายรวมทุกหมวด' : 'All expenses', `− ${money(expenses, language)}`)}
+            {line(th ? 'กำไรสุทธิ' : 'Net profit', money(netProfit, language))}
+            {line(th ? `มาร์จิน = กำไรสุทธิ ÷ รายได้ × 100` : 'Margin = net profit ÷ revenue × 100', percent, true)}
           </View>
         </ReportCard>
         <View style={{ gap: 6 }}>
           <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
             {th
-              ? '• ยังไม่ได้หักค่าแรง ค่าเช่า ค่าน้ำไฟ และรายจ่ายอื่นในหน้ารายจ่าย กำไรจริงของร้านจะน้อยกว่านี้'
-              : '• Wages, rent, utilities and other expenses are not taken off yet, so the shop keeps less than this.'}
+              ? '• รายจ่ายคือทุกรายการในหน้ารายจ่ายของช่วงนี้ รวมค่าซื้อวัตถุดิบเข้าคลัง ค่าแรง ค่าเช่า ค่าน้ำไฟ'
+              : '• Expenses are every entry on the expenses page for this period: ingredient purchases, wages, rent, utilities.'}
           </Text>
           <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
             {th
-              ? '• ต้นทุนคิดจากสูตรวัตถุดิบของเมนู เมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0 ทำให้มาร์จินสูงกว่าความจริง'
-              : '• Cost comes from menu recipes. A menu with no recipe counts as zero cost and pushes the margin up.'}
+              ? '• วันที่ซื้อของเข้าคลังก้อนใหญ่ กำไรสุทธิของวันนั้นจะต่ำหรือติดลบ แม้ของยังอยู่ในคลัง ดูช่วงยาวขึ้นจะเห็นภาพจริงกว่า'
+              : '• A day with a big restock shows low or negative profit even though the stock is still on the shelf; a longer period evens it out.'}
+          </Text>
+          <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
+            {th
+              ? '• กำไรต่อเมนูในแท็บเมนูใช้ต้นทุนตามสูตรของเมนูนั้น เป็นคนละตัวเลขกับกำไรสุทธิของร้าน'
+              : '• Profit per menu on the menu tab uses that menu\'s recipe cost; it is a different figure from the shop\'s net profit.'}
           </Text>
           <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
             {th

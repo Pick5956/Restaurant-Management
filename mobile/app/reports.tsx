@@ -165,16 +165,16 @@ export default function ReportsScreen() {
       tone: 'bad',
     },
     { key: 'orders', label: copy('ออเดอร์', 'Orders'), value: summary.orders.toLocaleString(locale), note: summary.orders > 0 ? copy(`เฉลี่ยบิลละ ${money(summary.revenue / summary.orders, language)}`, `${money(summary.revenue / summary.orders, language)} a bill`) : undefined },
-    { key: 'cost', label: copy('ต้นทุนวัตถุดิบ', 'Ingredient cost'), value: money(summary.cost, language) },
-    { key: 'profit', label: copy('กำไรขั้นต้น', 'Gross profit'), value: money(summary.profit, language), note: copy('หักค่าวัตถุดิบแล้ว', 'After ingredients'), tone: summary.profit >= 0 ? 'good' : undefined },
     {
-      // Gross profit less every expense that is not an ingredient purchase
-      // (15 ก.ย. 2569). It is only as right as the expense ledger is complete.
+      // One profit figure (the owner's call, 15 ก.ย. 2569): revenue less every
+      // expense in the ledger, ingredient purchases included. The gross-profit
+      // and ingredient-cost cards came out with it; recipe cost still shows
+      // per menu on the menu tab.
       key: 'net',
       label: copy('กำไรสุทธิ', 'Net profit'),
-      value: money(summary.net_profit ?? summary.profit, language),
-      note: copy(`หักรายจ่ายอื่น ${money(summary.operating_expenses ?? 0, language)}`, `After other costs ${money(summary.operating_expenses ?? 0, language)}`),
-      tone: (summary.net_profit ?? summary.profit) >= 0 ? 'good' : 'bad',
+      value: money(summary.net_profit ?? summary.revenue - (summary.expenses ?? 0), language),
+      note: copy(`รายได้ − รายจ่ายรวม ${money(summary.expenses ?? 0, language)}`, `Revenue − expenses ${money(summary.expenses ?? 0, language)}`),
+      tone: (summary.net_profit ?? summary.revenue - (summary.expenses ?? 0)) >= 0 ? 'good' : 'bad',
     },
     {
       key: 'margin',
@@ -411,7 +411,7 @@ export default function ReportsScreen() {
   const skeleton = (
     <SkeletonReveal label={copy('กำลังโหลดรายงาน', 'Loading reports')} style={{ flex: 1, gap: spacing.md }}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        {(tablet ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2]).map((index) => <Bone key={index} height={tablet ? 70 : 60} radius={16} style={{ flex: 1 }} />)}
+        {(tablet ? [0, 1, 2, 3, 4] : [0, 1, 2]).map((index) => <Bone key={index} height={tablet ? 70 : 60} radius={16} style={{ flex: 1 }} />)}
       </View>
       <Bone width={tablet ? 340 : '100%'} height={30} radius={999} />
       <View style={{ flex: 1, flexDirection: tablet ? 'row' : 'column', gap: spacing.md }}>
@@ -456,8 +456,8 @@ export default function ReportsScreen() {
           open={marginInfoOpen}
           onClose={() => setMarginInfoOpen(false)}
           revenue={summary.revenue}
-          cost={summary.cost}
-          profit={summary.profit}
+          expenses={summary.expenses ?? 0}
+          netProfit={summary.net_profit ?? summary.revenue - (summary.expenses ?? 0)}
           margin={summary.margin}
           language={language}
         />

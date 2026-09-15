@@ -75,13 +75,13 @@ export default function ReportsPage() {
         grossRevenue: "รายได้รวม",
         expenses: "รายจ่ายรวม",
         netProfit: "กำไรสุทธิ",
-        afterOther: (value: string) => `หักรายจ่ายอื่น ${value}`,
+        afterAll: (value: string) => `รายได้ − รายจ่ายรวม ${value}`,
         entries: (n: number) => `${n} รายการ`,
         beforeDiscount: "ก่อนหักส่วนลด",
         discountNote: (value: string) => `ส่วนลด −${value}`,
         marginInfo: "มาร์จินคืออะไร",
-        marginExplain: (per100: string, revenue: string, cost: string, profit: string, margin: string) =>
-          `มาร์จินคือส่วนที่เหลือเป็นกำไรเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${per100} บาท · รายได้หลังหักส่วนลด ${revenue} − ต้นทุนวัตถุดิบ ${cost} = กำไรขั้นต้น ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · ยังไม่หักค่าแรง ค่าเช่า ค่าน้ำไฟ และเมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0`,
+        marginExplain: (per100: string, revenue: string, expenses: string, net: string, margin: string) =>
+          `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${per100} บาทหลังหักรายจ่ายทั้งหมด · รายได้ ${revenue} − รายจ่ายรวมทุกหมวด ${expenses} = กำไรสุทธิ ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · วันที่ซื้อของเข้าคลังก้อนใหญ่จะดูกำไรต่ำแม้ของยังอยู่ในคลัง`,
         period: "ช่วงเวลา",
         custom: "กำหนดเอง",
         from: "ตั้งแต่",
@@ -120,13 +120,13 @@ export default function ReportsPage() {
         grossRevenue: "Gross revenue",
         expenses: "Total expenses",
         netProfit: "Net profit",
-        afterOther: (value: string) => `After other costs ${value}`,
+        afterAll: (value: string) => `Revenue − expenses ${value}`,
         entries: (n: number) => `${n} entries`,
         beforeDiscount: "Before discounts",
         discountNote: (value: string) => `Discounts −${value}`,
         marginInfo: "What is margin?",
-        marginExplain: (per100: string, revenue: string, cost: string, profit: string, margin: string) =>
-          `Margin is the share of sales left as profit. In this period every 100 baht of sales left ${per100} baht after ingredients · sales ${revenue} − ingredient cost ${cost} = gross profit ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · wages, rent and utilities are not taken off, and a menu with no recipe counts as zero cost.`,
+        marginExplain: (per100: string, revenue: string, expenses: string, net: string, margin: string) =>
+          `Margin is the share of revenue left as net profit. In this period every 100 baht of revenue left ${per100} baht after all expenses · revenue ${revenue} − all expenses ${expenses} = net profit ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · a day with a big restock shows low profit even though the stock is still on the shelf.`,
         period: "Period",
         custom: "Custom",
         from: "From",
@@ -291,7 +291,7 @@ export default function ReportsPage() {
         </div>
       ) : report ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[
               {
                 label: copy.grossRevenue,
@@ -311,12 +311,10 @@ export default function ReportsPage() {
                 icon: <AlertTriangle className="h-4 w-4" />,
               },
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
-              { label: copy.foodCost, value: formatCurrency(report.summary.cost, lang), icon: <AlertTriangle className="h-4 w-4" /> },
-              { label: copy.profit, value: formatCurrency(report.summary.profit, lang), icon: <TrendingUp className="h-4 w-4" /> },
               {
                 label: copy.netProfit,
-                value: formatCurrency(report.summary.net_profit ?? report.summary.profit, lang),
-                note: copy.afterOther(formatCurrency(report.summary.operating_expenses ?? 0, lang)),
+                value: formatCurrency(report.summary.net_profit ?? report.summary.revenue - (report.summary.expenses ?? 0), lang),
+                note: copy.afterAll(formatCurrency(report.summary.expenses ?? 0, lang)),
                 icon: <TrendingUp className="h-4 w-4" />,
               },
               {
@@ -352,8 +350,8 @@ export default function ReportsPage() {
                 {copy.marginExplain(
                   formatNumber(report.summary.margin, lang),
                   formatCurrency(report.summary.revenue, lang),
-                  formatCurrency(report.summary.cost, lang),
-                  formatCurrency(report.summary.profit, lang),
+                  formatCurrency(report.summary.expenses ?? 0, lang),
+                  formatCurrency(report.summary.net_profit ?? report.summary.revenue - (report.summary.expenses ?? 0), lang),
                   `${formatNumber(report.summary.margin, lang)}%`,
                 )}
               </p>
