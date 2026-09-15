@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
@@ -150,7 +151,7 @@ function FigureStrip({ children }: { children: ReactNode }) {
             end={{ x: 1, y: 0.5 }}
             style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
           />
-          <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceStrong, borderWidth: 1, borderColor: palette.accentMuted }}>
+          <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.divider, shadowColor: '#21130C', shadowOpacity: 0.12, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
             <AppIcon name="chevron-forward" size={15} color={palette.primaryInk} />
           </View>
         </View>
@@ -392,13 +393,15 @@ export type TableRow = { key: string; cells: ReactNode[]; highlight?: boolean; o
  * page itself no longer scrolls. When rows run past the bottom, the edge fades
  * and says how many are left, until the last one is on screen.
  */
-export function ReportTable({ columns, rows, empty, onRefresh, footer, language }: {
+export function ReportTable({ columns, rows, empty, onRefresh, footer, bottomInset = 0, language }: {
   columns: TableColumn[];
   rows: TableRow[];
   empty: string;
   onRefresh?: () => void | Promise<void>;
   /** A totals row pinned under the scrolling rows, one cell per column. */
   footer?: ReactNode[];
+  /** Room after the last row, for a table that runs to a screen's bottom edge. */
+  bottomInset?: number;
   language: Language;
 }) {
   const [viewport, setViewport] = useState(0);
@@ -428,7 +431,8 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
       {rows.length ? (
         <View style={{ flex: 1, minHeight: 0 }}>
           <ScrollView
-            style={{ flex: 1 }}
+            style={{ flex: 1, backgroundColor: palette.surface }}
+            contentContainerStyle={bottomInset ? { paddingBottom: bottomInset } : undefined}
             onLayout={(event) => setViewport(event.nativeEvent.layout.height)}
             onScroll={(event) => setOffset(event.nativeEvent.contentOffset.y)}
             scrollEventThrottle={32}
@@ -461,7 +465,7 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
             ))}
           </ScrollView>
           {hidden > 0 ? (
-            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 52, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 7 }}>
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: bottomInset, height: 52, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 7 }}>
               <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.96)']} locations={[0, 0.7]} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} />
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 10, borderRadius: 999, backgroundColor: palette.surfaceStrong }}>
                 <Text style={{ fontSize: 11.5, fontWeight: '700', color: palette.primaryInk }}>{language === 'th' ? `อีก ${hidden} แถว` : `${hidden} more`}</Text>
@@ -588,6 +592,7 @@ export function DaySheet({ date, today, best, onClose, onOpenOrder, language }: 
   const [hours, setHours] = useState<ReportBar[]>([]);
   const [failed, setFailed] = useState(false);
   const [shownDate, setShownDate] = useState<string | null>(date);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!date) return;
@@ -620,7 +625,7 @@ export function DaySheet({ date, today, best, onClose, onOpenOrder, language }: 
   );
 
   return (
-    <BottomSheet open={date !== null} onClose={onClose} heightFraction={0.9} label={th ? 'ปิด' : 'Close'} showClose>
+    <BottomSheet open={date !== null} onClose={onClose} heightFraction={0.9} label={th ? 'ปิด' : 'Close'} showClose flushBottom>
       <SheetTitle
         title={title}
         subtitle={detail
@@ -686,6 +691,7 @@ export function DaySheet({ date, today, best, onClose, onOpenOrder, language }: 
               ],
             }))}
             empty={th ? 'วันนี้ไม่มีบิลที่ชำระแล้ว' : 'No paid bills on this day'}
+            bottomInset={insets.bottom + 16}
             language={language}
           />
           {detail.has_more ? (

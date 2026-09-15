@@ -1069,6 +1069,7 @@ export function BottomSheet({
   label,
   showClose,
   background,
+  flushBottom = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1078,6 +1079,13 @@ export function BottomSheet({
   label: string;
   /** A glass close button in the top-right corner. */
   showClose?: boolean;
+  /**
+   * Let the content run to the sheet's bottom edge. For a sheet that is one
+   * scrolling list: the list pads itself by the home indicator instead, so a
+   * sheet pulled to full shows rows to the edge rather than a strip of bare
+   * glass under the last one (the reports day sheet, 15 ก.ย. 2569).
+   */
+  flushBottom?: boolean;
   /** The sheet's own colour, so the safe area at the top matches its content. */
   background?: string;
 }) {
@@ -1243,7 +1251,7 @@ export function BottomSheet({
   const bottomInset = between(CARD_INSET, 0);
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
-  const bottomPadding = between(10, insets.bottom + 6);
+  const bottomPadding = flushBottom ? 0 : between(10, insets.bottom + 6);
 
   // How far down the card has to go to be gone: its own height, the gap it
   // keeps at the bottom, and a little more for its shadow. Travelling a whole
