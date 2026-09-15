@@ -21,8 +21,11 @@ type ReportSalesDay struct {
 	OrderDate string  `json:"order_date"`
 	Orders    int64   `json:"orders"`
 	Revenue   float64 `json:"revenue"`
-	Cost      float64 `json:"cost"`
-	Profit    float64 `json:"profit"`
+	// Discount is what the bills of that day took off before they were paid, so
+	// revenue + discount is what the same food would have fetched at list price.
+	Discount float64 `json:"discount"`
+	Cost     float64 `json:"cost"`
+	Profit   float64 `json:"profit"`
 }
 
 type ReportSalesHour struct {
@@ -87,11 +90,12 @@ func bucketExpr(column string, format salesBucketFormat) string {
 // salesBucket is one time slice of paid revenue and its ingredient cost. The
 // bucket label is whatever TO_CHAR pattern the caller grouped by.
 type salesBucket struct {
-	Bucket  string
-	Orders  int64
-	Revenue float64
-	Cost    float64
-	Profit  float64
+	Bucket   string
+	Orders   int64
+	Revenue  float64
+	Discount float64
+	Cost     float64
+	Profit   float64
 }
 
 type ReportMenuMargin struct {
@@ -125,7 +129,7 @@ func (r *ReportRepository) salesBuckets(restaurantID uint, bucketFormat salesBuc
 
 	var rows []salesBucket
 	err := r.db.Model(&entity.Order{}).
-		Select(orderBucket+" AS bucket, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
+		Select(orderBucket+" AS bucket, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue, COALESCE(SUM(discount_amount), 0) AS discount").
 		Where(orderWhere, orderArgs...).
 		Group(orderBucket).
 		Order(orderBucket + " desc").
@@ -172,7 +176,7 @@ func (r *ReportRepository) SalesByDayBetween(restaurantID uint, since, until tim
 	}
 	rows := make([]ReportSalesDay, 0, len(buckets))
 	for _, b := range buckets {
-		rows = append(rows, ReportSalesDay{OrderDate: b.Bucket, Orders: b.Orders, Revenue: b.Revenue, Cost: b.Cost, Profit: b.Profit})
+		rows = append(rows, ReportSalesDay{OrderDate: b.Bucket, Orders: b.Orders, Revenue: b.Revenue, Discount: b.Discount, Cost: b.Cost, Profit: b.Profit})
 	}
 	return rows, nil
 }

@@ -60,7 +60,16 @@ export function CardHeading({ title, detail, trailing }: { title: string; detail
 
 // ---------------------------------------------------------------- figures
 
-export type ReportFigure = { key: string; label: string; value: string; note?: string; tone?: 'hero' | 'good' };
+export type ReportFigure = {
+  key: string;
+  label: string;
+  value: string;
+  note?: string;
+  tone?: 'hero' | 'good';
+  /** Puts an ⓘ beside the label that explains the figure. */
+  onInfo?: () => void;
+  infoLabel?: string;
+};
 
 /**
  * The five figures. A row of five on a tablet; on a phone they scroll sideways
@@ -71,7 +80,20 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
     const hero = figure.tone === 'hero';
     const body = (
       <>
-        <Text numberOfLines={1} style={{ fontSize: 12, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.label}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.label}</Text>
+          {figure.onInfo ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={figure.infoLabel ?? figure.label}
+              onPress={figure.onInfo}
+              hitSlop={10}
+              style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+            >
+              <AppIcon name="information-circle-outline" size={16} color={hero ? '#fff' : palette.primaryInk} />
+            </Pressable>
+          ) : null}
+        </View>
         <Text numberOfLines={1} style={{ fontSize: tablet ? 23 : 19, lineHeight: tablet ? 29 : 24, fontWeight: '700', color: hero ? '#fff' : figure.tone === 'good' ? palette.success : palette.textStrong, fontVariant: ['tabular-nums'] }}>{figure.value}</Text>
         {figure.note ? <Text numberOfLines={1} style={{ fontSize: 11.5, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.note}</Text> : null}
       </>
@@ -90,6 +112,71 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
       {figures.map(card)}
       <View style={{ width: 8 }} />
     </ScrollView>
+  );
+}
+
+/**
+ * What the margin is, worked through with the period's own numbers rather than
+ * a textbook line: the owner asked for an ⓘ on the figure (15 ก.ย. 2569).
+ */
+export function MarginInfoSheet({ open, onClose, revenue, cost, profit, margin, language }: {
+  open: boolean;
+  onClose: () => void;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+  language: Language;
+}) {
+  const th = language === 'th';
+  const locale = th ? 'th-TH' : 'en-US';
+  const percent = `${Number(margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  const perHundred = Number(margin).toLocaleString(locale, { maximumFractionDigits: 1 });
+  const line = (label: string, value: string, strong = false) => (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: palette.divider }}>
+      <Text style={{ flex: 1, fontSize: 14, color: strong ? palette.textStrong : palette.muted, fontWeight: strong ? '700' : '500' }}>{label}</Text>
+      <Text style={{ fontSize: strong ? 17 : 15, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{value}</Text>
+    </View>
+  );
+  return (
+    <BottomSheet open={open} onClose={onClose} heightFraction={0.62} label={th ? 'ปิด' : 'Close'} showClose>
+      <SheetTitle title={th ? 'มาร์จินคืออะไร' : 'What is margin?'} />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 14 }}>
+        <Text style={{ fontSize: 15, lineHeight: 23, color: palette.text }}>
+          {th
+            ? `มาร์จินคือส่วนที่เหลือเป็นกำไร เมื่อเทียบกับยอดขาย · ช่วงนี้ขายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${perHundred} บาท`
+            : `Margin is the share of sales left as profit. In this period, every 100 baht of sales left ${perHundred} baht after ingredients.`}
+        </Text>
+        <ReportCard>
+          <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 }}>
+            <View style={{ paddingVertical: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder }}>{th ? 'คิดจากตัวเลขของช่วงนี้' : 'Worked out from this period'}</Text>
+            </View>
+            {line(th ? 'ยอดขาย' : 'Sales', money(revenue, language))}
+            {line(th ? 'ต้นทุนวัตถุดิบ' : 'Ingredient cost', `− ${money(cost, language)}`)}
+            {line(th ? 'กำไรขั้นต้น' : 'Gross profit', money(profit, language))}
+            {line(th ? `มาร์จิน = กำไรขั้นต้น ÷ ยอดขาย × 100` : 'Margin = gross profit ÷ sales × 100', percent, true)}
+          </View>
+        </ReportCard>
+        <View style={{ gap: 6 }}>
+          <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
+            {th
+              ? '• ยังไม่ได้หักค่าแรง ค่าเช่า ค่าน้ำไฟ และรายจ่ายอื่นในหน้ารายจ่าย กำไรจริงของร้านจะน้อยกว่านี้'
+              : '• Wages, rent, utilities and other expenses are not taken off yet, so the shop keeps less than this.'}
+          </Text>
+          <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
+            {th
+              ? '• ต้นทุนคิดจากสูตรวัตถุดิบของเมนู เมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0 ทำให้มาร์จินสูงกว่าความจริง'
+              : '• Cost comes from menu recipes. A menu with no recipe counts as zero cost and pushes the margin up.'}
+          </Text>
+          <Text style={{ fontSize: 13.5, lineHeight: 20, color: palette.muted }}>
+            {th
+              ? '• ยอดขายคือเงินที่ลูกค้าจ่ายจริง หลังหักส่วนลดแล้ว'
+              : '• Sales is what customers actually paid, after discounts.'}
+          </Text>
+        </View>
+      </ScrollView>
+    </BottomSheet>
   );
 }
 

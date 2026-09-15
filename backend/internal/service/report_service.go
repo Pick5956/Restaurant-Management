@@ -65,11 +65,15 @@ func ParseManagerReportRange(from, to string, now time.Time) (time.Time, time.Ti
 }
 
 type ManagerReportSummary struct {
-	Orders  int64   `json:"orders"`
-	Revenue float64 `json:"revenue"`
-	Cost    float64 `json:"cost"`
-	Profit  float64 `json:"profit"`
-	Margin  float64 `json:"margin"`
+	Orders int64 `json:"orders"`
+	// GrossRevenue is "รายได้รวม": the bills before their discounts, service
+	// charge and VAT still in, so GrossRevenue − Discount = Revenue.
+	GrossRevenue float64 `json:"gross_revenue"`
+	Discount     float64 `json:"discount"`
+	Revenue      float64 `json:"revenue"`
+	Cost         float64 `json:"cost"`
+	Profit       float64 `json:"profit"`
+	Margin       float64 `json:"margin"`
 }
 
 type ManagerReportStockRisk struct {
@@ -152,8 +156,11 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 	for _, day := range sales {
 		summary.Orders += day.Orders
 		summary.Revenue += day.Revenue
+		summary.Discount += day.Discount
 		summary.Cost += day.Cost
 	}
+	summary.Discount = roundMoney(summary.Discount)
+	summary.GrossRevenue = roundMoney(summary.Revenue + summary.Discount)
 	summary.Cost = roundMoney(summary.Cost)
 	summary.Profit = roundMoney(summary.Revenue - summary.Cost)
 	if summary.Revenue > 0 {

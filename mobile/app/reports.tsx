@@ -8,6 +8,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import {
   BarTable,
   CardHeading,
+  MarginInfoSheet,
   MenuProfitCard,
   PeriodButton,
   PeriodSheet,
@@ -66,6 +67,7 @@ export default function ReportsScreen() {
   const [today, setToday] = useState(() => formatBangkokDate());
   const [range, setRange] = useState<ReportRange>(() => presetRange('last14', formatBangkokDate()));
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const [tab, setTab] = useState<ReportTab>('sales');
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [hours, setHours] = useState<SalesByHourReport | null>(null);
@@ -125,7 +127,17 @@ export default function ReportsScreen() {
     );
   }
 
+  const discount = Number(report?.summary.discount ?? 0);
+  const grossRevenue = Number(report?.summary.gross_revenue ?? report?.summary.revenue ?? 0);
   const figures: ReportFigure[] = report ? [
+    {
+      // "รายได้รวม" (15 ก.ย. 2569): the bills before their discounts. Sales,
+      // next to it, is the same bills after them.
+      key: 'gross',
+      label: copy('รายได้รวม', 'Gross revenue'),
+      value: money(grossRevenue, language),
+      note: discount > 0 ? copy(`ส่วนลด −${money(discount, language)}`, `Discounts −${money(discount, language)}`) : copy('ก่อนหักส่วนลด', 'Before discounts'),
+    },
     {
       key: 'revenue',
       label: copy('ยอดขาย', 'Sales'),
@@ -136,7 +148,13 @@ export default function ReportsScreen() {
     { key: 'orders', label: copy('ออเดอร์', 'Orders'), value: report.summary.orders.toLocaleString(locale), note: report.summary.orders > 0 ? copy(`เฉลี่ยบิลละ ${money(report.summary.revenue / report.summary.orders, language)}`, `${money(report.summary.revenue / report.summary.orders, language)} a bill`) : undefined },
     { key: 'cost', label: copy('ต้นทุนวัตถุดิบ', 'Ingredient cost'), value: money(report.summary.cost, language) },
     { key: 'profit', label: copy('กำไรขั้นต้น', 'Gross profit'), value: money(report.summary.profit, language), tone: report.summary.profit >= 0 ? 'good' : undefined },
-    { key: 'margin', label: copy('มาร์จิน', 'Margin'), value: `${Number(report.summary.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` },
+    {
+      key: 'margin',
+      label: copy('มาร์จิน', 'Margin'),
+      value: `${Number(report.summary.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`,
+      onInfo: () => setMarginInfoOpen(true),
+      infoLabel: copy('มาร์จินคืออะไร', 'What is margin?'),
+    },
   ] : [];
 
   const salesTab = (
@@ -168,7 +186,7 @@ export default function ReportsScreen() {
   const skeleton = (
     <SkeletonReveal label={copy('กำลังโหลดรายงาน', 'Loading reports')} style={{ gap: spacing.md }}>
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        {(tablet ? [0, 1, 2, 3, 4] : [0, 1, 2]).map((index) => <Bone key={index} height={tablet ? 78 : 66} radius={18} style={{ flex: 1 }} />)}
+        {(tablet ? [0, 1, 2, 3, 4, 5] : [0, 1, 2]).map((index) => <Bone key={index} height={tablet ? 78 : 66} radius={18} style={{ flex: 1 }} />)}
       </View>
       <Bone width={tablet ? 340 : '100%'} height={34} radius={999} />
       <View style={{ flexDirection: tablet ? 'row' : 'column', gap: spacing.md }}>
@@ -212,6 +230,18 @@ export default function ReportsScreen() {
             </Text>
           ) : null}
         </View>
+      ) : null}
+
+      {report ? (
+        <MarginInfoSheet
+          open={marginInfoOpen}
+          onClose={() => setMarginInfoOpen(false)}
+          revenue={report.summary.revenue}
+          cost={report.summary.cost}
+          profit={report.summary.profit}
+          margin={report.summary.margin}
+          language={language}
+        />
       ) : null}
 
       <PeriodSheet

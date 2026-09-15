@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
-import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
@@ -72,6 +72,12 @@ export default function ReportsPage() {
         dayCapped: "แสดงเฉพาะรายการแรกของวันนี้",
         close: "ปิด",
         receiptError: "เปิดใบเสร็จไม่สำเร็จ",
+        grossRevenue: "รายได้รวม",
+        beforeDiscount: "ก่อนหักส่วนลด",
+        discountNote: (value: string) => `ส่วนลด −${value}`,
+        marginInfo: "มาร์จินคืออะไร",
+        marginExplain: (per100: string, revenue: string, cost: string, profit: string, margin: string) =>
+          `มาร์จินคือส่วนที่เหลือเป็นกำไรเมื่อเทียบกับยอดขาย · ช่วงนี้ขายได้ทุก 100 บาท เหลือกำไรหลังหักค่าวัตถุดิบ ${per100} บาท · ยอดขาย ${revenue} − ต้นทุนวัตถุดิบ ${cost} = กำไรขั้นต้น ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · ยังไม่หักค่าแรง ค่าเช่า ค่าน้ำไฟ และเมนูที่ยังไม่มีสูตรนับต้นทุนเป็น 0`,
         period: "ช่วงเวลา",
         custom: "กำหนดเอง",
         from: "ตั้งแต่",
@@ -107,6 +113,12 @@ export default function ReportsPage() {
         dayCapped: "Showing the first orders of this day only.",
         close: "Close",
         receiptError: "Could not open that receipt.",
+        grossRevenue: "Gross revenue",
+        beforeDiscount: "Before discounts",
+        discountNote: (value: string) => `Discounts −${value}`,
+        marginInfo: "What is margin?",
+        marginExplain: (per100: string, revenue: string, cost: string, profit: string, margin: string) =>
+          `Margin is the share of sales left as profit. In this period every 100 baht of sales left ${per100} baht after ingredients · sales ${revenue} − ingredient cost ${cost} = gross profit ${profit} · ${profit} ÷ ${revenue} × 100 = ${margin} · wages, rent and utilities are not taken off, and a menu with no recipe counts as zero cost.`,
         period: "Period",
         custom: "Custom",
         from: "From",
@@ -198,6 +210,7 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView, language, range.from, range.to]);
 
+  const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const preset = matchPreset(range, today);
   const draftProblem = rangeProblem(draft, today);
   const applyDraft = () => {
@@ -270,23 +283,58 @@ export default function ReportsPage() {
         </div>
       ) : report ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {[
+              {
+                label: copy.grossRevenue,
+                value: formatCurrency(report.summary.gross_revenue ?? report.summary.revenue, lang),
+                note: (report.summary.discount ?? 0) > 0 ? copy.discountNote(formatCurrency(report.summary.discount ?? 0, lang)) : copy.beforeDiscount,
+                icon: <Wallet className="h-4 w-4" />,
+              },
               { label: copy.revenue, value: formatCurrency(report.summary.revenue, lang), icon: <Wallet className="h-4 w-4" /> },
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
               { label: copy.foodCost, value: formatCurrency(report.summary.cost, lang), icon: <AlertTriangle className="h-4 w-4" /> },
               { label: copy.profit, value: formatCurrency(report.summary.profit, lang), icon: <TrendingUp className="h-4 w-4" /> },
-              { label: copy.margin, value: `${formatNumber(report.summary.margin, lang)}%`, icon: <TrendingUp className="h-4 w-4" /> },
-            ].map((card) => (
+              {
+                label: copy.margin,
+                value: `${formatNumber(report.summary.margin, lang)}%`,
+                icon: (
+                  <button
+                    type="button"
+                    aria-label={copy.marginInfo}
+                    aria-expanded={marginInfoOpen}
+                    onClick={() => setMarginInfoOpen((open) => !open)}
+                    className="ui-press rounded-full p-0.5 text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                  >
+                    <Info className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                ),
+              },
+            ].map((card: { label: string; value: string; note?: string; icon: React.ReactNode }) => (
               <div key={card.label} className="rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between gap-3 text-gray-500">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</span>
                   {card.icon}
                 </div>
                 <p className="mt-3 text-xl font-semibold tabular-nums">{card.value}</p>
+                {card.note ? <p className="mt-1 text-[12px] text-gray-500 tabular-nums">{card.note}</p> : null}
               </div>
             ))}
           </div>
+          {marginInfoOpen ? (
+            <div role="note" className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
+              <p className="font-semibold">{copy.marginInfo}</p>
+              <p>
+                {copy.marginExplain(
+                  formatNumber(report.summary.margin, lang),
+                  formatCurrency(report.summary.revenue, lang),
+                  formatCurrency(report.summary.cost, lang),
+                  formatCurrency(report.summary.profit, lang),
+                  `${formatNumber(report.summary.margin, lang)}%`,
+                )}
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
             <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
