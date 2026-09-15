@@ -485,15 +485,21 @@ export function TicketLanes({ count, children, language }: { count: number; chil
 
 // ---------------------------------------------------------------- empty board
 
-export function EmptyKitchen({ latestFinishedAt, language }: { latestFinishedAt: number | null; language: 'th' | 'en' }) {
+/**
+ * `fill` is the tablet: the notice takes the whole board, the height and width
+ * the lanes would have, with its words in the middle. As a 600pt card pinned to
+ * the top-left it left two thirds of the screen bare and sat off-centre from
+ * everything around it (15 ก.ย. 2569).
+ */
+export function EmptyKitchen({ latestFinishedAt, language, fill = false }: { latestFinishedAt: number | null; language: 'th' | 'en'; fill?: boolean }) {
   const detail = latestFinishedAt !== null
     ? (language === 'th' ? `ทุกโต๊ะได้อาหารครบแล้ว · รอบล่าสุดเสร็จ ${kitchenClockLabel(latestFinishedAt, language)}` : `Every table is served · last round finished ${kitchenClockLabel(latestFinishedAt, language)}`)
     : (language === 'th' ? 'ยังไม่มีรอบเข้าครัว' : 'No rounds have reached the kitchen yet');
   return (
-    <View style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: palette.border, backgroundColor: palette.surfaceSubtle, paddingVertical: 26, paddingHorizontal: 18, alignItems: 'center', gap: 4 }}>
-      <AppIcon name="flame-outline" size={34} color={palette.primaryInk} />
-      <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textStrong, marginTop: 4 }}>{language === 'th' ? 'ครัวว่าง' : 'Kitchen is clear'}</Text>
-      <Text style={{ fontSize: 12.5, color: palette.muted, textAlign: 'center' }}>{detail}</Text>
+    <View style={{ borderRadius: CARD_RADIUS + 2, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: palette.border, backgroundColor: palette.surfaceSubtle, paddingVertical: 26, paddingHorizontal: 18, alignItems: 'center', gap: fill ? 6 : 4, ...(fill ? { flex: 1, justifyContent: 'center' as const, marginBottom: 14 } : null) }}>
+      <AppIcon name="flame-outline" size={fill ? 48 : 34} color={palette.primaryInk} />
+      <Text style={{ fontSize: fill ? 22 : 16, fontWeight: '700', color: palette.textStrong, marginTop: 4 }}>{language === 'th' ? 'ครัวว่าง' : 'Kitchen is clear'}</Text>
+      <Text style={{ fontSize: fill ? 15 : 12.5, color: palette.muted, textAlign: 'center' }}>{detail}</Text>
     </View>
   );
 }

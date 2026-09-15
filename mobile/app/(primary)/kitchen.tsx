@@ -657,7 +657,7 @@ export default function KitchenScreen() {
   const tabletBoard = showSkeleton ? (
     <KitchenSkeleton tablet label={copy('กำลังโหลดคิวครัว', 'Loading the kitchen queue')} />
   ) : emptyBoard ? (
-    <View style={{ width: LANE_WIDTH * 2 }}>{emptyBoard}</View>
+    <EmptyKitchen fill latestFinishedAt={latestFinishedAt(doneTickets)} language={language} />
   ) : (
     <TicketLanes count={cookingTickets.length} language={language}>
       {(height) => cookingTickets.map((order) => (
