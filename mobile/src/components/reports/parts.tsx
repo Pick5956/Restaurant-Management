@@ -106,7 +106,10 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
   };
   if (tablet) return <View style={{ flexDirection: 'row', gap: 8 }}>{figures.map(card)}</View>;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginHorizontal: -16 }}>
+    // flexGrow 0: a ScrollView grows to fill its column by default, and on the
+    // locked page that column is the whole screen — the cards stretched down
+    // past the tabs on an iPad held upright (15 ก.ย. 2569).
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, alignItems: 'flex-start' }} style={{ flexGrow: 0, flexShrink: 0, marginHorizontal: -16 }}>
       <View style={{ width: 8 }} />
       {figures.map(card)}
       <View style={{ width: 8 }} />

@@ -75,10 +75,14 @@ type ManagerReportSummary struct {
 	// recipe cost of what sold); subtracting both would count the same pork twice.
 	Expenses     float64 `json:"expenses"`
 	ExpenseCount int64   `json:"expense_count"`
-	Revenue      float64 `json:"revenue"`
-	Cost         float64 `json:"cost"`
-	Profit       float64 `json:"profit"`
-	Margin       float64 `json:"margin"`
+	// OperatingExpenses is the expenses that are not ingredient purchases, and
+	// NetProfit ("กำไรสุทธิ") is Profit minus them.
+	OperatingExpenses float64 `json:"operating_expenses"`
+	NetProfit         float64 `json:"net_profit"`
+	Revenue           float64 `json:"revenue"`
+	Cost              float64 `json:"cost"`
+	Profit            float64 `json:"profit"`
+	Margin            float64 `json:"margin"`
 }
 
 type ManagerReportStockRisk struct {
@@ -141,7 +145,7 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 	if len(topItems) > 10 {
 		topItems = topItems[:10]
 	}
-	expenseTotal, expenseCount, err := s.repo.ExpenseTotal(restaurantID, since, until)
+	expenseTotal, operatingExpenses, expenseCount, err := s.repo.ExpenseTotal(restaurantID, since, until)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +181,8 @@ func (s *ReportService) ManagerReportRange(restaurantID uint, from, to time.Time
 	if summary.Revenue > 0 {
 		summary.Margin = roundMoney(summary.Profit / summary.Revenue * 100)
 	}
+	summary.OperatingExpenses = roundMoney(operatingExpenses)
+	summary.NetProfit = roundMoney(summary.Profit - summary.OperatingExpenses)
 
 	risks := make([]ManagerReportStockRisk, 0, len(ingredients))
 	for _, ingredient := range ingredients {

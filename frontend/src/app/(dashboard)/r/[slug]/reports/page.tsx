@@ -74,6 +74,8 @@ export default function ReportsPage() {
         receiptError: "เปิดใบเสร็จไม่สำเร็จ",
         grossRevenue: "รายได้รวม",
         expenses: "รายจ่ายรวม",
+        netProfit: "กำไรสุทธิ",
+        afterOther: (value: string) => `หักรายจ่ายอื่น ${value}`,
         entries: (n: number) => `${n} รายการ`,
         beforeDiscount: "ก่อนหักส่วนลด",
         discountNote: (value: string) => `ส่วนลด −${value}`,
@@ -117,6 +119,8 @@ export default function ReportsPage() {
         receiptError: "Could not open that receipt.",
         grossRevenue: "Gross revenue",
         expenses: "Total expenses",
+        netProfit: "Net profit",
+        afterOther: (value: string) => `After other costs ${value}`,
         entries: (n: number) => `${n} entries`,
         beforeDiscount: "Before discounts",
         discountNote: (value: string) => `Discounts −${value}`,
@@ -287,7 +291,7 @@ export default function ReportsPage() {
         </div>
       ) : report ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             {[
               {
                 label: copy.grossRevenue,
@@ -309,6 +313,12 @@ export default function ReportsPage() {
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
               { label: copy.foodCost, value: formatCurrency(report.summary.cost, lang), icon: <AlertTriangle className="h-4 w-4" /> },
               { label: copy.profit, value: formatCurrency(report.summary.profit, lang), icon: <TrendingUp className="h-4 w-4" /> },
+              {
+                label: copy.netProfit,
+                value: formatCurrency(report.summary.net_profit ?? report.summary.profit, lang),
+                note: copy.afterOther(formatCurrency(report.summary.operating_expenses ?? 0, lang)),
+                icon: <TrendingUp className="h-4 w-4" />,
+              },
               {
                 label: copy.margin,
                 value: `${formatNumber(report.summary.margin, lang)}%`,

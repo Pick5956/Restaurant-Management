@@ -87,6 +87,8 @@ export type ManagerReport = {
     discount?: number;
     expenses?: number;
     expense_count?: number;
+    operating_expenses?: number;
+    net_profit?: number;
     revenue: number;
     cost: number;
     profit: number;

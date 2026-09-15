@@ -312,16 +312,22 @@ func (r *ReportRepository) ExpenseDetail(restaurantID uint, since, until time.Ti
 // ExpenseTotal adds up the expense ledger over [since, until): every row a
 // person typed or a stock-in wrote, whatever its category. It is money that
 // left the shop, not the recipe cost of food sold — see entity.Expense.
-func (r *ReportRepository) ExpenseTotal(restaurantID uint, since, until time.Time) (float64, int64, error) {
+//
+// Operating is the part that is not an ingredient purchase — wages, rent,
+// utilities, equipment, other. Net profit takes that part off gross profit; the
+// ingredient purchases are already in gross profit as the recipe cost of what
+// sold, and taking them off again would count the same food twice.
+func (r *ReportRepository) ExpenseTotal(restaurantID uint, since, until time.Time) (total float64, operating float64, count int64, err error) {
 	var row struct {
-		Total float64
-		Count int64
+		Total     float64
+		Operating float64
+		Count     int64
 	}
-	err := r.db.Model(&entity.Expense{}).
-		Select("COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count").
+	err = r.db.Model(&entity.Expense{}).
+		Select("COALESCE(SUM(amount), 0) AS total, COALESCE(SUM(CASE WHEN category <> ? THEN amount ELSE 0 END), 0) AS operating, COUNT(*) AS count", "ingredient").
 		Where("restaurant_id = ? AND spent_at >= ? AND spent_at < ?", restaurantID, since, until).
 		Scan(&row).Error
-	return row.Total, row.Count, err
+	return row.Total, row.Operating, row.Count, err
 }
 
 func (r *ReportRepository) MenuMargins(restaurantID uint, since time.Time) ([]ReportMenuMargin, error) {
