@@ -8,23 +8,26 @@ import {
   BoardHeading,
   CancelSheet,
   CompletedSheet,
-  DonePanel,
+  CountChip,
   EmptyKitchen,
+  KitchenSkeleton,
   KitchenTile,
+  LANE_WIDTH,
   LiveChip,
+  SortSwitch,
   Ticket,
   TicketButton,
-  KitchenSkeleton,
   TicketItem,
+  TicketLanes,
   type DoneRowProps,
 } from '@/src/components/kitchen/parts';
+import { AppText as Text } from '@/src/components/app-text';
 import { useReducedMotion } from '@/src/components/motion';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { useKitchenOrderEvents } from '@/src/hooks/use-kitchen-order-events';
 import { EmptyState, Feedback, StatusBadge } from '@/src/components/ui';
 import { itemStatusLabel } from '@/src/lib/format';
 import {
-  dealIntoColumns,
   formatKitchenMinutes,
   kitchenBoardStats,
   latestFinishedAt,
@@ -54,7 +57,7 @@ import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { useToast, type ToastInput } from '@/src/providers/toast-provider';
-import { spacing } from '@/src/theme';
+import { spacing, typeScale } from '@/src/theme';
 import type { Order, OrderItem } from '@/src/types/order';
 
 // The kitchen board, redrawn on 13 ก.ย. 2569 in the overview's language. The
@@ -85,24 +88,6 @@ const styles = StyleSheet.create({
   },
   board: {
     gap: 12,
-  },
-  tabletBoard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-  },
-  tabletColumns: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-  },
-  column: {
-    flex: 1,
-    gap: 12,
-  },
-  donePanel: {
-    width: 300,
   },
 });
 
@@ -499,7 +484,7 @@ export default function KitchenScreen() {
 
   // ---------------------------------------------------------------- tickets
 
-  const renderTicket = (order: Order) => {
+  const renderTicket = (order: Order, fill = false) => {
     const ticketKey = kitchenTicketKey(order);
     const items = (order.items || []).filter((item) => isCookingItem(item.status));
     const { title, icon } = ticketTitle(order);
@@ -555,6 +540,8 @@ export default function KitchenScreen() {
         urgencyLabel={urgencyLabel}
         language={language}
         footer={footer}
+        fill={fill}
+        style={fill ? { flex: 1 } : undefined}
       >
         {items.map((item, index) => {
           const fulfillment = kitchenFulfillmentContext(order.order_type, item.fulfillment_type);
@@ -619,23 +606,22 @@ export default function KitchenScreen() {
     ? `· ${formatKitchenMinutes(stats.averageDoneSeconds, language)}`
     : (language === 'th' ? 'รอบ' : 'rounds');
 
-  return (
-    <AppScreen
-      title={copy('ครัว', 'Kitchen')}
-      topLevel
-      action={<LiveChip live={realtimeStatus !== 'offline'} language={language} />}
-      refreshControl={<AppRefreshControl onRefresh={() => load()} />}
-      contentMaxWidth={1320}
-      contentStyle={{ gap: spacing.md }}
-    >
+  const count = (value: number) => value.toLocaleString(language === 'th' ? 'th-TH' : 'en-US');
+  const showSkeleton = loading && !hasSnapshot;
+  const notices = (
+    <>
       {error ? <Feedback title={copy('คิวครัวมีปัญหา', 'Kitchen queue issue')} detail={error} tone="danger" /> : null}
       {realtimeStatus === 'offline' ? (
         <Feedback
           tone="warning"
           title={copy('การเชื่อมต่อสดหลุด', 'Live updates disconnected')}
           detail={copy(
-            'คิวจะไม่อัปเดตเองจนกว่าจะต่อกลับได้ ระบบกำลังลองใหม่ ระหว่างนี้ดึงหน้าจอลงเพื่อรีเฟรชได้',
-            'The queue will not update on its own until the connection is back. Retrying now - pull down to refresh in the meantime.',
+            isTablet
+              ? 'คิวจะไม่อัปเดตเองจนกว่าจะต่อกลับได้ ระบบกำลังลองใหม่ และดึงคิวใหม่ทุก 1 นาทีอยู่แล้ว'
+              : 'คิวจะไม่อัปเดตเองจนกว่าจะต่อกลับได้ ระบบกำลังลองใหม่ ระหว่างนี้ดึงหน้าจอลงเพื่อรีเฟรชได้',
+            isTablet
+              ? 'The queue will not update on its own until the connection is back. Retrying now, and the queue still reloads every minute.'
+              : 'The queue will not update on its own until the connection is back. Retrying now - pull down to refresh in the meantime.',
           )}
         />
       ) : null}
@@ -646,34 +632,91 @@ export default function KitchenScreen() {
           tone="info"
         />
       ) : null}
+    </>
+  );
 
-      {loading && !hasSnapshot ? (
-        <KitchenSkeleton tablet={isTablet} label={copy('กำลังโหลดคิวครัว', 'Loading the kitchen queue')} />
-      ) : null}
+  // Tablet: the lanes need the screen's full height, so the page itself does
+  // not scroll; the counts ride on the heading row, and finished rounds open
+  // from their chip. The queue still refreshes live and every minute.
+  const tabletHeading = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      <Text accessibilityRole="header" style={[typeScale.hero, { fontWeight: '600', marginRight: 6 }]}>{copy('ครัว', 'Kitchen')}</Text>
+      <CountChip icon="flame-outline" label={copy('กำลังทำ', 'Cooking')} value={count(stats.cookingRounds)} suffix={copy('รอบ', 'rounds')} tone="brand" />
+      <CountChip icon="timer-outline" label={copy('เกินเวลา', 'Overdue')} value={count(stats.overdueRounds)} tone="danger" />
+      <CountChip
+        icon="checkmark-done"
+        label={copy('เสร็จ', 'Done')}
+        value={count(stats.doneRounds)}
+        suffix={stats.averageDoneSeconds !== null ? copy(`· เฉลี่ย ${formatKitchenMinutes(stats.averageDoneSeconds, language)}`, `· avg ${formatKitchenMinutes(stats.averageDoneSeconds, language)}`) : undefined}
+        tone="success"
+        onPress={() => setCompletedOpen(true)}
+      />
+    </View>
+  );
 
-      {loading && !hasSnapshot ? null : (<>
+  const tabletBoard = showSkeleton ? (
+    <KitchenSkeleton tablet label={copy('กำลังโหลดคิวครัว', 'Loading the kitchen queue')} />
+  ) : emptyBoard ? (
+    <View style={{ width: LANE_WIDTH * 2 }}>{emptyBoard}</View>
+  ) : (
+    <TicketLanes count={cookingTickets.length} language={language}>
+      {(height) => cookingTickets.map((order) => (
+        <View key={kitchenTicketKey(order)} style={{ width: LANE_WIDTH, height }}>
+          {renderTicket(order, true)}
+        </View>
+      ))}
+    </TicketLanes>
+  );
+
+  return (
+    <AppScreen
+      title={copy('ครัว', 'Kitchen')}
+      titleContent={isTablet ? tabletHeading : undefined}
+      topLevel
+      action={isTablet ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {cookingTickets.length > 1 ? <SortSwitch sort={sortMode} onSort={setSortMode} language={language} /> : null}
+          <LiveChip live={realtimeStatus !== 'offline'} language={language} />
+        </View>
+      ) : <LiveChip live={realtimeStatus !== 'offline'} language={language} />}
+      refreshControl={isTablet ? undefined : <AppRefreshControl onRefresh={() => load()} />}
+      scroll={!isTablet}
+      contentMaxWidth={isTablet ? 4000 : 1320}
+      contentStyle={{ gap: spacing.md }}
+    >
+      {isTablet ? (
+        <View style={{ flex: 1, minHeight: 0, gap: spacing.md }}>
+          {notices}
+          {tabletBoard}
+        </View>
+      ) : (<>
+      {notices}
+
+      {showSkeleton ? (
+        <KitchenSkeleton tablet={false} label={copy('กำลังโหลดคิวครัว', 'Loading the kitchen queue')} />
+      ) : (<>
       <View style={styles.tiles}>
         <KitchenTile
           icon="flame-outline"
           label={copy('กำลังทำ', 'Cooking')}
-          value={stats.cookingRounds.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+          value={count(stats.cookingRounds)}
           suffix={copy('รอบ', 'rounds')}
           tone="brand"
         />
         <KitchenTile
           icon="timer-outline"
           label={copy('เกินเวลา', 'Overdue')}
-          value={stats.overdueRounds.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+          value={count(stats.overdueRounds)}
           suffix={copy('รอบ', 'rounds')}
           tone="danger"
         />
         <KitchenTile
           icon="checkmark-done"
           label={copy('เสร็จแล้ว', 'Finished')}
-          value={stats.doneRounds.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+          value={count(stats.doneRounds)}
           suffix={averageSuffix}
           tone="success"
-          onPress={isTablet ? undefined : () => setCompletedOpen(true)}
+          onPress={() => setCompletedOpen(true)}
         />
       </View>
 
@@ -685,22 +728,10 @@ export default function KitchenScreen() {
         language={language}
       />
 
-      {isTablet ? (
-        <View style={styles.tabletBoard}>
-          <View style={styles.tabletColumns}>
-            {emptyBoard ? <View style={styles.column}>{emptyBoard}</View> : dealIntoColumns(cookingTickets, 2).map((column, index) => (
-              <View key={index} style={styles.column}>{column.map(renderTicket)}</View>
-            ))}
-          </View>
-          <View style={styles.donePanel}>
-            <DonePanel rows={doneRows} average={stats.averageDoneSeconds} language={language} empty={doneEmpty} />
-          </View>
-        </View>
-      ) : (
-        <View style={styles.board}>
-          {emptyBoard ?? cookingTickets.map(renderTicket)}
-        </View>
-      )}
+      <View style={styles.board}>
+        {emptyBoard ?? cookingTickets.map((order) => renderTicket(order))}
+      </View>
+      </>)}
       </>)}
 
       <CancelSheet
@@ -733,17 +764,15 @@ export default function KitchenScreen() {
         language={language}
       />
 
-      {!isTablet ? (
-        <CompletedSheet
-          open={completedOpen}
-          onClose={() => setCompletedOpen(false)}
-          rows={doneRows}
-          average={stats.averageDoneSeconds}
-          slowest={stats.slowestDoneSeconds}
-          language={language}
-          empty={doneEmpty}
-        />
-      ) : null}
+      <CompletedSheet
+        open={completedOpen}
+        onClose={() => setCompletedOpen(false)}
+        rows={doneRows}
+        average={stats.averageDoneSeconds}
+        slowest={stats.slowestDoneSeconds}
+        language={language}
+        empty={doneEmpty}
+      />
     </AppScreen>
   );
 }

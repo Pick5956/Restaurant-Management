@@ -139,11 +139,21 @@ export function latestFinishedAt(done: readonly BoardTicket[]): number | null {
   return latest;
 }
 
-/** Two columns for the tablet: tickets dealt left, right, left, right. */
-export function dealIntoColumns<T>(tickets: readonly T[], columns: number): T[][] {
-  const out: T[][] = Array.from({ length: Math.max(1, columns) }, () => []);
-  tickets.forEach((ticket, index) => { out[index % out.length].push(ticket); });
-  return out;
+/**
+ * The tablet board lays tickets out as lanes, left to right (the owner chose
+ * this on 15 ก.ย. 2569). A lane counts as out of sight once less than half of it
+ * is on screen, and this is how many are, for the "+N" at the right edge.
+ */
+export function lanesOutOfSight(total: number, laneWidth: number, gap: number, scrollX: number, viewportWidth: number): number {
+  if (total <= 0 || laneWidth <= 0 || viewportWidth <= 0) return 0;
+  const step = laneWidth + gap;
+  const visibleEdge = Math.max(0, scrollX) + viewportWidth;
+  let shown = 0;
+  for (let index = 0; index < total; index += 1) {
+    const middle = index * step + laneWidth / 2;
+    if (middle <= visibleEdge) shown = index + 1;
+  }
+  return total - shown;
 }
 
 export type { KitchenUrgency };

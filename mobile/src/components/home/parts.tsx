@@ -84,10 +84,19 @@ const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
  * Seven days, today at the right, the selected one in ink. A dot under a day
  * means it sold something; no dots at all means the history is not known.
  */
-export function DayStrip({ days, language, onSelect }: { days: HomeDay[]; language: 'th' | 'en'; onSelect: (date: string) => void }) {
+export function DayStrip({ days, language, onSelect, compact = false }: {
+  days: HomeDay[];
+  language: 'th' | 'en';
+  onSelect: (date: string) => void;
+  /**
+   * The tablet: seven 46pt squares on the heading row. Stretched across the
+   * width they were 250pt-wide buttons for picking a day (15 ก.ย. 2569).
+   */
+  compact?: boolean;
+}) {
   const names = language === 'th' ? WEEKDAYS_TH : WEEKDAYS_EN;
   return (
-    <View style={{ flexDirection: 'row', gap: 6 }}>
+    <View style={{ flexDirection: 'row', gap: compact ? 5 : 6 }}>
       {days.map((day) => (
         <Pressable
           key={day.date}
@@ -96,11 +105,9 @@ export function DayStrip({ days, language, onSelect }: { days: HomeDay[]; langua
           accessibilityLabel={day.date}
           onPress={() => onSelect(day.date)}
           style={({ pressed }) => ({
-            flex: 1,
+            ...(compact ? { width: 46, height: 46, justifyContent: 'center' as const } : { flex: 1, paddingTop: 5, paddingBottom: 4 }),
             alignItems: 'center',
-            paddingTop: 5,
-            paddingBottom: 4,
-            borderRadius: 13,
+            borderRadius: compact ? 12 : 13,
             backgroundColor: day.selected ? palette.textStrong : palette.surfaceSubtle,
             opacity: pressed ? 0.7 : 1,
           })}
@@ -320,6 +327,51 @@ export function AttentionRail({ cards, stacked }: { cards: AttentionCardProps[];
   );
 }
 
+/**
+ * The tablet's version of the rail: one card, one row per thing, the count on
+ * the right. Four stacked cards took about 660pt of the screen's 834; as rows
+ * they take about 240 and leave room for the table map under them.
+ */
+export function AttentionList({ cards }: { cards: AttentionCardProps[] }) {
+  return (
+    <HomeCard radius={18}>
+      {cards.map((card, index) => {
+        const ink = card.tone === 'danger' ? palette.danger : card.tone === 'warning' ? palette.warning : palette.info;
+        return (
+          <Pressable
+            key={card.key}
+            accessibilityRole={card.onPress ? 'button' : undefined}
+            accessibilityLabel={`${card.title} ${card.headline} ${card.detail}`}
+            disabled={!card.onPress}
+            onPress={card.onPress}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              minHeight: 58,
+              paddingVertical: 8,
+              paddingLeft: 12,
+              paddingRight: 12,
+              borderTopWidth: index === 0 ? 0 : 1,
+              borderTopColor: palette.divider,
+              backgroundColor: pressed ? palette.surfaceSubtle : 'transparent',
+            })}
+          >
+            <View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: ink, marginVertical: 4 }} />
+            <AppIcon name={card.icon} size={18} color={ink} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '700', color: ink }}>{card.title}</Text>
+              <Text numberOfLines={1} style={{ fontSize: 11.5, color: palette.muted }}>{card.detail}</Text>
+            </View>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: ink, fontVariant: ['tabular-nums'] }}>{card.headline}</Text>
+            {card.onPress ? <AppIcon name="chevron-forward" size={15} color={palette.placeholder} /> : null}
+          </Pressable>
+        );
+      })}
+    </HomeCard>
+  );
+}
+
 // ---------------------------------------------------------------- table map
 
 const cellLook: Record<HomeTableCell['state'], { bg: string; ink: string; dot: string; border: string }> = {
@@ -519,12 +571,28 @@ export function HomeSkeleton({ isToday, tablet, label }: { isToday: boolean; tab
     </View>
   );
 
-  if (tablet && isToday) {
+  if (tablet) {
+    const attentionRows = (
+      <View style={{ gap: 8 }}>
+        {heading(92)}
+        <HomeCard radius={18}>
+          {[0, 1, 2, 3].map((row) => (
+            <View key={row} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 58, paddingHorizontal: 12, borderTopWidth: row ? 1 : 0, borderTopColor: palette.divider }}>
+              <Bone width={4} height={34} radius={2} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Bone width="40%" height={11} />
+                <Bone width="65%" height={9} />
+              </View>
+              <Bone width={52} height={16} />
+            </View>
+          ))}
+        </HomeCard>
+      </View>
+    );
     return (
-      <SkeletonReveal label={label} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-        <View style={{ flex: 1.15, gap: 12 }}>{hero}{tiles}</View>
-        <View style={{ flex: 0.85, gap: 12 }}>{attention}</View>
-        <View style={{ flex: 1, gap: 12 }}>{tables}</View>
+      <SkeletonReveal label={label} style={{ flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1.45, gap: 12 }}>{hero}{tiles}{orders}</View>
+        <View style={{ flex: 1, gap: 12 }}>{isToday ? <>{attentionRows}{tables}</> : null}</View>
       </SkeletonReveal>
     );
   }
