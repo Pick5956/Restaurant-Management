@@ -272,10 +272,53 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
           <View style={{ width: `${Math.round(ticketProgress(minutes) * 100)}%`, height: 4, backgroundColor: 'rgba(255,255,255,0.75)' }} />
         </View>
       </View>
-      {fill ? (
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>{children}</ScrollView>
-      ) : children}
+      {fill ? <LaneItems language={language}>{children}</LaneItems> : children}
       {footer ? <View style={{ borderTopWidth: 1, borderTopColor: palette.divider, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 10, paddingLeft: 14 }}>{footer}</View> : null}
+    </View>
+  );
+}
+
+/**
+ * The dishes of a lane, scrolling inside the lane when there are more than fit.
+ *
+ * The list ends on a hairline. On the phone the footer's top border sat right
+ * under the last dish and closed the list; in a lane the footer is pinned to
+ * the bottom edge, so without its own line the last dish ran straight into
+ * the empty space below it (the owner saw it under "ลาบหมู", 15 ก.ย. 2569).
+ *
+ * When dishes run past the bottom, a chip says so until the list is scrolled to
+ * its end: a dish nobody scrolls to is a dish nobody cooks.
+ */
+function LaneItems({ children, language }: { children: ReactNode; language: 'th' | 'en' }) {
+  const [viewport, setViewport] = useState(0);
+  const [content, setContent] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const moreBelow = viewport > 0 && content - viewport - offset > 8;
+  return (
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={32}
+        onLayout={(event) => setViewport(event.nativeEvent.layout.height)}
+        onContentSizeChange={(_, height) => setContent(height)}
+        onScroll={(event) => setOffset(event.nativeEvent.contentOffset.y)}
+      >
+        <View style={{ borderBottomWidth: 1, borderBottomColor: palette.divider }}>{children}</View>
+      </ScrollView>
+      {moreBelow ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 }}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.96)']}
+            locations={[0, 0.6]}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: palette.surfaceStrong }}>
+            <AppIcon name="chevron-down" size={14} color={palette.primaryInk} />
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: palette.primaryInk }}>{language === 'th' ? 'เลื่อนดูรายการที่เหลือ' : 'More dishes below'}</Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
