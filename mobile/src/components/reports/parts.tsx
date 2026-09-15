@@ -5,7 +5,7 @@ import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppRefreshControl } from '@/src/components/app-shell';
-import { AppIcon } from '@/src/components/app-icon';
+import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { money } from '@/src/lib/format';
@@ -388,11 +388,13 @@ export type TableRow = { key: string; cells: ReactNode[]; highlight?: boolean };
  * page itself no longer scrolls. When rows run past the bottom, the edge fades
  * and says how many are left, until the last one is on screen.
  */
-export function ReportTable({ columns, rows, empty, onRefresh, language }: {
+export function ReportTable({ columns, rows, empty, onRefresh, footer, language }: {
   columns: TableColumn[];
   rows: TableRow[];
   empty: string;
   onRefresh?: () => void | Promise<void>;
+  /** A totals row pinned under the scrolling rows, one cell per column. */
+  footer?: ReactNode[];
   language: Language;
 }) {
   const [viewport, setViewport] = useState(0);
@@ -456,6 +458,43 @@ export function ReportTable({ columns, rows, empty, onRefresh, language }: {
       ) : (
         <Text style={{ paddingHorizontal: 16, paddingVertical: 18, fontSize: 13.5, color: palette.placeholder }}>{empty}</Text>
       )}
+      {footer && rows.length ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 42, paddingHorizontal: 14, backgroundColor: palette.textStrong }}>
+          {footer.map((cell, index) => (
+            <View key={columns[index]?.key ?? index} style={cellStyle(columns[index] ?? { key: String(index) })}>
+              {typeof cell === 'string' || typeof cell === 'number' ? <Cell align={columns[index]?.align} strong color="#fff">{cell}</Cell> : cell}
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Two icons that switch one card between views — on a phone the sales card is
+ * either the chart or the table, each at the card's full height (the owner
+ * chose this on 15 ก.ย. 2569, with icons rather than words).
+ */
+export function IconToggle<T extends string>({ options, value, onChange }: { options: { key: T; icon: AppIconName; label: string }[]; value: T; onChange: (key: T) => void }) {
+  return (
+    <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', padding: 3, gap: 2, borderRadius: 999, backgroundColor: palette.surfaceSubtle, borderWidth: 1, borderColor: palette.divider }}>
+      {options.map((option) => {
+        const on = option.key === value;
+        return (
+          <Pressable
+            key={option.key}
+            accessibilityRole="radio"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected: on }}
+            onPress={() => onChange(option.key)}
+            hitSlop={4}
+            style={({ pressed }) => ({ width: 38, height: 30, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? palette.surface : 'transparent', opacity: pressed && !on ? 0.6 : 1, ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}) })}
+          >
+            <AppIcon name={option.icon} size={18} color={on ? palette.primaryInk : palette.placeholder} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

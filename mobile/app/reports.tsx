@@ -10,6 +10,7 @@ import {
   CardHeading,
   Cell,
   HeadingChips,
+  IconToggle,
   MarginInfoSheet,
   PeriodButton,
   PeriodSheet,
@@ -61,6 +62,7 @@ function bangkokHour(value = new Date()) {
 }
 
 type MenuView = 'top' | 'profit';
+type SalesView = 'chart' | 'table';
 type StockFilter = 'all' | 'out' | 'low';
 
 export default function ReportsScreen() {
@@ -77,6 +79,7 @@ export default function ReportsScreen() {
   const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const [tab, setTab] = useState<ReportTab>('sales');
   const [menuView, setMenuView] = useState<MenuView>('top');
+  const [salesView, setSalesView] = useState<SalesView>('chart');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [hours, setHours] = useState<SalesByHourReport | null>(null);
@@ -316,17 +319,49 @@ export default function ReportsScreen() {
 
   // ---------------------------------------------------------------- layout
 
+  const salesTitle = singleDay ? copy('ยอดขายรายชั่วโมง', 'Sales by hour') : copy('ยอดขายรายวัน', 'Daily sales');
+  const salesFooter = [
+    singleDay ? copy('รวมทั้งวัน', 'Whole day') : copy(`รวม ${bars.length} วัน`, `${bars.length} days`),
+    summary ? summary.orders.toLocaleString(locale) : '',
+    summary ? money(summary.revenue, language) : '',
+    ...(tablet ? [summary && summary.orders > 0 ? money(summary.revenue / summary.orders, language) : '—'] : []),
+  ];
+  const salesTable = <ReportTable columns={salesColumns} rows={salesRows} footer={salesFooter} empty={copy('ยังไม่มียอดขายในช่วงนี้', 'No sales in this period')} onRefresh={load} language={language} />;
+
   const body = !report ? null : tab === 'sales' ? (
-    <View style={{ flex: 1, minHeight: 0, flexDirection: tablet ? 'row' : 'column', gap: spacing.md }}>
-      <ReportCard style={tablet ? { flex: 1.35 } : undefined}>
-        <CardHeading title={singleDay ? copy('ยอดขายรายชั่วโมง', 'Sales by hour') : copy('ยอดขายรายวัน', 'Daily sales')} detail={copy('แตะแท่งเพื่อดูตัวเลข', 'Tap a bar for its figures')} />
-        <SalesChart bars={bars} best={best} average={average} height={tablet ? undefined : 118} hourly={singleDay} language={language} />
-      </ReportCard>
+    tablet ? (
+      <View style={{ flex: 1, minHeight: 0, flexDirection: 'row', gap: spacing.md }}>
+        <ReportCard style={{ flex: 1.35 }}>
+          <CardHeading title={salesTitle} detail={copy('แตะแท่งเพื่อดูตัวเลข', 'Tap a bar for its figures')} />
+          <SalesChart bars={bars} best={best} average={average} hourly={singleDay} language={language} />
+        </ReportCard>
+        <ReportCard style={{ flex: 1 }}>
+          <CardHeading title={singleDay ? copy('รายชั่วโมง', 'By hour') : copy('รายวัน', 'By day')} detail={copy('ล่าสุดก่อน', 'Newest first')} />
+          {salesTable}
+        </ReportCard>
+      </View>
+    ) : (
+      // Phone: one card, chart or table at its full height (design B, 15 ก.ย. 2569).
       <ReportCard style={{ flex: 1 }}>
-        {tablet ? <CardHeading title={singleDay ? copy('รายชั่วโมง', 'By hour') : copy('รายวัน', 'By day')} detail={copy('ล่าสุดก่อน', 'Newest first')} /> : null}
-        <ReportTable columns={salesColumns} rows={salesRows} empty={copy('ยังไม่มียอดขายในช่วงนี้', 'No sales in this period')} onRefresh={load} language={language} />
+        <CardHeading
+          title={salesTitle}
+          detail={salesView === 'chart' ? copy('แตะแท่งเพื่อดูตัวเลข', 'Tap a bar for its figures') : copy('ล่าสุดก่อน', 'Newest first')}
+          trailing={(
+            <IconToggle<SalesView>
+              options={[
+                { key: 'chart', icon: 'bar-chart-outline', label: copy('ดูเป็นกราฟ', 'Show chart') },
+                { key: 'table', icon: 'list-outline', label: copy('ดูเป็นตาราง', 'Show table') },
+              ]}
+              value={salesView}
+              onChange={setSalesView}
+            />
+          )}
+        />
+        {salesView === 'chart'
+          ? <SalesChart bars={bars} best={best} average={average} hourly={singleDay} language={language} />
+          : salesTable}
       </ReportCard>
-    </View>
+    )
   ) : tab === 'menu' ? (
     tablet ? (
       <View style={{ flex: 1, minHeight: 0, flexDirection: 'row', gap: spacing.md }}>
