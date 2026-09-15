@@ -145,6 +145,26 @@ export function summarizeCurrentRound(items: readonly CurrentRoundItem[] | null 
   }, { quantity: 0, subtotal: 0 });
 }
 
+/**
+ * How many of each dish sit in the current round, keyed by menu id: the number a
+ * menu tile carries, so a waiter sees what is already in the basket without
+ * opening it. Pending lines only, like the basket and the web POS tile badge - a
+ * dish already with the kitchen is not part of this round.
+ */
+export function pendingQuantityByMenu(
+  items: readonly { menu_id?: number; status?: string; quantity?: number }[] | null | undefined,
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const item of items ?? []) {
+    if (item.status !== 'pending') continue;
+    const menuId = Number(item.menu_id);
+    const quantity = Number(item.quantity);
+    if (!Number.isInteger(menuId) || menuId <= 0 || !Number.isFinite(quantity) || quantity <= 0) continue;
+    counts.set(menuId, (counts.get(menuId) ?? 0) + quantity);
+  }
+  return counts;
+}
+
 export function currentRoundPresentation(summary: CurrentRoundSummary, language: 'th' | 'en') {
   const quantity = summary.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US');
 
