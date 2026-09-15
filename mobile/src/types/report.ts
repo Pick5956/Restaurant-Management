@@ -17,6 +17,26 @@ export type ReportSalesHour = { hour: number; orders: number; revenue: number; c
 
 export type SalesByHourReport = { date: string; hours: ReportSalesHour[] };
 
+export type ReportSalesDetailOrder = {
+  order_id: number;
+  order_number: string;
+  order_type: string;
+  table_label: string;
+  customer_name: string;
+  completed_at: string;
+  revenue: number;
+  cost: number;
+  profit: number;
+};
+
+export type SalesDetailReport = {
+  date: string;
+  hour: number | null;
+  orders: ReportSalesDetailOrder[];
+  summary: { orders?: number; revenue: number; cost: number; profit: number };
+  has_more: boolean;
+};
+
 export type ReportTopMenuItem = {
   menu_id: number;
   menu_name: string;

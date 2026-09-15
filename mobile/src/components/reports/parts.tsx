@@ -8,10 +8,13 @@ import { AppRefreshControl } from '@/src/components/app-shell';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
+import { getSalesByHour, getSalesDetail } from '@/src/api/report';
+import { Bone } from '@/src/components/skeleton';
 import { money } from '@/src/lib/format';
 import {
   calendarWeeks,
   draftToRange,
+  hourBars,
   monthTitle,
   presetLabel,
   presetRange,
@@ -27,6 +30,7 @@ import {
   type ReportTab,
 } from '@/src/lib/report-view';
 import { palette } from '@/src/theme';
+import type { SalesDetailReport } from '@/src/types/report';
 
 // The reports screen's pieces, in the overview's language: white cards with a
 // warm hairline, the one orange block for sales, figures in tabular digits.
@@ -380,7 +384,7 @@ function Legend({ swatch, label }: { swatch: ReactNode; label: string }) {
 // ---------------------------------------------------------------- table
 
 export type TableColumn = { key: string; label: string; flex?: number; width?: number; align?: 'left' | 'right' };
-export type TableRow = { key: string; cells: ReactNode[]; highlight?: boolean };
+export type TableRow = { key: string; cells: ReactNode[]; highlight?: boolean; onPress?: () => void; label?: string };
 
 /**
  * Every table on the reports screen (15 ก.ย. 2569): the column names stay put
@@ -400,6 +404,7 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
   const [viewport, setViewport] = useState(0);
   const [offset, setOffset] = useState(0);
   const [bottoms, setBottoms] = useState<Record<string, number>>({});
+  const pressable = rows.some((row) => row.onPress);
   const hidden = viewport > 0 ? rows.filter((row) => (bottoms[row.key] ?? 0) > offset + viewport + 2).length : 0;
   const cellStyle = (column: TableColumn) => ({
     ...(column.width ? { width: column.width } : { flex: column.flex ?? 1 }),
@@ -418,6 +423,7 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
             <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: '600', color: '#8B5E44' }}>{column.label}</Text>
           </View>
         ))}
+        {pressable ? <View style={{ width: 14 }} /> : null}
       </View>
       {rows.length ? (
         <View style={{ flex: 1, minHeight: 0 }}>
@@ -429,20 +435,29 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
             refreshControl={onRefresh ? <AppRefreshControl onRefresh={onRefresh} /> : undefined}
           >
             {rows.map((row) => (
-              <View
+              <Pressable
                 key={row.key}
+                accessibilityRole={row.onPress ? 'button' : undefined}
+                accessibilityLabel={row.label}
+                disabled={!row.onPress}
+                onPress={row.onPress}
                 onLayout={(event) => {
                   const bottom = event.nativeEvent.layout.y + event.nativeEvent.layout.height;
                   setBottoms((current) => (current[row.key] === bottom ? current : { ...current, [row.key]: bottom }));
                 }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40, paddingVertical: 5, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#F3EDE7', backgroundColor: row.highlight ? palette.accentSoft : palette.surface }}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40, paddingVertical: 5, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#F3EDE7', backgroundColor: pressed ? palette.surfaceSubtle : row.highlight ? palette.accentSoft : palette.surface })}
               >
                 {row.cells.map((cell, index) => (
                   <View key={columns[index]?.key ?? index} style={cellStyle(columns[index] ?? { key: String(index) })}>
                     {typeof cell === 'string' || typeof cell === 'number' ? <Cell align={columns[index]?.align}>{cell}</Cell> : cell}
                   </View>
                 ))}
-              </View>
+                {pressable ? (
+                  <View style={{ width: 14, alignItems: 'flex-end' }}>
+                    {row.onPress ? <AppIcon name="chevron-forward" size={14} color={palette.placeholder} /> : null}
+                  </View>
+                ) : null}
+              </Pressable>
             ))}
           </ScrollView>
           {hidden > 0 ? (
@@ -465,6 +480,7 @@ export function ReportTable({ columns, rows, empty, onRefresh, footer, language 
               {typeof cell === 'string' || typeof cell === 'number' ? <Cell align={columns[index]?.align} strong color="#fff">{cell}</Cell> : cell}
             </View>
           ))}
+          {pressable ? <View style={{ width: 14 }} /> : null}
         </View>
       ) : null}
     </View>
@@ -545,6 +561,139 @@ export function HeadingChips<T extends string>({ options, value, onChange }: { o
         );
       })}
     </View>
+  );
+}
+
+// ---------------------------------------------------------------- one day
+
+const WEEKDAY_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+const WEEKDAY_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * One day, opened by tapping its row (15 ก.ย. 2569, from design A): the day's
+ * sales, cost and profit, the hours it sold in, and every bill with its time
+ * and amount. Tapping a bill opens the order. The sheet loads its own data so
+ * the table stays as it was underneath.
+ */
+export function DaySheet({ date, today, best, onClose, onOpenOrder, language }: {
+  date: string | null;
+  today: string;
+  best: boolean;
+  onClose: () => void;
+  onOpenOrder: (orderId: number) => void;
+  language: Language;
+}) {
+  const th = language === 'th';
+  const [detail, setDetail] = useState<SalesDetailReport | null>(null);
+  const [hours, setHours] = useState<ReportBar[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [shownDate, setShownDate] = useState<string | null>(date);
+
+  useEffect(() => {
+    if (!date) return;
+    let cancelled = false;
+    setShownDate(date);
+    setDetail(null);
+    setHours([]);
+    setFailed(false);
+    Promise.all([getSalesDetail(date), getSalesByHour(date)])
+      .then(([sales, byHour]) => {
+        if (cancelled) return;
+        setDetail(sales);
+        setHours(hourBars(byHour.hours ?? [], date, today, Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: '2-digit', hour12: false }).format(new Date())) % 24));
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [date, today]);
+
+  const day = shownDate;
+  const weekday = day ? new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)), 12)).getUTCDay() : 0;
+  const title = day ? `${th ? WEEKDAY_TH[weekday] : WEEKDAY_EN[weekday]} ${reportRangeLabel({ from: day, to: day }, language)}` : '';
+  const bills = [...(detail?.orders ?? [])].sort((a, b) => (a.completed_at < b.completed_at ? 1 : -1));
+  const peak = Math.max(1, ...hours.map((bar) => bar.revenue));
+  const clock = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+  const stat = (label: string, value: string, color?: string) => (
+    <View style={{ flex: 1, borderRadius: 12, backgroundColor: palette.accentSoft, paddingVertical: 6, paddingHorizontal: 10 }}>
+      <Text style={{ fontSize: 11, color: palette.placeholder }}>{label}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 15.5, fontWeight: '700', color: color ?? palette.textStrong, fontVariant: ['tabular-nums'] }}>{value}</Text>
+    </View>
+  );
+
+  return (
+    <BottomSheet open={date !== null} onClose={onClose} heightFraction={0.9} label={th ? 'ปิด' : 'Close'} showClose>
+      <SheetTitle
+        title={title}
+        subtitle={detail
+          ? `${th ? `${bills.length.toLocaleString('th-TH')} บิล` : `${bills.length} bills`}${best ? (th ? ' · ขายดีสุดของช่วงนี้' : ' · best day of the period') : ''}${day === today ? (th ? ' · ยังไม่จบวัน' : ' · still open') : ''}`
+          : (th ? 'กำลังโหลด' : 'Loading')}
+      />
+      {failed ? (
+        <Text style={{ paddingHorizontal: 16, paddingVertical: 20, fontSize: 14, color: palette.danger }}>{th ? 'โหลดข้อมูลของวันนี้ไม่ได้ ปิดแล้วลองใหม่' : 'Could not load this day. Close and try again.'}</Text>
+      ) : !detail ? (
+        <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>{[0, 1, 2].map((index) => <Bone key={index} height={48} radius={12} style={{ flex: 1 }} />)}</View>
+          <Bone height={70} radius={10} />
+          {[0, 1, 2, 3, 4].map((index) => <Bone key={index} height={40} radius={8} />)}
+        </View>
+      ) : (
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
+            {stat(th ? 'ยอดขาย' : 'Sales', money(detail.summary.revenue, language))}
+            {stat(th ? 'ต้นทุนวัตถุดิบ' : 'Ingredients', money(detail.summary.cost, language))}
+            {stat(th ? 'กำไรขั้นต้น' : 'Gross profit', money(detail.summary.profit, language), detail.summary.profit >= 0 ? palette.success : palette.danger)}
+          </View>
+          {hours.length ? (
+            <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
+              <Text style={{ fontSize: 11.5, color: palette.placeholder, marginBottom: 4 }}>{th ? `รายชั่วโมง ${hours[0].label}–${hours[hours.length - 1].label}` : `By hour ${hours[0].label}–${hours[hours.length - 1].label}`}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 64 }}>
+                {hours.map((bar) => (
+                  <View key={bar.key} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                    {bar.revenue > 0 ? (
+                      <View style={{ width: '100%', height: Math.max(3, Math.round((bar.revenue / peak) * 54)), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: bar.open ? BAR_OPEN : bar.revenue === peak ? BAR_BEST : BAR }} />
+                    ) : (
+                      <View style={{ width: '100%', height: 6, borderRadius: 2, borderWidth: 1, borderStyle: 'dashed', borderColor: '#D6C3B6' }} />
+                    )}
+                  </View>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 4, marginTop: 2 }}>
+                {hours.map((bar, index) => (
+                  <Text key={bar.key} style={{ flex: 1, textAlign: 'center', fontSize: 9.5, color: '#8B6F5F' }}>{index % 2 === 0 ? bar.axis : ''}</Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <ReportTable
+            columns={[
+              { key: 'time', label: th ? 'เวลา' : 'Time', width: 50 },
+              { key: 'bill', label: th ? 'บิล' : 'Bill', flex: 1 },
+              { key: 'amount', label: th ? 'ยอด' : 'Amount', width: 84, align: 'right' },
+            ]}
+            rows={bills.map((bill) => ({
+              key: String(bill.order_id),
+              label: `${clock(bill.completed_at)} ${bill.table_label || bill.customer_name} ${money(bill.revenue, language)}`,
+              onPress: () => onOpenOrder(bill.order_id),
+              cells: [
+                <Cell key="time" muted>{clock(bill.completed_at)}</Cell>,
+                <Cell
+                  key="bill"
+                  strong
+                  sub={bill.order_number}
+                >
+                  {bill.table_label ? (th ? `โต๊ะ ${bill.table_label}` : `Table ${bill.table_label}`) : (bill.customer_name || (th ? 'ซื้อกลับบ้าน' : 'Takeaway'))}
+                </Cell>,
+                <Cell key="amount" align="right" strong>{money(bill.revenue, language)}</Cell>,
+              ],
+            }))}
+            empty={th ? 'วันนี้ไม่มีบิลที่ชำระแล้ว' : 'No paid bills on this day'}
+            language={language}
+          />
+          {detail.has_more ? (
+            <Text style={{ paddingHorizontal: 16, paddingVertical: 8, fontSize: 12, color: palette.placeholder, textAlign: 'center' }}>{th ? 'แสดง 300 บิลแรกของวัน' : 'Showing the first 300 bills of the day'}</Text>
+          ) : null}
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 

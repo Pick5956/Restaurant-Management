@@ -9,6 +9,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import {
   CardHeading,
   Cell,
+  DaySheet,
   HeadingChips,
   IconToggle,
   MarginInfoSheet,
@@ -80,6 +81,7 @@ export default function ReportsScreen() {
   const [tab, setTab] = useState<ReportTab>('sales');
   const [menuView, setMenuView] = useState<MenuView>('top');
   const [salesView, setSalesView] = useState<SalesView>('chart');
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [hours, setHours] = useState<SalesByHourReport | null>(null);
@@ -194,6 +196,9 @@ export default function ReportsScreen() {
   const salesRows: TableRow[] = [...(singleDay ? bars.filter((bar) => bar.revenue > 0 || bar.open) : bars)].reverse().map((bar) => ({
     key: bar.key,
     highlight: bar.key === best?.key,
+    // A day row opens that day (15 ก.ย. 2569). An hour row has nothing further.
+    onPress: !singleDay && bar.revenue > 0 ? () => setOpenDay(bar.key) : undefined,
+    label: `${bar.label} ${bar.revenue > 0 ? money(bar.revenue, language) : ''}`,
     cells: [
       <Cell key="when" strong={bar.key === best?.key} sub={bar.open ? (singleDay ? copy('ยังไม่จบชั่วโมง', 'still open') : copy('ยังไม่จบวัน', 'still open')) : undefined}>{bar.label}</Cell>,
       <Cell key="orders" align="right" muted>{bar.orders || '—'}</Cell>,
@@ -457,6 +462,17 @@ export default function ReportsScreen() {
           language={language}
         />
       ) : null}
+      <DaySheet
+        date={openDay}
+        today={today}
+        best={openDay !== null && openDay === best?.key}
+        onClose={() => setOpenDay(null)}
+        onOpenOrder={(orderId) => {
+          setOpenDay(null);
+          router.push({ pathname: '/order/[id]', params: { id: String(orderId) } });
+        }}
+        language={language}
+      />
       <PeriodSheet open={periodOpen} onClose={() => setPeriodOpen(false)} range={range} today={today} onApply={setRange} language={language} />
     </AppScreen>
   );

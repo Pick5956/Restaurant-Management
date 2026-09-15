@@ -18,6 +18,11 @@ export function buildManagerReportRangePath(from: string, to: string): string {
   return `/api/v1/reports/manager?${query.toString()}`;
 }
 
+/** The bills behind one day of the sales chart. */
+export function buildSalesDetailPath(date: string): string {
+  return `/api/v1/reports/sales-detail?${new URLSearchParams({ date }).toString()}`;
+}
+
 export function buildSalesByHourPath(date: string): string {
   return `/api/v1/reports/sales-by-hour?${new URLSearchParams({ date }).toString()}`;
 }
