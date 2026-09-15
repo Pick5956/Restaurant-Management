@@ -1,20 +1,51 @@
+import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
 import { getManagerReport, getTopMenuItemsByMonth } from '@/src/api/report';
-import { AppIcon, type AppIconName } from '@/src/components/app-icon';
-import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
-import { Button, ChipGroup, EmptyState, Feedback, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
+import { AppText as Text } from '@/src/components/app-text';
+import {
+  CardHeading,
+  DayTable,
+  MenuProfitCard,
+  ReportCard,
+  ReportFigures,
+  ReportTabs,
+  SalesChart,
+  StockRisksView,
+  TopSellersCard,
+  type ReportFigure,
+} from '@/src/components/reports/parts';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { EmptyState, Feedback } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
 import { loadFilteredReplacement } from '@/src/lib/filter-reload';
-import { getBangkokReportMonth, shiftReportMonth } from '@/src/lib/report-query';
+import { formatBangkokDate } from '@/src/lib/order-query';
 import { can } from '@/src/lib/rbac';
+import {
+  averagePerFinishedDay,
+  bestReportDay,
+  fillReportDays,
+  reportPeriodLabel,
+  sortStockRisks,
+  type ReportTab,
+} from '@/src/lib/report-view';
+import { getBangkokReportMonth, shiftReportMonth } from '@/src/lib/report-query';
 import { createRequestGeneration } from '@/src/lib/request-generation';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
+import { breakpoints, palette, spacing } from '@/src/theme';
 import type { ManagerReport, TopMenuItemsReport } from '@/src/types/report';
+
+// The reports screen, redrawn on 15 ก.ย. 2569 (the owner chose design B from
+// two): the five figures stay on top, and the rest sits behind three tabs —
+// sales, menu, stock — so each fits a screen instead of the page running four
+// screens long. The 14-day report and the month's best sellers load apart, so
+// stepping to another month redraws that one card and leaves the rest standing.
+
+// Fixed window, matching the web reports page. There is no period picker.
+const REPORT_DAYS = 14;
 
 export default function ReportsScreen() {
   const { width } = useWindowDimensions();
@@ -22,199 +53,164 @@ export default function ReportsScreen() {
   const { copy, language } = useDisplayPreferences();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
   const canView = can(activeMembership, 'view_reports');
+  const tablet = width >= breakpoints.tabletWorkspace;
   const currentMonth = useMemo(() => getBangkokReportMonth(), []);
-  // Fixed window, matching the web reports page. There is no period picker.
-  const REPORT_DAYS = 14;
+
+  const [tab, setTab] = useState<ReportTab>('sales');
   const [topMenuMonth, setTopMenuMonth] = useState(currentMonth);
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [topMenus, setTopMenus] = useState<TopMenuItemsReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setReportError] = useState<string | null>(null);
-  const requestGenerationRef = useRef(createRequestGeneration());
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const [menusLoading, setMenusLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [today, setToday] = useState(() => formatBangkokDate());
+  const reportRequest = useRef(createRequestGeneration());
+  const menuRequest = useRef(createRequestGeneration());
 
-  const load = useCallback(async () => {
+  const loadReport = useCallback(async () => {
     if (!canView) {
-      requestGenerationRef.current.invalidate();
-      setReport(null);
-      setTopMenus(null);
       setLoading(false);
       return;
     }
-    const request = requestGenerationRef.current.begin();
-    const setError = (value: string | null) => {
-      if (requestGenerationRef.current.isCurrent(request)) setReportError(value);
-    };
+    const request = reportRequest.current.begin();
     setLoading(true);
     setError(null);
-    setReport(null);
-    setTopMenus(null);
-    const result = await loadFilteredReplacement(() => Promise.all([
-        getManagerReport(REPORT_DAYS),
-        getTopMenuItemsByMonth(topMenuMonth),
-      ]));
-    if (!requestGenerationRef.current.isCurrent(request)) return;
+    const result = await loadFilteredReplacement(() => getManagerReport(REPORT_DAYS));
+    if (!reportRequest.current.isCurrent(request)) return;
     if (result.ok) {
-      const [managerReport, topMenuReport] = result.data;
-      setReport(managerReport);
-      setTopMenus(topMenuReport);
+      setReport(result.data);
+      setToday(formatBangkokDate());
     } else {
-      setReport(null);
-      setTopMenus(null);
       setError(result.error instanceof Error ? result.error.message : copy('โหลดรายงานไม่สำเร็จ', 'Could not load reports.'));
     }
     setLoading(false);
-  }, [canView, copy, topMenuMonth]);
+  }, [canView, copy]);
+
+  const loadMenus = useCallback(async () => {
+    if (!canView) {
+      setMenusLoading(false);
+      return;
+    }
+    const request = menuRequest.current.begin();
+    setMenusLoading(true);
+    const result = await loadFilteredReplacement(() => getTopMenuItemsByMonth(topMenuMonth));
+    if (!menuRequest.current.isCurrent(request)) return;
+    setTopMenus(result.ok ? result.data : null);
+    setMenusLoading(false);
+  }, [canView, topMenuMonth]);
+
   useEffect(() => {
-    void load();
-    return () => requestGenerationRef.current.invalidate();
-  }, [load]);
+    void loadReport();
+    const generation = reportRequest.current;
+    return () => generation.invalidate();
+  }, [loadReport]);
+  useEffect(() => {
+    void loadMenus();
+    const generation = menuRequest.current;
+    return () => generation.invalidate();
+  }, [loadMenus]);
+
+  const days = useMemo(() => (report ? fillReportDays(report.sales_days, REPORT_DAYS, today) : []), [report, today]);
+  const best = useMemo(() => bestReportDay(days), [days]);
+  const average = useMemo(() => averagePerFinishedDay(days), [days]);
+  const periodLabel = days.length ? reportPeriodLabel(days[0].date, days[days.length - 1].date, language) : '';
+  const stock = useMemo(() => sortStockRisks(report?.stock_risks ?? []), [report]);
+
   const canGoPreviousMonth = topMenuMonth.year > 2000 || topMenuMonth.month > 1;
   const canGoNextMonth = topMenuMonth.year < currentMonth.year
     || (topMenuMonth.year === currentMonth.year && topMenuMonth.month < currentMonth.month);
-  const topMenuMonthLabel = useMemo(
-    () => new Intl.DateTimeFormat(locale, {
-      month: 'long',
-      year: 'numeric',
-      timeZone: 'Asia/Bangkok',
-    }).format(new Date(Date.UTC(topMenuMonth.year, topMenuMonth.month - 1, 1, 12))),
-    [locale, topMenuMonth],
-  );
-  const dateLabel = useCallback((value: string) => {
-    const [year, month, day] = value.split('-').map(Number);
-    if (!year || !month || !day) return value;
-    return new Intl.DateTimeFormat(locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'Asia/Bangkok',
-    }).format(new Date(Date.UTC(year, month - 1, day, 12)));
-  }, [locale]);
-
-  const summaryPanel = report ? (
-    <Surface>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <AppIcon color={palette.muted} name="analytics-outline" size={20} />
-        <Text selectable style={typeScale.title}>{copy('ภาพรวม', 'Overview')}</Text>
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg }}>
-        {([
-          { icon: 'cash-outline', label: copy('ยอดขาย', 'Revenue'), value: money(report.summary.revenue, language) },
-          { icon: 'receipt-outline', label: copy('ออเดอร์', 'Orders'), value: report.summary.orders.toLocaleString(locale) },
-          { icon: 'cube-outline', label: copy('ต้นทุนวัตถุดิบ', 'Ingredient cost'), value: money(report.summary.cost, language) },
-          { icon: 'trending-up-outline', label: copy('กำไรขั้นต้น', 'Gross profit'), value: money(report.summary.profit, language) },
-          { icon: 'pie-chart-outline', label: copy('มาร์จิน', 'Margin'), value: `${Number(report.summary.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` },
-        ] as { icon: AppIconName; label: string; value: string }[]).map((item) => (
-          <View key={item.label} style={{ minWidth: 126, minHeight: 66, flexBasis: tabletWorkspace ? 150 : 126, flexGrow: 1, justifyContent: 'space-between', gap: spacing.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <AppIcon color={palette.muted} name={item.icon} size={18} />
-              <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{item.label}</Text>
-            </View>
-            <Text selectable style={typeScale.number}>{item.value}</Text>
-          </View>
-        ))}
-      </View>
-    </Surface>
-  ) : null;
-
-  const dailySalesPanel = report ? (
-    <Surface>
-      <SectionHeader title={copy('ยอดขายรายวัน', 'Daily sales')} detail={copy(`ย้อนหลัง ${REPORT_DAYS.toLocaleString('th-TH')} วัน`, `Last ${REPORT_DAYS.toLocaleString('en-US')} days`)} />
-      {report.sales_days.length ? report.sales_days.map((day) => (
-        <View key={day.order_date} style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, borderTopColor: palette.border }}>
-          <Text selectable style={[typeScale.caption, { flex: 1, color: palette.muted }]}>{dateLabel(day.order_date)}</Text>
-          <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy(`${day.orders.toLocaleString('th-TH')} ออเดอร์`, `${day.orders.toLocaleString('en-US')} orders`)}</Text>
-          <Text selectable style={typeScale.number}>{money(day.revenue, language)}</Text>
-        </View>
-      )) : <EmptyState title={copy('ยังไม่มียอดขายในช่วงนี้', 'No sales in this period yet')} />}
-    </Surface>
-  ) : null;
-
-  const topMenusPanel = report ? (
-    <Surface>
-      <SectionHeader title={copy('เมนูขายดี', 'Top sellers')} detail={topMenuMonthLabel} />
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <Button compact variant="secondary" icon="chevron-back" label={copy('เดือนก่อน', 'Previous')} onPress={() => setTopMenuMonth((current) => shiftReportMonth(current, -1))} disabled={loading || !canGoPreviousMonth} style={{ flex: 1 }} />
-        <Button compact variant="secondary" icon="chevron-forward" label={copy('เดือนถัดไป', 'Next')} onPress={() => setTopMenuMonth((current) => shiftReportMonth(current, 1))} disabled={loading || !canGoNextMonth} style={{ flex: 1 }} />
-      </View>
-      {topMenus?.items.length ? topMenus.items.slice(0, 10).map((item, index) => (
-        <View key={`${item.menu_id}-${item.menu_name}`} style={{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, borderTopColor: palette.border }}>
-          <Text selectable style={[typeScale.caption, { width: 26, color: palette.muted }]}>#{(index + 1).toLocaleString(locale)}</Text>
-          <Text selectable style={[typeScale.cardTitle, { flex: 1 }]}>{item.menu_name}</Text>
-          <Text selectable style={typeScale.number}>{copy(`${item.quantity.toLocaleString('th-TH')} จาน`, `${item.quantity.toLocaleString('en-US')} sold`)}</Text>
-        </View>
-      )) : <EmptyState title={copy('ยังไม่มีเมนูขายในเดือนนี้', 'No menu sales this month yet')} />}
-    </Surface>
-  ) : null;
-
-  const profitabilityPanel = report ? (
-    <Surface>
-      <SectionHeader title={copy('กำไรต่อเมนู', 'Menu profitability')} detail={copy('เรียงจากกำไรสูงสุด', 'Highest profit first')} />
-      {report.menu_margins.length ? report.menu_margins.map((item) => (
-        <View key={item.menu_id} style={{ gap: spacing.sm, borderTopWidth: 1, borderTopColor: palette.border, paddingVertical: spacing.md }}>
-          <View style={{ flexDirection: 'row', gap: spacing.md }}>
-            <Text selectable style={[typeScale.cardTitle, { flex: 1 }]}>{item.menu_name}</Text>
-            <Text selectable style={typeScale.number}>{money(item.profit, language)}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <Text selectable style={[typeScale.caption, { flex: 1, color: palette.muted }]}>{copy(`${item.quantity.toLocaleString('th-TH')} จาน · รายได้ ${money(item.revenue, 'th')}`, `${item.quantity.toLocaleString('en-US')} sold · Revenue ${money(item.revenue, 'en')}`)}</Text>
-            <StatusBadge label={`${Number(item.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} tone={item.margin < 20 ? 'danger' : item.margin < 35 ? 'warning' : 'success'} />
-          </View>
-        </View>
-      )) : <EmptyState title={copy('ยังคำนวณกำไรไม่ได้', 'Profit cannot be calculated yet')} detail={copy('เพิ่มสูตรวัตถุดิบในเมนูเพื่อคำนวณต้นทุน', 'Add ingredient recipes to calculate costs.')} />}
-    </Surface>
-  ) : null;
-
-  const stockRisksPanel = report ? (
-    <Surface>
-      <SectionHeader title={copy('สต็อกต้องดู', 'Stock risks')} detail={copy('รายการที่ควรวางแผนเติม', 'Plan these restocks')} />
-      {report.stock_risks.length ? report.stock_risks.map((item) => (
-        <View key={item.id} style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, borderTopColor: palette.border }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text selectable style={typeScale.cardTitle}>{item.name}</Text>
-            <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy(`${item.category || 'ไม่มีหมวด'} · เติม ${Number(item.restock_estimate).toLocaleString('th-TH')} ${item.unit}`, `${item.category || 'Uncategorized'} · Restock ${Number(item.restock_estimate).toLocaleString('en-US')} ${item.unit}`)}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 4 }}>
-            <Text selectable style={typeScale.number}>{Number(item.stock).toLocaleString(locale)} {item.unit}</Text>
-            <StatusBadge label={item.status === 'out' ? copy('หมด', 'Out') : copy('ใกล้หมด', 'Low')} tone={item.status === 'out' ? 'danger' : 'warning'} />
-          </View>
-        </View>
-      )) : <EmptyState title={copy('ไม่มีสต็อกเสี่ยงขาด', 'No stock at risk')} />}
-    </Surface>
-  ) : null;
+  const monthDate = new Date(Date.UTC(topMenuMonth.year, topMenuMonth.month - 1, 1, 12));
+  const monthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' }).format(monthDate);
+  const shortMonthLabel = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' }).format(monthDate);
 
   if (!canView) {
     return (
-      <AppScreen title={copy('รายงานร้าน', 'Reports')} subtitle={copy('ยอดขาย กำไร และสต็อก', 'Sales, profit, and stock')} topLevel={false}>
+      <AppScreen title={copy('รายงานร้าน', 'Reports')} topLevel={false}>
         <Feedback title={copy('ไม่มีสิทธิ์ดูรายงาน', 'Report access unavailable')} detail={copy('หน้านี้ต้องใช้สิทธิ์ดูรายงานของร้าน', 'This page requires permission to view restaurant reports.')} tone="info" />
       </AppScreen>
     );
   }
 
+  const figures: ReportFigure[] = report ? [
+    { key: 'revenue', label: copy('ยอดขาย', 'Sales'), value: money(report.summary.revenue, language), note: average > 0 ? copy(`เฉลี่ยวันละ ${money(average, language)}`, `${money(average, language)} a day`) : undefined, tone: 'hero' },
+    { key: 'orders', label: copy('ออเดอร์', 'Orders'), value: report.summary.orders.toLocaleString(locale), note: report.summary.orders > 0 ? copy(`เฉลี่ยบิลละ ${money(report.summary.revenue / report.summary.orders, language)}`, `${money(report.summary.revenue / report.summary.orders, language)} a bill`) : undefined },
+    { key: 'cost', label: copy('ต้นทุนวัตถุดิบ', 'Ingredient cost'), value: money(report.summary.cost, language) },
+    { key: 'profit', label: copy('กำไรขั้นต้น', 'Gross profit'), value: money(report.summary.profit, language), tone: report.summary.profit >= 0 ? 'good' : undefined },
+    { key: 'margin', label: copy('มาร์จิน', 'Margin'), value: `${Number(report.summary.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` },
+  ] : [];
+
+  const salesTab = (
+    <View style={{ flexDirection: tablet ? 'row' : 'column', alignItems: tablet ? 'flex-start' : 'stretch', gap: spacing.md }}>
+      <ReportCard style={tablet ? { flex: 1.35 } : undefined}>
+        <CardHeading title={copy('ยอดขายรายวัน', 'Daily sales')} detail={copy('แตะแท่งเพื่อดูตัวเลขของวันนั้น', 'Tap a bar for that day')} />
+        <SalesChart days={days} best={best} average={average} height={tablet ? 300 : 170} language={language} />
+      </ReportCard>
+      <ReportCard style={tablet ? { flex: 1 } : undefined}>
+        <DayTable days={days} best={best} language={language} showAverage />
+      </ReportCard>
+    </View>
+  );
+
+  const menuTab = (
+    <View style={{ flexDirection: tablet ? 'row' : 'column', alignItems: tablet ? 'flex-start' : 'stretch', gap: spacing.md }}>
+      <View style={tablet ? { flex: 1 } : undefined}>
+        <TopSellersCard
+          items={topMenus?.items ?? []}
+          monthLabel={monthLabel}
+          shortMonthLabel={shortMonthLabel}
+          onPrev={() => setTopMenuMonth((current) => shiftReportMonth(current, -1))}
+          onNext={() => setTopMenuMonth((current) => shiftReportMonth(current, 1))}
+          canPrev={canGoPreviousMonth}
+          canNext={canGoNextMonth}
+          loading={menusLoading}
+          language={language}
+        />
+      </View>
+      <View style={tablet ? { flex: 1 } : undefined}>
+        <MenuProfitCard items={report?.menu_margins ?? []} periodLabel={copy(`${REPORT_DAYS} วัน`, `${REPORT_DAYS} days`)} language={language} />
+      </View>
+    </View>
+  );
+
+  const skeleton = (
+    <SkeletonReveal label={copy('กำลังโหลดรายงาน', 'Loading reports')} style={{ gap: spacing.md }}>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        {(tablet ? [0, 1, 2, 3, 4] : [0, 1, 2]).map((index) => <Bone key={index} height={tablet ? 78 : 66} radius={18} style={{ flex: 1 }} />)}
+      </View>
+      <Bone width={tablet ? 440 : '100%'} height={44} radius={999} />
+      <View style={{ flexDirection: tablet ? 'row' : 'column', gap: spacing.md }}>
+        <Bone height={tablet ? 380 : 240} radius={20} style={tablet ? { flex: 1.35 } : undefined} />
+        <Bone height={tablet ? 380 : 300} radius={20} style={tablet ? { flex: 1 } : undefined} />
+      </View>
+    </SkeletonReveal>
+  );
+
   return (
-    <AppScreen title={copy('รายงานร้าน', 'Reports')} subtitle={copy('ยอดขาย กำไร และสต็อก', 'Sales, profit, and stock')} topLevel={false} refreshControl={<AppRefreshControl onRefresh={load} />}>
+    <AppScreen
+      title={copy('รายงานร้าน', 'Reports')}
+      subtitle={periodLabel ? copy(`${REPORT_DAYS} วัน · ${periodLabel}`, `${REPORT_DAYS} days · ${periodLabel}`) : copy('ยอดขาย กำไร และสต๊อก', 'Sales, profit and stock')}
+      topLevel={false}
+      contentMaxWidth={tablet ? 1180 : undefined}
+      contentStyle={{ gap: spacing.md }}
+      refreshControl={<AppRefreshControl onRefresh={async () => { await Promise.all([loadReport(), loadMenus()]); }} />}
+    >
       {error ? <Feedback title={copy('โหลดรายงานไม่ได้', 'Could not load reports')} detail={error} tone="danger" /> : null}
-      {tabletWorkspace && report ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xl }}>
-          <View style={{ flex: 1.35, gap: spacing.xl }}>
-            {summaryPanel}
-            {dailySalesPanel}
-            {profitabilityPanel}
-          </View>
-          <View style={{ flex: 0.85, gap: spacing.xl }}>
-            {topMenusPanel}
-            {stockRisksPanel}
-          </View>
-        </View>
-      ) : (
-        <View style={{ gap: spacing.xl }}>
-          {summaryPanel}
-          {dailySalesPanel}
-          {topMenusPanel}
-          {profitabilityPanel}
-          {stockRisksPanel}
-        </View>
-      )}
+      {loading && !report ? skeleton : report ? (
+        <>
+          <ReportFigures figures={figures} tablet={tablet} />
+          <ReportTabs tab={tab} onTab={setTab} stockCount={stock.out.length + stock.low.length} language={language} tablet={tablet} />
+          {tab === 'sales' ? (
+            days.some((day) => day.revenue > 0) ? salesTab : <EmptyState title={copy('ยังไม่มียอดขายในช่วงนี้', 'No sales in this period yet')} />
+          ) : tab === 'menu' ? menuTab : (
+            <StockRisksView out={stock.out} low={stock.low} language={language} columns={tablet} onOpenInventory={() => router.push('/inventory' as never)} />
+          )}
+          {tab !== 'stock' ? (
+            <Text style={{ fontSize: 12, color: palette.placeholder, textAlign: 'center' }}>
+              {copy('ยอดขายนับเฉพาะบิลที่ชำระแล้ว · วันนี้ยังไม่จบวัน', 'Sales count paid bills only · today is still open')}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
     </AppScreen>
   );
 }
