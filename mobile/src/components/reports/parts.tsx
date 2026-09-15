@@ -4,6 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
+import { AppRefreshControl } from '@/src/components/app-shell';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
@@ -15,7 +16,6 @@ import {
   presetLabel,
   presetRange,
   rangeDayCount,
-  readableAmount,
   REPORT_MAX_DAYS,
   REPORT_PRESETS,
   reportRangeLabel,
@@ -27,7 +27,6 @@ import {
   type ReportTab,
 } from '@/src/lib/report-view';
 import { palette } from '@/src/theme';
-import type { ManagerReport, ReportTopMenuItem } from '@/src/types/report';
 
 // The reports screen's pieces, in the overview's language: white cards with a
 // warm hairline, the one orange block for sales, figures in tabular digits.
@@ -40,7 +39,7 @@ const BAR_OPEN = '#F6C9AD';
 
 export function ReportCard({ children, style }: { children: ReactNode; style?: object }) {
   return (
-    <View style={[{ borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }, style]}>
+    <View style={[{ borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }, style]}>
       {children}
     </View>
   );
@@ -48,9 +47,9 @@ export function ReportCard({ children, style }: { children: ReactNode; style?: o
 
 export function CardHeading({ title, detail, trailing }: { title: string; detail?: string; trailing?: ReactNode }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8 }}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text accessibilityRole="header" style={{ fontSize: 15.5, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
+        <Text accessibilityRole="header" style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
         {detail ? <Text numberOfLines={1} style={{ fontSize: 12, color: palette.placeholder }}>{detail}</Text> : null}
       </View>
       {trailing}
@@ -94,18 +93,18 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
             </Pressable>
           ) : null}
         </View>
-        <Text numberOfLines={1} style={{ fontSize: tablet ? 23 : 19, lineHeight: tablet ? 29 : 24, fontWeight: '700', color: hero ? '#fff' : figure.tone === 'good' ? palette.success : palette.textStrong, fontVariant: ['tabular-nums'] }}>{figure.value}</Text>
-        {figure.note ? <Text numberOfLines={1} style={{ fontSize: 11.5, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.note}</Text> : null}
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ fontSize: tablet ? 20 : 17, lineHeight: tablet ? 26 : 22, fontWeight: '700', color: hero ? '#fff' : figure.tone === 'good' ? palette.success : palette.textStrong, fontVariant: ['tabular-nums'] }}>{figure.value}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 11, color: hero ? 'rgba(255,255,255,0.88)' : palette.placeholder }}>{figure.note ?? ' '}</Text>
       </>
     );
-    const frame = { borderRadius: 18, borderCurve: 'continuous' as const, paddingVertical: tablet ? 12 : 9, paddingHorizontal: tablet ? 14 : 12, ...(tablet ? { flex: 1 } : { minWidth: 118 }) };
+    const frame = { borderRadius: 16, borderCurve: 'continuous' as const, paddingVertical: tablet ? 9 : 7, paddingHorizontal: tablet ? 12 : 11, ...(tablet ? { flex: 1, minWidth: 0 } : { minWidth: 112 }) };
     return hero ? (
       <LinearGradient key={figure.key} colors={['#B93A0D', '#D9581F', '#EF7A35']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={frame}>{body}</LinearGradient>
     ) : (
       <View key={figure.key} style={[frame, { borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface }]}>{body}</View>
     );
   };
-  if (tablet) return <View style={{ flexDirection: 'row', gap: 10 }}>{figures.map(card)}</View>;
+  if (tablet) return <View style={{ flexDirection: 'row', gap: 8 }}>{figures.map(card)}</View>;
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginHorizontal: -16 }}>
       <View style={{ width: 8 }} />
@@ -224,9 +223,19 @@ function niceMax(value: number) {
  * best bar is dark, the one still selling pale, a bar with no sales a dashed
  * outline. Tapping a bar puts its figures above the chart; it opens on the best.
  */
-export function SalesChart({ bars, best, average, height, hourly, language }: { bars: ReportBar[]; best: ReportBar | null; average: number; height: number; hourly: boolean; language: Language }) {
+export function SalesChart({ bars, best, average, height: fixedHeight, hourly, language }: {
+  bars: ReportBar[];
+  best: ReportBar | null;
+  average: number;
+  /** Leave out to fill the space the card gives it. */
+  height?: number;
+  hourly: boolean;
+  language: Language;
+}) {
   const th = language === 'th';
   const [width, setWidth] = useState(0);
+  const [measuredHeight, setMeasuredHeight] = useState(0);
+  const height = fixedHeight ?? measuredHeight;
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => { setPicked(null); }, [bars]);
   const selected = bars.find((bar) => bar.key === picked) ?? best ?? bars.at(-1) ?? null;
@@ -243,7 +252,7 @@ export function SalesChart({ bars, best, average, height, hourly, language }: { 
   const bestWord = hourly ? (th ? 'ชั่วโมงขายดีสุด' : 'best hour') : (th ? 'ขายดีสุด' : 'best day');
 
   return (
-    <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
+    <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8, ...(fixedHeight === undefined ? { flex: 1, minHeight: 0 } : null) }}>
       {selected ? (
         <View accessibilityLiveRegion="polite" style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 10, paddingHorizontal: 4 }}>
           <Text style={{ fontSize: 13, fontWeight: '600', color: palette.muted }}>
@@ -253,8 +262,14 @@ export function SalesChart({ bars, best, average, height, hourly, language }: { 
           {selected.orders > 0 ? <Text style={{ fontSize: 13, color: palette.placeholder }}>{th ? `${selected.orders} ออเดอร์` : `${selected.orders} orders`}</Text> : null}
         </View>
       ) : null}
-      <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ height }}>
-        {width > 0 ? (
+      <View
+        onLayout={(event) => {
+          setWidth(event.nativeEvent.layout.width);
+          if (fixedHeight === undefined) setMeasuredHeight(event.nativeEvent.layout.height);
+        }}
+        style={fixedHeight === undefined ? { flex: 1, minHeight: 60 } : { height: fixedHeight }}
+      >
+        {width > 0 && height > 40 ? (
           <Svg width={width} height={height}>
             {[0, max / 2, max].map((tick) => (
               <Line key={tick} x1={padLeft} x2={width} y1={y(tick)} y2={y(tick)} stroke="#F1E8DF" strokeWidth={1} />
@@ -288,7 +303,7 @@ export function SalesChart({ bars, best, average, height, hourly, language }: { 
             {average > 0 ? <Line x1={padLeft} x2={width} y1={y(average)} y2={y(average)} stroke={palette.textStrong} strokeWidth={1.2} strokeDasharray="5 4" opacity={0.5} /> : null}
           </Svg>
         ) : null}
-        {width > 0 ? (
+        {width > 0 && height > 40 ? (
           <View style={{ position: 'absolute', left: padLeft, top: 0, right: 0, bottom: 0, flexDirection: 'row', gap }}>
             {bars.map((bar) => (
               <Pressable
@@ -323,162 +338,132 @@ function Legend({ swatch, label }: { swatch: ReactNode; label: string }) {
 
 // ---------------------------------------------------------------- table
 
-/** Newest first, the best bar tinted. A single day lists only hours that sold. */
-export function BarTable({ bars, best, hourly, language }: { bars: ReportBar[]; best: ReportBar | null; hourly: boolean; language: Language }) {
-  const th = language === 'th';
-  const cell = { fontSize: 13.5, color: palette.textStrong, fontVariant: ['tabular-nums' as const], textAlign: 'right' as const };
-  const head = { fontSize: 12, fontWeight: '600' as const, color: palette.placeholder, textAlign: 'right' as const };
-  const rows = hourly ? bars.filter((bar) => bar.revenue > 0 || bar.open) : bars;
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.divider }}>
-        <Text style={[head, { flex: 1.2, textAlign: 'left' }]}>{hourly ? (th ? 'เวลา' : 'Hour') : (th ? 'วันที่' : 'Date')}</Text>
-        <Text style={[head, { flex: 0.8 }]}>{th ? 'ออเดอร์' : 'Orders'}</Text>
-        <Text style={[head, { flex: 1 }]}>{th ? 'ยอดขาย' : 'Sales'}</Text>
-        <Text style={[head, { flex: 0.9 }]}>{th ? 'เฉลี่ย/บิล' : 'Per bill'}</Text>
-      </View>
-      {rows.length ? [...rows].reverse().map((bar) => {
-        const isBest = best?.key === bar.key;
-        return (
-          <View key={bar.key} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 38, paddingHorizontal: 16, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#F3EDE7', backgroundColor: isBest ? palette.accentSoft : 'transparent' }}>
-            <View style={{ flex: 1.2 }}>
-              <Text style={[cell, { textAlign: 'left', fontWeight: isBest ? '700' : '500' }]}>{bar.label}</Text>
-              {bar.open ? <Text style={{ fontSize: 11, color: palette.warning }}>{hourly ? (th ? 'ยังไม่จบชั่วโมง' : 'still open') : (th ? 'ยังไม่จบวัน' : 'still open')}</Text> : null}
-            </View>
-            <Text style={[cell, { flex: 0.8, color: palette.muted }]}>{bar.orders || '—'}</Text>
-            <Text style={[cell, { flex: 1, fontWeight: isBest ? '700' : '600', color: bar.revenue > 0 ? palette.textStrong : palette.placeholder }]}>{bar.revenue > 0 ? money(bar.revenue, language) : (th ? 'ไม่มีขาย' : 'No sales')}</Text>
-            <Text style={[cell, { flex: 0.9, color: palette.muted }]}>{bar.orders > 0 ? money(bar.revenue / bar.orders, language) : '—'}</Text>
-          </View>
-        );
-      }) : (
-        <Text style={{ paddingHorizontal: 16, paddingVertical: 18, fontSize: 13.5, color: palette.placeholder }}>{th ? 'ยังไม่มียอดขาย' : 'No sales yet'}</Text>
-      )}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------- menu
-
-export function TopSellersCard({ items, periodLabel, language }: { items: ReportTopMenuItem[]; periodLabel: string; language: Language }) {
-  const th = language === 'th';
-  const top = items.slice(0, 10);
-  const most = top[0]?.quantity || 1;
-  return (
-    <ReportCard>
-      <CardHeading title={th ? 'เมนูขายดี' : 'Top sellers'} detail={periodLabel} />
-      {top.length ? top.map((item, index) => (
-        <View key={`${item.menu_id}-${item.menu_name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: palette.divider }}>
-          <Text style={{ width: 24, fontSize: 13, fontWeight: '600', color: index < 3 ? palette.primaryInk : palette.placeholder, fontVariant: ['tabular-nums'] }}>{index + 1}</Text>
-          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-            <Text numberOfLines={1} style={{ fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{item.menu_name}</Text>
-            <View style={{ height: 5, borderRadius: 3, backgroundColor: '#FDE2CF', overflow: 'hidden' }}>
-              <View style={{ width: `${Math.max(4, Math.round((item.quantity / most) * 100))}%`, height: 5, borderRadius: 3, backgroundColor: BAR }} />
-            </View>
-          </View>
-          <Text style={{ fontSize: 14.5, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{th ? `${item.quantity.toLocaleString('th-TH')} จาน` : `${item.quantity.toLocaleString('en-US')} sold`}</Text>
-        </View>
-      )) : (
-        <Text style={{ paddingHorizontal: 16, paddingVertical: 18, fontSize: 13.5, color: palette.placeholder }}>{th ? 'ยังไม่มีเมนูขายในช่วงนี้' : 'No menu sales in this period'}</Text>
-      )}
-    </ReportCard>
-  );
-}
-
-export function MenuProfitCard({ items, periodLabel, language }: { items: ManagerReport['menu_margins']; periodLabel: string; language: Language }) {
-  const th = language === 'th';
-  const locale = th ? 'th-TH' : 'en-US';
-  return (
-    <ReportCard>
-      <CardHeading title={th ? 'กำไรต่อเมนู' : 'Menu profit'} detail={th ? `${periodLabel} · เรียงจากกำไรสูงสุด` : `${periodLabel} · highest profit first`} />
-      {items.length ? items.map((item) => (
-        <View key={item.menu_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54, paddingHorizontal: 16, paddingVertical: 6, borderTopWidth: 1, borderTopColor: palette.divider }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{item.menu_name}</Text>
-            <Text numberOfLines={1} style={{ fontSize: 12, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>
-              {th
-                ? `${item.quantity.toLocaleString(locale)} จาน · รายได้ ${money(item.revenue, language)} · มาร์จิน ${Number(item.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
-                : `${item.quantity.toLocaleString(locale)} sold · revenue ${money(item.revenue, language)} · margin ${Number(item.margin).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
-            </Text>
-          </View>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: item.profit < 0 ? palette.danger : palette.textStrong, fontVariant: ['tabular-nums'] }}>{money(item.profit, language)}</Text>
-        </View>
-      )) : (
-        <Text style={{ paddingHorizontal: 16, paddingVertical: 18, fontSize: 13.5, color: palette.placeholder }}>{th ? 'ยังคำนวณกำไรไม่ได้ในช่วงนี้ · เมนูที่มีสูตรวัตถุดิบเท่านั้นที่คิดต้นทุนได้' : 'No profit to show for this period · only menus with recipes can be costed'}</Text>
-      )}
-    </ReportCard>
-  );
-}
-
-// ---------------------------------------------------------------- stock
-
-type StockRisk = ManagerReport['stock_risks'][number];
-
-function StockRow({ risk, language, first }: { risk: StockRisk; language: Language; first: boolean }) {
-  const th = language === 'th';
-  const out = risk.status === 'out';
-  const ink = out ? palette.danger : palette.warning;
-  const locale = th ? 'th-TH' : 'en-US';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingHorizontal: 16, paddingVertical: 6, borderTopWidth: first ? 0 : 1, borderTopColor: palette.divider }}>
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ink }} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{risk.name}</Text>
-        <Text numberOfLines={1} style={{ fontSize: 12, color: palette.placeholder }}>{risk.category || (th ? 'ไม่มีหมวด' : 'Uncategorized')}</Text>
-      </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={{ fontSize: 13.5, fontWeight: '700', color: palette.textStrong }}>{th ? `เติมราว ${readableAmount(Number(risk.restock_estimate), risk.unit, language)}` : `Buy about ${readableAmount(Number(risk.restock_estimate), risk.unit, language)}`}</Text>
-        <Text style={{ fontSize: 11.5, color: ink, fontVariant: ['tabular-nums'] }}>
-          {out ? (th ? 'หมดแล้ว' : 'Out') : (th ? `เหลือ ${Number(risk.stock).toLocaleString(locale, { maximumFractionDigits: 1 })} ${risk.unit}` : `${Number(risk.stock).toLocaleString(locale, { maximumFractionDigits: 1 })} ${risk.unit} left`)}
-        </Text>
-      </View>
-    </View>
-  );
-}
+export type TableColumn = { key: string; label: string; flex?: number; width?: number; align?: 'left' | 'right' };
+export type TableRow = { key: string; cells: ReactNode[]; highlight?: boolean };
 
 /**
- * Out of stock, then running low, each in its own card. On a tablet the rows of
- * a long card run in two columns so twenty items are not twenty screen-widths.
- * Stock is what is on the shelf now; the chosen period does not change it.
+ * Every table on the reports screen (15 ก.ย. 2569): the column names stay put
+ * and only the rows scroll, inside whatever height the card is given — the
+ * page itself no longer scrolls. When rows run past the bottom, the edge fades
+ * and says how many are left, until the last one is on screen.
  */
-export function StockRisksView({ out, low, language, columns, onOpenInventory }: { out: StockRisk[]; low: StockRisk[]; language: Language; columns: boolean; onOpenInventory: () => void }) {
-  const th = language === 'th';
-  if (!out.length && !low.length) {
-    return (
-      <ReportCard>
-        <Text style={{ paddingHorizontal: 16, paddingVertical: 22, fontSize: 14, color: palette.placeholder, textAlign: 'center' }}>{th ? 'ไม่มีวัตถุดิบที่หมดหรือใกล้หมด' : 'Nothing is out or running low'}</Text>
-      </ReportCard>
-    );
-  }
-  const section = (key: string, title: string, tone: string, list: StockRisk[]) => {
-    if (!list.length) return null;
-    const split = columns && list.length > 4;
-    const half = Math.ceil(list.length / 2);
-    const groups = split ? [list.slice(0, half), list.slice(half)] : [list];
-    return (
-      <ReportCard key={key}>
-        <CardHeading
-          title={title}
-          detail={th ? 'สต๊อกตอนนี้ ไม่ขึ้นกับช่วงเวลาที่เลือก' : 'Stock right now, whatever period is chosen'}
-          trailing={<Text style={{ fontSize: 13, fontWeight: '700', color: tone, fontVariant: ['tabular-nums'] }}>{th ? `${list.length} รายการ` : `${list.length} items`}</Text>}
-        />
-        <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: palette.divider }}>
-          {groups.map((group, index) => (
-            <View key={index} style={{ flex: 1, minWidth: 0, borderLeftWidth: index ? 1 : 0, borderLeftColor: palette.divider }}>
-              {group.map((risk, row) => <StockRow key={risk.id} risk={risk} language={language} first={row === 0} />)}
-            </View>
-          ))}
-        </View>
-      </ReportCard>
-    );
-  };
+export function ReportTable({ columns, rows, empty, onRefresh, language }: {
+  columns: TableColumn[];
+  rows: TableRow[];
+  empty: string;
+  onRefresh?: () => void | Promise<void>;
+  language: Language;
+}) {
+  const [viewport, setViewport] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [bottoms, setBottoms] = useState<Record<string, number>>({});
+  const hidden = viewport > 0 ? rows.filter((row) => (bottoms[row.key] ?? 0) > offset + viewport + 2).length : 0;
+  const cellStyle = (column: TableColumn) => ({
+    ...(column.width ? { width: column.width } : { flex: column.flex ?? 1 }),
+    minWidth: 0,
+    alignItems: column.align === 'right' ? ('flex-end' as const) : ('flex-start' as const),
+  });
+
   return (
-    <View style={{ gap: 12 }}>
-      {section('out', th ? 'หมดแล้ว' : 'Out of stock', palette.danger, out)}
-      {section('low', th ? 'ใกล้หมด' : 'Running low', palette.warning, low)}
-      <Pressable accessibilityRole="button" onPress={onOpenInventory} style={({ pressed }) => ({ alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: palette.surfaceSubtle, opacity: pressed ? 0.7 : 1 })}>
-        <Text style={{ fontSize: 13.5, fontWeight: '600', color: palette.primaryInk }}>{th ? 'ไปที่คลังวัตถุดิบ' : 'Open inventory'}</Text>
-        <AppIcon name="chevron-forward" size={15} color={palette.primaryInk} />
-      </Pressable>
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <View
+        accessibilityRole="header"
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 34, paddingHorizontal: 14, backgroundColor: palette.accentSoft, borderTopWidth: 1, borderTopColor: palette.divider, borderBottomWidth: 1, borderBottomColor: '#EFD9C6', zIndex: 2, shadowColor: '#7C2D12', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
+      >
+        {columns.map((column) => (
+          <View key={column.key} style={cellStyle(column)}>
+            <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: '600', color: '#8B5E44' }}>{column.label}</Text>
+          </View>
+        ))}
+      </View>
+      {rows.length ? (
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            onLayout={(event) => setViewport(event.nativeEvent.layout.height)}
+            onScroll={(event) => setOffset(event.nativeEvent.contentOffset.y)}
+            scrollEventThrottle={32}
+            refreshControl={onRefresh ? <AppRefreshControl onRefresh={onRefresh} /> : undefined}
+          >
+            {rows.map((row) => (
+              <View
+                key={row.key}
+                onLayout={(event) => {
+                  const bottom = event.nativeEvent.layout.y + event.nativeEvent.layout.height;
+                  setBottoms((current) => (current[row.key] === bottom ? current : { ...current, [row.key]: bottom }));
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40, paddingVertical: 5, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#F3EDE7', backgroundColor: row.highlight ? palette.accentSoft : palette.surface }}
+              >
+                {row.cells.map((cell, index) => (
+                  <View key={columns[index]?.key ?? index} style={cellStyle(columns[index] ?? { key: String(index) })}>
+                    {typeof cell === 'string' || typeof cell === 'number' ? <Cell align={columns[index]?.align}>{cell}</Cell> : cell}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+          {hidden > 0 ? (
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 52, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 7 }}>
+              <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.96)']} locations={[0, 0.7]} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 10, borderRadius: 999, backgroundColor: palette.surfaceStrong }}>
+                <Text style={{ fontSize: 11.5, fontWeight: '700', color: palette.primaryInk }}>{language === 'th' ? `อีก ${hidden} แถว` : `${hidden} more`}</Text>
+                <AppIcon name="chevron-down" size={12} color={palette.primaryInk} />
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={{ paddingHorizontal: 16, paddingVertical: 18, fontSize: 13.5, color: palette.placeholder }}>{empty}</Text>
+      )}
+    </View>
+  );
+}
+
+/** A table cell's words: one line, or a second smaller line under it. */
+export function Cell({ children, sub, align, strong, muted, color }: {
+  children: ReactNode;
+  sub?: string;
+  align?: 'left' | 'right';
+  strong?: boolean;
+  muted?: boolean;
+  color?: string;
+}) {
+  return (
+    <View style={{ alignItems: align === 'right' ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+      <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: strong ? '700' : '500', color: color ?? (muted ? palette.muted : palette.textStrong), fontVariant: ['tabular-nums'], textAlign: align === 'right' ? 'right' : 'left' }}>{children}</Text>
+      {sub ? <Text numberOfLines={1} style={{ fontSize: 11, color: palette.placeholder, fontVariant: ['tabular-nums'], textAlign: align === 'right' ? 'right' : 'left' }}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+/** A thin bar under a menu name, measured against the first row. */
+export function ShareBar({ value }: { value: number }) {
+  return (
+    <View style={{ alignSelf: 'stretch', height: 5, borderRadius: 3, backgroundColor: '#FDE2CF', overflow: 'hidden', marginTop: 4 }}>
+      <View style={{ width: `${Math.max(3, Math.min(100, Math.round(value * 100)))}%`, height: 5, borderRadius: 3, backgroundColor: BAR }} />
+    </View>
+  );
+}
+
+/** Small switch chips in a card heading: "ขายดี | กำไร", "ทั้งหมด · หมด · ใกล้หมด". */
+export function HeadingChips<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (key: T) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 6 }}>
+      {options.map((option) => {
+        const on = option.key === value;
+        return (
+          <Pressable
+            key={option.key}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            onPress={() => onChange(option.key)}
+            hitSlop={4}
+            style={({ pressed }) => ({ paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: on ? palette.textStrong : palette.divider, backgroundColor: on ? palette.textStrong : palette.surface, opacity: pressed ? 0.7 : 1 })}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: on ? '#fff' : palette.muted }}>{option.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
