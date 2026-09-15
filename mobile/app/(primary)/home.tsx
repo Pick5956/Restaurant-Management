@@ -12,8 +12,8 @@ import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
-import { AttentionRail, DayStrip, HomeHeading, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
-import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback, Surface } from '@/src/components/ui';
+import { AttentionList, AttentionRail, DayStrip, HomeHeading, HomeSkeleton, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
+import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback } from '@/src/components/ui';
 import {
   bangkokHour,
   buildHomeAttention,
@@ -579,7 +579,7 @@ export default function HomeScreen() {
   const attentionBlock = attentionCards.length ? (
     <View style={{ gap: spacing.sm }}>
       <HomeHeading icon="alert-circle-outline" title={copy('จัดการตอนนี้', 'Handle now')} />
-      <AttentionRail cards={attentionCards} stacked={tabletWorkspace} />
+      {tabletWorkspace ? <AttentionList cards={attentionCards} /> : <AttentionRail cards={attentionCards} />}
     </View>
   ) : null;
   const tablesBlock = isToday && canViewTables && tableCells.length ? (
@@ -592,16 +592,94 @@ export default function HomeScreen() {
       />
       <TableMap
         cells={tableCells}
-        columns={tabletWorkspace ? 4 : 5}
+        columns={5}
         legend={tableLegend}
         onPress={canTakeOrder ? openTable : undefined}
       />
     </View>
   ) : null;
 
+  const orderRows = (list: Order[]) => (
+    <EdgeSection>
+      {list.map((order) => {
+        const orderTone = orderStatusPresentation(order.status);
+        const orderTime = formatBangkokTime(order.closed_at || order.opened_at, language);
+        return (
+          <EdgeRow
+            accessibilityLabel={`${order.table?.display_label || order.order_number}, ${localizedOrderStatus(order.status, copy)}, ${formatMoney(order.grand_total, language)}`}
+            detail={`${order.order_number} · ${localizedOrderStatus(order.status, copy)}`}
+            key={order.ID}
+            leading={(
+              <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.full, backgroundColor: orderTone.backgroundColor }}>
+                <AppIcon color={orderTone.color} name={order.payment_status === 'paid' ? 'checkmark' : 'receipt-outline'} size={18} />
+              </View>
+            )}
+            onPress={() => router.push({ pathname: '/order/[id]', params: { id: String(order.ID) } })}
+            title={order.table?.display_label || order.order_number}
+            trailing={(
+              <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                <Text selectable style={[typeScale.number, { fontSize: 16 }]}>{formatMoney(order.grand_total, language)}</Text>
+                {orderTime ? <Text selectable style={[typeScale.caption, { color: palette.muted, fontVariant: ['tabular-nums'] }]}>{orderTime}</Text> : null}
+              </View>
+            )}
+          />
+        );
+      })}
+    </EdgeSection>
+  );
+  const noOrders = (
+    <EmptyState
+      title={
+        canViewOrders
+          ? (isToday && tabletWorkspace
+            ? copy('ไม่มีออเดอร์ค้าง', 'No open orders')
+            : copy('ยังไม่มีออเดอร์ในวันที่เลือก', 'No orders for the selected date'))
+          : copy('ไม่มีสิทธิ์ดูรายการออเดอร์', 'You cannot view order details')
+      }
+      detail={
+        canViewOrders
+          ? (isToday && tabletWorkspace
+            ? copy('ออเดอร์ที่ยังไม่ปิดบิลจะอยู่ตรงนี้', 'Orders not yet paid appear here.')
+            : copy('เมื่อมีออเดอร์ รายการของวันที่เลือกจะอยู่ตรงนี้', 'Orders for the selected date will appear here.'))
+          : copy('สรุปส่วนที่เหลือจะแสดงตามสิทธิ์ของคุณ', 'The remaining summary is shown based on your access.')
+      }
+    />
+  );
+
+  // Tablet, today: the orders still open — the ones someone has to act on —
+  // sit under the sales, not below the fold (15 ก.ย. 2569). Five rows at most so
+  // the month row stays on screen; the rest are one tap away. An earlier day
+  // lists that day's orders instead.
+  const tabletOrderList = isToday ? activeOrders : displayOrders;
+  const tabletOrderLimit = isToday ? 5 : 6;
+  const tabletOrders = (
+    <View style={{ gap: spacing.sm }}>
+      <HomeHeading
+        icon="receipt-outline"
+        title={isToday ? copy('ออเดอร์ที่ยังเปิดอยู่', 'Open orders') : copy('ออเดอร์ของวันที่เลือก', 'Orders for the selected date')}
+        trailing={canViewOrders ? copy(`${tabletOrderList.length} บิล · ดูทั้งหมด`, `${tabletOrderList.length} · See all`) : undefined}
+        onPress={canViewOrders ? () => router.push('/orders') : undefined}
+      />
+      {tabletOrderList.length ? orderRows(tabletOrderList.slice(0, tabletOrderLimit)) : noOrders}
+    </View>
+  );
+  const liveDataWarning = isToday && optionalFailures.length ? (
+    <Feedback
+      title={copy('ข้อมูลบางส่วนยังไม่ครบ', 'Some live data is unavailable')}
+      detail={copy(`ระบบยังอัปเดตไม่ได้: ${optionalFailureLabels.join(', ')} และจะลองใหม่อัตโนมัติ`, `Could not update: ${optionalFailureLabels.join(', ')}. The app will retry automatically.`)}
+      tone="warning"
+    />
+  ) : null;
+
   return (
     <AppScreen
       title={copy('ภาพรวมร้าน', 'Restaurant overview')}
+      titleContent={tabletWorkspace ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.lg }}>
+          <Text accessibilityRole="header" style={[typeScale.hero, { fontWeight: '600' }]}>{copy('ภาพรวมร้าน', 'Restaurant overview')}</Text>
+          <DayStrip compact days={days} language={language} onSelect={selectDate} />
+        </View>
+      ) : undefined}
       topLevel
       refreshControl={<AppRefreshControl onRefresh={() => load()} />}
       action={(
@@ -611,7 +689,7 @@ export default function HomeScreen() {
         </View>
       )}
     >
-      <DayStrip days={days} language={language} onSelect={selectDate} />
+      {tabletWorkspace ? null : <DayStrip days={days} language={language} onSelect={selectDate} />}
 
       {error ? (
         <Feedback
@@ -622,50 +700,40 @@ export default function HomeScreen() {
       ) : null}
 
       {dateLoading ? (
-        <Surface>
-          <Text selectable style={[typeScale.body, { color: palette.muted }]}>
-            {copy('กำลังโหลดข้อมูลของวันที่เลือก...', 'Loading data for the selected date...')}
-          </Text>
-        </Surface>
+        <HomeSkeleton
+          isToday={isToday}
+          tablet={tabletWorkspace}
+          label={copy('กำลังโหลดข้อมูลของวันที่เลือก', 'Loading data for the selected date')}
+        />
       ) : tabletWorkspace ? (
-        <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
-          <View style={{ flex: 1.15, gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' }}>
+          <View style={{ flex: 1.45, gap: spacing.md }}>
             {hero}
             {stats}
+            {isToday || attentionBlock || tablesBlock ? tabletOrders : null}
             {month}
           </View>
-          <View style={{ flex: 0.85, gap: spacing.md }}>
-            {attentionBlock}
-            {isToday && optionalFailures.length ? (
-              <Feedback
-                title={copy('ข้อมูลบางส่วนยังไม่ครบ', 'Some live data is unavailable')}
-                detail={copy(`ระบบยังอัปเดตไม่ได้: ${optionalFailureLabels.join(', ')} และจะลองใหม่อัตโนมัติ`, `Could not update: ${optionalFailureLabels.join(', ')}. The app will retry automatically.`)}
-                tone="warning"
-              />
-            ) : null}
-          </View>
           <View style={{ flex: 1, gap: spacing.md }}>
+            {liveDataWarning}
+            {attentionBlock}
             {tablesBlock}
+            {/* An earlier day has no urgent work and no floor, so its order list
+                takes this side instead of leaving it empty. */}
+            {!isToday && !attentionBlock && !tablesBlock ? tabletOrders : null}
           </View>
         </View>
       ) : (
         <>
           {hero}
           {stats}
-          {isToday && optionalFailures.length ? (
-            <Feedback
-              title={copy('ข้อมูลบางส่วนยังไม่ครบ', 'Some live data is unavailable')}
-              detail={copy(`ระบบยังอัปเดตไม่ได้: ${optionalFailureLabels.join(', ')} และจะลองใหม่อัตโนมัติ`, `Could not update: ${optionalFailureLabels.join(', ')}. The app will retry automatically.`)}
-              tone="warning"
-            />
-          ) : null}
+          {liveDataWarning}
           {attentionBlock}
           {tablesBlock}
           {month}
         </>
       )}
 
-      {!dateLoading ? (
+      {!dateLoading && !tabletWorkspace ? (
         <View style={{ gap: spacing.md }}>
           <EdgeSectionHeader
             title={
@@ -682,47 +750,7 @@ export default function HomeScreen() {
                 : dashboardDateLabel(selectedDate, language)
             }
           />
-          {displayOrders.length ? (
-            <EdgeSection>
-              {displayOrders.slice(0, 6).map((order) => {
-                const orderTone = orderStatusPresentation(order.status);
-                const orderTime = formatBangkokTime(order.closed_at || order.opened_at, language);
-                return (
-                  <EdgeRow
-                    accessibilityLabel={`${order.table?.display_label || order.order_number}, ${localizedOrderStatus(order.status, copy)}, ${formatMoney(order.grand_total, language)}`}
-                    detail={`${order.order_number} · ${localizedOrderStatus(order.status, copy)}`}
-                    key={order.ID}
-                    leading={(
-                      <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.full, backgroundColor: orderTone.backgroundColor }}>
-                        <AppIcon color={orderTone.color} name={order.payment_status === 'paid' ? 'checkmark' : 'receipt-outline'} size={18} />
-                      </View>
-                    )}
-                    onPress={() => router.push({ pathname: '/order/[id]', params: { id: String(order.ID) } })}
-                    title={order.table?.display_label || order.order_number}
-                    trailing={(
-                      <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                        <Text selectable style={[typeScale.number, { fontSize: 16 }]}>{formatMoney(order.grand_total, language)}</Text>
-                        {orderTime ? <Text selectable style={[typeScale.caption, { color: palette.muted, fontVariant: ['tabular-nums'] }]}>{orderTime}</Text> : null}
-                      </View>
-                    )}
-                  />
-                );
-              })}
-            </EdgeSection>
-          ) : (
-            <EmptyState
-              title={
-                canViewOrders
-                  ? copy('ยังไม่มีออเดอร์ในวันที่เลือก', 'No orders for the selected date')
-                  : copy('ไม่มีสิทธิ์ดูรายการออเดอร์', 'You cannot view order details')
-              }
-              detail={
-                canViewOrders
-                  ? copy('เมื่อมีออเดอร์ รายการของวันที่เลือกจะอยู่ตรงนี้', 'Orders for the selected date will appear here.')
-                  : copy('สรุปส่วนที่เหลือจะแสดงตามสิทธิ์ของคุณ', 'The remaining summary is shown based on your access.')
-              }
-            />
-          )}
+          {displayOrders.length ? orderRows(displayOrders.slice(0, 6)) : noOrders}
         </View>
       ) : null}
     </AppScreen>

@@ -5,6 +5,7 @@ import { Animated, Pressable, View } from 'react-native';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { useReducedMotion } from '@/src/components/motion';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import type { AIGuidedAction } from '@/src/lib/ai-actions';
 import { parseAIResponseBlocks } from '@/src/lib/ai-response';
 
@@ -138,6 +139,48 @@ export function ThinkingText({ text }: { text: string }) {
         <Text style={{ fontSize: 13, fontWeight: '500', color: ai.orange }}>{text}</Text>
       </Animated.View>
     </View>
+  );
+}
+
+/**
+ * A thread before its messages arrive: question and answer shapes alternating,
+ * the way the conversation will lay out, with the orb still moving and one
+ * quiet line under them. It replaced a lone "กำลังเปิดแชท" bubble on an empty
+ * canvas (14 ก.ย.), which made opening an old chat look like a new, empty one.
+ */
+export function ThreadSkeleton({ label }: { label: string }) {
+  const userShape = (key: string, widthPercent: `${number}%`, lines: `${number}%`[]) => (
+    <View key={key} style={{ alignSelf: 'flex-end', width: widthPercent }}>
+      <LinearGradient
+        colors={['rgba(249,115,22,0.20)', 'rgba(245,158,11,0.20)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ borderRadius: 18, borderBottomRightRadius: 6, paddingHorizontal: 14, paddingVertical: 11, gap: 6 }}
+      >
+        {lines.map((line, index) => (
+          <Bone key={index} width={line} height={10} style={{ backgroundColor: 'rgba(255,255,255,0.55)' }} />
+        ))}
+      </LinearGradient>
+    </View>
+  );
+  const answerShape = (key: string, lines: `${number}%`[], orb: boolean) => (
+    <View key={key} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, maxWidth: '96%' }}>
+      {orb ? <AIOrb size={AI_ORB_AVATAR} style={{ marginTop: 2 }} /> : <View style={{ width: AI_ORB_AVATAR }} />}
+      <View style={{ flex: 1, backgroundColor: ai.surface, borderWidth: 1, borderColor: ai.hairlineSoft, borderRadius: 18, borderTopLeftRadius: 6, paddingHorizontal: 14, paddingVertical: 11, gap: 7 }}>
+        {lines.map((line, index) => <Bone key={index} width={line} height={10} />)}
+      </View>
+    </View>
+  );
+  return (
+    <SkeletonReveal label={label} style={{ gap: 14 }}>
+      {userShape('u1', '64%', ['90%', '55%'])}
+      {answerShape('a1', ['92%', '100%', '70%'], true)}
+      {userShape('u2', '46%', ['80%'])}
+      {answerShape('a2', ['85%', '60%'], false)}
+      <View style={{ marginLeft: AI_ORB_AVATAR + 8 }}>
+        <ThinkingText text={label} />
+      </View>
+    </SkeletonReveal>
   );
 }
 

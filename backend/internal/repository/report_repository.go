@@ -21,8 +21,11 @@ type ReportSalesDay struct {
 	OrderDate string  `json:"order_date"`
 	Orders    int64   `json:"orders"`
 	Revenue   float64 `json:"revenue"`
-	Cost      float64 `json:"cost"`
-	Profit    float64 `json:"profit"`
+	// Discount is what the bills of that day took off before they were paid, so
+	// revenue + discount is what the same food would have fetched at list price.
+	Discount float64 `json:"discount"`
+	Cost     float64 `json:"cost"`
+	Profit   float64 `json:"profit"`
 }
 
 type ReportSalesHour struct {
@@ -87,11 +90,12 @@ func bucketExpr(column string, format salesBucketFormat) string {
 // salesBucket is one time slice of paid revenue and its ingredient cost. The
 // bucket label is whatever TO_CHAR pattern the caller grouped by.
 type salesBucket struct {
-	Bucket  string
-	Orders  int64
-	Revenue float64
-	Cost    float64
-	Profit  float64
+	Bucket   string
+	Orders   int64
+	Revenue  float64
+	Discount float64
+	Cost     float64
+	Profit   float64
 }
 
 type ReportMenuMargin struct {
@@ -125,7 +129,7 @@ func (r *ReportRepository) salesBuckets(restaurantID uint, bucketFormat salesBuc
 
 	var rows []salesBucket
 	err := r.db.Model(&entity.Order{}).
-		Select(orderBucket+" AS bucket, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
+		Select(orderBucket+" AS bucket, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue, COALESCE(SUM(discount_amount), 0) AS discount").
 		Where(orderWhere, orderArgs...).
 		Group(orderBucket).
 		Order(orderBucket + " desc").
@@ -161,13 +165,18 @@ func (r *ReportRepository) salesBuckets(restaurantID uint, bucketFormat salesBuc
 }
 
 func (r *ReportRepository) SalesByDay(restaurantID uint, since time.Time) ([]ReportSalesDay, error) {
-	buckets, err := r.salesBuckets(restaurantID, bucketByDate, since, time.Time{})
+	return r.SalesByDayBetween(restaurantID, since, time.Time{})
+}
+
+// SalesByDayBetween is SalesByDay over [since, until); a zero until has no end.
+func (r *ReportRepository) SalesByDayBetween(restaurantID uint, since, until time.Time) ([]ReportSalesDay, error) {
+	buckets, err := r.salesBuckets(restaurantID, bucketByDate, since, until)
 	if err != nil {
 		return nil, err
 	}
 	rows := make([]ReportSalesDay, 0, len(buckets))
 	for _, b := range buckets {
-		rows = append(rows, ReportSalesDay{OrderDate: b.Bucket, Orders: b.Orders, Revenue: b.Revenue, Cost: b.Cost, Profit: b.Profit})
+		rows = append(rows, ReportSalesDay{OrderDate: b.Bucket, Orders: b.Orders, Revenue: b.Revenue, Discount: b.Discount, Cost: b.Cost, Profit: b.Profit})
 	}
 	return rows, nil
 }
@@ -300,9 +309,35 @@ func (r *ReportRepository) ExpenseDetail(restaurantID uint, since, until time.Ti
 	return rows, err
 }
 
+// ExpenseTotal adds up the expense ledger over [since, until): every row a
+// person typed or a stock-in wrote, whatever its category. It is money that
+// left the shop, not the recipe cost of food sold — see entity.Expense.
+//
+// Operating is the part that is not an ingredient purchase — wages, rent,
+// utilities, equipment, other. Net profit takes that part off gross profit; the
+// ingredient purchases are already in gross profit as the recipe cost of what
+// sold, and taking them off again would count the same food twice.
+func (r *ReportRepository) ExpenseTotal(restaurantID uint, since, until time.Time) (total float64, operating float64, count int64, err error) {
+	var row struct {
+		Total     float64
+		Operating float64
+		Count     int64
+	}
+	err = r.db.Model(&entity.Expense{}).
+		Select("COALESCE(SUM(amount), 0) AS total, COALESCE(SUM(CASE WHEN category <> ? THEN amount ELSE 0 END), 0) AS operating, COUNT(*) AS count", "ingredient").
+		Where("restaurant_id = ? AND spent_at >= ? AND spent_at < ?", restaurantID, since, until).
+		Scan(&row).Error
+	return row.Total, row.Operating, row.Count, err
+}
+
 func (r *ReportRepository) MenuMargins(restaurantID uint, since time.Time) ([]ReportMenuMargin, error) {
+	return r.MenuMarginsBetween(restaurantID, since, time.Time{})
+}
+
+// MenuMarginsBetween is MenuMargins over [since, until); a zero until has no end.
+func (r *ReportRepository) MenuMarginsBetween(restaurantID uint, since, until time.Time) ([]ReportMenuMargin, error) {
 	var rows []ReportMenuMargin
-	err := r.db.Table("order_items").
+	query := r.db.Table("order_items").
 		Select(`
 			order_items.menu_id,
 			order_items.menu_name,
@@ -327,7 +362,11 @@ func (r *ReportRepository) MenuMargins(restaurantID uint, since time.Time) ([]Re
 			since,
 			entity.OrderStatusCompleted,
 			entity.PaymentStatusPaid,
-		).
+		)
+	if !until.IsZero() {
+		query = query.Where("orders.completed_at < ?", until)
+	}
+	err := query.
 		Group("order_items.menu_id, order_items.menu_name").
 		Order("profit desc, revenue desc").
 		Limit(12).
@@ -371,7 +410,9 @@ func (r *ReportRepository) StockRisks(restaurantID uint) ([]entity.Ingredient, e
 		Preload("Category").
 		Where("restaurant_id = ? AND (stock <= 0 OR (min_stock > 0 AND stock <= min_stock))", restaurantID).
 		Order("stock asc, name asc").
-		Limit(12).
+		// Was 12: a shop with 22 items out or low saw "สต๊อก 12" and never
+		// learned about the other ten (15 ก.ย. 2569).
+		Limit(500).
 		Find(&ingredients).Error
 	return ingredients, err
 }

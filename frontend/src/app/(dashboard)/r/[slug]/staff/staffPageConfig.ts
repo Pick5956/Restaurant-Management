@@ -436,6 +436,14 @@ export function auditMessage(log: RestaurantAuditLog, language: Language) {
       ? `เปลี่ยนสิทธิ์บทบาท${roleDisplayName ? ` · ${roleDisplayName}` : ""}${permissionCount == null ? "" : ` · ${permissionCount} สิทธิ์`}`
       : `Changed role permissions${roleDisplayName ? ` · ${roleDisplayName}` : ""}${permissionCount == null ? "" : ` · ${permissionCount} permissions`}`;
   }
+  if (log.action === "ai_set_menu_availability") {
+    // Written when the owner confirms the assistant's switch. It showed as the
+    // raw key "ai_set_menu_availability" until 15 ก.ย. 2569 (the app too).
+    const menuName = typeof details.target_menu_item_name === "string" ? details.target_menu_item_name.trim() : "";
+    const on = details.is_available === true;
+    if (language === "th") return `AI ${on ? "เปิดขาย" : "ปิดขาย"}เมนู${menuName ? ` "${menuName}"` : ""}`;
+    return `AI ${on ? "turned on" : "turned off"} ${menuName ? `"${menuName}"` : "a menu item"}`;
+  }
   return log.action;
 }
 

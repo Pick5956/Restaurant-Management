@@ -33,6 +33,14 @@ type AIActionPlanItemResponse struct {
 	Change      string   `json:"change"`
 	Unit        string   `json:"unit,omitempty"`
 	SideEffects []string `json:"side_effects,omitempty"`
+	// The change in parts; see AIActionItemPreview.
+	Kind      string                `json:"kind,omitempty"`
+	Field     string                `json:"field,omitempty"`
+	From      string                `json:"from,omitempty"`
+	To        string                `json:"to,omitempty"`
+	ValueUnit string                `json:"value_unit,omitempty"`
+	Delta     string                `json:"delta,omitempty"`
+	Facts     []AIActionPreviewFact `json:"facts,omitempty"`
 }
 
 // maybeHandleJoyboyStockCommand answers an inventory command. It reports handled
@@ -302,6 +310,13 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 			Change:      preview.Change,
 			Unit:        preview.Unit,
 			SideEffects: preview.SideEffects,
+			Kind:        preview.Kind,
+			Field:       preview.Field,
+			From:        preview.From,
+			To:          preview.To,
+			ValueUnit:   preview.ValueUnit,
+			Delta:       preview.Delta,
+			Facts:       preview.Facts,
 		})
 	}
 

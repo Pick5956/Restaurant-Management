@@ -1,12 +1,13 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, View, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, View, type DimensionValue, type ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 
 import { GlassPanel } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import type { HomeDay, HomeRevenueCurve, HomeTableCell } from '@/src/lib/home-dashboard';
 import { palette } from '@/src/theme';
 
@@ -63,6 +64,19 @@ export function HomeHeading({ icon, title, trailing, onPress }: { icon: AppIconN
 
 // ---------------------------------------------------------------- day strip
 
+/**
+ * A small round mark drawn as a vector circle. A 4–5 pt View with a half-width
+ * corner radius is snapped to whole pixels on Android and comes out as a
+ * square there (the owner saw squares under the days, 14 ก.ย. 2569).
+ */
+function Dot({ size, color, style }: { size: number; color: string; style?: ViewStyle }) {
+  return (
+    <Svg width={size} height={size} style={style}>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={color} />
+    </Svg>
+  );
+}
+
 const WEEKDAYS_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -70,10 +84,19 @@ const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
  * Seven days, today at the right, the selected one in ink. A dot under a day
  * means it sold something; no dots at all means the history is not known.
  */
-export function DayStrip({ days, language, onSelect }: { days: HomeDay[]; language: 'th' | 'en'; onSelect: (date: string) => void }) {
+export function DayStrip({ days, language, onSelect, compact = false }: {
+  days: HomeDay[];
+  language: 'th' | 'en';
+  onSelect: (date: string) => void;
+  /**
+   * The tablet: seven 46pt squares on the heading row. Stretched across the
+   * width they were 250pt-wide buttons for picking a day (15 ก.ย. 2569).
+   */
+  compact?: boolean;
+}) {
   const names = language === 'th' ? WEEKDAYS_TH : WEEKDAYS_EN;
   return (
-    <View style={{ flexDirection: 'row', gap: 6 }}>
+    <View style={{ flexDirection: 'row', gap: compact ? 5 : 6 }}>
       {days.map((day) => (
         <Pressable
           key={day.date}
@@ -82,18 +105,16 @@ export function DayStrip({ days, language, onSelect }: { days: HomeDay[]; langua
           accessibilityLabel={day.date}
           onPress={() => onSelect(day.date)}
           style={({ pressed }) => ({
-            flex: 1,
+            ...(compact ? { width: 46, height: 46, justifyContent: 'center' as const } : { flex: 1, paddingTop: 5, paddingBottom: 4 }),
             alignItems: 'center',
-            paddingTop: 5,
-            paddingBottom: 4,
-            borderRadius: 13,
+            borderRadius: compact ? 12 : 13,
             backgroundColor: day.selected ? palette.textStrong : palette.surfaceSubtle,
             opacity: pressed ? 0.7 : 1,
           })}
         >
           <Text allowFontScaling={false} style={{ fontSize: 10, fontWeight: '600', color: day.selected ? 'rgba(255,255,255,0.7)' : palette.muted }}>{names[day.weekday]}</Text>
           <Text allowFontScaling={false} style={{ fontSize: 14, fontWeight: '700', lineHeight: 18, color: day.selected ? '#ffffff' : palette.textStrong, fontVariant: ['tabular-nums'] }}>{day.dayOfMonth}</Text>
-          <View style={{ width: 4, height: 4, borderRadius: 2, marginTop: 2, backgroundColor: day.hasSales ? (day.selected ? palette.accentMuted : palette.primary) : 'transparent' }} />
+          <Dot size={5} color={day.hasSales ? (day.selected ? palette.accentMuted : palette.primary) : 'transparent'} style={{ marginTop: 2 }} />
         </Pressable>
       ))}
     </View>
@@ -306,6 +327,51 @@ export function AttentionRail({ cards, stacked }: { cards: AttentionCardProps[];
   );
 }
 
+/**
+ * The tablet's version of the rail: one card, one row per thing, the count on
+ * the right. Four stacked cards took about 660pt of the screen's 834; as rows
+ * they take about 240 and leave room for the table map under them.
+ */
+export function AttentionList({ cards }: { cards: AttentionCardProps[] }) {
+  return (
+    <HomeCard radius={18}>
+      {cards.map((card, index) => {
+        const ink = card.tone === 'danger' ? palette.danger : card.tone === 'warning' ? palette.warning : palette.info;
+        return (
+          <Pressable
+            key={card.key}
+            accessibilityRole={card.onPress ? 'button' : undefined}
+            accessibilityLabel={`${card.title} ${card.headline} ${card.detail}`}
+            disabled={!card.onPress}
+            onPress={card.onPress}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              minHeight: 58,
+              paddingVertical: 8,
+              paddingLeft: 12,
+              paddingRight: 12,
+              borderTopWidth: index === 0 ? 0 : 1,
+              borderTopColor: palette.divider,
+              backgroundColor: pressed ? palette.surfaceSubtle : 'transparent',
+            })}
+          >
+            <View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: ink, marginVertical: 4 }} />
+            <AppIcon name={card.icon} size={18} color={ink} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '700', color: ink }}>{card.title}</Text>
+              <Text numberOfLines={1} style={{ fontSize: 11.5, color: palette.muted }}>{card.detail}</Text>
+            </View>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: ink, fontVariant: ['tabular-nums'] }}>{card.headline}</Text>
+            {card.onPress ? <AppIcon name="chevron-forward" size={15} color={palette.placeholder} /> : null}
+          </Pressable>
+        );
+      })}
+    </HomeCard>
+  );
+}
+
 // ---------------------------------------------------------------- table map
 
 const cellLook: Record<HomeTableCell['state'], { bg: string; ink: string; dot: string; border: string }> = {
@@ -353,7 +419,7 @@ export function TableMap({ cells, columns, legend, onPress }: {
                 >
                   <View style={{ aspectRatio: 1.5, borderRadius: 11, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: look.bg, borderWidth: 1, borderColor: look.border, shadowColor: '#7C2D12', shadowOpacity: cell.state === 'free' ? 0 : 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: cell.state === 'free' ? 0 : 2 }}>
                     <Text allowFontScaling={false} numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: look.ink }}>{cell.label}</Text>
-                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: look.dot }} />
+                    <Dot size={5} color={look.dot} />
                   </View>
                 </Pressable>
               );
@@ -363,7 +429,7 @@ export function TableMap({ cells, columns, legend, onPress }: {
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
           {([['busy', cellLook.busy.dot], ['bill', cellLook.bill.dot], ...(hasReserved ? [['reserved', cellLook.reserved.dot] as const] : []), ['free', cellLook.free.dot]] as Array<[HomeTableCell['state'], string]>).map(([state, dot]) => (
             <View key={state} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: dot }} />
+              <Dot size={7} color={dot} />
               <Text style={{ fontSize: 11, color: palette.muted }}>{legend[state]}</Text>
             </View>
           ))}
@@ -392,5 +458,150 @@ export function MonthRow({ title, detail, onPress }: { title: string; detail: st
         </View>
       </HomeCard>
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------- loading skeleton
+
+/**
+ * The overview before its figures arrive, block for block where the real page
+ * puts them: the orange sales card, the three tiles, the urgent-work cards and
+ * the table map on today; the card, the tiles and the order list on an earlier
+ * day. Replaces a one-line "กำลังโหลดข้อมูลของวันที่เลือก..." box (14 ก.ย.).
+ */
+export function HomeSkeleton({ isToday, tablet, label }: { isToday: boolean; tablet: boolean; label: string }) {
+  const hero = (
+    <LinearGradient
+      colors={['#b93a0d', '#d9581f', '#ef7a35']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ borderRadius: 22, borderCurve: 'continuous', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, gap: 8 }}
+    >
+      <Bone onColor width={92} height={10} />
+      <Bone onColor width={150} height={30} radius={10} />
+      <Bone onColor width={168} height={20} radius={999} />
+      <Bone onColor height={40} radius={10} style={{ marginTop: 2 }} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Bone onColor width={34} height={9} />
+        <Bone onColor width={58} height={9} />
+        <Bone onColor width={34} height={9} />
+      </View>
+    </LinearGradient>
+  );
+
+  const tile = (key: string, top: DimensionValue, bottom: DimensionValue) => (
+    <HomeCard key={key} radius={16} style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 10 }}>
+        <Bone width={26} height={26} radius={9} />
+        <View style={{ flex: 1, gap: 5 }}>
+          <Bone width={top} height={8} />
+          <Bone width={bottom} height={12} />
+        </View>
+      </View>
+    </HomeCard>
+  );
+  const tiles = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {tile('a', '70%', '90%')}
+      {tile('b', '60%', '85%')}
+      {tile('c', '65%', '50%')}
+    </View>
+  );
+
+  const heading = (width: number) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6 }}>
+      <Bone width={16} height={16} radius={5} />
+      <Bone width={width} height={12} />
+    </View>
+  );
+
+  const attentionCard = (key: string, first: DimensionValue) => (
+    <HomeCard key={key} radius={18} style={tablet ? undefined : { width: 164 }}>
+      <View style={{ paddingVertical: 11, paddingHorizontal: 12, gap: 7 }}>
+        <Bone width={first} height={9} />
+        <Bone width="80%" height={18} />
+        <Bone width="95%" height={9} />
+      </View>
+    </HomeCard>
+  );
+  const attention = (
+    <View style={{ gap: 8 }}>
+      {heading(92)}
+      <View style={{ flexDirection: tablet ? 'column' : 'row', gap: 8, overflow: 'hidden' }}>
+        {attentionCard('a', '70%')}
+        {attentionCard('b', '60%')}
+      </View>
+    </View>
+  );
+
+  const tables = (
+    <View style={{ gap: 8 }}>
+      {heading(40)}
+      <HomeCard radius={20}>
+        <View style={{ padding: 11, gap: 6 }}>
+          {[0, 1].map((row) => (
+            <View key={row} style={{ flexDirection: 'row', gap: 6 }}>
+              {[0, 1, 2, 3, 4].map((cell) => (
+                <View key={cell} style={{ flex: 1, aspectRatio: 1.5 }}>
+                  <Bone height={1} radius={11} style={{ flex: 1, height: undefined }} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      </HomeCard>
+    </View>
+  );
+
+  const orders = (
+    <View style={{ gap: 8 }}>
+      {heading(120)}
+      <HomeCard radius={18}>
+        {[0, 1, 2].map((row) => (
+          <View key={row} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderTopWidth: row ? 1 : 0, borderTopColor: palette.divider }}>
+            <Bone width={32} height={32} radius={16} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Bone width="45%" height={11} />
+              <Bone width="70%" height={9} />
+            </View>
+            <Bone width={56} height={14} />
+          </View>
+        ))}
+      </HomeCard>
+    </View>
+  );
+
+  if (tablet) {
+    const attentionRows = (
+      <View style={{ gap: 8 }}>
+        {heading(92)}
+        <HomeCard radius={18}>
+          {[0, 1, 2, 3].map((row) => (
+            <View key={row} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 58, paddingHorizontal: 12, borderTopWidth: row ? 1 : 0, borderTopColor: palette.divider }}>
+              <Bone width={4} height={34} radius={2} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Bone width="40%" height={11} />
+                <Bone width="65%" height={9} />
+              </View>
+              <Bone width={52} height={16} />
+            </View>
+          ))}
+        </HomeCard>
+      </View>
+    );
+    return (
+      <SkeletonReveal label={label} style={{ flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1.45, gap: 12 }}>{hero}{tiles}{orders}</View>
+        <View style={{ flex: 1, gap: 12 }}>{isToday ? <>{attentionRows}{tables}</> : null}</View>
+      </SkeletonReveal>
+    );
+  }
+  return (
+    <SkeletonReveal label={label} style={{ gap: 12 }}>
+      {hero}
+      {tiles}
+      {isToday ? attention : null}
+      {isToday ? tables : orders}
+    </SkeletonReveal>
   );
 }

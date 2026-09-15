@@ -19,6 +19,7 @@ import { GlassView } from 'expo-glass-effect';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassButton } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
 import { AppText as Text } from '@/src/components/app-text';
@@ -208,7 +209,7 @@ export function PrimaryTabletRail({
 }) {
   const { activeMembership } = useAuth();
   const primary = primaryNavigation.filter((item) => (!expanded || item.key !== 'more') && isAllowed(item, activeMembership));
-  const management = managementNavigation.filter((item) => item.key !== 'settings' && isAllowed(item, activeMembership));
+  const management = managementNavigation.filter((item) => item.key !== 'settings' && item.key !== 'staff' && isAllowed(item, activeMembership));
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left']} style={{ width: expanded ? 232 : 92, borderRightWidth: 1, borderRightColor: palette.navigationBorder, backgroundColor: palette.navigationSurface, paddingHorizontal: expanded ? spacing.md : spacing.sm }}>
@@ -1044,22 +1045,10 @@ function ScreenHeading({
     // against the title with the order number hanging below it, so the pair
     // read as two separate things rather than one heading.
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      {/* The assistant's round glass back button on every screen (15 ก.ย. 2569):
+          real Liquid Glass on iOS 26, a white disc with a hairline elsewhere. */}
       {showBack ? (
-        <Pressable
-          accessibilityLabel={copy('ย้อนกลับ', 'Go back')}
-          accessibilityRole="button"
-          hitSlop={4}
-          onPress={() => router.back()}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.5 : 1,
-          })}
-        >
-          <AppIcon color={palette.textStrong} name="chevron-back-outline" size={30} />
-        </Pressable>
+        <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />
       ) : null}
       {/* A single-line title against 44pt action buttons has to centre on them.
           Top-aligning it leaves the text sitting in the corner while the buttons
@@ -1083,7 +1072,7 @@ function ScreenHeading({
           the title 44px right of the screen's centre line. This mirrors that
           width on the trailing side so the centre is the real one. An `action`
           already balances the row, so it takes the place of the spacer. */}
-      {centerTitle && showBack && !action ? <View style={{ width: 44 }} /> : null}
+      {centerTitle && showBack && !action ? <View style={{ width: 46 }} /> : null}
     </View>
   );
 }

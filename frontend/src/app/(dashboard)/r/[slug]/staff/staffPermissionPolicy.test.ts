@@ -257,4 +257,16 @@ describe("permission audit labels", () => {
 
     expect(auditMessage(log, "th")).toBe("เปลี่ยนสิทธิ์บทบาท · หัวหน้ากะ · 2 สิทธิ์");
   });
+
+  it("describes the assistant switching a menu on or off instead of showing the raw action key", () => {
+    const log = {
+      ID: 3,
+      restaurant_id: 1,
+      action: "ai_set_menu_availability",
+      details: JSON.stringify({ target_menu_item_name: "ต้มยำกุ้งน้ำข้น", previous_availability: true, is_available: false }),
+    };
+
+    expect(auditMessage(log, "th")).toBe('AI ปิดขายเมนู "ต้มยำกุ้งน้ำข้น"');
+    expect(auditMessage({ ...log, details: JSON.stringify({ target_menu_item_name: "ต้มยำกุ้งน้ำข้น", is_available: true }) }, "en")).toBe('AI turned on "ต้มยำกุ้งน้ำข้น"');
+  });
 });
