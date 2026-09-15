@@ -105,15 +105,53 @@ export function ReportFigures({ figures, tablet }: { figures: ReportFigure[]; ta
     );
   };
   if (tablet) return <View style={{ flexDirection: 'row', gap: 8 }}>{figures.map(card)}</View>;
+  return <FigureStrip>{figures.map(card)}</FigureStrip>;
+}
+
+/**
+ * The phone's figures, one strip that scrolls sideways. While cards are still
+ * off the right edge, that edge fades and shows an arrow (asked for on
+ * 15 ก.ย. 2569) — a card cut in half at the edge was the only hint before.
+ */
+function FigureStrip({ children }: { children: ReactNode }) {
+  const [viewport, setViewport] = useState(0);
+  const [content, setContent] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const more = viewport > 0 && content - viewport - offset > 6;
   return (
-    // flexGrow 0: a ScrollView grows to fill its column by default, and on the
-    // locked page that column is the whole screen — the cards stretched down
-    // past the tabs on an iPad held upright (15 ก.ย. 2569).
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, alignItems: 'flex-start' }} style={{ flexGrow: 0, flexShrink: 0, marginHorizontal: -16 }}>
-      <View style={{ width: 8 }} />
-      {figures.map(card)}
-      <View style={{ width: 8 }} />
-    </ScrollView>
+    <View style={{ marginHorizontal: -16 }}>
+      {/* flexGrow 0: a ScrollView grows to fill its column by default, and on
+          the locked page that column is the whole screen — the cards stretched
+          down past the tabs on an iPad held upright (15 ก.ย. 2569). */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        onLayout={(event) => setViewport(event.nativeEvent.layout.width)}
+        onContentSizeChange={(width) => setContent(width)}
+        onScroll={(event) => setOffset(event.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={32}
+        contentContainerStyle={{ gap: 8, alignItems: 'flex-start' }}
+        style={{ flexGrow: 0, flexShrink: 0 }}
+      >
+        <View style={{ width: 8 }} />
+        {children}
+        <View style={{ width: 8 }} />
+      </ScrollView>
+      {more ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 56, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 6 }}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)']}
+            locations={[0, 0.6]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceStrong, borderWidth: 1, borderColor: palette.accentMuted }}>
+            <AppIcon name="chevron-forward" size={15} color={palette.primaryInk} />
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 

@@ -343,7 +343,6 @@ export default function ReportsScreen() {
       <ReportCard style={{ flex: 1 }}>
         <CardHeading
           title={menuView === 'top' ? copy('เมนูขายดี', 'Top sellers') : copy('กำไรต่อเมนู', 'Menu profit')}
-          detail={rangeLabel}
           trailing={<HeadingChips<MenuView> options={[{ key: 'top', label: copy('ขายดี', 'Top') }, { key: 'profit', label: copy('กำไร', 'Profit') }]} value={menuView} onChange={setMenuView} />}
         />
         {menuView === 'top' ? topTable : profitTable}
