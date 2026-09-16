@@ -309,7 +309,7 @@ export function SalesChart({ bars, best, average, height: fixedHeight, hourly, l
           <Text style={{ fontSize: 13, fontWeight: '600', color: palette.muted }}>
             {selected.label}{selected.open ? ` · ${openWord}` : selected.key === best?.key ? ` · ${bestWord}` : ''}
           </Text>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{selected.revenue > 0 ? money(selected.revenue, language) : (th ? 'ไม่มีขาย' : 'No sales')}</Text>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>{selected.revenue > 0 ? money(selected.revenue, language) : (th ? 'ไม่มีขาย' : 'No sales')}</Text>
           {selected.orders > 0 ? <Text style={{ fontSize: 13, color: palette.placeholder }}>{th ? `${selected.orders} ออเดอร์` : `${selected.orders} orders`}</Text> : null}
         </View>
       ) : null}

@@ -55,7 +55,7 @@ export function ExpenseHero({ label, total, entries, perDay, shares, language }:
       style={{ borderRadius: 20, borderCurve: 'continuous', paddingVertical: 12, paddingHorizontal: 16 }}
     >
       <Text numberOfLines={1} style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>{label}</Text>
-      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 30, lineHeight: 38, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] }}>{money(total, language)}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] }}>{money(total, language)}</Text>
       <Text numberOfLines={1} style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>
         {th ? `${entries.toLocaleString('th-TH')} รายการ` : `${entries.toLocaleString('en-US')} entries`}
         {perDay > 0 ? (th ? ` · เฉลี่ยวันละ ${money(perDay, language)}` : ` · ${money(perDay, language)} a day`) : ''}

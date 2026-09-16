@@ -76,7 +76,7 @@ function Delta({ item, dim }: { item: ConfirmItem; dim: boolean }) {
       <Text style={{ fontSize: 15, color: ai.faded, textDecorationLine: 'line-through', fontVariant: ['tabular-nums'] }}>{readableFigure(item.from ?? '')}</Text>
       <AppIcon name="arrow-forward" size={16} color={ai.faded} />
       <View style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-        <Text selectable style={{ fontSize: 22, lineHeight: 28, fontWeight: '600', color: dim ? ai.muted : ai.deep, fontVariant: ['tabular-nums'] }}>{readableFigure(item.to ?? '')}</Text>
+        <Text selectable style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: dim ? ai.muted : ai.deep, fontVariant: ['tabular-nums'] }}>{readableFigure(item.to ?? '')}</Text>
         {item.valueUnit ? <Text style={{ fontSize: 13, fontWeight: '500', color: ai.muted }}>{item.valueUnit}</Text> : null}
       </View>
       {item.delta ? (

@@ -758,7 +758,19 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
   // offset double-counts however far iOS has already moved.
   assert.match(itemSource, /'keyboardWillChangeFrame' : 'keyboardDidShow'/);
   assert.doesNotMatch(itemSource, /addListener\('keyboardDidShow'/);
-  assert.match(itemSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - keyboardTop;/);
+  assert.match(itemSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - top;/);
+
+  // Neither half may be set up by the focus render. The listener used to be
+  // added by an effect that runs AFTER the render focus triggers, while the
+  // anchor arrived from an async measure - so on the FIRST tap iOS had the
+  // keyboard up before either existed and the page never moved; it took a
+  // scroll, a dismiss and a second tap, which is what the owner reported on
+  // 16 ก.ย. 2569. The listener is mounted for the screen, and whichever of the
+  // two lands last does the scrolling.
+  assert.match(itemSource, /const show = Keyboard\.addListener\(showEvent[\s\S]{0,320}alignNoteAboveKeyboard\(\);/);
+  assert.match(itemSource, /\}, \[alignNoteAboveKeyboard\]\);/);
+  assert.doesNotMatch(itemSource, /if \(!noteFocused\) return undefined;/);
+  assert.match(itemSource, /measureInWindow\(\([\s\S]{0,260}alignNoteAboveKeyboard\(\);/);
 });
 
 test('the overview keeps its fourteen-day report when an earlier day is picked', async () => {

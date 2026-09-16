@@ -151,7 +151,7 @@ export function TeamStats({ stats }: { stats: { key: string; label: string; valu
       {stats.map((stat) => (
         <View key={stat.key} accessible accessibilityLabel={`${stat.label} ${stat.value}`} style={{ flex: 1, minWidth: 0, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
           <Text numberOfLines={1} style={{ fontSize: 12, color: palette.placeholder }}>{stat.label}</Text>
-          <Text style={{ fontSize: 21, lineHeight: 27, fontWeight: '700', fontVariant: ['tabular-nums'], color: stat.value > 0 && stat.tone === 'good' ? palette.success : stat.value > 0 && stat.tone === 'wait' ? palette.warning : palette.textStrong }}>{stat.value}</Text>
+          <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'], color: stat.value > 0 && stat.tone === 'good' ? palette.success : stat.value > 0 && stat.tone === 'wait' ? palette.warning : palette.textStrong }}>{stat.value}</Text>
         </View>
       ))}
     </View>

@@ -114,7 +114,7 @@ export default function NewOrderScreen() {
               borderColor: palette.controlBorder,
               borderRadius: radius.md,
               backgroundColor: palette.surfaceSubtle,
-              fontSize: 22,
+              fontSize: 20,
               // Same weight as the total on the bill footer. typeScale.number is
               // 800, which is heavier than anything else on the screen and made
               // the count read as the loudest thing on a form.

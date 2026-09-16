@@ -4,20 +4,22 @@ import { Pressable, View } from 'react-native';
 
 import { AuthScreen } from '@/src/components/auth-screen';
 import { AppText as Text } from '@/src/components/app-text';
-import { Button, Feedback, TextField } from '@/src/components/ui';
+import { Button, TextField } from '@/src/components/ui';
+import { authFailureToast } from '@/src/lib/auth-error';
 import { invitationTokenFrom } from '@/src/lib/staff-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { palette, spacing } from '@/src/theme';
 
 export default function LoginScreen() {
   const { inviteToken: rawInviteToken } = useLocalSearchParams<{ inviteToken?: string }>();
   const inviteToken = invitationTokenFrom(rawInviteToken || '');
   const { signIn, signInWithGoogle, user, status } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
+  const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [emailMissing, setEmailMissing] = useState(false);
   const [passwordMissing, setPasswordMissing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -35,21 +37,17 @@ export default function LoginScreen() {
     setEmailMissing(nextEmailMissing);
     setPasswordMissing(nextPasswordMissing);
     if (nextEmailMissing || nextPasswordMissing) {
-      setError(null);
       return;
     }
 
     setSubmitting(true);
-    setError(null);
     try {
       await signIn(email.trim(), password);
       if (inviteToken) {
         router.replace({ pathname: '/invite/[token]', params: { token: inviteToken } } as never);
       }
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('เข้าสู่ระบบไม่สำเร็จ', 'Could not sign in'));
+      showToast({ tone: 'error', ...authFailureToast(err instanceof Error ? err.message : '', 'sign_in', language) });
     } finally {
       setSubmitting(false);
     }
@@ -57,25 +55,13 @@ export default function LoginScreen() {
 
   async function submitGoogle() {
     setGoogleSubmitting(true);
-    setError(null);
     try {
       const signedIn = await signInWithGoogle();
       if (signedIn && inviteToken) {
         router.replace({ pathname: '/invite/[token]', params: { token: inviteToken } } as never);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      setError(
-        message === 'invalid google credentials'
-          ? copy(
-            'Google ยืนยันบัญชีนี้กับระบบไม่ได้ กรุณาตรวจการตั้งค่า OAuth',
-            'Google could not verify this account. Check the OAuth configuration.',
-          )
-          : message || copy(
-            'เข้าสู่ระบบด้วย Google ไม่สำเร็จ',
-            'Could not sign in with Google',
-          ),
-      );
+      showToast({ tone: 'error', ...authFailureToast(err instanceof Error ? err.message : '', 'google', language) });
     } finally {
       setGoogleSubmitting(false);
     }
@@ -98,31 +84,6 @@ export default function LoginScreen() {
         : undefined}
     >
       <View style={{ gap: spacing.xl }}>
-        {error ? (
-          <Feedback
-            title={copy('เข้าสู่ระบบไม่ได้', 'Unable to sign in')}
-            detail={error}
-            tone="danger"
-          />
-        ) : null}
-
-        <Button
-          icon="logo-google"
-          variant="secondary"
-          label={copy('ดำเนินการต่อด้วย Google', 'Continue with Google')}
-          onPress={submitGoogle}
-          loading={googleSubmitting}
-          disabled={busy && !googleSubmitting}
-        />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <View style={{ height: 1, flex: 1, backgroundColor: palette.border }} />
-          <Text style={{ color: palette.muted, fontSize: 12, fontWeight: '600' }}>
-            {copy('หรือใช้อีเมล', 'or use email')}
-          </Text>
-          <View style={{ height: 1, flex: 1, backgroundColor: palette.border }} />
-        </View>
-
         <TextField
           icon="mail-outline"
           label={copy('อีเมล', 'Email')}
@@ -176,6 +137,26 @@ export default function LoginScreen() {
           onPress={submit}
           loading={submitting || status === 'loading'}
           disabled={googleSubmitting}
+        />
+
+        {/* Under the form, not over it. Google was the first thing the screen
+            offered and the account most people have was below it; the way in
+            people already use now leads, and Google is the alternative. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <View style={{ height: 1, flex: 1, backgroundColor: palette.border }} />
+          <Text style={{ color: palette.muted, fontSize: 12, fontWeight: '600' }}>
+            {copy('หรือ', 'or')}
+          </Text>
+          <View style={{ height: 1, flex: 1, backgroundColor: palette.border }} />
+        </View>
+
+        <Button
+          icon="logo-google"
+          variant="secondary"
+          label={copy('ดำเนินการต่อด้วย Google', 'Continue with Google')}
+          onPress={submitGoogle}
+          loading={googleSubmitting}
+          disabled={busy && !googleSubmitting}
         />
 
         <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>

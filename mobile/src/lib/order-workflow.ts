@@ -110,6 +110,21 @@ export function isOptionSelectionBelowMinimum(
   return selectedCount < normalizedMinimum;
 }
 
+/**
+ * Why a dish the kitchen already made is coming off the bill. Picked from this
+ * list rather than typed: the reason is written into the day's cancellation
+ * record, and a waiter standing at a table with a customer waiting was being
+ * handed an empty box and a keyboard. Five covers what actually happens in
+ * service; anything rarer is a conversation with the manager, not a text field.
+ */
+export const SERVED_REMOVAL_REASONS: { key: string; th: string; en: string }[] = [
+  { key: 'customer_cancelled', th: 'ลูกค้ายกเลิก', en: 'Customer cancelled' },
+  { key: 'not_ordered', th: 'ลูกค้าไม่ได้สั่งรายการนี้', en: 'Customer did not order this' },
+  { key: 'wrong_item', th: 'ทำผิดรายการ', en: 'Wrong item made' },
+  { key: 'quality', th: 'อาหารมีปัญหา', en: 'Problem with the food' },
+  { key: 'comp', th: 'ร้านยกให้ลูกค้า', en: 'On the house' },
+];
+
 export function validateKitchenCancelReason(value: string) {
   const reason = value.trim();
   if (!reason) return { reason: null, error: 'required' as const };

@@ -99,6 +99,28 @@ export function usePrimaryTabSwipeExclusionHandlers() {
   );
 }
 
+/**
+ * Holds the tab pager's swipe off for as long as `covered` is true, for a sheet
+ * or dialog drawn over the screen. A modal is a separate host view, so the
+ * pager's own responder never sees the touches land on it - what it sees is a
+ * drag that started nowhere it knows about, and it changed tabs underneath an
+ * open sheet (the kitchen's finished-rounds sheet, 16 ก.ย. 2569).
+ *
+ * The exclusion handlers above do the same job for a control INSIDE the page,
+ * which can report its own touches; an overlay has to say so for its lifetime.
+ */
+export function usePrimaryTabSwipeCover(covered: boolean) {
+  const { setNestedHorizontalGestureActive } = useContext(PrimaryTabSwipeGestureContext);
+
+  useEffect(() => {
+    if (!covered) return undefined;
+    setNestedHorizontalGestureActive(true);
+    // Released on close AND on unmount: a screen left while its sheet is open
+    // would otherwise take the pager's swipe with it.
+    return () => setNestedHorizontalGestureActive(false);
+  }, [covered, setNestedHorizontalGestureActive]);
+}
+
 export function usePrimaryTabVerticalScrollActivityReporter() {
   return useContext(PrimaryTabSwipeGestureContext).reportVerticalScrollActivity;
 }

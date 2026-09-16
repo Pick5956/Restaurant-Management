@@ -38,25 +38,6 @@ function headerColor(urgency: KitchenUrgency) {
   return urgency === 'overdue' ? palette.danger : urgency === 'warning' ? palette.warning : FRESH_HEADER;
 }
 
-// ---------------------------------------------------------------- header chip
-
-/** Green while the live feed is connected, red when it has dropped. */
-export function LiveChip({ live, language }: { live: boolean; language: 'th' | 'en' }) {
-  const ink = live ? palette.success : palette.danger;
-  const wash = live ? palette.successSoft : palette.dangerSoft;
-  return (
-    <View
-      accessibilityLabel={live ? (language === 'th' ? 'เชื่อมต่อสดอยู่' : 'Live updates connected') : (language === 'th' ? 'การเชื่อมต่อสดหลุด' : 'Live updates disconnected')}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10, backgroundColor: wash, borderWidth: 1, borderColor: live ? '#A7F3D0' : '#FECACA' }}
-    >
-      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: ink }} />
-      <Text style={{ fontSize: 12, fontWeight: '600', color: ink }}>
-        {live ? (language === 'th' ? 'สด' : 'Live') : (language === 'th' ? 'หลุด' : 'Offline')}
-      </Text>
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------- board heading
 
 /**
@@ -244,7 +225,7 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {titleIcon ? <AppIcon name={titleIcon} size={20} color="rgba(255,255,255,0.8)" /> : null}
-            <Text selectable numberOfLines={1} style={{ fontSize: 24, lineHeight: 30, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'], flexShrink: 1 }}>{title}</Text>
+            <Text selectable numberOfLines={1} style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'], flexShrink: 1 }}>{title}</Text>
           </View>
           <Text selectable numberOfLines={1} style={{ fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.82)', marginTop: 3, fontVariant: ['tabular-nums'] }}>{meta}</Text>
         </View>
@@ -260,7 +241,7 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
                 fixed height, the row is centred in it, and the row is nudged down
                 by the part of the box the digits leave empty. */}
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, transform: [{ translateY: 2.5 }] }}>
-              <Text style={{ fontSize: 20, lineHeight: 24, fontWeight: '700', color: '#fff', fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'] }}>
                 {minutes.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
               </Text>
               <Text style={{ fontSize: 11, lineHeight: 16, fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>{language === 'th' ? 'นาที' : 'min'}</Text>

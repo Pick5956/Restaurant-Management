@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { useReducedMotion } from '@/src/components/motion';
+import { useTabSwipeCover } from '@/src/components/tab-swipe-context';
 
 import { ai } from './theme';
 
@@ -472,6 +473,8 @@ export function GlassMorphMenu({
   const progress = useRef(new Animated.Value(0)).current;
   // The backdrop that closes on an outside tap stays for the closing animation.
   const [engaged, setEngaged] = useState(open);
+  // Its backdrop covers the screen, so the pager behind it stands down too.
+  useTabSwipeCover(engaged);
   // The list's natural height, measured once it has laid out at full width.
   const [contentHeight, setContentHeight] = useState(0);
   const fromTop = from === 'top-right';
@@ -1106,6 +1109,9 @@ export function BottomSheet({
   const expandedRef = useRef(false);
 
   const [shown, setShown] = useState(open);
+  // While it is up - including the frames it spends animating away - the tab
+  // pager behind it does not take swipes.
+  useTabSwipeCover(shown);
 
   useEffect(() => {
     if (open) {

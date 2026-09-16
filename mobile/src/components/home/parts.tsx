@@ -193,7 +193,7 @@ export function SalesHero({
         }}
       >
         <Text style={{ fontSize: 11.5, fontWeight: '600', color: 'rgba(255,255,255,0.82)', letterSpacing: 0.3 }}>{caption}</Text>
-        <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 32, fontWeight: '700', color: '#ffffff', lineHeight: 38, marginTop: 1, fontVariant: ['tabular-nums'] }}>{amount}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 20, fontWeight: '600', color: '#ffffff', lineHeight: 28, marginTop: 1, fontVariant: ['tabular-nums'] }}>{amount}</Text>
         {reference ? (
           <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 999, paddingVertical: 2, paddingHorizontal: 9 }}>
             <Text style={{ fontSize: 11, fontWeight: '600', color: '#ffffff' }}>{reference}</Text>

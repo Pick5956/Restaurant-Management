@@ -61,10 +61,14 @@ export const controlShadow = {
 // the loss is silent. 1.5-1.6x is the floor; anything tighter ate the tone mark
 // on words like "น้ำมะนาวโซดา".
 export const typeScale = StyleSheet.create({
+  // THE CEILING. Every screen's own title is drawn in this, and nothing in the
+  // app may be set larger or heavier than it: not a shop name, not a monogram,
+  // not a figure on a dashboard tile. A page whose contents shout over its own
+  // name has no hierarchy left to spend (16 ก.ย. 2569, the owner's rule).
   hero: {
     color: palette.textStrong,
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '600',
     lineHeight: 28,
     letterSpacing: -0.3,
   },

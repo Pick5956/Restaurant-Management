@@ -5,7 +5,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowD
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
+import { useTabSwipeCover, useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
 import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
 import { breakpoints, controlShadow, palette, radius, spacing, statusTone, typeScale } from '@/src/theme';
 
@@ -891,6 +891,7 @@ export function Select<T extends string | number>({
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
+  useTabSwipeCover(open);
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -1097,6 +1098,88 @@ export function EmptyState({ title, detail, action }: { title: string; detail?: 
   );
 }
 
+/**
+ * A sheet that asks one question and closes on the answer. Built for the reason
+ * a made dish comes off a bill: what used to be there was an empty text box
+ * under the row, and a waiter at the table with a customer waiting had to think
+ * of a sentence and type it on a phone (16 ก.ย. 2569).
+ */
+export function ChoiceSheet<T extends string>({
+  open,
+  title,
+  detail,
+  options,
+  cancelLabel,
+  onChoose,
+  onClose,
+  busy = false,
+}: {
+  open: boolean;
+  title: string;
+  /** One line naming what the answer applies to, such as the dish. */
+  detail?: string;
+  options: Array<{ label: string; value: T }>;
+  cancelLabel: string;
+  onChoose: (value: T) => void;
+  onClose: () => void;
+  busy?: boolean;
+}) {
+  useTabSwipeCover(open);
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={open}>
+      <Pressable
+        accessibilityLabel={cancelLabel}
+        onPress={onClose}
+        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}
+      >
+        {/* Stops a tap inside the sheet from reaching the dismiss backdrop. */}
+        <Pressable
+          onPress={() => undefined}
+          style={{
+            maxHeight: '80%',
+            borderTopLeftRadius: radius.md,
+            borderTopRightRadius: radius.md,
+            backgroundColor: palette.surface,
+            paddingBottom: spacing.xxxl + spacing.md,
+          }}
+        >
+          <View style={{ gap: 2, borderBottomWidth: 1, borderBottomColor: palette.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+            <Text style={{ color: palette.textStrong, fontSize: 15, fontWeight: '700' }}>{title}</Text>
+            {detail ? <Text numberOfLines={2} style={{ color: palette.muted, fontSize: 13, lineHeight: 18 }}>{detail}</Text> : null}
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {options.map((option, index) => (
+              <View key={option.value}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => onChoose(option.value)}
+                  style={({ pressed }) => ({
+                    minHeight: 54,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: pressed ? palette.surfaceSubtle : 'transparent',
+                    paddingHorizontal: spacing.lg,
+                    opacity: busy ? 0.5 : 1,
+                  })}
+                >
+                  <Text style={{ minWidth: 0, flex: 1, color: palette.text, fontSize: 15, fontWeight: '500' }}>{option.label}</Text>
+                </Pressable>
+                {index === options.length - 1 ? null : (
+                  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: palette.divider, marginHorizontal: spacing.lg }} />
+                )}
+              </View>
+            ))}
+          </ScrollView>
+          <View style={{ borderTopWidth: 1, borderTopColor: palette.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+            <Button variant="secondary" label={cancelLabel} onPress={onClose} disabled={busy} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export function Divider() {
   return <View style={{ height: 1, backgroundColor: palette.border }} />;
 }
@@ -1131,7 +1214,7 @@ export function ActionDock({
       {label || value ? (
         <View style={{ minWidth: 0, flex: 1, gap: 1 }}>
           {label ? <Text style={[typeScale.caption, { color: palette.muted }]}>{label}</Text> : null}
-          {value ? <Text numberOfLines={1} style={[typeScale.number, { fontSize: 20 }]}>{value}</Text> : null}
+          {value ? <Text numberOfLines={1} style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{value}</Text> : null}
         </View>
       ) : null}
       <View style={{ flex: label || value ? 1.35 : 1 }}>{children}</View>

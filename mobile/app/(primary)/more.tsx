@@ -6,17 +6,19 @@ import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { appNavigation, AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { ToolRow } from '@/src/components/tool-row';
-import { groupMoreItems, MORE_DETAILS, restaurantMark, type MoreGroupKey } from '@/src/lib/more-screen';
+import { groupMoreItems, MORE_TITLES, restaurantMark, type MoreGroupKey } from '@/src/lib/more-screen';
 import { getWorkModeCopy } from '@/src/lib/work-mode';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, spacing } from '@/src/theme';
+import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
 
-// "เพิ่มเติม", redrawn on 15 ก.ย. 2569 (design B). It had been three plain
-// lists whose two columns on a tablet ended a row apart, every row the same
-// thin icon and name, and nothing saying which shop this was. Now: the shop at
-// the top, then two groups of four — so on a tablet the columns end level —
-// each row with a tinted icon and a line saying what is inside.
+// "เพิ่มเติม", redrawn on 15 ก.ย. 2569 (design B): the shop at the top, then
+// two groups of four - so on a tablet the columns end level - each row a
+// tinted icon and a name.
+//
+// The line under each name went on 16 ก.ย.: eight of them turned a short menu
+// into a wall of small print, and none of it said anything the name did not.
+// The group's heading leads instead, and the names stepped back to make room.
 
 const CARD_EDGE = '#EFE7DF';
 
@@ -53,10 +55,10 @@ export default function MoreScreen() {
         end={{ x: 1, y: 1 }}
         style={{ width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#fff' }}>{restaurantMark(shopName)}</Text>
+        <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff' }}>{restaurantMark(shopName)}</Text>
       </LinearGradient>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text accessibilityRole="header" numberOfLines={1} style={{ fontSize: 20, lineHeight: 26, fontWeight: '700', color: palette.textStrong }}>
+        <Text accessibilityRole="header" numberOfLines={1} style={[typeScale.hero, { lineHeight: 26 }]}>
           {shopName}{branch ? <Text style={{ fontSize: 15, fontWeight: '500', color: palette.muted }}>{` · ${branch}`}</Text> : null}
         </Text>
         {role ? (
@@ -81,19 +83,25 @@ export default function MoreScreen() {
 
   const groupViews = groups.map((group) => (
     <View key={group.key} style={{ flex: columns ? 1 : undefined, minWidth: 0, gap: spacing.sm }}>
-      <Text accessibilityRole="header" style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder, paddingHorizontal: 6 }}>
+      {/* The heading leads its group - it used to be smaller and paler than the
+          rows under it, so the two sections read as one long list (16 ก.ย.) -
+          but it stays under the screen title every other page carries, which is
+          typeScale.hero at weight 600. A heading inside a page cannot be
+          heavier than the name of the page. */}
+      <Text accessibilityRole="header" style={{ fontSize: 17, lineHeight: 24, fontWeight: '600', color: palette.textStrong, paddingHorizontal: 6 }}>
         {group.key === 'shop' ? copy('งานร้าน', 'Shop') : copy('ข้อมูลและบัญชี', 'Insights and account')}
       </Text>
       <View style={{ borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
         {group.items.map((item, index) => {
-          const detail = MORE_DETAILS[item.key];
+          const override = MORE_TITLES[item.key];
           return (
             <ToolRow
               key={item.key}
               first={index === 0}
               icon={item.icon as AppIconName}
-              title={language === 'th' ? item.label : item.labelEn}
-              detail={detail ? (language === 'th' ? detail.th : detail.en) : undefined}
+              title={override
+                ? (language === 'th' ? override.th : override.en)
+                : (language === 'th' ? item.label : item.labelEn)}
               look={rowLook(group.key, item.key)}
               onPress={() => router.push(item.href as never)}
             />

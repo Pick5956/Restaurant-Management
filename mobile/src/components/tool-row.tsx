@@ -26,8 +26,10 @@ export function ToolRow({ icon, title, detail, first, look, onPress, showChevron
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        minHeight: 64,
-        paddingVertical: 10,
+        // A row with no second line does not need the height one had: 64 left a
+        // band of empty paper above and below every name (16 ก.ย. 2569).
+        minHeight: detail ? 64 : 56,
+        paddingVertical: 9,
         paddingHorizontal: 14,
         borderTopWidth: first ? 0 : 1,
         borderTopColor: palette.divider,
@@ -38,7 +40,9 @@ export function ToolRow({ icon, title, detail, first, look, onPress, showChevron
         <AppIcon name={icon} size={21} color={look.ink} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 16, lineHeight: 21, fontWeight: '600', color: look.title }}>{title}</Text>
+        {/* Quieter than the heading above the card: this is one of four things
+            inside a group, not the name of the group. */}
+        <Text numberOfLines={1} style={{ fontSize: 15, lineHeight: 20, fontWeight: '500', color: look.title }}>{title}</Text>
         {detail ? <Text numberOfLines={1} style={{ fontSize: 12.5, lineHeight: 17, color: palette.muted }}>{detail}</Text> : null}
       </View>
       {showChevron ? <AppIcon name="chevron-forward" size={19} color={palette.placeholder} /> : null}

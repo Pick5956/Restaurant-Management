@@ -79,7 +79,7 @@ export default function SettingsScreen() {
         end={{ x: 1, y: 1 }}
         style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Text style={{ fontSize: 19, fontWeight: '700', color: '#fff' }}>{memberInitials(name)}</Text>
+        <Text style={{ fontSize: 19, lineHeight: 27, fontWeight: '600', color: '#fff' }}>{memberInitials(name)}</Text>
       </LinearGradient>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: palette.textStrong }}>{name}</Text>

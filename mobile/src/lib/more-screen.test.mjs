@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { MORE_DETAILS, MORE_GROUPS, groupMoreItems, restaurantMark } from './more-screen.ts';
+import { MORE_GROUPS, MORE_TITLES, groupMoreItems, restaurantMark } from './more-screen.ts';
 
 const ALL = ['menu', 'inventory', 'tables-manage', 'staff', 'reports', 'expenses', 'ai', 'settings'].map((key) => ({ key }));
 
@@ -24,11 +24,12 @@ test('items a person may not open are left out, and an empty group disappears', 
   assert.deepEqual(onlySettings.map((group) => group.key), ['team']);
 });
 
-test('every listed item has a line in both languages', () => {
-  for (const group of MORE_GROUPS) {
-    for (const key of group.itemKeys) {
-      assert.ok(MORE_DETAILS[key]?.th && MORE_DETAILS[key]?.en, key);
-    }
+test('a row is named for the job, and every override has both languages', () => {
+  // The rail calls it "เมนูอาหาร"; a row someone taps to go and edit prices says so.
+  assert.deepEqual(MORE_TITLES.menu, { th: 'จัดการเมนูอาหาร', en: 'Manage menu' });
+  for (const [key, title] of Object.entries(MORE_TITLES)) {
+    assert.ok(title.th && title.en, key);
+    assert.ok(MORE_GROUPS.some((group) => group.itemKeys.includes(key)), `${key} is not on this screen`);
   }
 });
 
