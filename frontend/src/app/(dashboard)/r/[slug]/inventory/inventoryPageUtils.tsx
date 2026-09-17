@@ -1,7 +1,14 @@
 import type { AdjustStockInput, Ingredient, IngredientInput } from "@/src/types/ingredient";
 import { localeForLanguage } from "@/src/lib/format";
 
-export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
+/**
+ * The unit stock is counted in — the unit a recipe consumes. Containers stay for
+ * things used whole (a bottle of water sold as a bottle); a container that is
+ * used a little at a time belongs in the purchase units instead, see
+ * inventoryUnitUtils.ts. An existing ingredient on a unit not listed here keeps
+ * it: the pickers prepend the current value.
+ */
+export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ฟอง", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {
@@ -13,6 +20,10 @@ export const emptyForm: IngredientInput = {
   min_percent: 0,
   cost_per_unit: 0,
   storage_type: "room_temp",
+  pack_unit: "",
+  pack_size: 0,
+  case_unit: "",
+  case_size: 0,
 };
 
 /** The quantity a percentage of the shelf's maximum works out to. */

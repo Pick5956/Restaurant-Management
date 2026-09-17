@@ -55,6 +55,7 @@ import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { PACK_UNITS, formatPackCount, packExample, unitCopy } from "./inventoryUnitUtils";
 import {
   daysUntil,
   defaultShelfLifeDays,
@@ -390,6 +391,7 @@ export default function InventoryPage() {
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const unitOptions = useMemo(() => UNITS.map((unit) => ({ value: unit, label: unit })), []);
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const ucopy = useMemo(() => unitCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
@@ -491,7 +493,11 @@ export default function InventoryPage() {
   // Mirrors the server's fallback: an unpriced stock-in is booked at the
   // ingredient's own cost per unit.
   const referenceAdjustAmount = (() => {
-    const quantity = Number(adjustQty);
+    const factor =
+      !adjustTarget || !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    const quantity = Number(adjustQty) * factor;
     const rate = adjustTarget?.cost_per_unit ?? 0;
     if (!Number.isFinite(quantity) || quantity <= 0 || rate <= 0) return 0;
     return Math.round(rate * quantity * 100) / 100;
@@ -689,12 +695,18 @@ export default function InventoryPage() {
 
   const adjustPreview = useMemo(() => {
     if (!adjustTarget || !adjustQty) return null;
-    const qty = parseFloat(adjustQty);
+    // The preview is in the shelf's unit, so a quantity typed in ลัง or กิโลกรัม
+    // is scaled first — it used to add 2 to a ml shelf for "2 ลัง".
+    const factor =
+      !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    const qty = parseFloat(adjustQty) * factor;
     if (Number.isNaN(qty) || qty <= 0) return null;
     if (adjustType === "in") return adjustTarget.stock + qty;
     if (adjustType === "out") return Math.max(0, adjustTarget.stock - qty);
     return qty;
-  }, [adjustTarget, adjustQty, adjustType]);
+  }, [adjustTarget, adjustQty, adjustType, adjustUnit]);
 
   function openCreate() {
     setModalClosing(false);
@@ -718,6 +730,10 @@ export default function InventoryPage() {
       min_percent: item.min_percent ?? 0,
       cost_per_unit: item.cost_per_unit,
       storage_type: item.storage_type ?? "room_temp",
+      pack_unit: item.pack_unit ?? "",
+      pack_size: item.pack_size ?? 0,
+      case_unit: item.case_unit ?? "",
+      case_size: item.case_size ?? 0,
     });
     setCostText(item.cost_per_unit ? String(item.cost_per_unit) : "");
     setFormError("");
@@ -728,6 +744,14 @@ export default function InventoryPage() {
     setFormError("");
     if (!form.name.trim()) {
       setFormError(lang === "th" ? "กรุณาระบุชื่อวัตถุดิบ" : "Name is required");
+      return;
+    }
+    if (form.pack_unit && !((form.pack_size ?? 0) > 0)) {
+      setFormError(ucopy.packSizeRequired(form.pack_unit));
+      return;
+    }
+    if (form.pack_unit && form.case_unit && !((form.case_size ?? 0) > 0)) {
+      setFormError(ucopy.caseSizeRequired(form.case_unit));
       return;
     }
 
@@ -923,7 +947,8 @@ export default function InventoryPage() {
     setAdjustQty("");
     // Default to the shelf's own unit every time, so a unit chosen for one
     // ingredient never carries into the next one.
-    setAdjustUnit(item.unit);
+    // Deliveries arrive in packs, so open on the pack when the ingredient has one.
+    setAdjustUnit(item.pack_unit && (item.pack_size ?? 0) > 0 ? item.pack_unit : item.unit);
     setAdjustPaidAmount("");
     setAdjustNote("");
     setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
@@ -1591,6 +1616,9 @@ export default function InventoryPage() {
                                 <div className="flex items-center gap-2 text-[13px]">
                                   <span className={`font-semibold tabular-nums ${meta.value}`}>
                                     {formatNumber(item.stock, lang)} <span className="text-[11px] font-medium text-slate-400">{item.unit}</span>
+                                    {formatPackCount(item, lang) ? (
+                                      <span className="ml-1.5 text-[11px] font-medium text-slate-400">{formatPackCount(item, lang)}</span>
+                                    ) : null}
                                   </span>
                                 </div>
                                 {/* percent is null when this shelf has no observed
@@ -1841,6 +1869,91 @@ export default function InventoryPage() {
                       className={inputCls}
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.groupBuy}</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-36">
+                      <ThemedSelect
+                        aria-label={ucopy.buyAs}
+                        value={form.pack_unit ?? ""}
+                        onChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            pack_unit: value,
+                            pack_size: value ? current.pack_size : 0,
+                            case_unit: value ? current.case_unit : "",
+                            case_size: value ? current.case_size : 0,
+                          }))
+                        }
+                        options={[
+                          { value: "", label: ucopy.none },
+                          ...PACK_UNITS.filter((unit) => unit !== form.unit).map((unit) => ({ value: unit, label: unit })),
+                        ]}
+                      />
+                    </div>
+                    {form.pack_unit ? (
+                      <>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.per}</span>
+                        <div className="w-28">
+                          <input
+                            type="number"
+                            min={0}
+                            inputMode="decimal"
+                            aria-label={ucopy.perPack(form.pack_unit)}
+                            value={form.pack_size || ""}
+                            onChange={(event) =>
+                              setForm((current) => ({ ...current, pack_size: parseFloat(event.target.value) || 0 }))
+                            }
+                            className={inputCls}
+                          />
+                        </div>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{form.unit}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  {form.pack_unit ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="w-36">
+                        <ThemedSelect
+                          aria-label={ucopy.caseAs}
+                          value={form.case_unit ?? ""}
+                          onChange={(value) =>
+                            setForm((current) => ({ ...current, case_unit: value, case_size: value ? current.case_size : 0 }))
+                          }
+                          options={[
+                            { value: "", label: `${ucopy.caseAs}: ${ucopy.none}` },
+                            ...PACK_UNITS.filter((unit) => unit !== form.pack_unit && unit !== form.unit).map((unit) => ({
+                              value: unit,
+                              label: unit,
+                            })),
+                          ]}
+                        />
+                      </div>
+                      {form.case_unit ? (
+                        <>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.per}</span>
+                          <div className="w-28">
+                            <input
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              aria-label={ucopy.perCase(form.case_unit)}
+                              value={form.case_size || ""}
+                              onChange={(event) =>
+                                setForm((current) => ({ ...current, case_size: parseFloat(event.target.value) || 0 }))
+                              }
+                              className={inputCls}
+                            />
+                          </div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">{form.pack_unit}</span>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                    {packExample(form, lang) ?? ucopy.buyNote}
+                  </p>
                 </div>
                 {/* Storage pairs with the opening stock when there is one; on an
                     existing item it takes the whole row rather than leaving half

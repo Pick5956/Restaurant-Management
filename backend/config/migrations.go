@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 30
+	CurrentSchemaVersion int64 = 31
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -665,6 +665,31 @@ func schemaMigrationPlan() []SchemaMigration {
 				                        WHERE l.ingredient_id = i.id AND l.deleted_at IS NULL)`
 				if err := ctx.DB.Exec(statement).Error; err != nil {
 					return fmt.Errorf("backfill opening lots: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 31,
+			Name:    "ingredient_pack_units",
+			Up: func(ctx *MigrationContext) error {
+				// Purchase units per ingredient: how many stock units one pack
+				// holds, and how many packs one case holds. Every existing row is
+				// "bought in its own unit", which is what empty/zero means, so
+				// there is nothing to backfill.
+				for _, statement := range []string{
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS pack_unit VARCHAR(40) NOT NULL DEFAULT ''`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS pack_size NUMERIC(18,4) NOT NULL DEFAULT 0`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS case_unit VARCHAR(40) NOT NULL DEFAULT ''`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS case_size NUMERIC(18,4) NOT NULL DEFAULT 0`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_pack_size_nonnegative`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_pack_size_nonnegative CHECK (pack_size >= 0)`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_case_size_nonnegative`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_case_size_nonnegative CHECK (case_size >= 0)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add ingredient pack units: %w", err)
+					}
 				}
 				return nil
 			},

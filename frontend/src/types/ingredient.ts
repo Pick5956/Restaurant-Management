@@ -42,6 +42,16 @@ export interface Ingredient {
   yield_percent?: number;
   storage_type?: string;
   /**
+   * How this ingredient is bought when that is not how it is used: pack_unit
+   * "ขวด" with pack_size 700 means one ขวด holds 700 of `unit`. Empty means it
+   * is bought in its own unit. case_unit/case_size are the level above — one
+   * ลัง holds case_size packs. Both already appear in unit_family.
+   */
+  pack_unit?: string;
+  pack_size?: number;
+  case_unit?: string;
+  case_size?: number;
+  /**
    * How many days the current stock lasts at the rate this ingredient was
    * actually consumed over the last 30 days. Computed at read time, absent when
    * nothing was consumed in the window — there is no rate to divide by, and a 0
@@ -151,6 +161,14 @@ export interface IngredientInput {
   storage_type?: string;
   /** YYYY-MM-DD for the opening lot when `stock` is above zero; omit for "ไม่ระบุ". */
   expires_at?: string;
+  /**
+   * Purchase units. Omit a field to leave what is stored alone; send "" as
+   * pack_unit to clear the pack and its case.
+   */
+  pack_unit?: string;
+  pack_size?: number;
+  case_unit?: string;
+  case_size?: number;
 }
 
 /** One entry in a unit picker: a unit this ingredient accepts, and how many of

@@ -17,6 +17,7 @@ import {
 import { BottomSheet, PrimaryButton, ScreenNav, SecondaryButton, TAP } from "./primitives";
 import { statusTone, thaiShortDate } from "./inventoryMobileUtils";
 import ExpiryPicker from "./ExpiryPicker";
+import { formatPackCount, packSummary, unitCopy } from "../inventoryUnitUtils";
 
 export default function IngredientDetailScreen({
   item,
@@ -187,6 +188,9 @@ export default function IngredientDetailScreen({
               {formatNumber(item.stock, lang)}
             </span>
             <span className="text-[15px] text-(--inv-muted)">{item.unit}</span>
+            {formatPackCount(item, lang) ? (
+              <span className="text-[13px] text-(--inv-faint)">{formatPackCount(item, lang)}</span>
+            ) : null}
             <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
               {tone.label}
             </span>
@@ -222,6 +226,12 @@ export default function IngredientDetailScreen({
             }
           />
         </div>
+
+        {packSummary(item, lang) ? (
+          <p className="px-1 text-[12px] text-(--inv-muted)">
+            {unitCopy(lang).buyAs} {packSummary(item, lang)}
+          </p>
+        ) : null}
 
         {lots.length > 0 && (
           <div>

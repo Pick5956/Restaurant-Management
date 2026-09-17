@@ -47,6 +47,18 @@ type Ingredient struct {
 	CostPerUnit  float64 `json:"cost_per_unit" gorm:"type:numeric(14,4);not null;default:0;check:ingredient_cost_nonnegative,cost_per_unit >= 0"`
 	YieldPercent float64 `json:"yield_percent" gorm:"type:numeric(7,4);not null;default:100;check:ingredient_yield_range,yield_percent > 0 AND yield_percent <= 100"`
 	StorageType  string  `json:"storage_type" gorm:"size:40;default:room_temp"`
+	// PackUnit and PackSize say how this ingredient is bought when that is not
+	// how it is used: น้ำปลา is used by the มิลลิลิตร but bought by the ขวด, and
+	// one ขวด holds PackSize มิลลิลิตร. The factor lives on the ingredient, not
+	// in the unit table, because a container word has no universal size — a
+	// ขวด of fish sauce and a ขวด of soda are different amounts. Empty PackUnit
+	// means the ingredient is bought in its own unit.
+	PackUnit string  `json:"pack_unit" gorm:"size:40;not null;default:''"`
+	PackSize float64 `json:"pack_size" gorm:"type:numeric(18,4);not null;default:0;check:ingredient_pack_size_nonnegative,pack_size >= 0"`
+	// CaseUnit and CaseSize are the level above the pack: one ลัง holds CaseSize
+	// ขวด. They mean nothing without a pack and are cleared along with it.
+	CaseUnit string  `json:"case_unit" gorm:"size:40;not null;default:''"`
+	CaseSize float64 `json:"case_size" gorm:"type:numeric(18,4);not null;default:0;check:ingredient_case_size_nonnegative,case_size >= 0"`
 
 	Restaurant *Restaurant         `json:"restaurant,omitempty" gorm:"foreignKey:RestaurantID"`
 	Category   *IngredientCategory `json:"category,omitempty" gorm:"foreignKey:CategoryID"`

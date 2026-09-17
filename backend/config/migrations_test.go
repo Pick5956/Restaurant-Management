@@ -159,6 +159,10 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// Version 30 adds ingredient_lots — one row per delivery, the only place an
 		// expiry date lives — so the model registry gains a table here.
 		30: "263ac19bea1d072a807e83cbdbc58c56907ecf3428146e0311692c36b7576097",
+		// Version 31 adds pack_unit/pack_size/case_unit/case_size to Ingredient —
+		// the purchase units a delivery is entered in — inside the frozen
+		// registry, so the fingerprint advances with the columns.
+		31: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -184,6 +188,7 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 	want := map[int64]string{
 		29: "restaurant_slug",
 		30: "ingredient_lots",
+		31: "ingredient_pack_units",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

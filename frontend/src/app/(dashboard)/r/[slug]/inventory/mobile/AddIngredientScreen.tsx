@@ -7,6 +7,7 @@ import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
 import { STORAGE_TYPES, UNITS, reorderQuantityFor } from "../inventoryPageUtils";
 import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
 import ExpiryPicker from "./ExpiryPicker";
+import { PACK_UNITS, packExample, unitCopy } from "../inventoryUnitUtils";
 import type { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -114,7 +115,20 @@ export default function AddIngredientScreen({
   // percentage of; a brand new ingredient has none, so it types a quantity.
   const shelfMax = editing?.max_stock ?? 0;
   const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
-  const [picker, setPicker] = useState<"none" | "category" | "unit" | "storage">("none");
+  const [picker, setPicker] = useState<"none" | "category" | "unit" | "storage" | "pack" | "case">("none");
+  const ucopy = unitCopy(lang);
+  const [packUnit, setPackUnit] = useState(editing?.pack_unit ?? "");
+  const [packSize, setPackSize] = useState(editing?.pack_size ? String(editing.pack_size) : "");
+  const [caseUnit, setCaseUnit] = useState(editing?.case_unit ?? "");
+  const [caseSize, setCaseSize] = useState(editing?.case_size ? String(editing.case_size) : "");
+  const packShape = {
+    unit,
+    pack_unit: packUnit,
+    pack_size: Number(packSize) || 0,
+    case_unit: caseUnit,
+    case_size: Number(caseSize) || 0,
+    cost_per_unit: Number(price) || 0,
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -124,6 +138,14 @@ export default function AddIngredientScreen({
   async function save() {
     if (!name.trim()) {
       setError(copy.nameRequired);
+      return;
+    }
+    if (packUnit && !(Number(packSize) > 0)) {
+      setError(ucopy.packSizeRequired(packUnit));
+      return;
+    }
+    if (packUnit && caseUnit && !(Number(caseSize) > 0)) {
+      setError(ucopy.caseSizeRequired(caseUnit));
       return;
     }
     setBusy(true);
@@ -141,6 +163,10 @@ export default function AddIngredientScreen({
         min_percent: minPercent,
         cost_per_unit: Number(price) || 0,
         storage_type: storageType,
+        pack_unit: packUnit,
+        pack_size: packUnit ? Number(packSize) || 0 : 0,
+        case_unit: packUnit ? caseUnit : "",
+        case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
         // Only a create with stock opens a lot, so only that case carries a date.
         ...(!editing && (Number(stock) || 0) > 0 && expiryDays !== null
           ? { expires_at: expiryDateFromDays(expiryDays) }
@@ -192,6 +218,46 @@ export default function AddIngredientScreen({
             <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
           </FormRow>
         </FormGroup>
+
+        <FormGroup label={ucopy.groupBuy}>
+          <FormRow label={ucopy.buyAs} onPress={() => setPicker("pack")} divider={packUnit !== ""}>
+            <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+          </FormRow>
+          {packUnit ? (
+            <>
+              <FormRow label={ucopy.perPack(packUnit)} suffix={unit}>
+                <input
+                type="number"
+                inputMode="decimal"
+                value={packSize}
+                onChange={(event) => setPackSize(event.target.value)}
+                placeholder="0"
+                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+              />
+              </FormRow>
+              <FormRow label={ucopy.caseAs} onPress={() => setPicker("case")} divider={caseUnit !== ""}>
+                <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+              </FormRow>
+              {caseUnit ? (
+                <FormRow label={ucopy.perCase(caseUnit)} suffix={packUnit} divider={false}>
+                  <input
+                type="number"
+                inputMode="decimal"
+                value={caseSize}
+                onChange={(event) => setCaseSize(event.target.value)}
+                placeholder="0"
+                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+              />
+                </FormRow>
+              ) : null}
+            </>
+          ) : null}
+        </FormGroup>
+        <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
+          {packExample(packShape, lang) ?? ucopy.buyNote}
+        </p>
 
         <FormGroup label={copy.groupStock}>
           <FormRow label={copy.openingStock} suffix={unit}>
@@ -341,10 +407,44 @@ export default function AddIngredientScreen({
 
       <BottomSheet open={picker === "unit"} title={copy.pickUnit} onClose={() => setPicker("none")}>
         <PickerList
-          options={UNITS.map((u) => ({ value: u, label: u }))}
+          options={(UNITS.includes(unit) ? UNITS : [unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
           value={unit}
           onPick={(value) => {
             setUnit(value);
+            setPicker("none");
+          }}
+        />
+      </BottomSheet>
+
+      <BottomSheet open={picker === "pack"} title={ucopy.pickPack} onClose={() => setPicker("none")}>
+        <PickerList
+          options={[
+            { value: "", label: ucopy.none },
+            ...PACK_UNITS.filter((u) => u !== unit).map((u) => ({ value: u, label: u })),
+          ]}
+          value={packUnit}
+          onPick={(value) => {
+            setPackUnit(value);
+            if (!value) {
+              setPackSize("");
+              setCaseUnit("");
+              setCaseSize("");
+            }
+            setPicker("none");
+          }}
+        />
+      </BottomSheet>
+
+      <BottomSheet open={picker === "case"} title={ucopy.pickCase} onClose={() => setPicker("none")}>
+        <PickerList
+          options={[
+            { value: "", label: ucopy.none },
+            ...PACK_UNITS.filter((u) => u !== unit && u !== packUnit).map((u) => ({ value: u, label: u })),
+          ]}
+          value={caseUnit}
+          onPick={(value) => {
+            setCaseUnit(value);
+            if (!value) setCaseSize("");
             setPicker("none");
           }}
         />

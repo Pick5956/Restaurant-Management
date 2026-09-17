@@ -41,6 +41,13 @@ type IngredientRequest struct {
 	// ExpiresAt dates the opening stock's lot (YYYY-MM-DD). Blank means the
 	// delivery came without a date; it can be set later from the lot list.
 	ExpiresAt string `json:"expires_at" binding:"max=10"`
+	// Purchase units — see ingredient_pack.go. Pointers because leaving them
+	// out has to mean "leave them as they are": the Expo app and the assistant
+	// send none of these, and must not wipe a pack set on the web.
+	PackUnit *string  `json:"pack_unit" binding:"omitempty,max=40"`
+	PackSize *float64 `json:"pack_size"`
+	CaseUnit *string  `json:"case_unit" binding:"omitempty,max=40"`
+	CaseSize *float64 `json:"case_size"`
 }
 
 type IngredientCategoryRequest struct {
@@ -88,13 +95,13 @@ func attachUnitFamily(ingredient *entity.Ingredient, err error) (*entity.Ingredi
 	if err != nil || ingredient == nil {
 		return ingredient, err
 	}
-	ingredient.UnitFamily = IngredientUnitFamily(ingredient.Unit)
+	ingredient.UnitFamily = IngredientUnitFamilyFor(ingredient)
 	return ingredient, nil
 }
 
 func attachUnitFamilyList(items []entity.Ingredient) []entity.Ingredient {
 	for i := range items {
-		items[i].UnitFamily = IngredientUnitFamily(items[i].Unit)
+		items[i].UnitFamily = IngredientUnitFamilyFor(&items[i])
 	}
 	return items
 }
@@ -208,6 +215,10 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 	if err := validateIngredientNumbers(req); err != nil {
 		return nil, err
 	}
+	packs, err := resolvePackFields(req, unit, packFields{})
+	if err != nil {
+		return nil, err
+	}
 	ingredient := &entity.Ingredient{
 		RestaurantID: restaurantID,
 		Name:         name,
@@ -221,6 +232,7 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 		YieldPercent: sanitizeYieldPercent(req.YieldPercent),
 		StorageType:  storageType,
 	}
+	packs.applyTo(ingredient)
 	ingredient.MaxStock = startingMaxStock(req.Stock, req.MinStock)
 	ingredient.MinPercent = percentOr(req.MinPercent, 0)
 	ingredient.MinStock = reorderLevelFrom(ingredient.MaxStock, ingredient.MinPercent, req.MinStock)
@@ -281,6 +293,11 @@ func (s *IngredientService) Update(restaurantID, ingredientID uint, req *Ingredi
 			return nil, errors.New("cannot change stock units while ingredient is used by a menu recipe")
 		}
 	}
+	packs, err := resolvePackFields(req, unit, packFieldsOf(ingredient))
+	if err != nil {
+		return nil, err
+	}
+	packs.applyTo(ingredient)
 	ingredient.Name = name
 	ingredient.SKU = strings.TrimSpace(req.SKU)
 	ingredient.CategoryID = categoryID
@@ -295,7 +312,7 @@ func (s *IngredientService) Update(restaurantID, ingredientID uint, req *Ingredi
 	if err := s.repo.UpdateMetadata(ingredient); err != nil {
 		return nil, err
 	}
-	return s.repo.FindByID(restaurantID, ingredientID)
+	return attachUnitFamily(s.repo.FindByID(restaurantID, ingredientID))
 }
 
 func (s *IngredientService) Delete(restaurantID, ingredientID uint) error {
@@ -337,7 +354,7 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 		if err != nil {
 			return errors.New("ingredient not found")
 		}
-		quantity, err := stockQuantityInStockUnit(req.Quantity, req.Unit, ingredient.Unit)
+		quantity, err := ingredientStockQuantity(req.Quantity, req.Unit, ingredient)
 		if err != nil {
 			return err
 		}
@@ -630,11 +647,17 @@ func isFiniteIngredientNumber(value float64) bool {
 // A unit from the same family is converted; anything else is refused, because a
 // wrong factor here moves real stock and nothing later can tell it was wrong.
 func stockQuantityInStockUnit(quantity float64, enteredUnit, stockUnit string) (float64, error) {
+	return ingredientStockQuantity(quantity, enteredUnit, &entity.Ingredient{Unit: stockUnit})
+}
+
+// ingredientStockQuantity is stockQuantityInStockUnit with the ingredient's own
+// pack and case understood as well.
+func ingredientStockQuantity(quantity float64, enteredUnit string, ingredient *entity.Ingredient) (float64, error) {
 	unit := strings.TrimSpace(enteredUnit)
-	if unit == "" || strings.EqualFold(unit, strings.TrimSpace(stockUnit)) {
+	if unit == "" || strings.EqualFold(unit, strings.TrimSpace(ingredient.Unit)) {
 		return quantity, nil
 	}
-	converted, ok := ConvertToStockUnit(quantity, unit, stockUnit)
+	converted, ok := IngredientQuantityInStockUnit(quantity, unit, ingredient)
 	if !ok {
 		return 0, errors.New("stock unit cannot be converted to the ingredient unit")
 	}
