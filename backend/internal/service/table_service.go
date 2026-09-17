@@ -262,6 +262,7 @@ func (s *TableService) ReserveTable(restaurantID, userID, tableID uint, phone, n
 			return err
 		}
 		reservation := reservationForTable(table, userID, phone, name)
+		reservation.GuestCount = guestCount
 		if activeReservation == nil {
 			if err := tx.CreateReservation(reservation); err != nil {
 				return err
@@ -270,6 +271,7 @@ func (s *TableService) ReserveTable(restaurantID, userID, tableID uint, phone, n
 			activeReservation.TableLabel = reservation.TableLabel
 			activeReservation.Name = reservation.Name
 			activeReservation.Phone = reservation.Phone
+			activeReservation.GuestCount = reservation.GuestCount
 			activeReservation.ReservedByUserID = reservation.ReservedByUserID
 			activeReservation.ResolvedAt = nil
 			if err := tx.UpdateReservation(activeReservation); err != nil {

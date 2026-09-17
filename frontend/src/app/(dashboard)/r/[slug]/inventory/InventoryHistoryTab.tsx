@@ -237,7 +237,7 @@ export default function InventoryHistoryTab({
             placeholder={copy.searchPlaceholder}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className={`${inputCls} !h-9 pl-7 pr-3`}
+            className={`${inputCls} !h-9 !rounded-xl pl-7 pr-3 shadow-(--dashboard-control-shadow)`}
           />
         </div>
 
@@ -248,7 +248,7 @@ export default function InventoryHistoryTab({
             aria-expanded={rangeOpen}
             aria-label={copy.range}
             onClick={() => setRangeOpen((open) => !open)}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold transition ${
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
               rangeOpen || rangeKey !== "30d"
                 ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
@@ -261,7 +261,7 @@ export default function InventoryHistoryTab({
           {rangeOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
-              <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-md border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+              <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl border border-slate-200 bg-white p-3 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
                 {/* A four-column grid, not a wrapping row: the labels differ in
                     width per language and one of them kept falling to its own line. */}
                 <div className="mb-3 grid grid-cols-4 gap-1.5">
@@ -321,6 +321,7 @@ export default function InventoryHistoryTab({
           aria-label={copy.type}
           compact
           className="w-28 lg:w-32"
+          triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
           value={type}
           onChange={(value) => setType(value as TransactionType | "")}
           options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
@@ -330,6 +331,7 @@ export default function InventoryHistoryTab({
           aria-label={copy.allCategories}
           compact
           className="w-36 lg:w-40"
+          triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
           value={String(categoryId)}
           onChange={(value) => setCategoryId(Number(value))}
           options={[
@@ -342,7 +344,7 @@ export default function InventoryHistoryTab({
           <button
             type="button"
             onClick={resetFilters}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             {copy.clear}
@@ -354,7 +356,7 @@ export default function InventoryHistoryTab({
             type="button"
             disabled={exporting}
             onClick={() => setExportOpen((open) => !open)}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
           >
             <Download className="h-4 w-4" />
             {exporting ? copy.exporting : copy.export}
@@ -362,18 +364,18 @@ export default function InventoryHistoryTab({
           {exportOpen && !exporting && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
-              <div className="smooth-pop absolute right-0 top-full z-50 mt-2 w-56 origin-top-right rounded-md border border-slate-200 bg-white p-1.5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+              <div className="smooth-pop absolute right-0 top-full z-50 mt-2 w-56 origin-top-right rounded-xl border border-slate-200 bg-white p-1.5 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
                 <button
                   type="button"
                   onClick={() => runExport("filtered")}
-                  className="block w-full rounded px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
+                  className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
                 >
                   {copy.exportFiltered}
                 </button>
                 <button
                   type="button"
                   onClick={() => runExport("all")}
-                  className="block w-full rounded px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
+                  className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
                 >
                   {copy.exportAll}
                 </button>

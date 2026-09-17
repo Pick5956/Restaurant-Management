@@ -478,26 +478,26 @@ export default function ExpensesPage() {
 
       <div id="expense-print">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <ThemedSelect aria-label={copy.month} value={monthValue} onChange={selectMonth} options={monthOptions} compact className="w-[140px] print:hidden" />
+        <ThemedSelect aria-label={copy.month} value={monthValue} onChange={selectMonth} options={monthOptions} compact className="w-[140px] print:hidden" triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)" />
         {/* The picker itself is screen-only, so the PDF keeps a plain month heading. */}
         <span className="hidden text-[16px] font-semibold print:block">{monthLabel}</span>
         <span className="text-[11px] text-gray-500 dark:text-gray-400 print:hidden">{scopedData.entries} {copy.entries}</span>
         {/* Icon-only, so the label has to survive as an accessible name. */}
-        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className="ui-press ml-auto inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
+        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className="ui-press ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </Link>
-        <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
+        <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
           <Printer className="h-4 w-4" aria-hidden="true" />
           {copy.exportPdf}
         </button>
         {/* Primary add sits at the far right of the header, matching /tables and /inventory. */}
         {canEdit ? (
-          <button type="button" onClick={openAdd} className="ui-press inline-flex h-9 items-center gap-2 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800 print:hidden">
+          <button type="button" onClick={openAdd} className="ui-press inline-flex h-9 items-center gap-2 rounded-xl bg-orange-700 px-3 text-[12px] font-semibold text-white shadow-(--dashboard-control-shadow) hover:bg-orange-800 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800 print:hidden">
             <Plus className="h-4 w-4" aria-hidden="true" />
             {copy.add}
           </button>
         ) : (
-          <p className="inline-flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-[12px] text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 print:hidden">{copy.readOnly}</p>
+          <p className="inline-flex h-9 items-center rounded-xl border border-gray-200 bg-gray-50 px-3 text-[12px] text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 print:hidden">{copy.readOnly}</p>
         )}
       </div>
 
@@ -513,6 +513,7 @@ export default function ExpensesPage() {
           })}
           compact
           className="w-full sm:w-[240px]"
+          triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
         />
       </div>
 

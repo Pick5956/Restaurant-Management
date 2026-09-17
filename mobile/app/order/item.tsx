@@ -27,7 +27,7 @@ export default function AddOrderItemScreen() {
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
-  const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string }>();
+  const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string; served?: string }>();
   const orderId = Number(params.id); const menuId = Number(params.menuId);
   // With `itemId` this screen is editing a line that is already on the order
   // rather than adding one. Same screen on purpose: a waiter fixing an option
@@ -36,6 +36,10 @@ export default function AddOrderItemScreen() {
   // delete the line and start again.
   const itemId = Number(params.itemId);
   const editing = Number.isInteger(itemId) && itemId > 0;
+  // Opened from the bill's served-item page: the dish is already on the table,
+  // so the line goes onto the bill as served and never reaches the kitchen.
+  // Everything else - options, note, quantity - is chosen the same way.
+  const served = !editing && params.served === '1';
   const validParams = Number.isInteger(orderId) && orderId > 0 && Number.isInteger(menuId) && menuId > 0;
   const [order, setOrder] = useState<Order | null>(null);
   const [menu, setMenu] = useState<MenuItem | null>(null);
@@ -110,7 +114,7 @@ export default function AddOrderItemScreen() {
     setSaving(true); setError(null);
     try {
       if (editing) await updateOrderItem(orderId, itemId, { quantity, note: note.trim(), selected_option_ids: selectedOptionIds });
-      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment });
+      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment, serve_immediately: served });
       router.back();
     }
     catch (err) { setError(err instanceof Error ? err.message : editing ? copy('บันทึกรายการไม่สำเร็จ', 'Could not save this item') : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item')); }
@@ -181,7 +185,9 @@ export default function AddOrderItemScreen() {
             icon={editing ? 'checkmark' : 'add'}
             label={editing
               ? copy(`บันทึกรายการ · ${money(total, language)}`, `Save item · ${money(total, language)}`)
-              : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
+              : served
+                ? copy(`เพิ่มเข้าบิล · ${money(total, language)}`, `Add to bill · ${money(total, language)}`)
+                : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
             onPress={add}
             loading={saving}
             disabled={missingRequired || (!editing && !menu.is_available)}
@@ -289,7 +295,7 @@ export default function AddOrderItemScreen() {
           {/* Measured on focus to work out how much of it the keyboard covers, so
               it has to wrap everything that must end up visible. */}
           <View ref={noteRef} style={{ gap: spacing.md, paddingVertical: spacing.lg }}>
-            {sectionHead(copy('หมายเหตุถึงครัว', 'Kitchen note'), { label: copy('ไม่จำเป็นต้องระบุ', 'Optional'), tone: 'optional' })}
+            {sectionHead(served ? copy('หมายเหตุ', 'Note') : copy('หมายเหตุถึงครัว', 'Kitchen note'), { label: copy('ไม่จำเป็นต้องระบุ', 'Optional'), tone: 'optional' })}
             <TextField
               value={note}
               onChangeText={setNote}

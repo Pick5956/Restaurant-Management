@@ -14,6 +14,7 @@ import {
   lockCurrentRoundRowSwipeAxis,
   nextOpenCurrentRoundItemId,
   orderSummaryPresentation,
+  pendingQuantityByMenu,
   resolveCurrentRoundRowDragOffset,
   resolveCurrentRoundRowInteraction,
   resolveCurrentRoundRowRelease,
@@ -72,6 +73,50 @@ test('the current round totals only pending items', () => {
     quantity: 3,
     subtotal: 223,
   });
+});
+
+test('menu tiles count each dish still in the current round, as the web POS does', () => {
+  const counts = pendingQuantityByMenu([
+    { menu_id: 7, status: 'pending', quantity: 2 },
+    // The same dish with different options is a second line, and still that dish.
+    { menu_id: 7, status: 'pending', quantity: 1 },
+    { menu_id: 9, status: 'pending', quantity: 1 },
+    // Already with the kitchen, served or cancelled: not in this round.
+    { menu_id: 9, status: 'cooking', quantity: 4 },
+    { menu_id: 11, status: 'served', quantity: 1 },
+    { menu_id: 12, status: 'cancelled', quantity: 3 },
+  ]);
+
+  assert.equal(counts.get(7), 3);
+  assert.equal(counts.get(9), 1);
+  assert.equal(counts.has(11), false);
+  assert.equal(counts.has(12), false);
+});
+
+test('menu tile counts stay empty for an unloaded order and ignore unusable lines', () => {
+  assert.equal(pendingQuantityByMenu(null).size, 0);
+  assert.equal(pendingQuantityByMenu(undefined).size, 0);
+  assert.equal(pendingQuantityByMenu([
+    { menu_id: 7, status: 'pending', quantity: Number.NaN },
+    { menu_id: 0, status: 'pending', quantity: 2 },
+    { status: 'pending', quantity: 1 },
+    { menu_id: 8, status: 'pending', quantity: 0 },
+  ]).size, 0);
+});
+
+test('the order screen badges each dish tile with its count in the current round', async () => {
+  const [source, gridSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'app', 'order', '[id].tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'order-menu-grid.tsx'), 'utf8'),
+  ]);
+
+  // Counted once per render from the order, handed to the shared grid, then
+  // read per tile by the dish id - a tile keyed on anything else would badge
+  // the wrong dish.
+  assert.match(source, /const pendingByMenu = useMemo\(\(\) => pendingQuantityByMenu\(order\?\.items\), \[order\?\.items\]\);/);
+  assert.match(source, /countByMenu=\{pendingByMenu\}/);
+  assert.match(gridSource, /const count = countByMenu\.get\(item\.ID\) \?\? 0;/);
+  assert.match(gridSource, /\{count > 0 \? \(/);
 });
 
 test('the current round uses the same Thai and English wording as web POS', () => {

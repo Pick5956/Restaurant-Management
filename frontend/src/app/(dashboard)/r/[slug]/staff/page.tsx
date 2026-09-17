@@ -823,7 +823,7 @@ export default function StaffPage() {
                     <button
                       type="button"
                       onClick={openInviteModal}
-                      className="h-10 rounded-md bg-orange-700 px-4 text-[13px] font-semibold text-white transition-colors hover:bg-orange-800 dark:bg-orange-700 dark:text-white"
+                      className="h-10 rounded-xl bg-orange-700 px-4 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-colors hover:bg-orange-800 dark:bg-orange-700 dark:text-white"
                     >
                       {copy.createLink}
                     </button>
@@ -832,7 +832,7 @@ export default function StaffPage() {
                     <button
                       type="button"
                       onClick={openRoleManager}
-                      className="h-10 rounded-md border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-800 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                      className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
                     >
                       {copy.rolePanelAction}
                     </button>
