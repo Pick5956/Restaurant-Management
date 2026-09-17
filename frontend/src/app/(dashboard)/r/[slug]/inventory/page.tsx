@@ -31,20 +31,41 @@ import {
   createIngredientCategory,
   deleteIngredient,
   deleteIngredientCategory,
+  discardLot,
   exportStockCSV,
   listIngredientCategories,
   listIngredients,
+  listLots,
   listTransactions,
   updateIngredient,
   updateIngredientCategory,
+  updateLotExpiry,
 } from "@/src/lib/ingredient";
 import { createSingleFlight } from "@/src/lib/singleFlight";
-import type { Ingredient, IngredientCategory, IngredientInput, IngredientTransaction } from "@/src/types/ingredient";
+import type {
+  Ingredient,
+  IngredientCategory,
+  IngredientInput,
+  IngredientLot,
+  IngredientTransaction,
+} from "@/src/types/ingredient";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
+import ExpiryChips from "./ExpiryChips";
+import {
+  daysUntil,
+  defaultShelfLifeDays,
+  expiryCopy,
+  expiryDateFromDays,
+  expiryState,
+  formatExpiryDate,
+  ingredientExpiryState,
+  matchesExpiryFilter,
+  type ExpiryFilter,
+} from "./inventoryExpiryUtils";
 import InventoryMobile from "./mobile/InventoryMobile";
 import { useIsMobile } from "./mobile/primitives";
 import {
@@ -368,6 +389,7 @@ export default function InventoryPage() {
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const unitOptions = useMemo(() => UNITS.map((unit) => ({ value: unit, label: unit })), []);
+  const xcopy = useMemo(() => expiryCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
@@ -384,6 +406,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockStatus>("all");
   const [categoryFilter, setCategoryFilter] = useState<number>(0);
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersClosing, setFiltersClosing] = useState(false);
   // Export, categories and bulk add: three things an owner reaches for now and
@@ -460,6 +483,9 @@ export default function InventoryPage() {
   }, [adjustQty, adjustTarget, adjustUnit]);
   const [adjustPaidAmount, setAdjustPaidAmount] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  // Days from today for the lot a stock-in opens; null is "ไม่ระบุ".
+  const [adjustExpiryDays, setAdjustExpiryDays] = useState<number | null>(null);
+  const [formExpiryDays, setFormExpiryDays] = useState<number | null>(null);
   const [adjustError, setAdjustError] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   // Mirrors the server's fallback: an unpriced stock-in is booked at the
@@ -474,6 +500,10 @@ export default function InventoryPage() {
   const [txTarget, setTxTarget] = useState<Ingredient | null>(null);
   const [txClosing, setTxClosing] = useState(false);
   const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
+  const [lots, setLots] = useState<IngredientLot[]>([]);
+  const [editingLotId, setEditingLotId] = useState<number | null>(null);
+  const [lotDraftDays, setLotDraftDays] = useState<number | null>(null);
+  const [lotSaving, setLotSaving] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
 
   const saveOnce = useRef(createSingleFlight());
@@ -562,6 +592,7 @@ export default function InventoryPage() {
       .filter((item) => {
         if (search && !item.name.toLowerCase().includes(search.toLowerCase())) return false;
         if (statusFilter !== "all" && getStatus(item) !== statusFilter) return false;
+        if (!matchesExpiryFilter(item, expiryFilter)) return false;
         if (categoryFilter !== 0 && (item.category_id ?? 0) !== categoryFilter) return false;
         return true;
       })
@@ -588,7 +619,7 @@ export default function InventoryPage() {
         else if (sortKey === "price") cmp = a.cost_per_unit - b.cost_per_unit;
         return sortDir === "asc" ? cmp : -cmp;
       });
-  }, [ingredients, search, statusFilter, categoryFilter, sortKey, sortMode, sortDir, categoryNameById, copy]);
+  }, [ingredients, search, statusFilter, categoryFilter, expiryFilter, sortKey, sortMode, sortDir, categoryNameById, copy]);
 
   // Client-side paging of the already-loaded list — instant, no server round-trips.
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -600,13 +631,13 @@ export default function InventoryPage() {
   // Back to the first page whenever the result set or page size changes.
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, categoryFilter, pageSize]);
+  }, [search, statusFilter, categoryFilter, expiryFilter, pageSize]);
 
   // A new filter is a new context — drop any selection so a stale selection
   // never refers to rows you can no longer see.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [search, statusFilter, categoryFilter]);
+  }, [search, statusFilter, categoryFilter, expiryFilter]);
 
   // If deletions shrink the list past the current page, clamp back into range.
   useEffect(() => {
@@ -669,6 +700,7 @@ export default function InventoryPage() {
     setModalClosing(false);
     setEditingItem(null);
     setForm(emptyForm);
+    setFormExpiryDays(defaultShelfLifeDays(emptyForm.storage_type));
     setCostText("");
     setFormError("");
     setModalOpen(true);
@@ -707,7 +739,11 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const response = await createIngredient(form);
+          const response = await createIngredient(
+            form.stock > 0 && formExpiryDays !== null
+              ? { ...form, expires_at: expiryDateFromDays(formExpiryDays) }
+              : form,
+          );
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
@@ -890,6 +926,7 @@ export default function InventoryPage() {
     setAdjustUnit(item.unit);
     setAdjustPaidAmount("");
     setAdjustNote("");
+    setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
     setAdjustError("");
   }
 
@@ -931,6 +968,8 @@ export default function InventoryPage() {
           note: adjustNote,
           paidAmount: adjustPaidAmount,
           canManageExpenses,
+          expiresAt:
+            adjustType === "in" && adjustExpiryDays !== null ? expiryDateFromDays(adjustExpiryDays) : "",
         }));
         setIngredients((prev) => prev.map((item) => (item.ID === adjustTarget.ID ? response.data : item)));
         closeAdjustModal();
@@ -944,16 +983,82 @@ export default function InventoryPage() {
     });
   }
 
+  async function loadLots(id: number) {
+    try {
+      const response = await listLots(id);
+      setLots(response.data.lots ?? []);
+    } catch {
+      setLots([]);
+    }
+  }
+
   async function openTransactions(item: Ingredient) {
     setTxClosing(false);
     setTxTarget(item);
     setTransactions([]);
+    setLots([]);
+    setEditingLotId(null);
     setTxLoading(true);
+    void loadLots(item.ID);
     try {
       const response = await listTransactions(item.ID);
       setTransactions(response.data.transactions ?? []);
     } finally {
       setTxLoading(false);
+    }
+  }
+
+  async function refreshIngredientRow(id: number) {
+    // The list carries expiring_lot per row, and a re-dated or discarded lot
+    // changes which lot that is — refetch rather than guess.
+    try {
+      const response = await listIngredients();
+      const fresh = (response.data.ingredients ?? []).find((entry) => entry.ID === id);
+      if (fresh) setIngredients((prev) => prev.map((entry) => (entry.ID === id ? fresh : entry)));
+    } catch {
+      // The row keeps its last known lot until the next full load.
+    }
+  }
+
+  async function saveLotExpiry(lot: IngredientLot) {
+    if (!txTarget) return;
+    setLotSaving(true);
+    try {
+      await updateLotExpiry(txTarget.ID, lot.ID, lotDraftDays === null ? "" : expiryDateFromDays(lotDraftDays));
+      setEditingLotId(null);
+      showToast({ title: xcopy.expirySaved });
+      await Promise.all([loadLots(txTarget.ID), refreshIngredientRow(txTarget.ID)]);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      showToast({ title: err?.response?.data?.error ?? xcopy.failed, tone: "error" });
+    } finally {
+      setLotSaving(false);
+    }
+  }
+
+  async function handleDiscardLot(lot: IngredientLot) {
+    if (!txTarget) return;
+    const target = txTarget;
+    const confirmed = await confirm({
+      title: xcopy.discardTitle,
+      message: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
+      confirmLabel: xcopy.discard,
+      cancelLabel: copy.cancel,
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setLotSaving(true);
+    try {
+      const response = await discardLot(target.ID, lot.ID);
+      setIngredients((prev) => prev.map((entry) => (entry.ID === target.ID ? response.data : entry)));
+      showToast({ title: xcopy.discarded(formatNumber(lot.remaining, lang), target.unit) });
+      const [, history] = await Promise.all([loadLots(target.ID), listTransactions(target.ID)]);
+      setTransactions(history.data.transactions ?? []);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      showToast({ title: err?.response?.data?.error ?? xcopy.failed, tone: "error" });
+    } finally {
+      setLotSaving(false);
     }
   }
 
@@ -1133,16 +1238,16 @@ export default function InventoryPage() {
               type="button"
               onClick={() => (filtersOpen ? closeFilters() : setFiltersOpen(true))}
               className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
-                statusFilter !== "all" || categoryFilter !== 0
+                statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all"
                   ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
               }`}
             >
               <Filter className="h-4 w-4" />
               {copy.filter}
-              {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) > 0 && (
+              {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) + (expiryFilter !== "all" ? 1 : 0) > 0 && (
                 <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">
-                  {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0)}
+                  {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) + (expiryFilter !== "all" ? 1 : 0)}
                 </span>
               )}
             </button>
@@ -1174,6 +1279,22 @@ export default function InventoryPage() {
                         }`}
                       >
                         {status === "all" ? copy.filterAll : status === "ok" ? copy.filterOk : status === "low" ? copy.filterLow : copy.filterOut}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.filterLabel}</p>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {(["all", "soon", "expired"] as ExpiryFilter[]).map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setExpiryFilter(filter)}
+                        className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
+                          expiryFilter === filter
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {filter === "all" ? xcopy.filterAll : filter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
                       </button>
                     ))}
                   </div>
@@ -1222,12 +1343,13 @@ export default function InventoryPage() {
                       </button>
                     ))}
                   </div>
-                  {(statusFilter !== "all" || categoryFilter !== 0 || sortKey !== "" || sortMode !== "recent") && (
+                  {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all" || sortKey !== "" || sortMode !== "recent") && (
                     <button
                       type="button"
                       onClick={() => {
                         setStatusFilter("all");
                         setCategoryFilter(0);
+                        setExpiryFilter("all");
                         setSortKey("");
                         setSortMode("recent");
                       }}
@@ -1338,7 +1460,7 @@ export default function InventoryPage() {
         {tab === "stock" && (
         <>
 
-        {(statusFilter !== "all" || categoryFilter !== 0) && (
+        {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
             {statusFilter !== "all" && (
@@ -1362,11 +1484,22 @@ export default function InventoryPage() {
                 <X className="h-3 w-3" />
               </button>
             )}
+            {expiryFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setExpiryFilter("all")}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+              >
+                {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
+                <X className="h-3 w-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 setStatusFilter("all");
                 setCategoryFilter(0);
+                setExpiryFilter("all");
               }}
               className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
             >
@@ -1480,6 +1613,23 @@ export default function InventoryPage() {
                                     )}
                                   </div>
                                 )}
+                                {(() => {
+                                  const expiry = ingredientExpiryState(item);
+                                  if ((expiry !== "soon" && expiry !== "expired") || !item.expiring_lot) return null;
+                                  const when = formatExpiryDate(item.expiring_lot.expires_at, lang);
+                                  return (
+                                    <p
+                                      className={`mt-1.5 text-[11px] font-semibold ${
+                                        expiry === "expired"
+                                          ? "text-red-500 dark:text-red-400"
+                                          : "text-amber-600 dark:text-amber-400"
+                                      }`}
+                                    >
+                                      {expiry === "expired" ? xcopy.expiredOn(when) : xcopy.expiresOn(when)} ·{" "}
+                                      {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                                    </p>
+                                  );
+                                })()}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -1701,7 +1851,11 @@ export default function InventoryPage() {
                     <ThemedSelect
                       aria-label={copy.storageType}
                       value={form.storage_type ?? "room_temp"}
-                      onChange={(value) => setForm((current) => ({ ...current, storage_type: value }))}
+                      onChange={(value) => {
+                        setForm((current) => ({ ...current, storage_type: value }));
+                        // A new storage type means a new shelf life for the opening lot.
+                        setFormExpiryDays(defaultShelfLifeDays(value));
+                      }}
                       options={storageOptions}
                     />
                   </div>
@@ -1731,6 +1885,18 @@ export default function InventoryPage() {
                     </div>
                   ) : null}
                 </div>
+                {!editingItem && form.stock > 0 ? (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.label}</label>
+                    <ExpiryChips
+                      key={form.storage_type ?? "room_temp"}
+                      value={formExpiryDays}
+                      onChange={setFormExpiryDays}
+                      storageType={form.storage_type}
+                      lang={lang}
+                    />
+                  </div>
+                ) : null}
                 {/* The number, the slider and the readout sit on one line of the
                     same width, so the reorder level reads as a single control
                     instead of three stacked measures. */}
@@ -2210,6 +2376,20 @@ export default function InventoryPage() {
                   </p>
                 </div>
               )}
+              {adjustType === "in" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {xcopy.label}
+                  </label>
+                  <ExpiryChips
+                    key={adjustTarget.ID}
+                    value={adjustExpiryDays}
+                    onChange={setAdjustExpiryDays}
+                    storageType={adjustTarget.storage_type}
+                    lang={lang}
+                  />
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.note}</label>
                 <input
@@ -2279,6 +2459,108 @@ export default function InventoryPage() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
+              {lots.length > 0 && (
+                <div className="mb-6">
+                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {xcopy.lots} · {lots.length}
+                  </p>
+                  <div className="space-y-2">
+                    {lots.map((lot) => {
+                      const state = expiryState(lot.expires_at);
+                      const editing = editingLotId === lot.ID;
+                      return (
+                        <div
+                          key={lot.ID}
+                          className="rounded-md border border-slate-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`text-sm font-semibold ${
+                                  state === "expired"
+                                    ? "text-red-500 dark:text-red-400"
+                                    : state === "soon"
+                                      ? "text-amber-600 dark:text-amber-400"
+                                      : "text-slate-900 dark:text-white"
+                                }`}
+                              >
+                                {lot.expires_at
+                                  ? state === "expired"
+                                    ? xcopy.expiredOn(formatExpiryDate(lot.expires_at, lang))
+                                    : xcopy.expiresOn(formatExpiryDate(lot.expires_at, lang))
+                                  : xcopy.noExpiry}
+                                {lot.expires_at && state !== "expired" ? (
+                                  <span className="ml-1.5 text-xs font-normal text-slate-400">
+                                    {xcopy.inDays(daysUntil(lot.expires_at))}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="text-xs text-slate-400">{xcopy.lotReceived(formatExpiryDate(lot.received_at, lang))}</p>
+                            </div>
+                            <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                              {formatNumber(lot.remaining, lang)}{" "}
+                              <span className="text-[10px] font-normal text-slate-400">{txTarget.unit}</span>
+                            </p>
+                          </div>
+                          {canManage && (
+                            <div className="mt-2">
+                              {editing ? (
+                                <>
+                                  <ExpiryChips
+                                    key={lot.ID}
+                                    value={lotDraftDays}
+                                    onChange={setLotDraftDays}
+                                    storageType={txTarget.storage_type}
+                                    lang={lang}
+                                  />
+                                  <div className="mt-2 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingLotId(null)}
+                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
+                                    >
+                                      {copy.cancel}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={lotSaving}
+                                      onClick={() => saveLotExpiry(lot)}
+                                      className="rounded-md bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50"
+                                    >
+                                      {xcopy.saveExpiry}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingLotId(lot.ID);
+                                      setLotDraftDays(lot.expires_at ? daysUntil(lot.expires_at) : null);
+                                    }}
+                                    className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800"
+                                  >
+                                    {xcopy.setExpiry}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={lotSaving}
+                                    onClick={() => handleDiscardLot(lot)}
+                                    className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
+                                  >
+                                    {xcopy.discard}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {txLoading ? (
                 <div className="flex h-32 items-center justify-center text-sm text-slate-400">{copy.loading}</div>
               ) : transactions.length === 0 ? (

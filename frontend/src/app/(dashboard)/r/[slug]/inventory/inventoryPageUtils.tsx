@@ -101,6 +101,7 @@ export function buildAdjustStockPayload({
   note,
   paidAmount,
   canManageExpenses,
+  expiresAt,
 }: {
   type: AdjustStockInput["type"];
   quantity: number;
@@ -108,6 +109,8 @@ export function buildAdjustStockPayload({
   note: string;
   paidAmount: string;
   canManageExpenses: boolean;
+  /** YYYY-MM-DD for the new lot; only a stock-in opens one, so it is dropped otherwise. */
+  expiresAt?: string;
 }): AdjustStockInput {
   const payload: AdjustStockInput = { type, quantity, note };
   // Only send a unit when it differs from what the ingredient stores; an empty
@@ -117,6 +120,7 @@ export function buildAdjustStockPayload({
   if (type === "in" && canManageExpenses && paidAmount.trim() !== "" && Number.isFinite(amount) && amount > 0) {
     payload.amount = amount;
   }
+  if (type === "in" && expiresAt) payload.expires_at = expiresAt;
   return payload;
 }
 

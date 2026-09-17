@@ -24,6 +24,16 @@ import { exportStockCSV } from "@/src/lib/ingredient";
 import type { Ingredient } from "@/src/types/ingredient";
 import { getStatus, type ItemStatus } from "../inventoryPageUtils";
 import { getReorderPercent, getStockPercent } from "../inventoryPageUtils";
+import {
+  defaultShelfLifeDays,
+  expiryCopy,
+  expiryDateFromDays,
+  formatExpiryDate,
+  ingredientExpiryState,
+  matchesExpiryFilter,
+  type ExpiryFilter,
+} from "../inventoryExpiryUtils";
+import ExpiryPicker from "./ExpiryPicker";
 import { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -190,7 +200,8 @@ export default function InventoryMobile({
   const { language } = useLanguage();
   const lang = language === "en" ? "en" : "th";
   const copy = useMemo(() => buildCopy(lang), [lang]);
-  const { ingredients, categories, loading, actions } = useInventoryData(canView);
+  const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const { ingredients, categories, loading, reload, actions } = useInventoryData(canView);
   const { toast, show } = useToastStack();
   useIOSActiveStates();
 
@@ -202,12 +213,18 @@ export default function InventoryMobile({
   const [status, setStatus] = useState<"all" | ItemStatus>("all");
   const [categoryId, setCategoryId] = useState(0);
   const [sort, setSort] = useState<SortKey>("recent");
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>("all");
 
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const [amount, setAmount] = useState(0);
+  // Days from today for the lot a restock opens; null is "ไม่ระบุ".
+  const [expiryDays, setExpiryDays] = useState<number | null>(null);
   const [batchMode, setBatchMode] = useState<"in" | "adjust">("in");
+  // A batch restock cannot ask per row, so it either dates every lot by the
+  // item's own storage default or leaves them all undated.
+  const [batchExpiry, setBatchExpiry] = useState<"default" | "none">("default");
   const [batchDraft, setBatchDraft] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -236,15 +253,19 @@ export default function InventoryMobile({
     const filtered = ingredients.filter((item) => {
       if (status !== "all" && getStatus(item) !== status) return false;
       if (categoryId !== 0 && (item.category_id ?? 0) !== categoryId) return false;
+      if (!matchesExpiryFilter(item, expiryFilter)) return false;
       if (term && !item.name.toLowerCase().includes(term)) return false;
       return true;
     });
     return sortIngredients(filtered, sort);
-  }, [ingredients, search, status, categoryId, sort]);
+  }, [ingredients, search, status, categoryId, expiryFilter, sort]);
 
   function openSheet(item: Ingredient, kind: SheetKind) {
     setActive(item);
-    if (kind === "restock") setAmount(restockStep(item));
+    if (kind === "restock") {
+      setAmount(restockStep(item));
+      setExpiryDays(defaultShelfLifeDays(item.storage_type));
+    }
     if (kind === "count") setAmount(item.stock);
     setSheet(kind);
   }
@@ -264,7 +285,11 @@ export default function InventoryMobile({
     if (!active || amount <= 0) return;
     const item = active;
     await guard(async () => {
-      await actions.restock(item.ID, { type: "in", quantity: amount });
+      await actions.restock(item.ID, {
+        type: "in",
+        quantity: amount,
+        ...(expiryDays === null ? {} : { expires_at: expiryDateFromDays(expiryDays) }),
+      });
       show(copy.restocked(item.name, formatNumber(amount, lang), item.unit));
       setSheet("none");
     });
@@ -345,7 +370,13 @@ export default function InventoryMobile({
         if (quantity <= 0) continue;
         if (batchMode === "adjust" && quantity === item.stock) continue;
         try {
-          await actions.restock(item.ID, { type: batchMode, quantity });
+          await actions.restock(item.ID, {
+            type: batchMode,
+            quantity,
+            ...(batchMode === "in" && batchExpiry === "default"
+              ? { expires_at: expiryDateFromDays(defaultShelfLifeDays(item.storage_type)) }
+              : {}),
+          });
           done += 1;
         } catch {
           failed.add(item.ID);
@@ -375,6 +406,8 @@ export default function InventoryMobile({
         onCount={() => openSheet(fresh, "count")}
         onEdit={() => setScreen("edit")}
         onDelete={() => openSheet(fresh, "row")}
+        onChanged={reload}
+        onNotice={show}
         sheet={
           <RestockAndCountSheets
             active={active}
@@ -382,8 +415,10 @@ export default function InventoryMobile({
             copy={copy}
             lang={lang}
             amount={amount}
+            expiryDays={expiryDays}
             busy={busy}
             setAmount={setAmount}
+            setExpiryDays={setExpiryDays}
             close={() => setSheet("none")}
             submitRestock={submitRestock}
             submitCount={submitCount}
@@ -487,7 +522,7 @@ export default function InventoryMobile({
               aria-label={copy.filter}
               onClick={() => setSheet("filter")}
               className={`ui-press flex h-[52px] items-center justify-center rounded-(--inv-radius) border bg-(--inv-surface) ${
-                categoryId !== 0 || sort !== "recent"
+                categoryId !== 0 || sort !== "recent" || expiryFilter !== "all"
                   ? "border-(--inv-action) text-(--inv-action)"
                   : "border-(--inv-hairline) text-(--inv-muted)"
               }`}
@@ -544,6 +579,7 @@ export default function InventoryMobile({
               const tone = statusTone(getStatus(item), lang);
               const percent = getStockPercent(item);
               const reorderAt = getReorderPercent(item);
+              const expiry = ingredientExpiryState(item);
               const checked = selected.has(item.ID);
               return (
                 <div
@@ -620,6 +656,23 @@ export default function InventoryMobile({
                         )}
                       </div>
                     )}
+
+                    {/* Only the lots that need a decision get a line here: a date
+                        weeks away is noise on a list, and the detail screen has
+                        every lot anyway. */}
+                    {(expiry === "soon" || expiry === "expired") && item.expiring_lot ? (
+                      <p
+                        className={`mt-1.5 text-[11px] font-semibold ${
+                          expiry === "expired" ? "text-(--inv-out)" : "text-(--inv-low)"
+                        }`}
+                      >
+                        {expiry === "expired"
+                          ? xcopy.expiredOn(formatExpiryDate(item.expiring_lot.expires_at, lang))
+                          : xcopy.expiresOn(formatExpiryDate(item.expiring_lot.expires_at, lang))}
+                        {" · "}
+                        {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                      </p>
+                    ) : null}
 
                     <div className="mt-2 flex items-center gap-2">
                       <span className="max-w-[45%] shrink-0 truncate rounded-full bg-(--inv-surface-strong) px-2 py-0.5 text-[11px] text-(--inv-muted)">
@@ -732,8 +785,10 @@ export default function InventoryMobile({
         copy={copy}
         lang={lang}
         amount={amount}
+        expiryDays={expiryDays}
         busy={busy}
         setAmount={setAmount}
+        setExpiryDays={setExpiryDays}
         close={() => setSheet("none")}
         submitRestock={submitRestock}
         submitCount={submitCount}
@@ -749,6 +804,7 @@ export default function InventoryMobile({
               onClick={() => {
                 setCategoryId(0);
                 setSort("recent");
+                setExpiryFilter("all");
               }}
             >
               {copy.clearFilter}
@@ -781,6 +837,18 @@ export default function InventoryMobile({
             { value: "value", label: copy.sortValue },
           ]}
         />
+        <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">
+          {xcopy.filterLabel}
+        </p>
+        <ChipRow
+          value={expiryFilter}
+          onChange={setExpiryFilter}
+          options={[
+            { value: "all", label: xcopy.filterAll },
+            { value: "soon", label: xcopy.filterSoon },
+            { value: "expired", label: xcopy.filterExpired },
+          ]}
+        />
       </BottomSheet>
 
       <BottomSheet
@@ -796,6 +864,18 @@ export default function InventoryMobile({
         <p className="mb-3 text-[12px] leading-snug text-(--inv-muted)">
           {batchMode === "in" ? copy.batchInHint : copy.batchSetHint}
         </p>
+        {batchMode === "in" && (
+          <div className="mb-3">
+            <ChipRow
+              value={batchExpiry}
+              onChange={setBatchExpiry}
+              options={[
+                { value: "default", label: xcopy.batchExpiryDefault },
+                { value: "none", label: xcopy.batchExpiryNone },
+              ]}
+            />
+          </div>
+        )}
         <div className="space-y-2">
           {selectedItems.map((item) => (
             <div key={item.ID} className="flex items-center gap-2">
@@ -884,8 +964,10 @@ function RestockAndCountSheets({
   copy,
   lang,
   amount,
+  expiryDays,
   busy,
   setAmount,
+  setExpiryDays,
   close,
   submitRestock,
   submitCount,
@@ -895,8 +977,10 @@ function RestockAndCountSheets({
   copy: ReturnType<typeof buildCopy>;
   lang: "th" | "en";
   amount: number;
+  expiryDays: number | null;
   busy: boolean;
   setAmount: (value: number) => void;
+  setExpiryDays: (days: number | null) => void;
   close: () => void;
   submitRestock: () => void;
   submitCount: () => void;
@@ -922,6 +1006,15 @@ function RestockAndCountSheets({
           <span className="text-[15px] font-semibold tabular-nums text-(--inv-heading)">
             {formatNumber(active.stock + amount, lang)} {active.unit}
           </span>
+        </div>
+        <div className="mt-4">
+          <ExpiryPicker
+            key={active.ID}
+            value={expiryDays}
+            onChange={setExpiryDays}
+            storageType={active.storage_type}
+            lang={lang}
+          />
         </div>
       </BottomSheet>
 

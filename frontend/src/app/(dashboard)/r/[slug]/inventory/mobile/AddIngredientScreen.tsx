@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { formatCurrency, formatAdaptiveNumber as formatNumber } from "@/src/lib/format";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
-import { UNITS, reorderQuantityFor } from "../inventoryPageUtils";
+import { STORAGE_TYPES, UNITS, reorderQuantityFor } from "../inventoryPageUtils";
+import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
+import ExpiryPicker from "./ExpiryPicker";
 import type { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -47,6 +49,8 @@ export default function AddIngredientScreen({
             namePlaceholder: "เช่น หมูสับ",
             category: "หมวดหมู่",
             unit: "หน่วยนับ",
+            storage: "ประเภทการเก็บ",
+            pickStorage: "เลือกประเภทการเก็บ",
             openingStock: "จำนวนเริ่มต้น",
             price: "ราคาต่อหน่วย",
             minStock: "แจ้งเตือนเมื่อต่ำกว่า",
@@ -73,6 +77,8 @@ export default function AddIngredientScreen({
             namePlaceholder: "e.g. Minced pork",
             category: "Category",
             unit: "Unit",
+            storage: "Storage",
+            pickStorage: "Pick a storage type",
             openingStock: "Opening quantity",
             price: "Unit price",
             minStock: "Warn below",
@@ -94,6 +100,13 @@ export default function AddIngredientScreen({
   const [name, setName] = useState(editing?.name ?? "");
   const [categoryId, setCategoryId] = useState(editing?.category_id ?? 0);
   const [unit, setUnit] = useState(editing?.unit ?? UNITS[1]);
+  // The web form has always sent this; the phone did not, so the server filled
+  // in room_temp behind its back. Now it is on the form because the expiry
+  // default hangs off it.
+  const [storageType, setStorageType] = useState(editing?.storage_type ?? "room_temp");
+  const [expiryDays, setExpiryDays] = useState<number | null>(
+    defaultShelfLifeDays(editing?.storage_type ?? "room_temp"),
+  );
   const [stock, setStock] = useState(editing ? String(editing.stock) : "");
   const [price, setPrice] = useState(editing ? String(editing.cost_per_unit) : "");
   const [minStock, setMinStock] = useState(editing ? String(editing.min_stock) : "");
@@ -101,7 +114,7 @@ export default function AddIngredientScreen({
   // percentage of; a brand new ingredient has none, so it types a quantity.
   const shelfMax = editing?.max_stock ?? 0;
   const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
-  const [picker, setPicker] = useState<"none" | "category" | "unit">("none");
+  const [picker, setPicker] = useState<"none" | "category" | "unit" | "storage">("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -127,6 +140,11 @@ export default function AddIngredientScreen({
         min_stock: Number(minStock) || 0,
         min_percent: minPercent,
         cost_per_unit: Number(price) || 0,
+        storage_type: storageType,
+        // Only a create with stock opens a lot, so only that case carries a date.
+        ...(!editing && (Number(stock) || 0) > 0 && expiryDays !== null
+          ? { expires_at: expiryDateFromDays(expiryDays) }
+          : {}),
       };
       if (editing) await actions.update(editing.ID, payload);
       else await actions.create(payload);
@@ -165,8 +183,12 @@ export default function AddIngredientScreen({
             <span className="truncate text-[15px] text-(--inv-muted)">{categoryName}</span>
             <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
           </FormRow>
-          <FormRow label={copy.unit} onPress={() => setPicker("unit")} divider={false}>
+          <FormRow label={copy.unit} onPress={() => setPicker("unit")}>
             <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+          </FormRow>
+          <FormRow label={copy.storage} onPress={() => setPicker("storage")} divider={false}>
+            <span className="truncate text-[15px] text-(--inv-muted)">{storageLabel(storageType, lang)}</span>
             <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
           </FormRow>
         </FormGroup>
@@ -186,6 +208,19 @@ export default function AddIngredientScreen({
               />
             )}
           </FormRow>
+          {/* px-4 rather than the row's px-3: the chip row bleeds 16px to scroll
+              edge to edge, and the card clips anything past its own padding. */}
+          {!editing && (Number(stock) || 0) > 0 ? (
+            <div className="border-b border-(--inv-hairline) px-4 py-3">
+              <ExpiryPicker
+                key={storageType}
+                value={expiryDays}
+                onChange={setExpiryDays}
+                storageType={storageType}
+                lang={lang}
+              />
+            </div>
+          ) : null}
           <FormRow label={copy.price} suffix={`฿/${unit}`}>
             <input
               type="number"
@@ -310,6 +345,20 @@ export default function AddIngredientScreen({
           value={unit}
           onPick={(value) => {
             setUnit(value);
+            setPicker("none");
+          }}
+        />
+      </BottomSheet>
+
+      <BottomSheet open={picker === "storage"} title={copy.pickStorage} onClose={() => setPicker("none")}>
+        <PickerList
+          options={STORAGE_TYPES.map((type) => ({ value: type, label: storageLabel(type, lang) }))}
+          value={storageType}
+          onPick={(value) => {
+            setStorageType(value);
+            // A new storage type means a new shelf life; the picker remounts on
+            // it so a custom number typed for the old one does not linger.
+            setExpiryDays(defaultShelfLifeDays(value));
             setPicker("none");
           }}
         />

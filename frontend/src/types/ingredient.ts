@@ -52,8 +52,38 @@ export interface Ingredient {
   /** The daily rate days_left was derived from, for showing the working. */
   daily_use?: number;
   category?: IngredientCategory;
+  /**
+   * The open lot that goes off first, when any lot has a date. The list uses it
+   * for the "หมดอายุ" line and the expiry filters; the full lot list is a
+   * separate call because a row only ever shows one.
+   */
+  expiring_lot?: IngredientLotSummary | null;
   CreatedAt?: string;
   UpdatedAt?: string;
+}
+
+export interface IngredientLotSummary {
+  lot_id: number;
+  expires_at: string;
+  remaining: number;
+}
+
+/**
+ * One delivery. Stock is drained from the lot that expires first, so `remaining`
+ * across all open lots always adds up to the ingredient's stock.
+ */
+export interface IngredientLot {
+  ID: number;
+  restaurant_id: number;
+  ingredient_id: number;
+  quantity: number;
+  remaining: number;
+  /** Null is "ไม่ระบุ" — the lot is consumed after every dated one. */
+  expires_at: string | null;
+  received_at: string;
+  transaction_id?: number | null;
+  cost_per_unit: number;
+  CreatedAt?: string;
 }
 
 export type TransactionType = "in" | "out" | "adjust";
@@ -119,6 +149,8 @@ export interface IngredientInput {
   min_percent?: number;
   cost_per_unit: number;
   storage_type?: string;
+  /** YYYY-MM-DD for the opening lot when `stock` is above zero; omit for "ไม่ระบุ". */
+  expires_at?: string;
 }
 
 /** One entry in a unit picker: a unit this ingredient accepts, and how many of
@@ -137,4 +169,6 @@ export interface AdjustStockInput {
   note?: string;
   /** What the restock cost. Stock-in only; a positive value writes an expense entry. */
   amount?: number;
+  /** YYYY-MM-DD the delivery goes off. Stock-in only; omit for "ไม่ระบุ". */
+  expires_at?: string;
 }

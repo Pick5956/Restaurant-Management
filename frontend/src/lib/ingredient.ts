@@ -5,6 +5,7 @@ import type {
   Ingredient,
   IngredientCategory,
   IngredientInput,
+  IngredientLot,
   TransactionListResponse,
   TransactionQuery,
 } from "../types/ingredient";
@@ -40,6 +41,21 @@ export const deleteIngredient = (id: number) =>
 
 export const adjustStock = (id: number, data: AdjustStockInput) =>
   apiClient.post<Ingredient>(`/api/v1/ingredients/${id}/adjust`, data);
+
+/** Open lots only (remaining > 0), the one that expires first at the top. */
+export const listLots = (id: number) =>
+  apiClient.get<{ lots: IngredientLot[] }>(`/api/v1/ingredients/${id}/lots`);
+
+/** Sets or, with an empty string, clears one lot's date. Never moves stock. */
+export const updateLotExpiry = (id: number, lotId: number, expiresAt: string) =>
+  apiClient.put<void>(`/api/v1/ingredients/${id}/lots/${lotId}`, { expires_at: expiresAt });
+
+/**
+ * Throws away what is left of one lot. It is an ordinary stock-out in the
+ * history, drained from this lot rather than the one that expires first.
+ */
+export const discardLot = (id: number, lotId: number, reason = "") =>
+  apiClient.post<Ingredient>(`/api/v1/ingredients/${id}/lots/${lotId}/discard`, { reason });
 
 /**
  * Drops empty filters instead of sending `type=`/`search=`, which the API would
