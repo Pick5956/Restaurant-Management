@@ -22,6 +22,7 @@ func (r *ReservationRepository) List(restaurantID uint, status string, limit, of
 	var reservations []entity.Reservation
 	query := r.db.
 		Preload("Table").
+		Preload("Table.TableZone").
 		Where("restaurant_id = ?", restaurantID)
 	if status != "" {
 		query = query.Where("status = ?", status)

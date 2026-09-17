@@ -9,14 +9,13 @@ import { AppRefreshControl } from '@/src/components/app-shell';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
+import { MonthCalendar, stepCalendarMonth } from '@/src/components/month-calendar';
 import { getSalesByHour, getSalesDetail } from '@/src/api/report';
 import { Bone } from '@/src/components/skeleton';
 import { money } from '@/src/lib/format';
 import {
-  calendarWeeks,
   draftToRange,
   hourBars,
-  monthTitle,
   presetLabel,
   presetRange,
   rangeDayCount,
@@ -727,9 +726,6 @@ export function PeriodButton({ label, onPress, language }: { label: string; onPr
   );
 }
 
-const WEEKDAYS_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-
 /**
  * Choosing the period: a preset in one tap, or days on the calendar — tap one
  * day for that day alone, tap a second for the range between. Days after today
@@ -755,12 +751,7 @@ export function PeriodSheet({ open, onClose, range, today, onApply, language }: 
 
   const picked = draftToRange(draft);
   const tooLong = picked ? rangeDayCount(picked) > REPORT_MAX_DAYS : false;
-  const thisMonth = { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) };
-  const atLatestMonth = month.year > thisMonth.year || (month.year === thisMonth.year && month.month >= thisMonth.month);
-  const stepMonth = (delta: number) => setMonth((current) => {
-    const next = new Date(Date.UTC(current.year, current.month - 1 + delta, 1));
-    return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1 };
-  });
+  const stepMonth = (delta: number) => setMonth((current) => stepCalendarMonth(current, delta));
 
   const choosePreset = (preset: ReportPreset) => {
     onApply(presetRange(preset, today));
@@ -789,49 +780,14 @@ export function PeriodSheet({ open, onClose, range, today, onApply, language }: 
           })}
         </View>
 
-        <ReportCard>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingTop: 10 }}>
-            <Pressable accessibilityRole="button" accessibilityLabel={th ? 'เดือนก่อน' : 'Previous month'} onPress={() => stepMonth(-1)} hitSlop={6} style={({ pressed }) => ({ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-              <AppIcon name="chevron-back" size={20} color={palette.primaryInk} />
-            </Pressable>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong }}>{monthTitle(month.year, month.month, language)}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={th ? 'เดือนถัดไป' : 'Next month'} disabled={atLatestMonth} onPress={() => stepMonth(1)} hitSlop={6} style={({ pressed }) => ({ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-              <AppIcon name="chevron-forward" size={20} color={atLatestMonth ? '#D6C3B6' : palette.primaryInk} />
-            </Pressable>
-          </View>
-          <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingTop: 6 }}>
-            {(th ? WEEKDAYS_TH : WEEKDAYS_EN).map((name) => (
-              <Text key={name} style={{ flex: 1, textAlign: 'center', fontSize: 11.5, fontWeight: '600', color: palette.placeholder }}>{name}</Text>
-            ))}
-          </View>
-          <View style={{ paddingHorizontal: 8, paddingBottom: 10, paddingTop: 4, gap: 2 }}>
-            {calendarWeeks(month.year, month.month).map((week, index) => (
-              <View key={index} style={{ flexDirection: 'row' }}>
-                {week.map((day, cellIndex) => {
-                  if (!day) return <View key={`e${cellIndex}`} style={{ flex: 1, height: 42 }} />;
-                  const future = day > today;
-                  const from = picked?.from;
-                  const to = picked?.to;
-                  const inside = Boolean(from && to && day >= from && day <= to);
-                  const edge = day === from || day === to;
-                  return (
-                    <View key={day} style={{ flex: 1, height: 42, justifyContent: 'center', backgroundColor: inside && from !== to ? palette.surfaceStrong : 'transparent', borderTopLeftRadius: day === from ? 21 : 0, borderBottomLeftRadius: day === from ? 21 : 0, borderTopRightRadius: day === to ? 21 : 0, borderBottomRightRadius: day === to ? 21 : 0 }}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: edge, disabled: future }}
-                        disabled={future}
-                        onPress={() => setDraft((current) => tapRangeDay(current, day))}
-                        style={({ pressed }) => ({ alignSelf: 'center', width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: edge ? palette.primary : pressed ? palette.surfaceSubtle : 'transparent' })}
-                      >
-                        <Text style={{ fontSize: 14.5, fontWeight: edge || day === today ? '700' : '500', color: future ? '#D6C3B6' : edge ? '#fff' : day === today ? palette.primaryInk : palette.textStrong, fontVariant: ['tabular-nums'] }}>{Number(day.slice(8))}</Text>
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-        </ReportCard>
+        <MonthCalendar
+          month={month}
+          onStepMonth={stepMonth}
+          today={today}
+          picked={picked}
+          onTapDay={(day) => setDraft((current) => tapRangeDay(current, day))}
+          language={language}
+        />
 
         {tooLong ? (
           <Text style={{ fontSize: 13, color: palette.danger, textAlign: 'center' }}>{th ? `เลือกได้ไม่เกิน ${REPORT_MAX_DAYS} วัน` : `Choose ${REPORT_MAX_DAYS} days or fewer`}</Text>

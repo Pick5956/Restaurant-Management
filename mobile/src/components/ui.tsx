@@ -385,6 +385,7 @@ export function EdgeSectionHeader({
 export function EdgeRow({
   title,
   detail,
+  detailContent,
   icon,
   iconColor = palette.text,
   leading,
@@ -398,6 +399,10 @@ export function EdgeRow({
 }: {
   title: string;
   detail?: string;
+  /** Detail drawn by the caller, for a row whose lines must each hold to one
+   *  line - `detail` is one text block, so a long first line pushes the last
+   *  one out of its three. Takes the place of `detail`. */
+  detailContent?: React.ReactNode;
   icon?: AppIconName;
   iconColor?: string;
   leading?: React.ReactNode;
@@ -410,16 +415,17 @@ export function EdgeRow({
   style?: StyleProp<ViewStyle>;
 }) {
   const hasLeading = Boolean(icon || leading);
+  const hasDetail = Boolean(detail || detailContent);
   const row = (
     <>
       {hasLeading ? (
-        <View style={{ minHeight: detail ? 48 : 36, width: 32, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ minHeight: hasDetail ? 48 : 36, width: 32, alignItems: 'center', justifyContent: 'center' }}>
           {leading || (icon ? <AppIcon color={iconColor} name={icon} size={25} /> : null)}
         </View>
       ) : null}
       <View style={{ minWidth: 0, flex: 1, justifyContent: 'center', gap: 1 }}>
         <Text
-          numberOfLines={detail ? 2 : 1}
+          numberOfLines={hasDetail ? 2 : 1}
           selectable
           style={[
             { color: palette.textStrong, fontSize: 16, lineHeight: 22, fontWeight: '600' },
@@ -428,11 +434,11 @@ export function EdgeRow({
         >
           {title}
         </Text>
-        {detail ? (
+        {detailContent ?? (detail ? (
           <Text numberOfLines={3} selectable style={{ color: palette.muted, fontSize: 13, lineHeight: 18 }}>
             {detail}
           </Text>
-        ) : null}
+        ) : null)}
       </View>
       {trailing ? <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>{trailing}</View> : null}
       {(showChevron ?? Boolean(onPress)) ? <AppIcon color={palette.placeholder} name="chevron-forward" size={20} /> : null}
@@ -450,12 +456,12 @@ export function EdgeRow({
           onPress={onPress}
           style={({ pressed }) => [
             {
-              minHeight: detail ? 72 : 60,
+              minHeight: hasDetail ? 72 : 60,
               flexDirection: 'row',
               alignItems: 'center',
               gap: spacing.md,
               paddingHorizontal: spacing.lg,
-              paddingVertical: detail ? spacing.sm : spacing.xs,
+              paddingVertical: hasDetail ? spacing.sm : spacing.xs,
               backgroundColor: pressed ? palette.surfaceStrong : palette.surface,
               opacity: disabled ? 0.48 : 1,
             },
@@ -468,12 +474,12 @@ export function EdgeRow({
         <View
           style={[
             {
-              minHeight: detail ? 72 : 60,
+              minHeight: hasDetail ? 72 : 60,
               flexDirection: 'row',
               alignItems: 'center',
               gap: spacing.md,
               paddingHorizontal: spacing.lg,
-              paddingVertical: detail ? spacing.sm : spacing.xs,
+              paddingVertical: hasDetail ? spacing.sm : spacing.xs,
               backgroundColor: palette.surface,
               opacity: disabled ? 0.48 : 1,
             },
@@ -709,6 +715,7 @@ export function SearchField({
   accessibilityLabel,
   clearLabel = 'Clear search',
   autoFocus,
+  glass = false,
 }: {
   value: string;
   onChangeText: (value: string) => void;
@@ -718,8 +725,43 @@ export function SearchField({
   /** For a field that appears on demand: without it the caller has to tap the
    *  magnifier and then the field it just summoned. */
   autoFocus?: boolean;
+  /** The assistant screen's material on iOS 26. Everywhere else the field stays
+   *  the flat control, so the material never has to be faked. */
+  glass?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
+  const onGlass = glass && LIQUID_GLASS;
+  const input = (
+    <TextInput
+      accessibilityLabel={accessibilityLabel}
+      autoCapitalize="none"
+      autoCorrect={false}
+      autoFocus={autoFocus}
+      onBlur={() => setFocused(false)}
+      onChangeText={onChangeText}
+      onFocus={() => setFocused(true)}
+      placeholder={placeholder}
+      placeholderTextColor={palette.placeholder}
+      // The return key reads Search and dismisses on its own, so a Done bar over
+      // it would be the same action offered twice.
+      omitKeyboardDoneBar
+      returnKeyType="search"
+      style={{
+        minHeight: 52,
+        // The glass draws its own edge and fill; a border and a wash on top of
+        // it would be the flat control painted over the material.
+        borderWidth: onGlass ? 0 : 1,
+        borderColor: focused ? palette.primary : palette.controlBorder,
+        borderRadius: radius.md,
+        backgroundColor: onGlass ? 'transparent' : focused ? palette.surface : palette.surfaceSubtle,
+        color: palette.textStrong,
+        fontSize: 16,
+        paddingLeft: 44,
+        paddingRight: value ? 52 : spacing.md,
+      }}
+      value={value}
+    />
+  );
   return (
     // The lift sits on this wrapper, not on the TextInput: Android's ReactEditText
     // applies background, border and radius from the style but not box shadow, so
@@ -729,33 +771,7 @@ export function SearchField({
       <View style={{ position: 'absolute', left: spacing.md, zIndex: 1, pointerEvents: 'none' }}>
         <AppIcon color={focused ? palette.textStrong : palette.muted} name="search-outline" size={19} />
       </View>
-      <TextInput
-        accessibilityLabel={accessibilityLabel}
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoFocus={autoFocus}
-        onBlur={() => setFocused(false)}
-        onChangeText={onChangeText}
-        onFocus={() => setFocused(true)}
-        placeholder={placeholder}
-        placeholderTextColor={palette.placeholder}
-        // The return key reads Search and dismisses on its own, so a Done bar over
-        // it would be the same action offered twice.
-        omitKeyboardDoneBar
-        returnKeyType="search"
-        style={{
-          minHeight: 52,
-          borderWidth: 1,
-          borderColor: focused ? palette.primary : palette.controlBorder,
-          borderRadius: radius.md,
-          backgroundColor: focused ? palette.surface : palette.surfaceSubtle,
-          color: palette.textStrong,
-          fontSize: 16,
-          paddingLeft: 44,
-          paddingRight: value ? 52 : spacing.md,
-        }}
-        value={value}
-      />
+      {onGlass ? <GlassLayer style={{ borderRadius: radius.md, overflow: 'hidden' }}>{input}</GlassLayer> : input}
       {value ? (
         <Pressable
           accessibilityLabel={clearLabel}
