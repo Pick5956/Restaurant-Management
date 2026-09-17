@@ -1,6 +1,10 @@
 package entity
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type IngredientCategory struct {
 	gorm.Model
@@ -56,11 +60,59 @@ type Ingredient struct {
 	DaysLeft *float64 `json:"days_left,omitempty" gorm:"-"`
 	DailyUse *float64 `json:"daily_use,omitempty" gorm:"-"`
 
+	// ExpiringLot is the open lot that runs out of date soonest, computed at
+	// read time. nil when no open lot carries a date — either the shelf is empty
+	// or nobody has recorded an expiry yet. It is what the card's "หมดอายุ" line
+	// and the ใกล้หมดอายุ filter read; the lots themselves live in ingredient_lots.
+	ExpiringLot *IngredientLotSummary `json:"expiring_lot,omitempty" gorm:"-"`
+
 	// UnitFamily is every unit a quantity may be entered in for this ingredient,
 	// computed at read time from Unit. The client uses it to build the unit
 	// picker, so the list of what converts to what lives in one place on the
 	// server instead of being mirrored - and drifting - in each app.
 	UnitFamily []IngredientUnitOption `json:"unit_family,omitempty" gorm:"-"`
+}
+
+// IngredientLot is one delivery of one ingredient, and the only place an expiry
+// date lives. A single date on the ingredient row cannot describe a shelf that
+// holds 1 kg due on the 15th next to 3 kg due on the 20th — and that shelf is
+// the normal case: the test data already had two ingredients received twice
+// within a week.
+//
+// Remaining is what is left of this delivery. Consumption drains lots earliest
+// expiry first (a lot with no date is drained last, since nothing says it has
+// gone off), so the invariant every write must keep is
+//
+//	SUM(remaining) over open lots == ingredients.stock
+//
+// ingredients.stock stays the source of truth for "how much"; lots are the
+// source of truth for "which of it goes off when".
+type IngredientLot struct {
+	gorm.Model
+	RestaurantID uint    `json:"restaurant_id" gorm:"not null;index"`
+	IngredientID uint    `json:"ingredient_id" gorm:"not null;index:idx_ingredient_lot_fefo,priority:1"`
+	Quantity     float64 `json:"quantity" gorm:"type:numeric(18,4);not null;check:ingredient_lot_quantity_positive,quantity > 0"`
+	Remaining    float64 `json:"remaining" gorm:"type:numeric(18,4);not null;default:0;check:ingredient_lot_remaining_nonnegative,remaining >= 0"`
+	// ExpiresAt is nil when the delivery came in without a date. It can be set
+	// later from the ingredient's lot list, which is how น้ำปลา received in a
+	// hurry gets its label date recorded once someone reads it.
+	ExpiresAt  *time.Time `json:"expires_at" gorm:"index:idx_ingredient_lot_fefo,priority:2"`
+	ReceivedAt time.Time  `json:"received_at" gorm:"not null;index"`
+	// TransactionID points at the stock-in that created this lot, so the history
+	// row and the lot can be shown together. nil for the opening lot the
+	// migration wrote for stock that predates lots.
+	TransactionID *uint   `json:"transaction_id" gorm:"index"`
+	CostPerUnit   float64 `json:"cost_per_unit" gorm:"type:numeric(14,4);not null;default:0"`
+
+	Ingredient *Ingredient `json:"-" gorm:"foreignKey:IngredientID"`
+}
+
+// IngredientLotSummary is the slice of a lot a list view needs: when it goes
+// off and how much of it is still on the shelf.
+type IngredientLotSummary struct {
+	LotID     uint      `json:"lot_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Remaining float64   `json:"remaining"`
 }
 
 type IngredientTransaction struct {

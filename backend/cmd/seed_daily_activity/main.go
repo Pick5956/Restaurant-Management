@@ -30,6 +30,7 @@ import (
 
 	"Project-M/config"
 	"Project-M/internal/entity"
+	"Project-M/internal/repository"
 )
 
 func main() {
@@ -328,6 +329,10 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 				Update("stock", gorm.Expr("GREATEST(stock - ?, 0)", round2(qty))).Error; err != nil {
 				return err
 			}
+			// Lots must follow the shelf: drain what was cooked, FEFO.
+			if err := repository.ReconcileLotsToStock(tx, restaurantID, ingredientID, time.Now()); err != nil {
+				return err
+			}
 			summary.stockMoved++
 		}
 		// The restock expense also puts stock back for the item it bought, so the
@@ -339,6 +344,10 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 			if err := tx.Model(&entity.Ingredient{}).
 				Where("id = ? AND restaurant_id = ?", item.restockID, restaurantID).
 				Update("stock", gorm.Expr("stock + ?", restockUnits(item.expense.Amount))).Error; err != nil {
+				return err
+			}
+			// The seeded delivery becomes a lot (undated: the seeder has no label to read).
+			if err := repository.ReconcileLotsToStock(tx, restaurantID, item.restockID, time.Now()); err != nil {
 				return err
 			}
 		}
@@ -454,6 +463,9 @@ func restockShelves(db *gorm.DB, restaurantID uint) {
 			Where("id = ? AND restaurant_id = ?", ing.ID, restaurantID).
 			Update("stock", round2(target)).Error; err != nil {
 			log.Fatalf("restock %s: %v", ing.Name, err)
+		}
+		if err := repository.ReconcileLotsToStock(db, restaurantID, ing.ID, time.Now()); err != nil {
+			log.Fatalf("reconcile lots %s: %v", ing.Name, err)
 		}
 		filled++
 	}

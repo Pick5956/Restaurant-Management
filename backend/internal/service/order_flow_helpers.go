@@ -183,6 +183,13 @@ func deductInventoryForCompletedKitchenItem(tx *repository.OrderRepository, rest
 		if err := tx.SaveIngredient(ingredient); err != nil {
 			return err
 		}
+		// The same units come off the lots, soonest expiry first, inside this
+		// transaction and under the same row lock. A shortfall means the lots
+		// already disagreed with stock; it is not a reason to refuse the dish
+		// the kitchen has already cooked.
+		if _, err := tx.DrainLots(restaurantID, ingredient.ID, required); err != nil {
+			return err
+		}
 		deductedIngredientIDs = append(deductedIngredientIDs, ingredient.ID)
 		cost := recipeComponentCost(required, snapshot.CostPerUnit, snapshot.YieldPercent)
 		deduction := &entity.OrderInventoryDeduction{

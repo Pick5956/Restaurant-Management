@@ -38,6 +38,9 @@ type IngredientRequest struct {
 	CostPerUnit  float64 `json:"cost_per_unit"`
 	YieldPercent float64 `json:"yield_percent"`
 	StorageType  string  `json:"storage_type" binding:"max=40"`
+	// ExpiresAt dates the opening stock's lot (YYYY-MM-DD). Blank means the
+	// delivery came without a date; it can be set later from the lot list.
+	ExpiresAt string `json:"expires_at" binding:"max=10"`
 }
 
 type IngredientCategoryRequest struct {
@@ -58,6 +61,9 @@ type AdjustStockRequest struct {
 	// Amount is what the restock cost. Only meaningful for "in"; a positive
 	// value also writes the expense-ledger row.
 	Amount float64 `json:"amount"`
+	// ExpiresAt dates the lot a stock-in creates (YYYY-MM-DD). Ignored for
+	// "out" and "adjust", which never create a dated lot.
+	ExpiresAt string `json:"expires_at" binding:"max=10"`
 }
 
 const (
@@ -103,6 +109,9 @@ func (s *IngredientService) List(restaurantID uint) ([]entity.Ingredient, error)
 	if err := s.repo.AttachDaysLeft(restaurantID, items); err != nil {
 		return nil, err
 	}
+	if err := s.repo.AttachExpiringLots(restaurantID, items); err != nil {
+		return nil, err
+	}
 	return attachUnitFamilyList(items), nil
 }
 
@@ -112,6 +121,9 @@ func (s *IngredientService) ListFiltered(restaurantID uint, q repository.Ingredi
 		return nil, 0, err
 	}
 	if err := s.repo.AttachDaysLeft(restaurantID, items); err != nil {
+		return nil, 0, err
+	}
+	if err := s.repo.AttachExpiringLots(restaurantID, items); err != nil {
 		return nil, 0, err
 	}
 	return attachUnitFamilyList(items), total, nil
@@ -212,6 +224,10 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 	ingredient.MaxStock = startingMaxStock(req.Stock, req.MinStock)
 	ingredient.MinPercent = percentOr(req.MinPercent, 0)
 	ingredient.MinStock = reorderLevelFrom(ingredient.MaxStock, ingredient.MinPercent, req.MinStock)
+	openingExpiry, err := parseLotExpiry(req.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.repo.Transaction(func(tx *repository.IngredientRepository) error {
 		if err := tx.Create(ingredient); err != nil {
 			return err
@@ -221,6 +237,11 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 			return nil
 		}
 		if err := tx.CreateTransaction(initialTx); err != nil {
+			return err
+		}
+		// Opening stock is a delivery like any other, so it gets a lot — the
+		// only place its expiry can live.
+		if err := tx.CreateLot(newLotForStockIn(ingredient, ingredient.Stock, initialTx.ID, openingExpiry, repository.BangkokNow())); err != nil {
 			return err
 		}
 		if initialTx.Amount > 0 {
@@ -305,6 +326,12 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 	if err != nil {
 		return nil, err
 	}
+	var lotExpiry *time.Time
+	if kind == "in" {
+		if lotExpiry, err = parseLotExpiry(req.ExpiresAt); err != nil {
+			return nil, err
+		}
+	}
 	err = s.repo.Transaction(func(tx *repository.IngredientRepository) error {
 		ingredient, err := tx.FindByIDForUpdate(restaurantID, ingredientID)
 		if err != nil {
@@ -348,6 +375,35 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 		}
 		if err := tx.CreateTransaction(stockTransaction); err != nil {
 			return err
+		}
+		// Keep the lots in step with the stock that just moved. Every branch
+		// preserves SUM(remaining) == stock; the integration test pins it.
+		switch kind {
+		case "in":
+			if err := tx.CreateLot(newLotForStockIn(ingredient, quantity, stockTransaction.ID, lotExpiry, repository.BangkokNow())); err != nil {
+				return err
+			}
+		case "out":
+			// FEFO: the delivery that goes off soonest is used first. A shortfall
+			// here means the lots already disagreed with stock; reconcile rather
+			// than refuse the movement the shelf has physically made.
+			if _, err := tx.DrainLots(restaurantID, ingredientID, quantity); err != nil {
+				return err
+			}
+		case "adjust":
+			// A count is an absolute level, so the delta decides the direction:
+			// counted high → an undated lot for the surplus; counted low → the
+			// loss comes off the oldest delivery first.
+			delta := nextStock - ingredient.Stock
+			if delta > 0 {
+				if err := tx.CreateLot(newLotForStockIn(ingredient, delta, stockTransaction.ID, nil, repository.BangkokNow())); err != nil {
+					return err
+				}
+			} else if delta < 0 {
+				if _, err := tx.ShrinkLotsOldestFirst(restaurantID, ingredientID, -delta); err != nil {
+					return err
+				}
+			}
 		}
 		if amount > 0 {
 			if err := tx.CreateExpense(buildRestockExpense(ingredient, userID, note, amount, stockTransaction.ID)); err != nil {
@@ -603,4 +659,92 @@ func noteWithEnteredUnit(note string, quantity float64, enteredUnit, stockUnit s
 		return entered
 	}
 	return entered + " · " + note
+}
+
+// ListLots returns the open lots of one ingredient, soonest expiry first, so
+// the detail screen can show "which of this goes off when" and let someone
+// date an undated delivery once they read the label.
+func (s *IngredientService) ListLots(restaurantID, ingredientID uint) ([]entity.IngredientLot, error) {
+	if _, err := s.repo.FindByID(restaurantID, ingredientID); err != nil {
+		return nil, errors.New("ingredient not found")
+	}
+	return s.repo.ListOpenLots(restaurantID, ingredientID)
+}
+
+// UpdateLotExpiry sets or clears one lot's date. It never moves stock.
+func (s *IngredientService) UpdateLotExpiry(restaurantID, ingredientID, lotID uint, raw string) error {
+	expiresAt, err := parseLotExpiry(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := s.repo.SaveLotExpiry(restaurantID, ingredientID, lotID, expiresAt)
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("lot not found")
+	}
+	return nil
+}
+
+// DiscardLot throws away what is left of one lot — the "ทิ้ง" button on an
+// expired delivery. It is an ordinary stock-out on the history, so the CSV and
+// the reports see the waste, but it drains THIS lot rather than FEFO, because
+// the person is standing in front of the specific bag that went off.
+func (s *IngredientService) DiscardLot(restaurantID, ingredientID, lotID, userID uint, reason string) (*entity.Ingredient, error) {
+	if len([]rune(reason)) > 200 {
+		return nil, errors.New("reason is too long")
+	}
+	var updated *entity.Ingredient
+	err := s.repo.Transaction(func(tx *repository.IngredientRepository) error {
+		ingredient, err := tx.FindByIDForUpdate(restaurantID, ingredientID)
+		if err != nil {
+			return errors.New("ingredient not found")
+		}
+		lot, err := tx.FindOpenLotForUpdate(restaurantID, ingredientID, lotID)
+		if err != nil {
+			return errors.New("lot not found or already empty")
+		}
+		quantity := lot.Remaining
+		if quantity > ingredient.Stock {
+			// Lots say more than the shelf holds: discard what the shelf can
+			// actually give up, and let the lot follow the stock.
+			quantity = ingredient.Stock
+		}
+		if quantity <= 0 {
+			return errors.New("nothing left to discard")
+		}
+		nextStock := ingredient.Stock - quantity
+		levels := levelsAfterStockChange(nextStock, ingredient.MaxStock, ingredient.MinStock, ingredient.MinPercent)
+		if err := tx.UpdateStockLevels(restaurantID, ingredientID, levels.Stock, levels.MaxStock, levels.MinStock); err != nil {
+			return err
+		}
+		if nextStock <= 0 {
+			if _, err := tx.DisableMenusForDepletedIngredients(restaurantID, []uint{ingredientID}); err != nil {
+				return err
+			}
+		}
+		if err := tx.CreateTransaction(&entity.IngredientTransaction{
+			RestaurantID: restaurantID,
+			IngredientID: ingredientID,
+			Type:         "out",
+			Quantity:     quantity,
+			Note:         discardNote(lot, reason),
+			CreatedByID:  userID,
+		}); err != nil {
+			return err
+		}
+		if err := tx.SaveLotRemaining(lot.ID, lot.Remaining-quantity); err != nil {
+			return err
+		}
+		ingredient.Stock = levels.Stock
+		ingredient.MaxStock = levels.MaxStock
+		ingredient.MinStock = levels.MinStock
+		updated = ingredient
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return attachUnitFamily(updated, nil)
 }

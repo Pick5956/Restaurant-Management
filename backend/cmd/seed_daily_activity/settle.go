@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"Project-M/internal/entity"
+	"Project-M/internal/repository"
 )
 
 // Closing yesterday before opening today.
@@ -103,6 +104,9 @@ func settleLeftovers(db *gorm.DB, restaurantID uint, today string, loc *time.Loc
 			if err := tx.Model(&entity.Ingredient{}).
 				Where("id = ? AND restaurant_id = ?", ingredientID, restaurantID).
 				Update("stock", gorm.Expr("GREATEST(stock - ?, 0)", round2(qty))).Error; err != nil {
+				return err
+			}
+			if err := repository.ReconcileLotsToStock(tx, restaurantID, ingredientID, time.Now()); err != nil {
 				return err
 			}
 		}
