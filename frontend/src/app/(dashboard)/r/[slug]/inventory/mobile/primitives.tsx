@@ -548,3 +548,49 @@ export function FormRow({
     </button>
   );
 }
+
+/**
+ * The phone's own picker behind whatever this wraps. The row keeps its look —
+ * label, value, chevron — and an invisible <select> lies over it, so a tap
+ * opens the system list: the iOS menu or wheel, the Android dialog. It trades
+ * our styling inside the list for the control people already know, dark mode,
+ * the system text size and VoiceOver/TalkBack for free. Only for short
+ * single-line choices; anything with extra controls stays a BottomSheet.
+ */
+export function NativeSelect<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  children,
+  className = "",
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      {children}
+      <select
+        aria-label={label}
+        value={String(value)}
+        onChange={(event) => {
+          const picked = options.find((option) => String(option.value) === event.target.value);
+          if (picked) onChange(picked.value);
+        }}
+        // 16px or iOS zooms the page in when the list opens.
+        className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 text-[16px]"
+      >
+        {options.map((option) => (
+          <option key={String(option.value)} value={String(option.value)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}

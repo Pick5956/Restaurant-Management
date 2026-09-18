@@ -24,9 +24,9 @@ import {
 } from "../inventoryUnitUtils";
 import type { useInventoryData } from "./useInventoryData";
 import {
-  BottomSheet,
   FormGroup,
   FormRow,
+  NativeSelect,
   PrimaryButton,
   ScreenNav,
   SecondaryButton,
@@ -126,9 +126,6 @@ export default function AddIngredientScreen({
   // percentage of; a brand new ingredient has none, so it types a quantity.
   const shelfMax = editing?.max_stock ?? 0;
   const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
-  const [picker, setPicker] = useState<
-    "none" | "category" | "unit" | "storage" | "pack" | "case" | "stockIn" | "minIn" | "costIn"
-  >("none");
   const ucopy = unitCopy(lang);
   const [packUnit, setPackUnit] = useState(editing?.pack_unit ?? "");
   const [packSize, setPackSize] = useState(editing?.pack_size ? String(editing.pack_size) : "");
@@ -312,18 +309,47 @@ export default function AddIngredientScreen({
               className="w-full bg-transparent text-right text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
             />
           </FormRow>
-          <FormRow label={copy.category} onPress={() => setPicker("category")}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{categoryName}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
-          <FormRow label={ucopy.stockUnitLabel} onPress={() => setPicker("unit")}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
-          <FormRow label={copy.storage} onPress={() => setPicker("storage")} divider={false}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{storageLabel(storageType, lang)}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
+          <NativeSelect
+            label={copy.category}
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: 0, label: copy.noCategory },
+              ...categories.map((c) => ({ value: c.ID, label: c.name })),
+            ]}
+          >
+            <FormRow label={copy.category}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{categoryName}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
+          <NativeSelect
+            label={ucopy.stockUnitLabel}
+            value={unit}
+            onChange={(value) => reshape({ unit: value })}
+            options={(UNITS.includes(unit) ? UNITS : [unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
+          >
+            <FormRow label={ucopy.stockUnitLabel}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
+          <NativeSelect
+            label={copy.storage}
+            value={storageType}
+            onChange={(value) => {
+              setStorageType(value);
+              // A new storage type means a new shelf life; the expiry picker
+              // remounts on it so a custom number typed for the old one goes.
+              setExpiryDays(defaultShelfLifeDays(value));
+            }}
+            options={STORAGE_TYPES.map((type) => ({ value: type, label: storageLabel(type, lang) }))}
+          >
+            <FormRow label={copy.storage} divider={false}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{storageLabel(storageType, lang)}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
         </FormGroup>
         {stockUnitHint(unit, lang) ? (
           <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
@@ -332,10 +358,22 @@ export default function AddIngredientScreen({
         ) : null}
 
         <FormGroup label={ucopy.groupBuy}>
-          <FormRow label={ucopy.buyAs} onPress={() => setPicker("pack")} divider={packUnit !== ""}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
+          <NativeSelect
+            label={ucopy.buyAs}
+            value={packUnit}
+            onChange={(value) =>
+              reshape(value ? { packUnit: value } : { packUnit: "", packSize: "", caseUnit: "", caseSize: "" })
+            }
+            options={[
+              { value: "", label: ucopy.none },
+              ...PACK_UNITS.filter((u) => u !== unit).map((u) => ({ value: u, label: u })),
+            ]}
+          >
+            <FormRow label={ucopy.buyAs} divider={packUnit !== ""}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
           {packUnit ? (
             <>
               <FormRow label={ucopy.perPack(packUnit)} suffix={unit}>
@@ -348,10 +386,20 @@ export default function AddIngredientScreen({
                 className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
               />
               </FormRow>
-              <FormRow label={ucopy.caseAs} onPress={() => setPicker("case")} divider={caseUnit !== ""}>
-                <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-              </FormRow>
+              <NativeSelect
+                label={ucopy.caseAs}
+                value={caseUnit}
+                onChange={(value) => reshape(value ? { caseUnit: value } : { caseUnit: "", caseSize: "" })}
+                options={[
+                  { value: "", label: ucopy.none },
+                  ...PACK_UNITS.filter((u) => u !== unit && u !== packUnit).map((u) => ({ value: u, label: u })),
+                ]}
+              >
+                <FormRow label={ucopy.caseAs} divider={caseUnit !== ""}>
+                  <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+                </FormRow>
+              </NativeSelect>
               {caseUnit ? (
                 <FormRow label={ucopy.perCase(caseUnit)} suffix={packUnit} divider={false}>
                   <input
@@ -387,7 +435,9 @@ export default function AddIngredientScreen({
             )}
             <UnitButton
               label={editing ? unit : stockUnit}
-              onPress={!editing && unitChoices.length > 1 ? () => setPicker("stockIn") : undefined}
+              value={stockUnit}
+              choices={!editing && unitChoices.length > 1 ? unitChoices : undefined}
+              onPick={(value) => setTyped({ ...typed, stockIn: value === unit ? "" : value })}
             />
           </FormRow>
           {stockNote ? <RowNote>{stockNote}</RowNote> : null}
@@ -415,7 +465,10 @@ export default function AddIngredientScreen({
             />
             <UnitButton
               label={pricingTotal ? ucopy.baht : `฿/${costUnit}`}
-              onPress={!pricingTotal && unitChoices.length > 1 ? () => setPicker("costIn") : undefined}
+              value={costUnit}
+              choices={!pricingTotal && unitChoices.length > 1 ? unitChoices : undefined}
+              optionLabel={(u) => `฿/${u}`}
+              onPick={(value) => setTyped({ ...typed, costIn: value === unit ? "" : value })}
             />
           </FormRow>
           {priceNote ? <RowNote>{priceNote}</RowNote> : null}
@@ -487,94 +540,6 @@ export default function AddIngredientScreen({
         </PrimaryButton>
       </div>
 
-      <BottomSheet
-        open={picker === "category"}
-        title={copy.pickCategory}
-        onClose={() => setPicker("none")}
-      >
-        <PickerList
-          options={[
-            { value: 0, label: copy.noCategory },
-            ...categories.map((c) => ({ value: c.ID, label: c.name })),
-          ]}
-          value={categoryId}
-          onPick={(value) => {
-            setCategoryId(value);
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker === "unit"} title={copy.pickUnit} onClose={() => setPicker("none")}>
-        <PickerList
-          options={(UNITS.includes(unit) ? UNITS : [unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
-          value={unit}
-          onPick={(value) => {
-            reshape({ unit: value });
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker === "pack"} title={ucopy.pickPack} onClose={() => setPicker("none")}>
-        <PickerList
-          options={[
-            { value: "", label: ucopy.none },
-            ...PACK_UNITS.filter((u) => u !== unit).map((u) => ({ value: u, label: u })),
-          ]}
-          value={packUnit}
-          onPick={(value) => {
-            reshape(value ? { packUnit: value } : { packUnit: "", packSize: "", caseUnit: "", caseSize: "" });
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker === "case"} title={ucopy.pickCase} onClose={() => setPicker("none")}>
-        <PickerList
-          options={[
-            { value: "", label: ucopy.none },
-            ...PACK_UNITS.filter((u) => u !== unit && u !== packUnit).map((u) => ({ value: u, label: u })),
-          ]}
-          value={caseUnit}
-          onPick={(value) => {
-            reshape(value ? { caseUnit: value } : { caseUnit: "", caseSize: "" });
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet
-        open={picker === "stockIn" || picker === "minIn" || picker === "costIn"}
-        title={ucopy.pickEntryUnit}
-        onClose={() => setPicker("none")}
-      >
-        <PickerList
-          options={unitChoices.map((u) => ({ value: u, label: picker === "costIn" ? `฿/${u}` : u }))}
-          value={
-            picker === "stockIn" ? stockUnit : picker === "minIn" ? minUnit : picker === "costIn" ? costUnit : unit
-          }
-          onPick={(value) => {
-            const key = picker === "stockIn" || picker === "minIn" || picker === "costIn" ? picker : null;
-            if (key) setTyped({ ...typed, [key]: value === unit ? "" : value });
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker === "storage"} title={copy.pickStorage} onClose={() => setPicker("none")}>
-        <PickerList
-          options={STORAGE_TYPES.map((type) => ({ value: type, label: storageLabel(type, lang) }))}
-          value={storageType}
-          onPick={(value) => {
-            setStorageType(value);
-            // A new storage type means a new shelf life; the picker remounts on
-            // it so a custom number typed for the old one does not linger.
-            setExpiryDays(defaultShelfLifeDays(value));
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
     </div>
   );
 }
@@ -609,20 +574,39 @@ export function PickerList<T extends string | number>({
   );
 }
 
-/** The unit at the end of a row, tappable when the number can be typed in another. */
-function UnitButton({ label, onPress }: { label: string; onPress?: () => void }) {
-  if (!onPress) {
+/**
+ * The unit at the end of a row. When the number may be typed in another unit
+ * it turns orange and opens the phone's own picker.
+ */
+function UnitButton({
+  label,
+  value,
+  choices,
+  optionLabel = (unit) => unit,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  choices?: string[];
+  optionLabel?: (unit: string) => string;
+  onPick: (unit: string) => void;
+}) {
+  if (!choices) {
     return <span className="w-[68px] shrink-0 text-right text-[13px] text-(--inv-muted)">{label}</span>;
   }
   return (
-    <button
-      type="button"
-      onClick={onPress}
-      className="ui-press flex w-[68px] shrink-0 items-center justify-end gap-0.5 text-[13px] font-semibold text-(--inv-action)"
+    <NativeSelect
+      label={label}
+      value={value}
+      onChange={onPick}
+      options={choices.map((unit) => ({ value: unit, label: optionLabel(unit) }))}
+      className="w-[68px] shrink-0"
     >
-      <span className="truncate">{label}</span>
-      <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-    </button>
+      <span className="flex items-center justify-end gap-0.5 text-[13px] font-semibold text-(--inv-action)">
+        <span className="truncate">{label}</span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+      </span>
+    </NativeSelect>
   );
 }
 

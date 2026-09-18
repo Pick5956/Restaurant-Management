@@ -6,8 +6,7 @@ import { formatCurrency } from "@/src/lib/format";
 import type { IngredientCategory } from "@/src/types/ingredient";
 import { UNITS } from "../inventoryPageUtils";
 import type { useInventoryData } from "./useInventoryData";
-import { BottomSheet, ChipRow, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
-import { PickerList } from "./AddIngredientScreen";
+import { ChipRow, NativeSelect, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
@@ -97,7 +96,6 @@ export default function BulkAddScreen({
   // Lazy initialiser: without it emptyRow ran on every render, burning a key
   // each time for a value React throws away after mount.
   const [rows, setRows] = useState<Row[]>(() => [emptyRow(1, 0, UNITS[1])]);
-  const [picker, setPicker] = useState<{ kind: "category" | "unit"; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -223,13 +221,19 @@ export default function BulkAddScreen({
                   placeholder={copy.quantity}
                   className="min-h-[52px] w-full bg-transparent px-2 text-center text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
                 />
-                <button
-                  type="button"
-                  onClick={() => setPicker({ kind: "unit", key: row.key })}
-                  className={`ui-press border-x border-(--inv-hairline) px-2 text-[15px] text-(--inv-body) ${TAP}`}
+                <NativeSelect
+                  label={copy.pickUnit}
+                  value={row.unit}
+                  onChange={(value) => patch(row.key, { unit: value })}
+                  options={(UNITS.includes(row.unit) ? UNITS : [row.unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
+                  className="flex"
                 >
-                  {row.unit}
-                </button>
+                  <span
+                    className={`flex items-center border-x border-(--inv-hairline) px-2 text-[15px] text-(--inv-body) ${TAP}`}
+                  >
+                    {row.unit}
+                  </span>
+                </NativeSelect>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -241,13 +245,22 @@ export default function BulkAddScreen({
               </div>
 
               <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPicker({ kind: "category", key: row.key })}
-                  className={`ui-press max-w-[55%] shrink-0 truncate rounded-full bg-(--inv-surface-strong) px-3 py-1 text-[12px] text-(--inv-muted) ${TAP}`}
+                <NativeSelect
+                  label={copy.pickCategory}
+                  value={row.categoryId}
+                  onChange={(value) => patch(row.key, { categoryId: value })}
+                  options={[
+                    { value: 0, label: copy.noCategory },
+                    ...categories.map((c) => ({ value: c.ID, label: c.name })),
+                  ]}
+                  className="max-w-[55%] shrink-0"
                 >
-                  {categoryName}
-                </button>
+                  <span
+                    className={`flex items-center truncate rounded-full bg-(--inv-surface-strong) px-3 py-1 text-[12px] text-(--inv-muted) ${TAP}`}
+                  >
+                    {categoryName}
+                  </span>
+                </NativeSelect>
                 <span className="ml-auto text-[13px] font-semibold tabular-nums text-(--inv-heading)">
                   {formatCurrency(subtotal, lang)}
                 </span>
@@ -297,34 +310,6 @@ export default function BulkAddScreen({
         </PrimaryButton>
       </div>
 
-      <BottomSheet
-        open={picker?.kind === "category"}
-        title={copy.pickCategory}
-        onClose={() => setPicker(null)}
-      >
-        <PickerList
-          options={[
-            { value: 0, label: copy.noCategory },
-            ...categories.map((c) => ({ value: c.ID, label: c.name })),
-          ]}
-          value={rows.find((row) => row.key === picker?.key)?.categoryId ?? 0}
-          onPick={(value) => {
-            if (picker) patch(picker.key, { categoryId: value });
-            setPicker(null);
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker?.kind === "unit"} title={copy.pickUnit} onClose={() => setPicker(null)}>
-        <PickerList
-          options={UNITS.map((u) => ({ value: u, label: u }))}
-          value={rows.find((row) => row.key === picker?.key)?.unit ?? UNITS[1]}
-          onPick={(value) => {
-            if (picker) patch(picker.key, { unit: value });
-            setPicker(null);
-          }}
-        />
-      </BottomSheet>
     </div>
   );
 }
