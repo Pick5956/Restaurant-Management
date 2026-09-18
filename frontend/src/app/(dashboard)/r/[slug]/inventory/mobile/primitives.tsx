@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 import { createPortal } from "react-dom";
 import { ChevronLeft, Minus, Plus, X } from "lucide-react";
 import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
+import NumberInput from "@/src/components/shared/NumberInput";
 
 /** 44px is the smallest target a finger hits reliably; 52 is for primary actions. */
 export const TAP = "min-h-[44px]";
@@ -254,11 +255,10 @@ export function Stepper({
         <Minus className="h-5 w-5" strokeWidth={2} />
       </button>
       <div className="relative min-w-0 flex-1">
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberInput
+          min={0}
           value={Number.isFinite(value) ? value : 0}
-          onChange={(event) => onChange(Math.max(0, Number(event.target.value)))}
+          onValue={onChange}
           className={`${inputBase} h-[52px] border-(--inv-hairline) pr-14 text-center font-semibold tabular-nums`}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-(--inv-muted)">

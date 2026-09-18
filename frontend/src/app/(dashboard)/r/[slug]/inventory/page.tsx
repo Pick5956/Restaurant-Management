@@ -55,6 +55,7 @@ import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import NumberInput from "@/src/components/shared/NumberInput";
 import {
   hasFieldErrors,
   inventoryErrorMessage,
@@ -2033,13 +2034,12 @@ export default function InventoryPage() {
                       <>
                         <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perPack(form.pack_unit)}</span>
                         <div className="w-28">
-                          <input
-                            type="number"
+                          <NumberInput
                             min={0}
-                            inputMode="decimal"
+                            blankWhenZero
                             aria-label={ucopy.perPack(form.pack_unit)}
-                            value={form.pack_size || ""}
-                            onChange={(event) => changePackFields({ pack_size: parseFloat(event.target.value) || 0 })}
+                            value={form.pack_size ?? 0}
+                            onValue={(value) => changePackFields({ pack_size: value })}
                             className={inputCls}
                           />
                         </div>
@@ -2061,13 +2061,12 @@ export default function InventoryPage() {
                         <>
                           <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perCase(form.case_unit)}</span>
                           <div className="w-28">
-                            <input
-                              type="number"
+                            <NumberInput
                               min={0}
-                              inputMode="decimal"
+                              blankWhenZero
                               aria-label={ucopy.perCase(form.case_unit)}
-                              value={form.case_size || ""}
-                              onChange={(event) => changePackFields({ case_size: parseFloat(event.target.value) || 0 })}
+                              value={form.case_size ?? 0}
+                              onValue={(value) => changePackFields({ case_size: value })}
                               className={inputCls}
                             />
                           </div>
@@ -2348,20 +2347,22 @@ export default function InventoryPage() {
                         />
                       </td>
                       <td className="w-24">
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          blankWhenZero
+                          placeholder="0"
                           value={row.stock}
-                          onChange={(event) => updateBulkRow(index, { stock: parseFloat(event.target.value) || 0 })}
+                          onValue={(value) => updateBulkRow(index, { stock: value })}
                           className={`${inputCls} h-9 text-right`}
                         />
                       </td>
                       <td className="w-24">
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          blankWhenZero
+                          placeholder="0"
                           value={row.min_stock}
-                          onChange={(event) => updateBulkRow(index, { min_stock: parseFloat(event.target.value) || 0 })}
+                          onValue={(value) => updateBulkRow(index, { min_stock: value })}
                           className={`${inputCls} h-9 text-right`}
                         />
                       </td>
