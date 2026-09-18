@@ -307,6 +307,12 @@ export function unitCopy(lang: "th" | "en") {
         totalFor: (amount: string, unit: string) => `สำหรับ ${amount} ${unit}`,
         baht: "บาท",
         stockUnitLabel: "เมนูตัดสต็อกเป็น",
+        warnLine: (amount: string, unit: string, inStock: string | null, max: string) =>
+          `จะเตือนเมื่อเหลือ ${amount} ${unit}${inStock ? ` (${inStock})` : ""} · เต็ม ${max} ${unit}`,
+        minNeedsStock: (editing: boolean) =>
+          editing
+            ? "ยังไม่เคยมีของเข้า ตั้งจุดแจ้งเตือนได้หลังเติมสต็อกครั้งแรก"
+            : "ใส่จำนวนเริ่มต้นก่อน ถึงจะตั้งจุดแจ้งเตือนได้",
         pickEntryUnit: "เลือกหน่วย",
         packSizeRequired: (pack: string) => `ใส่ว่า 1 ${pack} มีเท่าไหร่`,
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
@@ -332,6 +338,12 @@ export function unitCopy(lang: "th" | "en") {
         totalFor: (amount: string, unit: string) => `for ${amount} ${unit}`,
         baht: "THB",
         stockUnitLabel: "Menus deduct in",
+        warnLine: (amount: string, unit: string, inStock: string | null, max: string) =>
+          `warns at ${amount} ${unit}${inStock ? ` (${inStock})` : ""} · full at ${max} ${unit}`,
+        minNeedsStock: (editing: boolean) =>
+          editing
+            ? "Nothing received yet — set this after the first restock"
+            : "Enter the opening stock first to set the reorder level",
         pickEntryUnit: "Pick a unit",
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,

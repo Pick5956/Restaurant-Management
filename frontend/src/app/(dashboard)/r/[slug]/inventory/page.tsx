@@ -2135,92 +2135,52 @@ export default function InventoryPage() {
                     />
                   </div>
                 ) : null}
-                {/* The number, the slider and the readout sit on one line of the
-                    same width, so the reorder level reads as a single control
-                    instead of three stacked measures. */}
+                {/* The reorder level is set by the slider alone, in whole tens of
+                    the shelf's full level — 10%, 20% … 100% — so it is always a
+                    share people can say out loud, and it keeps tracking the shelf
+                    as the full level grows. The line under it says what that
+                    comes to in the pack and in the stock unit. */}
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
                   <div className="flex items-center gap-3">
-                    {/* The width lives on the wrapper, not on the input: inputCls
-                        already carries w-full, and two width utilities on one
-                        element are settled by stylesheet order, not by the order
-                        they are written in. */}
-                    <div className="w-32 shrink-0">
-                      <input
-                        type="number"
-                        min={0}
-                        inputMode="decimal"
-                        placeholder="0"
-                        aria-label={copy.minStock}
-                        value={typed.min}
-                        onChange={(event) =>
-                          // Typed by hand: a quantity the owner means, not a
-                          // share of the shelf, so it stops tracking the maximum.
-                          applyTyped({ ...form, min_percent: 0 }, { ...typed, min: event.target.value })
-                        }
-                        className={inputCls}
-                      />
-                    </div>
-                    {purchaseUnitChoices(form).length > 1 ? (
-                      <div className="w-28 shrink-0">
-                        <ThemedSelect
-                          aria-label={copy.minStock}
-                          value={typed.minIn || form.unit}
-                          onChange={(value) => applyTyped(form, { ...typed, minIn: value === form.unit ? "" : value })}
-                          options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
-                        />
-                      </div>
-                    ) : null}
-                    {editingMaxStock > 0 ? (
-                      <>
-                        {/* Whole tens only — 10%, 20% … 100% — so the reorder level
-                            is always a share people can say out loud. */}
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={10}
-                          value={Math.round(warnPercent / 10) * 10}
-                          onChange={(event) => {
-                            const percent = Number(event.target.value);
-                            const min = reorderQuantityFor(editingMaxStock, percent);
-                            const factor = purchaseFactor(form, typed.minIn) ?? 1;
-                            applyTyped(
-                              { ...form, min_percent: percent, min_stock: min },
-                              { ...typed, min: typedText(min / factor) },
-                              false,
-                            );
-                          }}
-                          className="h-9 min-w-0 flex-1 accent-orange-500"
-                        />
-                        <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
-                          {Math.round(warnPercent)}%
-                        </span>
-                      </>
-                    ) : null}
-                  </div>
-                  {editingMaxStock > 0 ? (
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {(() => {
-                        // Read back in the unit picked beside the number — "2 ลัง",
-                        // not "72 ขวด" — with the stock-unit amount alongside.
-                        const unit = typed.minIn || form.unit;
-                        const factor = purchaseFactor(form, unit) ?? 1;
-                        const warnAt =
-                          factor === 1
-                            ? `${formatNumber(form.min_stock, lang)}`
-                            : `${formatNumber(form.min_stock / factor, lang)}`;
-                        const inStock =
-                          factor === 1 ? "" : ` (${formatNumber(form.min_stock, lang)} ${form.unit})`;
-                        return (
-                          <>
-                            {copy.warnsAt(warnAt, unit)}
-                            {inStock} · {copy.ofFull(formatNumber(editingMaxStock / factor, lang), unit)}
-                          </>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={10}
+                      aria-label={copy.minStock}
+                      disabled={!(editingMaxStock > 0)}
+                      value={Math.round(warnPercent / 10) * 10}
+                      onChange={(event) => {
+                        const percent = Number(event.target.value);
+                        const min = reorderQuantityFor(editingMaxStock, percent);
+                        const factor = purchaseFactor(form, typed.minIn) ?? 1;
+                        applyTyped(
+                          { ...form, min_percent: percent, min_stock: min },
+                          { ...typed, min: typedText(min / factor) },
+                          false,
                         );
-                      })()}
-                    </p>
-                  ) : null}
+                      }}
+                      className="h-9 min-w-0 flex-1 accent-orange-500 disabled:opacity-40"
+                    />
+                    <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                      {Math.round(warnPercent)}%
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    {editingMaxStock > 0
+                      ? (() => {
+                          const unit = typed.minIn || form.unit;
+                          const factor = purchaseFactor(form, unit) ?? 1;
+                          return ucopy.warnLine(
+                            formatNumber(form.min_stock / factor, lang),
+                            unit,
+                            factor === 1 ? null : `${formatNumber(form.min_stock, lang)} ${form.unit}`,
+                            formatNumber(editingMaxStock / factor, lang),
+                          );
+                        })()
+                      : ucopy.minNeedsStock(Boolean(editingItem))}
+                  </p>
                 </div>
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>

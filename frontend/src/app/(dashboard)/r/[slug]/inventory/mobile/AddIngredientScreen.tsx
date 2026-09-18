@@ -166,6 +166,15 @@ export default function AddIngredientScreen({
   const minUnit = typed.minIn || unit;
   const costUnit = pricingTotal ? unit : typed.costIn || unit;
   const minFactor = purchaseFactor(shape, typed.minIn) ?? 1;
+  // The reorder percentage is a share of the full level: the most this shelf
+  // has held when editing, the opening stock when creating.
+  const warnBase = editing ? shelfMax : resolveTypedAmounts(shape, typed).stock;
+  const warnPercent =
+    minPercent > 0
+      ? minPercent
+      : warnBase > 0
+        ? Math.max(0, Math.min(100, Math.round((resolveTypedAmounts(shape, typed).min_stock / warnBase) * 100)))
+        : 0;
 
   // Anything that changes what a unit means — the stock unit, a pack or case,
   // their sizes — goes through here, so each field's unit stays valid and an
@@ -196,6 +205,12 @@ export default function AddIngredientScreen({
     if (!editing) {
       if ((parseFloat(raw) || 0) > 0) next.costIn = TOTAL_PRICE;
       else if (next.costIn === TOTAL_PRICE) next.costIn = packUnit && (Number(packSize) || 0) > 0 ? packUnit : "";
+      // The full level just moved, so a reorder level held as a share of it
+      // moves with it.
+      if (minPercent > 0) {
+        const stock = resolveTypedAmounts(shape, next).stock;
+        next.min = typedText(reorderQuantityFor(stock, minPercent) / minFactor);
+      }
     }
     setTyped(next);
   }
@@ -216,8 +231,7 @@ export default function AddIngredientScreen({
         ? `${ucopy.totalFor(formatNumber(parseFloat(typed.stock) || 0, lang), stockUnit)} · ${priceBreakdown(shape, resolved.cost_per_unit, "", lang)}`
         : `= ${priceBreakdown(shape, resolved.cost_per_unit, costUnit, lang)}`
       : null;
-  const minNote =
-    typed.minIn && resolved.min_stock > 0 ? ucopy.inStockUnit(formatNumber(resolved.min_stock, lang), unit) : null;
+
   const categoryName = categories.find((c) => c.ID === categoryId)?.name ?? copy.noCategory;
 
   async function save() {
@@ -405,73 +419,41 @@ export default function AddIngredientScreen({
             />
           </FormRow>
           {priceNote ? <RowNote>{priceNote}</RowNote> : null}
-          {minPercent > 0 && shelfMax > 0 ? (
-            <FormRow label={copy.minStock} suffix="%" divider={!minNote}>
-              <div className="flex w-full items-center gap-3">
-                {/* Whole tens only, the same as the web slider. */}
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={10}
-                  value={Math.round(minPercent / 10) * 10}
-                  onChange={(event) => {
-                    const percent = Number(event.target.value);
-                    setMinPercent(percent);
-                    setTyped({ ...typed, min: typedText(reorderQuantityFor(shelfMax, percent) / minFactor) });
-                  }}
-                  className="h-9 flex-1 accent-(--inv-action)"
-                />
-                <span className="w-9 shrink-0 text-right text-[16px] tabular-nums text-(--inv-heading)">
-                  {Math.round(minPercent)}
-                </span>
-              </div>
-            </FormRow>
-          ) : (
-            <FormRow label={copy.minStock} divider={!minNote}>
+          {/* Set by the slider alone, in whole tens of the full level — the same
+              control as the web form. The note under it says what it comes to. */}
+          <FormRow label={copy.minStock} suffix="%" divider={false}>
+            <div className="flex w-full items-center gap-3">
               <input
-                type="number"
-                inputMode="decimal"
-                value={typed.min}
+                type="range"
+                min={0}
+                max={100}
+                step={10}
+                aria-label={copy.minStock}
+                disabled={!(warnBase > 0)}
+                value={Math.round(warnPercent / 10) * 10}
                 onChange={(event) => {
-                  setTyped({ ...typed, min: event.target.value });
-                  setMinPercent(0);
+                  const percent = Number(event.target.value);
+                  setMinPercent(percent);
+                  setTyped({ ...typed, min: typedText(reorderQuantityFor(warnBase, percent) / minFactor) });
                 }}
-                placeholder="0"
-                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+                className="h-9 flex-1 accent-(--inv-action) disabled:opacity-40"
               />
-              <UnitButton
-                label={minUnit}
-                onPress={unitChoices.length > 1 ? () => setPicker("minIn") : undefined}
-              />
-            </FormRow>
-          )}
-          {minNote ? <RowNote>{minNote}</RowNote> : null}
+              <span className="w-9 shrink-0 text-right text-[16px] tabular-nums text-(--inv-heading)">
+                {Math.round(warnPercent)}
+              </span>
+            </div>
+          </FormRow>
+          <RowNote>
+            {warnBase > 0
+              ? ucopy.warnLine(
+                  formatNumber(resolved.min_stock / minFactor, lang),
+                  minUnit,
+                  minFactor === 1 ? null : `${formatNumber(resolved.min_stock, lang)} ${unit}`,
+                  formatNumber(warnBase / minFactor, lang),
+                )
+              : ucopy.minNeedsStock(Boolean(editing))}
+          </RowNote>
         </FormGroup>
-        {shelfMax > 0 ? (
-          <div className="-mt-4 mb-[22px] flex items-baseline justify-between gap-3 px-1">
-            <span className="text-[11px] leading-snug text-(--inv-faint)">
-              {minPercent > 0
-                ? copy.warnsAt(
-                    formatNumber(resolved.min_stock / minFactor, lang),
-                    minUnit,
-                    formatNumber(shelfMax / minFactor, lang),
-                  )
-                : ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                const next = minPercent > 0 ? 0 : 20;
-                setMinPercent(next);
-                if (next > 0) setTyped({ ...typed, min: typedText(reorderQuantityFor(shelfMax, next) / minFactor) });
-              }}
-              className="shrink-0 text-[11px] font-semibold text-(--inv-action)"
-            >
-              {minPercent > 0 ? copy.minAsAmount : copy.minAsPercent}
-            </button>
-          </div>
-        ) : null}
         <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
           {copy.minNote}
         </p>
