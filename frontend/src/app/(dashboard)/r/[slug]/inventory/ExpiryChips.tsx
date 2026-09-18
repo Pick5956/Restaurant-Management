@@ -6,7 +6,6 @@ import {
   expiryCopy,
   expiryDateFromDays,
   formatExpiryDate,
-  storageLabel,
   useExpiryChoice,
 } from "./inventoryExpiryUtils";
 import { inputCls } from "./inventoryPageUtils";
@@ -75,8 +74,6 @@ export default function ExpiryChips({
       ) : null}
       <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
         {value === null ? copy.noExpiry : copy.expiresOn(formatExpiryDate(expiryDateFromDays(value), lang))}
-        {" · "}
-        {copy.defaultHint(fallback, storageLabel(storageType, lang))}
       </p>
     </div>
   );

@@ -72,7 +72,6 @@ import {
   purchaseUnitChoices,
   resolveTypedAmounts,
   retargetTypedUnits,
-  stockUnitHint,
   typedText,
   unitCopy,
   TOTAL_PRICE,
@@ -1997,11 +1996,6 @@ export default function InventoryPage() {
                       onChange={(value) => changePackFields({ unit: value })}
                       options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
                     />
-                    {stockUnitHint(form.unit, lang) ? (
-                      <p className="mt-1.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
-                        {stockUnitHint(form.unit, lang)}
-                      </p>
-                    ) : null}
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
@@ -2084,9 +2078,9 @@ export default function InventoryPage() {
                   ) : null}
                   {shownErrors.packSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.packSize}</p> : null}
                   {shownErrors.caseSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.caseSize}</p> : null}
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    {packExample(form, lang) ?? ucopy.buyNote}
-                  </p>
+                  {packExample(form, lang) ? (
+                    <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">{packExample(form, lang)}</p>
+                  ) : null}
                 </div>
                 {/* Opening stock comes first because the price can be read off
                     it: type what was paid for that stock and the price per unit
@@ -2227,9 +2221,9 @@ export default function InventoryPage() {
                       {Math.round(warnPercent)}%
                     </span>
                   </div>
+                  {editingMaxStock > 0 ? (
                   <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    {editingMaxStock > 0
-                      ? (() => {
+                    {(() => {
                           const unit = typed.minIn || form.unit;
                           const factor = purchaseFactor(form, unit) ?? 1;
                           return ucopy.warnLine(
@@ -2238,9 +2232,9 @@ export default function InventoryPage() {
                             factor === 1 ? null : `${formatNumber(form.min_stock, lang)} ${form.unit}`,
                             formatNumber(editingMaxStock / factor, lang),
                           );
-                        })()
-                      : ucopy.minNeedsStock(Boolean(editingItem))}
+                        })()}
                   </p>
+                  ) : null}
                 </div>
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>

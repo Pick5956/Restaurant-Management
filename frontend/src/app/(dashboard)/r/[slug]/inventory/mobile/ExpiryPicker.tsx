@@ -6,7 +6,6 @@ import {
   expiryCopy,
   expiryDateFromDays,
   formatExpiryDate,
-  storageLabel,
   useExpiryChoice,
 } from "../inventoryExpiryUtils";
 import { ChipRow, inputBase } from "./primitives";
@@ -58,10 +57,6 @@ export default function ExpiryPicker({
       ) : null}
       <p className="mt-2 text-[12px] leading-snug text-(--inv-muted)">
         {value === null ? copy.noExpiry : copy.expiresOn(formatExpiryDate(expiryDateFromDays(value), lang))}
-        <span className="text-(--inv-faint)">
-          {" · "}
-          {copy.defaultHint(fallback, storageLabel(storageType, lang))}
-        </span>
       </p>
     </div>
   );

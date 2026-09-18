@@ -18,7 +18,6 @@ import {
   purchaseUnitChoices,
   resolveTypedAmounts,
   retargetTypedUnits,
-  stockUnitHint,
   typedText,
   unitCopy,
   type TypedAmounts,
@@ -387,11 +386,6 @@ export default function AddIngredientScreen({
             </FormRow>
           </NativeSelect>
         </FormGroup>
-        {stockUnitHint(unit, lang) ? (
-          <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-            {stockUnitHint(unit, lang)}
-          </p>
-        ) : null}
 
         <FormGroup label={ucopy.groupBuy}>
           <NativeSelect
@@ -450,9 +444,11 @@ export default function AddIngredientScreen({
             {[shown.packSize, shown.caseSize].filter(Boolean).join(" · ")}
           </p>
         ) : null}
-        <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-          {packExample(packShape, lang) ?? ucopy.buyNote}
-        </p>
+        {packExample(packShape, lang) ? (
+          <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
+            {packExample(packShape, lang)}
+          </p>
+        ) : null}
 
         <FormGroup label={copy.groupStock}>
           <FormRow label={copy.openingStock} divider={!stockNote}>
@@ -533,26 +529,17 @@ export default function AddIngredientScreen({
               </span>
             </div>
           </FormRow>
-          <RowNote>
-            {warnBase > 0
-              ? ucopy.warnLine(
-                  formatNumber(resolved.min_stock / minFactor, lang),
-                  minUnit,
-                  minFactor === 1 ? null : `${formatNumber(resolved.min_stock, lang)} ${unit}`,
-                  formatNumber(warnBase / minFactor, lang),
-                )
-              : ucopy.minNeedsStock(Boolean(editing))}
-          </RowNote>
+          {warnBase > 0 ? (
+            <RowNote>
+              {ucopy.warnLine(
+                formatNumber(resolved.min_stock / minFactor, lang),
+                minUnit,
+                minFactor === 1 ? null : `${formatNumber(resolved.min_stock, lang)} ${unit}`,
+                formatNumber(warnBase / minFactor, lang),
+              )}
+            </RowNote>
+          ) : null}
         </FormGroup>
-        <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-          {copy.minNote}
-        </p>
-
-        {editing && (
-          <p className="-mt-3 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-            {copy.stockLocked}
-          </p>
-        )}
 
         {!editing && (
           <FormGroup label={copy.groupSummary}>
