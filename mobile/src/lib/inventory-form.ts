@@ -7,9 +7,7 @@ export const INGREDIENT_UNITS = [
   'ลิตร',
   'ฟอง',
   'ขวด',
-  'แพ็ก',
-  'ถุง',
-  'กล่อง',
+  'กระป๋อง',
 ] as const;
 
 export interface IngredientFormValues {

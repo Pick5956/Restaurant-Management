@@ -2,13 +2,13 @@ import type { AdjustStockInput, Ingredient, IngredientInput } from "@/src/types/
 import { localeForLanguage } from "@/src/lib/format";
 
 /**
- * The unit stock is counted in — the unit a recipe consumes. Containers stay for
- * things used whole (a bottle of water sold as a bottle); a container that is
- * used a little at a time belongs in the purchase units instead, see
+ * The unit stock is counted in — the unit a recipe consumes. ขวด and กระป๋อง stay
+ * for drinks sold whole; แพ็ก ถุง กล่อง are how things are bought, not how a
+ * recipe takes them, so they live only in the purchase units — see
  * inventoryUnitUtils.ts. An existing ingredient on a unit not listed here keeps
  * it: the pickers prepend the current value.
  */
-export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ฟอง", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
+export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ฟอง", "ขวด", "กระป๋อง"];
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {

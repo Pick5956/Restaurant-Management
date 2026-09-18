@@ -111,9 +111,7 @@ test('matches the canonical Thai unit choices used by the web inventory form', (
     'ลิตร',
     'ฟอง',
     'ขวด',
-    'แพ็ก',
-    'ถุง',
-    'กล่อง',
+    'กระป๋อง',
   ]);
 });
 
