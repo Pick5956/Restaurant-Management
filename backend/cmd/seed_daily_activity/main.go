@@ -1,9 +1,15 @@
 // Command seed_daily_activity adds one day of realistic shop activity to the
 // database so the demo restaurant looks like it operates every day rather than
-// being a frozen snapshot: a run of completed+paid orders (with their cost
-// deductions so margin stays honest), a few orders still live on the floor
-// (open/cooking/served and unpaid, so get_active_orders has something to show),
-// an expense or two, and the matching drop in ingredient stock.
+// being a frozen snapshot: a run of orders that went all the way through —
+// sent to the kitchen, cooked, served, paid, the table freed — with their cost
+// deductions so margin stays honest, an expense or two, and the matching drop
+// in ingredient stock.
+//
+// Until 18 ก.ย. 2569 each day also left three to five orders live on the floor
+// for the assistant's "what is open right now". The owner asked for every bill
+// closed properly instead: the morning after, the app showed four bills the
+// kitchen had finished that nobody had marked served, one served and never
+// paid, and five tables still occupied. Now nothing seeded is left open.
 //
 // It is meant to be run once at the start of each day. It is idempotent per day:
 // every row it writes carries a marker note "[daily_activity YYYY-MM-DD]", so a
@@ -133,13 +139,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("seed day %s: %v", dateStr, err)
 	}
-	log.Printf("เติมกิจกรรมวันที่ %s แล้ว: ขายจบ %d ออเดอร์ (%.0f บาท) · ค้างบนโต๊ะ %d · รายจ่าย %d รายการ · สต๊อกขยับ %d ตัว",
-		dateStr, summary.completed, summary.revenue, summary.active, summary.expenses, summary.stockMoved)
+	log.Printf("เติมกิจกรรมวันที่ %s แล้ว: ขายจบ %d ออเดอร์ (%.0f บาท) ปิดบิลครบทุกใบ · รายจ่าย %d รายการ · สต๊อกขยับ %d ตัว",
+		dateStr, summary.completed, summary.revenue, summary.expenses, summary.stockMoved)
 }
 
 type daySummary struct {
 	completed  int
-	active     int
 	revenue    float64
 	expenses   int
 	stockMoved int
@@ -234,74 +239,6 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 			}
 			summary.completed++
 			summary.revenue += total
-		}
-
-		// ---- orders still live on the floor: unpaid, mid-service ------------
-		// Distinct free dine-in tables, because the schema allows only one active
-		// order per table. A couple of takeaways need no table.
-		freeTables := freeDineInTables(tx, restaurantID)
-		liveStates := []string{
-			entity.OrderStatusSentToKitchen, entity.OrderStatusCooking,
-			entity.OrderStatusCooking, entity.OrderStatusReady, entity.OrderStatusServed,
-		}
-		now := time.Now().In(loc)
-		activeWanted := 3 + rng.Intn(3) // 3–5
-		for i := 0; i < activeWanted; i++ {
-			seq++
-			openedAt := now.Add(-time.Duration(5+rng.Intn(80)) * time.Minute)
-			status := liveStates[rng.Intn(len(liveStates))]
-			order := &entity.Order{
-				Model:         gorm.Model{CreatedAt: openedAt, UpdatedAt: now},
-				RestaurantID:  restaurantID,
-				OrderType:     entity.OrderTypeDineIn,
-				OrderNumber:   fmt.Sprintf("DA-%s-%s-%03d", dateStr, tag, seq),
-				OrderDate:     dateStr,
-				StaffID:       staffID,
-				CustomerCount: 1 + rng.Intn(4),
-				Status:        status,
-				PaymentStatus: entity.PaymentStatusUnpaid,
-				Note:          marker,
-				OpenedAt:      openedAt,
-				Version:       1,
-			}
-			fulfillment := entity.OrderItemFulfillmentDineIn
-			if i < len(freeTables) {
-				order.TableID = &freeTables[i].ID
-			} else if rng.Float64() < 0.5 {
-				order.OrderType, fulfillment = entity.OrderTypeTakeaway, entity.OrderItemFulfillmentTakeaway
-			} else {
-				// No free table and staying dine-in would collide with nothing, but
-				// a dine-in order with no table reads oddly; make it takeaway.
-				order.OrderType, fulfillment = entity.OrderTypeTakeaway, entity.OrderItemFulfillmentTakeaway
-			}
-			if err := tx.Create(order).Error; err != nil {
-				return err
-			}
-			items := buildItems(order, menus, fulfillment, now, rng)
-			for idx := range items {
-				items[idx].Status = activeItemStatus(status)
-			}
-			if err := tx.Create(&items).Error; err != nil {
-				return err
-			}
-			total := 0.0
-			for idx := range items {
-				total += items[idx].Subtotal
-			}
-			total = round2(total)
-			if err := tx.Model(order).Updates(map[string]interface{}{
-				"subtotal": total, "total_amount": total, "grand_total": total,
-			}).Error; err != nil {
-				return err
-			}
-			if order.TableID != nil {
-				if err := tx.Model(&entity.RestaurantTable{}).
-					Where("id = ?", *order.TableID).
-					Update("status", entity.TableStatusOccupied).Error; err != nil {
-					return err
-				}
-			}
-			summary.active++
 		}
 
 		// ---- an expense or two: a restock, sometimes a utility bill ---------
@@ -472,26 +409,23 @@ func restockShelves(db *gorm.DB, restaurantID uint) {
 	log.Printf("เติมสต๊อกให้วัตถุดิบที่ต่ำกว่าขั้นต่ำแล้ว %d ตัว จากทั้งหมด %d ตัว", filled, len(ingredients))
 }
 
-// activeItemStatus keeps an item's kitchen state consistent with its order's.
-func activeItemStatus(orderStatus string) string {
-	switch orderStatus {
-	case entity.OrderStatusSentToKitchen:
-		return entity.OrderItemStatusPending
-	case entity.OrderStatusCooking:
-		return entity.OrderItemStatusCooking
-	case entity.OrderStatusReady:
-		return entity.OrderItemStatusReady
-	default:
-		return entity.OrderItemStatusServed
-	}
-}
-
 func buildItems(order *entity.Order, menus []entity.MenuItem, fulfillment string, servedAt time.Time, rng *rand.Rand) []entity.OrderItem {
 	n := 1 + rng.Intn(4)
 	if n > len(menus) {
 		n = len(menus)
 	}
 	items := make([]entity.OrderItem, 0, n)
+	// The kitchen's clock for this bill: sent a minute or two after it opened,
+	// ready once cooked, carried out a few minutes later — all before the bill
+	// closes at servedAt. They had all been one instant, so a finished order
+	// read as cooked, served and paid in the same second.
+	sentAt := order.OpenedAt.Add(time.Duration(1+rng.Intn(3)) * time.Minute)
+	if sentAt.After(servedAt) {
+		sentAt = servedAt
+	}
+	span := servedAt.Sub(sentAt)
+	readyAt := sentAt.Add(span * time.Duration(55+rng.Intn(25)) / 100)
+	carriedAt := readyAt.Add((servedAt.Sub(readyAt)) * time.Duration(20+rng.Intn(40)) / 100)
 	for _, mi := range rng.Perm(len(menus))[:n] {
 		menu := menus[mi]
 		qty := 1
@@ -512,9 +446,9 @@ func buildItems(order *entity.Order, menus []entity.MenuItem, fulfillment string
 			FulfillmentType: fulfillment,
 			Status:          entity.OrderItemStatusServed,
 			KitchenBatch:    1,
-			SentAt:          &order.OpenedAt,
-			ReadyAt:         &servedAt,
-			ServedAt:        &servedAt,
+			SentAt:          &sentAt,
+			ReadyAt:         &readyAt,
+			ServedAt:        &carriedAt,
 		})
 	}
 	return items
@@ -684,14 +618,6 @@ func pickTable(tables []entity.RestaurantTable, rng *rand.Rand) *entity.Restaura
 		}
 	}
 	return &tables[len(tables)-1]
-}
-
-func freeDineInTables(tx *gorm.DB, restaurantID uint) []entity.RestaurantTable {
-	var tables []entity.RestaurantTable
-	tx.Where("restaurant_id = ? AND status = ? AND deleted_at IS NULL",
-		restaurantID, entity.TableStatusFree).
-		Order("id asc").Limit(5).Find(&tables)
-	return tables
 }
 
 func purgeDay(db *gorm.DB, restaurantID uint, marker string) {
