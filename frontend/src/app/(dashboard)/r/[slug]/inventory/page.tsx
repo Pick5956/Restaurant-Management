@@ -62,10 +62,11 @@ import {
   validateIngredientForm,
 } from "./inventoryFormValidation";
 import {
-  PACK_UNITS,
   emptyTypedAmounts,
+  entryChain,
   formatPackCount,
   packExample,
+  packUnitChoices,
   purchaseFactor,
   purchaseUnitChoices,
   resolveTypedAmounts,
@@ -950,6 +951,19 @@ export default function InventoryPage() {
     lang,
   );
   const shownErrors = showFieldErrors ? fieldErrors : {};
+
+  // The dropdown lists the containers that usually hold this kind of stock
+  // first, then a disabled divider, then the rest — the web select has no
+  // group headings, so the divider row stands in for one. Nothing is refused.
+  function containerOptions(level: "pack" | "case", exclude: string[]) {
+    const { likely, other } = packUnitChoices(form.unit, level, exclude);
+    const rows: { value: string; label: string; disabled?: boolean }[] = [
+      { value: "", label: level === "pack" ? ucopy.none : `${ucopy.caseAs}: ${ucopy.none}` },
+      ...likely.map((unit) => ({ value: unit, label: unit })),
+    ];
+    if (likely.length && other.length) rows.push({ value: "__divider__", label: `── ${ucopy.otherUnits} ──`, disabled: true });
+    return [...rows, ...other.map((unit) => ({ value: unit, label: unit }))];
+  }
 
   // Everything that changes what a typed number means goes through here: the
   // typed text, the unit beside it, and the pack fields that size those units.
@@ -2017,15 +2031,12 @@ export default function InventoryPage() {
                             case_size: value ? form.case_size : 0,
                           })
                         }
-                        options={[
-                          { value: "", label: ucopy.none },
-                          ...PACK_UNITS.filter((unit) => unit !== form.unit).map((unit) => ({ value: unit, label: unit })),
-                        ]}
+                        options={containerOptions("pack", [])}
                       />
                     </div>
                     {form.pack_unit ? (
                       <>
-                        <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.per}</span>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perPack(form.pack_unit)}</span>
                         <div className="w-28">
                           <input
                             type="number"
@@ -2048,18 +2059,12 @@ export default function InventoryPage() {
                           aria-label={ucopy.caseAs}
                           value={form.case_unit ?? ""}
                           onChange={(value) => changePackFields({ case_unit: value, case_size: value ? form.case_size : 0 })}
-                          options={[
-                            { value: "", label: `${ucopy.caseAs}: ${ucopy.none}` },
-                            ...PACK_UNITS.filter((unit) => unit !== form.pack_unit && unit !== form.unit).map((unit) => ({
-                              value: unit,
-                              label: unit,
-                            })),
-                          ]}
+                          options={containerOptions("case", [form.pack_unit ?? ""])}
                         />
                       </div>
                       {form.case_unit ? (
                         <>
-                          <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.per}</span>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perCase(form.case_unit)}</span>
                           <div className="w-28">
                             <input
                               type="number"
@@ -2627,8 +2632,9 @@ export default function InventoryPage() {
                 {/* Entering in another unit is only useful if the result is
                     visible before saving - the shelf still counts in its own. */}
                 {convertedAdjustQty !== null ? (
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    = <span className="font-mono tabular-nums">{convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span> {adjustTarget.unit}
+                  <p className="mt-1.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                    {entryChain(adjustTarget, parseFloat(adjustQty), adjustUnit, lang) ??
+                      `= ${convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${adjustTarget.unit}`}
                   </p>
                 ) : null}
               </div>

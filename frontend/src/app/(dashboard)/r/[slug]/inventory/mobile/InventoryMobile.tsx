@@ -38,6 +38,7 @@ import ExpiryPicker from "./ExpiryPicker";
 import {
   convertEntryAmount,
   defaultEntryUnit,
+  entryChain,
   entryUnitOptions,
   formatPackCount,
   stockPerEntryUnit,
@@ -1076,10 +1077,13 @@ function RestockAndCountSheets({
         />
       </div>
     ) : null;
+  // Every level down, not just the stock unit: "= 24 ขวด = 18,000 มิลลิลิตร"
+  // for 2 ลัง, so a wrong case size shows up as a wrong bottle count.
+  const chain = entryChain(active, amount, unit, lang);
   const inStockUnit =
     factor !== 1 ? (
       <p className="mt-1.5 text-center text-[12px] tabular-nums text-(--inv-muted)">
-        = {formatNumber(amount * factor, lang)} {active.unit}
+        {chain ?? `= ${formatNumber(amount * factor, lang)} ${active.unit}`}
       </p>
     ) : null;
 

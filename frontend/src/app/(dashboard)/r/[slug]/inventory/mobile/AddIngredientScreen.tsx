@@ -8,10 +8,10 @@ import { STORAGE_TYPES, UNITS, reorderQuantityFor } from "../inventoryPageUtils"
 import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
 import ExpiryPicker from "./ExpiryPicker";
 import {
-  PACK_UNITS,
   TOTAL_PRICE,
   emptyTypedAmounts,
   packExample,
+  packUnitChoices,
   priceBreakdown,
   purchaseFactor,
   purchaseUnitChoices,
@@ -257,6 +257,19 @@ export default function AddIngredientScreen({
   );
   const shown = showErrors ? fieldErrors : {};
 
+  // The system picker groups the containers that usually hold this kind of
+  // stock above the rest, so ลัง is not the first thing offered to a shelf
+  // counted in millilitres — it still can be picked, under "อื่น ๆ".
+  function containerOptions(level: "pack" | "case", exclude: string[]) {
+    const { likely, other } = packUnitChoices(unit, level, exclude);
+    const likelyLabel = level === "pack" ? ucopy.likelyFor(unit) : ucopy.likelyFor(packUnit || unit);
+    return [
+      { value: "", label: ucopy.none },
+      ...likely.map((u) => ({ value: u, label: u, group: likelyLabel })),
+      ...other.map((u) => ({ value: u, label: u, group: likely.length ? ucopy.otherUnits : undefined })),
+    ];
+  }
+
   async function save() {
     if (hasFieldErrors(fieldErrors)) {
       setShowErrors(true);
@@ -385,10 +398,7 @@ export default function AddIngredientScreen({
             onChange={(value) =>
               reshape(value ? { packUnit: value } : { packUnit: "", packSize: "", caseUnit: "", caseSize: "" })
             }
-            options={[
-              { value: "", label: ucopy.none },
-              ...PACK_UNITS.filter((u) => u !== unit).map((u) => ({ value: u, label: u })),
-            ]}
+            options={containerOptions("pack", [])}
           >
             <FormRow label={ucopy.buyAs} divider={packUnit !== ""}>
               <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
@@ -411,10 +421,7 @@ export default function AddIngredientScreen({
                 label={ucopy.caseAs}
                 value={caseUnit}
                 onChange={(value) => reshape(value ? { caseUnit: value } : { caseUnit: "", caseSize: "" })}
-                options={[
-                  { value: "", label: ucopy.none },
-                  ...PACK_UNITS.filter((u) => u !== unit && u !== packUnit).map((u) => ({ value: u, label: u })),
-                ]}
+                options={containerOptions("case", [packUnit])}
               >
                 <FormRow label={ucopy.caseAs} divider={caseUnit !== ""}>
                   <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>

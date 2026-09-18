@@ -568,11 +568,23 @@ export function NativeSelect<T extends string | number>({
 }: {
   label: string;
   value: T;
-  options: { value: T; label: string }[];
+  /** Options with the same `group` sit under that heading, in first-seen order. */
+  options: { value: T; label: string; group?: string }[];
   onChange: (value: T) => void;
   children: ReactNode;
   className?: string;
 }) {
+  const sections: { group: string | undefined; items: typeof options }[] = [];
+  for (const option of options) {
+    const last = sections[sections.length - 1];
+    if (last && last.group === option.group) last.items.push(option);
+    else sections.push({ group: option.group, items: [option] });
+  }
+  const render = (option: (typeof options)[number]) => (
+    <option key={String(option.value)} value={String(option.value)}>
+      {option.label}
+    </option>
+  );
   return (
     <div className={`relative ${className}`}>
       {children}
@@ -586,11 +598,15 @@ export function NativeSelect<T extends string | number>({
         // 16px or iOS zooms the page in when the list opens.
         className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 text-[16px]"
       >
-        {options.map((option) => (
-          <option key={String(option.value)} value={String(option.value)}>
-            {option.label}
-          </option>
-        ))}
+        {sections.map((section, index) =>
+          section.group ? (
+            <optgroup key={`${section.group}-${index}`} label={section.group}>
+              {section.items.map(render)}
+            </optgroup>
+          ) : (
+            section.items.map(render)
+          ),
+        )}
       </select>
     </div>
   );

@@ -15,6 +15,9 @@ import {
   TOTAL_PRICE,
   priceBreakdown,
   stockUnitHint,
+  packUnitChoices,
+  packChain,
+  entryChain,
 } from "./inventoryUnitUtils";
 
 // What the API returns for fish sauce after migration 31: a ml shelf bought by
@@ -92,7 +95,7 @@ describe("pack text", () => {
   });
   it("explains a delivery with the biggest unit and the pack price", () => {
     const text = packExample(fishSauce, "th") ?? "";
-    expect(text.startsWith("รับของ 1 ลัง = 8,400 มิลลิลิตร · ขวดละ ")).toBe(true);
+    expect(text.startsWith("1 ลัง = 12 ขวด = 8,400 มิลลิลิตร · ขวดละ ")).toBe(true);
     expect(text).toContain("35");
   });
 });
@@ -210,5 +213,37 @@ describe("stockUnitHint", () => {
     expect(stockUnitHint("ขวด", "th")).toContain("ถ้าเทแบ่งใช้");
     expect(stockUnitHint("มิลลิลิตร", "th")).toContain("ตวงใช้");
     expect(stockUnitHint("ลูก", "th")).toBeNull();
+  });
+});
+
+describe("packUnitChoices", () => {
+  it("lists the containers that hold liquid first, and cases second", () => {
+    const pack = packUnitChoices("มิลลิลิตร", "pack");
+    expect(pack.likely[0]).toBe("ขวด");
+    expect(pack.likely).not.toContain("ลัง");
+    expect(pack.other).toContain("ลัง");
+    const kase = packUnitChoices("มิลลิลิตร", "case", ["ขวด"]);
+    expect(kase.likely).toEqual(["ลัง", "แพ็ก"]);
+    expect(kase.other).not.toContain("ขวด");
+  });
+  it("still offers everything, just later", () => {
+    const { likely, other } = packUnitChoices("กรัม", "pack");
+    expect(likely.length + other.length).toBe(15);
+    expect(packUnitChoices("ลูก", "pack").likely).toEqual([]);
+  });
+});
+
+describe("chains", () => {
+  const water = { unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 750, case_unit: "ลัง", case_size: 12 };
+  it("spells the whole packaging out biggest first", () => {
+    expect(packChain(water, "th")).toBe("1 ลัง = 12 ขวด = 9,000 มิลลิลิตร");
+    expect(packChain({ ...water, case_unit: "", case_size: 0 }, "th")).toBe("1 ขวด = 750 มิลลิลิตร");
+    expect(packChain({ ...water, pack_unit: "", pack_size: 0 }, "th")).toBeNull();
+  });
+  it("follows a delivery down every level", () => {
+    expect(entryChain(water, 2, "ลัง", "th")).toBe("= 24 ขวด = 18,000 มิลลิลิตร");
+    expect(entryChain(water, 3, "ขวด", "th")).toBe("= 2,250 มิลลิลิตร");
+    expect(entryChain(water, 3, "มิลลิลิตร", "th")).toBeNull();
+    expect(entryChain(water, 3, "ลิตร", "th")).toBeNull();
   });
 });

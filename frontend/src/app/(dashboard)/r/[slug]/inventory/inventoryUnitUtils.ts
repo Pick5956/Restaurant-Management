@@ -25,6 +25,73 @@ export const PACK_UNITS = [
   "มัด",
 ];
 
+/**
+ * Which containers usually hold which kind of stock. Nothing is refused by
+ * this — a crate of frozen chicken really is a ลัง holding grams directly —
+ * it only decides what a picker lists first. The stock unit the recipe
+ * consumes says what kind of thing the ingredient is.
+ */
+const LIKELY_CONTAINERS: Record<"volume" | "mass" | "egg" | "container" | "other", { pack: string[]; case: string[] }> = {
+  volume: { pack: ["ขวด", "กระป๋อง", "ถุง", "แกลลอน", "ถัง", "ปี๊บ", "กล่อง"], case: ["ลัง", "แพ็ก"] },
+  mass: { pack: ["ถุง", "ห่อ", "ซอง", "กระสอบ", "กล่อง", "ถัง", "ลัง"], case: ["ลัง", "กระสอบ"] },
+  egg: { pack: ["แผง"], case: ["ลัง"] },
+  container: { pack: ["แพ็ก", "ลัง"], case: ["ลัง"] },
+  other: { pack: [], case: [] },
+};
+
+function stockKind(unit: string): keyof typeof LIKELY_CONTAINERS {
+  if (unit === "มิลลิลิตร" || unit === "ลิตร") return "volume";
+  if (unit === "กรัม" || unit === "กิโลกรัม") return "mass";
+  if (unit === "ฟอง") return "egg";
+  if (unit === "ขวด" || unit === "กระป๋อง") return "container";
+  return "other";
+}
+
+/**
+ * The containers a picker offers for one level, split into the ones that
+ * usually hold this kind of stock and the rest. `exclude` drops units already
+ * taken by another level (the stock unit, the pack when picking a case).
+ */
+export function packUnitChoices(
+  stockUnit: string,
+  level: "pack" | "case",
+  exclude: string[] = [],
+): { likely: string[]; other: string[] } {
+  const taken = new Set([stockUnit, ...exclude].filter(Boolean));
+  const likely = LIKELY_CONTAINERS[stockKind(stockUnit)][level].filter((unit) => !taken.has(unit));
+  const other = PACK_UNITS.filter((unit) => !taken.has(unit) && !likely.includes(unit));
+  return { likely, other };
+}
+
+/**
+ * The whole chain in one line, biggest unit first, so a wrong number is seen
+ * where it was typed: "1 ลัง = 12 ขวด = 9,000 มิลลิลิตร".
+ */
+export function packChain(item: PackShape, lang: "th" | "en"): string | null {
+  if (!hasPack(item)) return null;
+  const pack = `1 ${item.pack_unit} = ${formatNumber(item.pack_size as number, lang)} ${item.unit}`;
+  if (!hasCase(item)) return pack;
+  const total = (item.case_size as number) * (item.pack_size as number);
+  return `1 ${item.case_unit} = ${formatNumber(item.case_size as number, lang)} ${item.pack_unit} = ${formatNumber(total, lang)} ${item.unit}`;
+}
+
+/**
+ * What an amount typed in a purchase unit comes to, every level down:
+ * "= 24 ขวด = 18,000 มิลลิลิตร" for 2 ลัง. Null when the amount is already in
+ * the stock unit, or the unit is not one of this ingredient's containers.
+ */
+export function entryChain(item: PackShape, amount: number, unit: string, lang: "th" | "en"): string | null {
+  if (!Number.isFinite(amount) || !unit || unit === item.unit) return null;
+  if (hasCase(item) && unit === item.case_unit) {
+    const packs = amount * (item.case_size as number);
+    return `= ${formatNumber(packs, lang)} ${item.pack_unit} = ${formatNumber(packs * (item.pack_size as number), lang)} ${item.unit}`;
+  }
+  if (hasPack(item) && unit === item.pack_unit) {
+    return `= ${formatNumber(amount * (item.pack_size as number), lang)} ${item.unit}`;
+  }
+  return null;
+}
+
 /** The measuring units worth offering as chips beside a shelf's own unit. */
 const EVERYDAY_UNITS = new Set(["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร"]);
 
@@ -107,11 +174,10 @@ export function packExample(item: PackShape & { cost_per_unit?: number }, lang: 
   const big = hasCase(item);
   const label = big ? (item.case_unit as string) : (item.pack_unit as string);
   const holds = big ? (item.case_size as number) * (item.pack_size as number) : (item.pack_size as number);
-  const parts = [
-    lang === "th"
-      ? `รับของ 1 ${label} = ${formatNumber(holds, lang)} ${item.unit}`
-      : `1 ${label} received = ${formatNumber(holds, lang)} ${item.unit}`,
-  ];
+  void big;
+  void label;
+  void holds;
+  const parts = [packChain(item, lang) as string];
   const rate = item.cost_per_unit ?? 0;
   if (rate > 0) {
     const perPack = formatCurrency(rate * (item.pack_size as number), lang, 2);
@@ -287,16 +353,18 @@ export function typedText(value: number, decimals = 4): string {
 export function unitCopy(lang: "th" | "en") {
   return lang === "th"
     ? {
-        groupBuy: "หน่วยซื้อ",
-        buyAs: "ซื้อเป็น",
-        caseAs: "หน่วยใหญ่",
+        groupBuy: "บรรจุภัณฑ์",
+        buyAs: "บรรจุใน",
+        caseAs: "รวมเป็น",
+        likelyFor: (unit: string) => `ที่ใช้บ่อยกับ${unit}`,
+        otherUnits: "อื่น ๆ",
         none: "ไม่มี",
         per: "ละ",
-        perPack: (pack: string) => `1 ${pack} มี`,
-        perCase: (kase: string) => `1 ${kase} มี`,
-        buyNote: "ใส่เมื่อซื้อของเป็นภาชนะแต่สูตรใช้เป็น กรัม/มล. ตอนรับของและนับของจะกรอกเป็นภาชนะได้เลย",
-        pickPack: "ซื้อเป็น",
-        pickCase: "หน่วยใหญ่",
+        perPack: (pack: string) => `1 ${pack} =`,
+        perCase: (kase: string) => `1 ${kase} =`,
+        buyNote: "ภาชนะที่ใส่ของนี้โดยตรง เช่น ขวด ถุง · ถ้ามาเป็นลังอีกชั้น ใส่ที่ \"รวมเป็น\" · ตอนรับของและนับของจะกรอกเป็นภาชนะได้เลย",
+        pickPack: "บรรจุใน",
+        pickCase: "รวมเป็น",
         price: "ราคา (THB)",
         perWord: "ต่อ",
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
@@ -318,16 +386,18 @@ export function unitCopy(lang: "th" | "en") {
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
     : {
-        groupBuy: "Purchase units",
-        buyAs: "Bought as",
-        caseAs: "Larger unit",
+        groupBuy: "Packaging",
+        buyAs: "Packed in",
+        caseAs: "Grouped as",
+        likelyFor: (unit: string) => `Usual for ${unit}`,
+        otherUnits: "Other",
         none: "None",
         per: "of",
-        perPack: (pack: string) => `1 ${pack} holds`,
-        perCase: (kase: string) => `1 ${kase} holds`,
-        buyNote: "Set this when an ingredient is bought in containers but used by weight or volume — deliveries and counts can then be entered per container.",
-        pickPack: "Bought as",
-        pickCase: "Larger unit",
+        perPack: (pack: string) => `1 ${pack} =`,
+        perCase: (kase: string) => `1 ${kase} =`,
+        buyNote: "The container this is packed in directly (bottle, bag). If those come in a case, set it under \"Grouped as\". Deliveries and counts can then be entered per container.",
+        pickPack: "Packed in",
+        pickCase: "Grouped as",
         price: "Price (THB)",
         perWord: "per",
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
