@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,7 +27,7 @@ export default function AddOrderItemScreen() {
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
-  const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string }>();
+  const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string; served?: string }>();
   const orderId = Number(params.id); const menuId = Number(params.menuId);
   // With `itemId` this screen is editing a line that is already on the order
   // rather than adding one. Same screen on purpose: a waiter fixing an option
@@ -36,6 +36,10 @@ export default function AddOrderItemScreen() {
   // delete the line and start again.
   const itemId = Number(params.itemId);
   const editing = Number.isInteger(itemId) && itemId > 0;
+  // Opened from the bill's served-item page: the dish is already on the table,
+  // so the line goes onto the bill as served and never reaches the kitchen.
+  // Everything else - options, note, quantity - is chosen the same way.
+  const served = !editing && params.served === '1';
   const validParams = Number.isInteger(orderId) && orderId > 0 && Number.isInteger(menuId) && menuId > 0;
   const [order, setOrder] = useState<Order | null>(null);
   const [menu, setMenu] = useState<MenuItem | null>(null);
@@ -45,41 +49,60 @@ export default function AddOrderItemScreen() {
   const [selectedOptionIds, setSelectedOptionIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [noteFocused, setNoteFocused] = useState(false);
   const scrollControl = useRef<AppScreenScrollControl | null>(null);
   const noteRef = useRef<View>(null);
   // Where the note block sat, and where the page sat, at the moment the field
-  // took focus — read together so they describe the same instant.
+  // took focus - read together so they describe the same instant.
   const noteAnchor = useRef<{ bottom: number; offset: number } | null>(null);
+  // The top of the keyboard, kept by a listener that is mounted for the whole
+  // screen rather than switched on when the field takes focus.
+  const keyboardTop = useRef<number | null>(null);
+  const noteFocused = useRef(false);
+
+  // iOS scrolls the CARET clear of the keyboard and stops there - see
+  // AppScreenScrollControl. On a three-line box the caret is on line one, so
+  // that leaves the rest of the box and the stepper under it covered, and the
+  // page has to be moved the rest of the way.
+  //
+  // The destination is absolute, computed from the anchor taken at focus rather
+  // than from a fresh measurement. A measurement taken now would be racing
+  // iOS's scroll - sometimes before it, sometimes after - and pairing it with
+  // the current offset would overshoot by however far iOS had already moved.
+  const alignNoteAboveKeyboard = useCallback(() => {
+    const anchor = noteAnchor.current;
+    const top = keyboardTop.current;
+    if (!noteFocused.current || !anchor || top === null) return;
+    // `screenY` is the top of the keyboard including its accessory bar, so this
+    // is the exact deficit and nothing more. Running it again with the same
+    // anchor asks for the same absolute place, so a second call cannot drift.
+    const target = anchor.offset + anchor.bottom + spacing.lg - top;
+    if (target > 0) scrollControl.current?.scrollTo(target);
+  }, []);
+
+  // Subscribed for the life of the screen, not for the life of the focus. The
+  // listener used to be added by an effect that ran AFTER the render that
+  // focus triggered, and `measureInWindow` answered on its own schedule too -
+  // so on the first tap iOS had already raised the keyboard before either was
+  // ready and nothing moved the page. It took a scroll, a dismiss and a second
+  // tap to land, because by then the previous focus had left an anchor behind.
+  // Now whichever of the two arrives last does the scrolling.
   useEffect(() => {
-    if (!noteFocused) return undefined;
-    // iOS scrolls the CARET clear of the keyboard and stops there — see
-    // AppScreenScrollControl. On a three-line box the caret is on line one, so
-    // that leaves the rest of the box and the stepper under it covered, and the
-    // page has to be moved the rest of the way.
-    //
-    // On `willChangeFrame`, not `didShow`. `didShow` lands after the keyboard has
-    // finished animating, so iOS's own partial scroll played out first and this
-    // one followed it as a separate, visibly late second movement. Both now start
-    // in the same frame and read as one.
-    //
-    // The destination is absolute, computed from the anchor taken at focus rather
-    // than from a fresh measurement. A measurement taken now would be racing
-    // iOS's scroll — sometimes before it, sometimes after — and pairing it with
-    // the current offset would overshoot by however far iOS had already moved.
-    const listener = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
-    const change = Keyboard.addListener(listener, (event) => {
-      const anchor = noteAnchor.current;
-      const keyboardTop = event?.endCoordinates?.screenY;
-      if (!anchor || typeof keyboardTop !== 'number') return;
-      // `screenY` is the top of the keyboard including its accessory bar, so this
-      // is the exact deficit and nothing more. Fires again if the keyboard
-      // resizes; the same target then means no movement. Negative on hide.
-      const target = anchor.offset + anchor.bottom + spacing.lg - keyboardTop;
-      if (target > 0) scrollControl.current?.scrollTo(target);
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const show = Keyboard.addListener(showEvent, (event) => {
+      const top = event?.endCoordinates?.screenY;
+      if (typeof top !== 'number') return;
+      keyboardTop.current = top;
+      alignNoteAboveKeyboard();
     });
-    return () => change.remove();
-  }, [noteFocused]);
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const hide = Keyboard.addListener(hideEvent, () => {
+      keyboardTop.current = null;
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [alignNoteAboveKeyboard]);
   useEffect(() => { if (!canTakeOrder || !validParams) return; Promise.all([getOrder(orderId), listMenuItems()]).then(([nextOrder, response]) => { const nextMenu = response.menu_items.find((item) => item.ID === menuId) || null; setOrder(nextOrder); setMenu(nextMenu); const existing = editing ? findPendingOrderItem(nextOrder.items, itemId) : null; setFulfillment(existing?.fulfillment_type || nextOrder.order_type || 'dine_in'); setQuantity(existing ? Math.max(1, existing.quantity) : 1); setNote(existing?.note || ''); setSelectedOptionIds(existing ? (existing.selected_options || []).map((option) => option.menu_option_id) : (nextMenu?.option_groups || []).flatMap((group) => (group.options || []).filter((option) => option.is_active && option.is_default).map((option) => option.ID))); if (!nextMenu) setError(copy('ไม่พบเมนูนี้', 'Menu item not found')); else if (editing && !findPendingOrderItem(nextOrder.items, itemId)) setError(copy('รายการนี้ส่งเข้าครัวแล้ว แก้ไขไม่ได้', 'This item is already with the kitchen and can no longer be edited')); }).catch((err) => setError(err instanceof Error ? err.message : copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item'))); }, [canTakeOrder, copy, editing, itemId, menuId, orderId, validParams]);
   const optionTotal = useMemo(() => (menu?.option_groups || []).flatMap((group) => group.options || []).filter((option) => selectedOptionIds.includes(option.ID)).reduce((sum, option) => sum + Number(option.price_delta), 0), [menu, selectedOptionIds]);
   const total = (Number(menu?.price || 0) + optionTotal) * quantity;
@@ -110,7 +133,7 @@ export default function AddOrderItemScreen() {
     setSaving(true); setError(null);
     try {
       if (editing) await updateOrderItem(orderId, itemId, { quantity, note: note.trim(), selected_option_ids: selectedOptionIds });
-      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment });
+      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment, serve_immediately: served });
       router.back();
     }
     catch (err) { setError(err instanceof Error ? err.message : editing ? copy('บันทึกรายการไม่สำเร็จ', 'Could not save this item') : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item')); }
@@ -181,7 +204,9 @@ export default function AddOrderItemScreen() {
             icon={editing ? 'checkmark' : 'add'}
             label={editing
               ? copy(`บันทึกรายการ · ${money(total, language)}`, `Save item · ${money(total, language)}`)
-              : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
+              : served
+                ? copy(`เพิ่มเข้าบิล · ${money(total, language)}`, `Add to bill · ${money(total, language)}`)
+                : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
             onPress={add}
             loading={saving}
             disabled={missingRequired || (!editing && !menu.is_available)}
@@ -289,12 +314,13 @@ export default function AddOrderItemScreen() {
           {/* Measured on focus to work out how much of it the keyboard covers, so
               it has to wrap everything that must end up visible. */}
           <View ref={noteRef} style={{ gap: spacing.md, paddingVertical: spacing.lg }}>
-            {sectionHead(copy('หมายเหตุถึงครัว', 'Kitchen note'), { label: copy('ไม่จำเป็นต้องระบุ', 'Optional'), tone: 'optional' })}
+            {sectionHead(served ? copy('หมายเหตุ', 'Note') : copy('หมายเหตุถึงครัว', 'Kitchen note'), { label: copy('ไม่จำเป็นต้องระบุ', 'Optional'), tone: 'optional' })}
             <TextField
               value={note}
               onChangeText={setNote}
               multiline
               onFocus={() => {
+                noteFocused.current = true;
                 // Measured here rather than when the keyboard arrives: nothing has
                 // scrolled yet, so the position and the offset agree.
                 noteRef.current?.measureInWindow((_x, y, _width, height) => {
@@ -302,10 +328,13 @@ export default function AddOrderItemScreen() {
                     bottom: y + height,
                     offset: scrollControl.current?.getOffset() ?? 0,
                   };
+                  alignNoteAboveKeyboard();
                 });
-                setNoteFocused(true);
               }}
-              onBlur={() => setNoteFocused(false)}
+              onBlur={() => {
+                noteFocused.current = false;
+                noteAnchor.current = null;
+              }}
             />
           </View>
 

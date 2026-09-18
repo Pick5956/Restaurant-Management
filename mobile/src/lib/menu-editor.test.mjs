@@ -559,7 +559,8 @@ test('cover menu images render inside a bounded square frame instead of measurin
 test('every mobile menu and order surface consumes the shared image policy', () => {
   const cardFiles = [
     '../../app/menu.tsx',
-    '../../app/order/[id].tsx',
+    // The order screen's and the served-item page's dish grid.
+    '../components/order-menu-grid.tsx',
     '../../app/order/item.tsx',
   ];
   for (const relativePath of cardFiles) {
@@ -582,12 +583,10 @@ test('every mobile menu and order surface consumes the shared image policy', () 
   }
 });
 
-test('the bill add-item catalog uses the same square menu card image as web', () => {
-  const source = readFileSync(new URL('../../app/order/bill.tsx', import.meta.url), 'utf8');
-  assert.match(
-    source,
-    /filteredMenu\.map[\s\S]{0,2400}<MenuImage[\s\S]{0,300}imageUrl=\{item\.image_url\}[\s\S]{0,300}variant="card"/,
-  );
+test('the served-item catalog uses the same square menu card image as web', () => {
+  // It renders the order screen's grid; menu-catalog.test.mjs asserts the grid's card image.
+  const source = readFileSync(new URL('../../app/order/served.tsx', import.meta.url), 'utf8');
+  assert.match(source, /<OrderMenuGrid\b/);
 });
 
 test('native menu uploads leave the multipart boundary to fetch', () => {

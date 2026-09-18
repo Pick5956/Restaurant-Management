@@ -424,6 +424,45 @@ func TestReserveTableReusesStaleActiveReservation(t *testing.T) {
 	}
 }
 
+// A hold used to drop the party size on the floor: only the scheduled path
+// copied guestCount onto the row, so every "now" booking read back as one guest
+// on both clients, whatever staff had entered. Both hold branches are covered -
+// the fresh row and the reused stale one - because each builds its row
+// separately and either can lose the field on its own.
+func TestHoldingATableKeepsThePartySize(t *testing.T) {
+	scenario := newReservationDBScenario(t)
+
+	fresh := scenario.table(t, 801, entity.TableStatusFree)
+	if _, err := scenario.tableSvc.ReserveTable(
+		scenario.restaurant.ID, scenario.user.ID, fresh.ID,
+		"0812345678", "Walk-up", 4, nil,
+	); err != nil {
+		t.Fatalf("hold free table: %v", err)
+	}
+	if bookings := activeBookingsFor(t, scenario, fresh.ID); len(bookings) != 1 || bookings[0].GuestCount != 4 {
+		t.Fatalf("fresh hold = %+v, want one row with guest count 4", bookings)
+	}
+
+	stale := scenario.table(t, 802, entity.TableStatusFree)
+	orphaned := reservationForTable(&stale, scenario.user.ID, "0800000000", "Old guest")
+	if err := scenario.db.Create(orphaned).Error; err != nil {
+		t.Fatalf("seed stale active reservation: %v", err)
+	}
+	if _, err := scenario.tableSvc.ReserveTable(
+		scenario.restaurant.ID, scenario.user.ID, stale.ID,
+		"0812345678", "Current guest", 6, nil,
+	); err != nil {
+		t.Fatalf("hold table over stale reservation: %v", err)
+	}
+	bookings := activeBookingsFor(t, scenario, stale.ID)
+	if len(bookings) != 1 || bookings[0].ID != orphaned.ID {
+		t.Fatalf("stale hold = %+v, want the reused row %d", bookings, orphaned.ID)
+	}
+	if bookings[0].GuestCount != 6 {
+		t.Fatalf("reused hold guest count = %d, want 6", bookings[0].GuestCount)
+	}
+}
+
 func TestTableMetadataWritesCannotCreateLifecycleStatuses(t *testing.T) {
 	scenario := newReservationDBScenario(t)
 

@@ -58,7 +58,9 @@ function Invoke-LoggedNativeProcess {
     [Parameter(Mandatory = $true)]
     [string]$FilePath,
 
+    # Empty is allowed: a binary started with no arguments is a normal call.
     [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
     [string]$Arguments,
 
     [Parameter(Mandatory = $true)]

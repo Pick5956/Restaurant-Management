@@ -6,6 +6,8 @@ export const orderRoutePermissions = ['view_orders', 'take_order'] as const;
 
 type OrderListRequestInput = {
   search?: string;
+  /** One Bangkok day, YYYY-MM-DD; null or absent for every day. */
+  date?: string | null;
   page: number;
   limit: number;
 };
@@ -31,6 +33,7 @@ export function orderListRequest(
   return {
     payment_status: 'paid' as const,
     search: input.search?.trim() || '',
+    ...(input.date ? { date: input.date } : {}),
     page: input.page,
     limit: input.limit,
   };

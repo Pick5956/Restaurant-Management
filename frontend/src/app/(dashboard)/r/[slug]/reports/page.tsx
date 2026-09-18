@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
-import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
@@ -11,7 +11,18 @@ import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { formatCurrency, formatNumber } from "@/src/lib/format";
 import { getOrderBill } from "@/src/lib/order";
 import { can } from "@/src/lib/rbac";
-import { getManagerReport, getSalesDetail } from "@/src/lib/report";
+import { getManagerReportRange, getSalesDetail } from "@/src/lib/report";
+import {
+  bangkokToday,
+  matchPreset,
+  presetRange,
+  rangeDayCount,
+  rangeProblem,
+  REPORT_MAX_DAYS,
+  REPORT_PRESETS,
+  type ReportPreset,
+  type ReportRange,
+} from "@/src/lib/reportRange";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { tableName } from "@/src/app/(dashboard)/r/[slug]/orders/ordersPageUtils";
@@ -27,6 +38,12 @@ export default function ReportsPage() {
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // The period, chosen by the owner (15 ก.ย. 2569) — the same presets and the
+  // same 93-day limit as the app. `draft` is what the date inputs hold until
+  // "ดู" applies it, so typing a date does not reload on every keystroke.
+  const [today] = useState(() => bangkokToday());
+  const [range, setRange] = useState<ReportRange>(() => presetRange("last14", bangkokToday()));
+  const [draft, setDraft] = useState<ReportRange>(range);
 
   const copy = useMemo(() => language === "th"
     ? {
@@ -55,6 +72,24 @@ export default function ReportsPage() {
         dayCapped: "แสดงเฉพาะรายการแรกของวันนี้",
         close: "ปิด",
         receiptError: "เปิดใบเสร็จไม่สำเร็จ",
+        grossRevenue: "รายได้รวม",
+        expenses: "รายจ่ายรวม",
+        netProfit: "กำไรสุทธิ",
+        afterAll: (value: string) => `รายได้ − รายจ่ายรวม ${value}`,
+        entries: (n: number) => `${n} รายการ`,
+        beforeDiscount: "ก่อนหักส่วนลด",
+        discountNote: (value: string) => `ส่วนลด −${value}`,
+        marginInfo: "มาร์จินคืออะไร",
+        marginExplain: (per100: string, revenue: string, expenses: string, net: string, margin: string) =>
+          `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${per100} บาทหลังหักรายจ่ายทั้งหมด · รายได้ ${revenue} − รายจ่ายรวมทุกหมวด ${expenses} = กำไรสุทธิ ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · วันที่ซื้อของเข้าคลังก้อนใหญ่จะดูกำไรต่ำแม้ของยังอยู่ในคลัง`,
+        period: "ช่วงเวลา",
+        custom: "กำหนดเอง",
+        from: "ตั้งแต่",
+        to: "ถึง",
+        apply: "ดู",
+        days: (n: number) => `${n} วัน`,
+        presets: { today: "วันนี้", yesterday: "เมื่อวาน", last7: "7 วันล่าสุด", last14: "14 วันล่าสุด", last30: "30 วันล่าสุด", thisMonth: "เดือนนี้", lastMonth: "เดือนก่อน" } as Record<ReportPreset, string>,
+        problems: { order: "วันเริ่มต้องไม่หลังวันจบ", future: "ยังไม่ถึงวันที่เลือก", tooLong: `เลือกได้ไม่เกิน ${REPORT_MAX_DAYS} วัน` },
       }
     : {
         denied: "You do not have permission to view reports.",
@@ -82,6 +117,24 @@ export default function ReportsPage() {
         dayCapped: "Showing the first orders of this day only.",
         close: "Close",
         receiptError: "Could not open that receipt.",
+        grossRevenue: "Gross revenue",
+        expenses: "Total expenses",
+        netProfit: "Net profit",
+        afterAll: (value: string) => `Revenue − expenses ${value}`,
+        entries: (n: number) => `${n} entries`,
+        beforeDiscount: "Before discounts",
+        discountNote: (value: string) => `Discounts −${value}`,
+        marginInfo: "What is margin?",
+        marginExplain: (per100: string, revenue: string, expenses: string, net: string, margin: string) =>
+          `Margin is the share of revenue left as net profit. In this period every 100 baht of revenue left ${per100} baht after all expenses · revenue ${revenue} − all expenses ${expenses} = net profit ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · a day with a big restock shows low profit even though the stock is still on the shelf.`,
+        period: "Period",
+        custom: "Custom",
+        from: "From",
+        to: "To",
+        apply: "Show",
+        days: (n: number) => `${n} days`,
+        presets: { today: "Today", yesterday: "Yesterday", last7: "Last 7 days", last14: "Last 14 days", last30: "Last 30 days", thisMonth: "This month", lastMonth: "Last month" } as Record<ReportPreset, string>,
+        problems: { order: "The start must not be after the end", future: "That day has not come yet", tooLong: `Choose ${REPORT_MAX_DAYS} days or fewer` },
       }, [language]);
 
   // A day opens in a dialog. Only one is open at a time, so a single slot for
@@ -150,7 +203,7 @@ export default function ReportsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await getManagerReport(14);
+      const res = await getManagerReportRange(range.from, range.to);
       setReport(res.data);
     } catch {
       setError(copy.loadError);
@@ -163,14 +216,65 @@ export default function ReportsPage() {
     const loadTimer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(loadTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView, language]);
+  }, [canView, language, range.from, range.to]);
+
+  const [marginInfoOpen, setMarginInfoOpen] = useState(false);
+  const preset = matchPreset(range, today);
+  const draftProblem = rangeProblem(draft, today);
+  const applyDraft = () => {
+    if (draftProblem) return;
+    setRange({ from: draft.from, to: draft.to > today ? today : draft.to });
+  };
+  const choosePreset = (value: string) => {
+    if (value === "custom") return;
+    const next = presetRange(value as ReportPreset, today);
+    setRange(next);
+    setDraft(next);
+  };
 
   if (!canView) return <PermissionDenied title={copy.denied} />;
 
   return (
     <div className="min-h-dvh bg-slate-100 px-4 py-4 text-gray-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:py-6">
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0"><h1 className="sr-only">{copy.title}</h1></div>
+        <div className="min-w-0">
+          <h1 className="sr-only">{copy.title}</h1>
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => { event.preventDefault(); applyDraft(); }}
+          >
+            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
+              {copy.period}
+              <select
+                id="report-period-preset"
+                value={preset ?? "custom"}
+                onChange={(event) => choosePreset(event.target.value)}
+                className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+              >
+                {REPORT_PRESETS.map((key) => <option key={key} value={key}>{copy.presets[key]}</option>)}
+                <option value="custom">{copy.custom}</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
+              {copy.from}
+              <input id="report-period-from" type="date" value={draft.from} max={today} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
+              {copy.to}
+              <input id="report-period-to" type="date" value={draft.to} max={today} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
+            </label>
+            <button
+              type="submit"
+              disabled={Boolean(draftProblem) || (draft.from === range.from && draft.to === range.to)}
+              className="ui-press h-10 rounded-md bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+            >
+              {copy.apply}
+            </button>
+            <span className="pb-2 text-[12px] text-gray-500 tabular-nums">
+              {draftProblem ? <span className="text-red-600">{copy.problems[draftProblem]}</span> : copy.days(rangeDayCount(range))}
+            </span>
+          </form>
+        </div>
         <Link href={restaurantPageHref("/home")} className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {copy.back}
@@ -187,23 +291,72 @@ export default function ReportsPage() {
         </div>
       ) : report ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[
-              { label: copy.revenue, value: formatCurrency(report.summary.revenue, lang), icon: <Wallet className="h-4 w-4" /> },
+              {
+                label: copy.grossRevenue,
+                value: formatCurrency(report.summary.gross_revenue ?? report.summary.revenue, lang),
+                // "ยอดขาย" used to sit beside this card with the same figure
+                // whenever no bill had a discount (15 ก.ย. 2569); a discount is
+                // now the line under it.
+                note: (report.summary.discount ?? 0) > 0
+                  ? `${copy.discountNote(formatCurrency(report.summary.discount ?? 0, lang))} · ${formatCurrency(report.summary.revenue, lang)}`
+                  : undefined,
+                icon: <Wallet className="h-4 w-4" />,
+              },
+              {
+                label: copy.expenses,
+                value: formatCurrency(report.summary.expenses ?? 0, lang),
+                note: copy.entries(report.summary.expense_count ?? 0),
+                icon: <AlertTriangle className="h-4 w-4" />,
+              },
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
-              { label: copy.foodCost, value: formatCurrency(report.summary.cost, lang), icon: <AlertTriangle className="h-4 w-4" /> },
-              { label: copy.profit, value: formatCurrency(report.summary.profit, lang), icon: <TrendingUp className="h-4 w-4" /> },
-              { label: copy.margin, value: `${formatNumber(report.summary.margin, lang)}%`, icon: <TrendingUp className="h-4 w-4" /> },
-            ].map((card) => (
+              {
+                label: copy.netProfit,
+                value: formatCurrency(report.summary.net_profit ?? report.summary.revenue - (report.summary.expenses ?? 0), lang),
+                note: copy.afterAll(formatCurrency(report.summary.expenses ?? 0, lang)),
+                icon: <TrendingUp className="h-4 w-4" />,
+              },
+              {
+                label: copy.margin,
+                value: `${formatNumber(report.summary.margin, lang)}%`,
+                icon: (
+                  <button
+                    type="button"
+                    aria-label={copy.marginInfo}
+                    aria-expanded={marginInfoOpen}
+                    onClick={() => setMarginInfoOpen((open) => !open)}
+                    className="ui-press rounded-full p-0.5 text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                  >
+                    <Info className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                ),
+              },
+            ].map((card: { label: string; value: string; note?: string; icon: React.ReactNode }) => (
               <div key={card.label} className="rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between gap-3 text-gray-500">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</span>
                   {card.icon}
                 </div>
                 <p className="mt-3 text-xl font-semibold tabular-nums">{card.value}</p>
+                {card.note ? <p className="mt-1 text-[12px] text-gray-500 tabular-nums">{card.note}</p> : null}
               </div>
             ))}
           </div>
+          {marginInfoOpen ? (
+            <div role="note" className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
+              <p className="font-semibold">{copy.marginInfo}</p>
+              <p>
+                {copy.marginExplain(
+                  formatNumber(report.summary.margin, lang),
+                  formatCurrency(report.summary.revenue, lang),
+                  formatCurrency(report.summary.expenses ?? 0, lang),
+                  formatCurrency(report.summary.net_profit ?? report.summary.revenue - (report.summary.expenses ?? 0), lang),
+                  `${formatNumber(report.summary.margin, lang)}%`,
+                )}
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
             <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">

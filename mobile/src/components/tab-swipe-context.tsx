@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 
 import {
   PrimaryTabSwipeGestureProvider,
+  usePrimaryTabSwipeCover,
   usePrimaryTabSwipeExclusionHandlers,
   usePrimaryTabVerticalScrollActivityReporter,
 } from '@/src/components/primary-tabs-runtime';
@@ -30,6 +31,11 @@ export function TabSwipeGestureProvider({
 
 export function useTabSwipeExclusionHandlers() {
   return usePrimaryTabSwipeExclusionHandlers();
+}
+
+/** Stops the tab pager while an overlay covers the screen. */
+export function useTabSwipeCover(covered: boolean) {
+  usePrimaryTabSwipeCover(covered);
 }
 
 export function useTabSwipeVerticalScrollActivityReporter() {

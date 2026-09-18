@@ -36,6 +36,7 @@ import {
   OutcomeLine,
   StreamCaret,
   ThinkingText,
+  ThreadSkeleton,
   UserBubble,
 } from '@/src/components/ai/bubbles';
 import { AIChart } from '@/src/components/ai/chart';
@@ -81,11 +82,13 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { breakpoints } from '@/src/theme';
 import type {
   AIActionPlan,
+  AIActionPlanItem,
   AIActionPreview,
   AIConversationMessage,
   AIConversationSummary,
   AIInsight,
 } from '@/src/types/ai';
+import type { ConfirmItem } from '@/src/lib/ai-confirm';
 
 // The assistant, the way the web page draws it: one full-height chat on a
 // cream canvas, the four glass buttons top-right, the orb greeting on an empty
@@ -106,12 +109,14 @@ const HEADER_ROW_PADDING_BOTTOM = 8;
  * blur and looks washed out, but a long band pushes that first message a long
  * way down the screen.
  *
- * The owner chose the far short end of that trade, on the screen and by eye:
- * the blur clears the buttons and stops. Do not raise it back "to smooth the
- * scroll" without asking — the tighter first message is the point, and the
- * abruptness underneath is a price that was picked deliberately.
+ * The owner first chose the far short end of that trade (15): the blur cleared
+ * the buttons and stopped. On 14 ก.ย. 2569 they asked for the pane to come down
+ * further — at 15 a bubble scrolling up showed sharp right under the chat's
+ * name — and accepted the first message starting 15pt lower as the cost.
+ * The same day they took it to 36 (a 130pt pane on an iPhone 11) to try.
+ * Change it only when the owner asks; both directions have been their call.
  */
-const HEADER_FADE = 15;
+const HEADER_FADE = 36;
 
 const SUGGESTIONS_TH = ['สรุปร้าน', 'เมนูขายดี', 'วัตถุดิบใกล้หมด', 'มูลค่าสต๊อก'];
 const SUGGESTIONS_EN = ['Shop summary', 'Best sellers', 'Low stock', 'Stock value'];
@@ -119,6 +124,35 @@ const SUGGESTIONS_EN = ['Shop summary', 'Best sellers', 'Low stock', 'Stock valu
 function availabilityLabel(isAvailable: boolean, language: 'th' | 'en'): string {
   if (language === 'th') return isAvailable ? 'เปิดขาย' : 'ปิดขาย';
   return isAvailable ? 'Available' : 'Unavailable';
+}
+
+function planItemToConfirm(item: AIActionPlanItem): ConfirmItem {
+  return {
+    title: item.title,
+    change: item.change,
+    unit: item.unit,
+    sideEffects: item.side_effects,
+    kind: item.kind,
+    field: item.field,
+    from: item.from,
+    to: item.to,
+    valueUnit: item.value_unit,
+    delta: item.delta,
+    facts: item.facts,
+  };
+}
+
+function previewToConfirm(preview: AIActionPreview, language: 'th' | 'en'): ConfirmItem {
+  const from = availabilityLabel(preview.current.is_available, language);
+  const to = availabilityLabel(preview.requested.is_available, language);
+  return {
+    title: preview.target.name,
+    change: `${from} → ${to}`,
+    kind: 'set_menu_availability',
+    field: language === 'th' ? 'สถานะ' : 'Status',
+    from,
+    to,
+  };
 }
 
 function newId(prefix: string): string {
@@ -441,7 +475,7 @@ export default function AIAssistantScreen() {
     const result = await confirmAIActionPlan(plan.id, plan.confirmation_token);
     setMessages((current) => current.map((message) => (
       message.planId === plan.id
-        ? { ...message, outcome: { tone: result.failed > 0 && result.succeeded === 0 ? 'bad' : 'good', text: result.message } }
+        ? { ...message, outcome: { tone: result.failed > 0 ? 'bad' : 'good', text: result.message } }
         : message
     )));
     if (result.succeeded === 0 && result.failed > 0) throw new Error(result.message);
@@ -469,24 +503,36 @@ export default function AIAssistantScreen() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [pendingQuestion]);
 
+  // An answered card is handed to its message and drawn there from then on, in
+  // the same spot, so the details and the result stay in the chat. The outcome
+  // line is still written: it is what a message without the card (a chat
+  // reopened later) falls back to.
   const onResolved = useCallback((kind: 'plan' | 'preview', state: ConfirmState) => {
-    if (state === 'confirming') return;
-    if (state === 'cancelled' || state === 'expired') {
-      const text = state === 'cancelled'
-        ? copy('ยกเลิกแล้ว · ไม่มีการแก้ข้อมูล', 'Cancelled · nothing changed')
-        : copy('คำสั่งหมดอายุ · ไม่มีการแก้ข้อมูล', 'Expired · nothing changed');
-      setMessages((current) => current.map((message) => (
-        (kind === 'plan' && message.planId && message.planId === pendingPlan?.id)
-        || (kind === 'preview' && message.previewId && message.previewId === pendingPreview?.id)
-          ? { ...message, outcome: { tone: 'muted', text } }
-          : message
-      )));
-    }
-    if (state === 'done' || state === 'cancelled') {
-      if (kind === 'plan') setPendingPlan(null);
-      else setPendingPreview(null);
-    }
-  }, [copy, pendingPlan?.id, pendingPreview?.id]);
+    if (state === 'confirming' || state === 'pending') return;
+    const plan = kind === 'plan' ? pendingPlan : null;
+    const preview = kind === 'preview' ? pendingPreview : null;
+    if (!plan && !preview) return;
+    const resolvedAction = {
+      state,
+      summary: plan ? plan.summary : preview!.summary,
+      items: plan ? plan.items.map(planItemToConfirm) : [previewToConfirm(preview!, language)],
+      at: Date.now(),
+    };
+    const mutedText = state === 'cancelled'
+      ? copy('ยกเลิกแล้ว · ไม่มีการแก้ข้อมูล', 'Cancelled · nothing changed')
+      : copy('คำสั่งหมดอายุ · ไม่มีการแก้ข้อมูล', 'Expired · nothing changed');
+    setMessages((current) => current.map((message) => {
+      const mine = plan ? message.planId === plan.id : message.previewId === preview!.id;
+      if (!mine) return message;
+      return {
+        ...message,
+        resolvedAction,
+        outcome: state === 'done' ? message.outcome : { tone: 'muted', text: mutedText },
+      };
+    }));
+    if (kind === 'plan') setPendingPlan(null);
+    else setPendingPreview(null);
+  }, [copy, language, pendingPlan, pendingPreview]);
 
   // ---------------------------------------------------------------- chats
 
@@ -530,40 +576,35 @@ export default function AIAssistantScreen() {
   const planAnchor = pendingPlan ? messages.find((message) => message.planId === pendingPlan.id)?.id ?? null : null;
   const previewAnchor = pendingPreview ? messages.find((message) => message.previewId === pendingPreview.id)?.id ?? null : null;
 
-  const planCard = pendingPlan && pendingPlan.items.length > 0 ? (
+  const planCard = (standalone: boolean) => (pendingPlan && pendingPlan.items.length > 0 ? (
     <ConfirmCard
       key={pendingPlan.id}
       summary={pendingPlan.summary}
-      items={pendingPlan.items.map((item) => ({ title: item.title, change: item.change, unit: item.unit, sideEffects: item.side_effects }))}
+      items={pendingPlan.items.map(planItemToConfirm)}
       warnings={pendingPlan.warnings}
-      detail={copy(`แก้ข้อมูลจริง ${pendingPlan.items.length} รายการ`, `changes ${pendingPlan.items.length} record(s)`)}
       expiresAt={pendingPlan.expires_at}
       onConfirm={confirmPlan}
       onCancel={() => { cancelAIActionPlan(pendingPlan.id).catch(() => undefined); }}
-      onReissue={reissue}
       onResolved={(state) => onResolved('plan', state)}
+      standalone={standalone}
       language={language}
     />
-  ) : null;
+  ) : null);
 
-  const previewCard = pendingPreview ? (
+  const previewCard = (standalone: boolean) => (pendingPreview ? (
     <ConfirmCard
       key={pendingPreview.id}
       summary={pendingPreview.summary}
-      items={[{
-        title: pendingPreview.target.name,
-        change: `${availabilityLabel(pendingPreview.current.is_available, language)} → ${availabilityLabel(pendingPreview.requested.is_available, language)}`,
-      }]}
+      items={[previewToConfirm(pendingPreview, language)]}
       warnings={pendingPreview.warnings}
-      detail={copy('แก้ข้อมูลจริง 1 รายการ', 'changes 1 record')}
       expiresAt={pendingPreview.expires_at}
       onConfirm={confirmPreview}
       onCancel={() => { cancelAIAction(pendingPreview.id).catch(() => undefined); }}
-      onReissue={reissue}
       onResolved={(state) => onResolved('preview', state)}
+      standalone={standalone}
       language={language}
     />
-  ) : null;
+  ) : null);
 
   return (
     <View style={{ flex: 1, backgroundColor: ai.canvas }}>
@@ -710,7 +751,7 @@ export default function AIAssistantScreen() {
                 scrollEventThrottle={64}
               >
                 {threadLoading ? (
-                  <AssistantRow><ThinkingText text={copy('กำลังเปิดแชท', 'Opening the chat')} /></AssistantRow>
+                  <ThreadSkeleton label={copy('กำลังเปิดแชท', 'Opening the chat')} />
                 ) : null}
                 {messages.map((message) => (
                   message.role === 'user' ? (
@@ -720,9 +761,21 @@ export default function AIAssistantScreen() {
                       <AssistantRow>
                         <AIResponseContent content={message.content} />
                         {message.chart ? <AIChart data={message.chart} /> : null}
-                        {planAnchor === message.id ? planCard : null}
-                        {previewAnchor === message.id ? previewCard : null}
-                        {message.outcome ? <OutcomeLine tone={message.outcome.tone} text={message.outcome.text} /> : null}
+                        {planAnchor === message.id ? planCard(false) : null}
+                        {previewAnchor === message.id ? previewCard(false) : null}
+                        {message.resolvedAction && planAnchor !== message.id && previewAnchor !== message.id ? (
+                          <ConfirmCard
+                            key={`resolved-${message.id}`}
+                            summary={message.resolvedAction.summary}
+                            items={message.resolvedAction.items}
+                            initialState={message.resolvedAction.state}
+                            resolvedAt={message.resolvedAction.at}
+                            resultError={message.outcome?.tone === 'bad' ? message.outcome.text : undefined}
+                            onReissue={message.resolvedAction.state === 'expired' ? reissue : undefined}
+                            onOpen={(href) => router.push(href as never)}
+                            language={language}
+                          />
+                        ) : message.outcome ? <OutcomeLine tone={message.outcome.tone} text={message.outcome.text} /> : null}
                       </AssistantRow>
                       {followUpsOn && message.actions && message.actions.length > 0 ? (
                         <FollowUpList heading={copy('ถามต่อได้เลย', 'Ask next')} actions={message.actions} disabled={loading} onPress={onAction} />
@@ -730,8 +783,8 @@ export default function AIAssistantScreen() {
                     </View>
                   )
                 ))}
-                {pendingPlan && planAnchor === null ? <AssistantRow>{planCard}</AssistantRow> : null}
-                {pendingPreview && previewAnchor === null ? <AssistantRow>{previewCard}</AssistantRow> : null}
+                {pendingPlan && planAnchor === null ? <AssistantRow>{planCard(true)}</AssistantRow> : null}
+                {pendingPreview && previewAnchor === null ? <AssistantRow>{previewCard(true)}</AssistantRow> : null}
                 {loading && draft ? (
                   <AssistantRow>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end' }}>

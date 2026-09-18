@@ -8,12 +8,15 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
-import { Button, Divider, EmptyState, Feedback, GlassLayer, IconButton, SearchField, SectionHeader, Select, StatusBadge, Surface } from '@/src/components/ui';
+import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
+import { Button, Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
 import { itemStatusLabel, money, orderStatusLabel } from '@/src/lib/format';
+import { filterMenuCatalog, groupMenuByCategory } from '@/src/lib/menu-catalog';
 import {
   createOrderDetailRequestGuard,
   currentRoundPresentation,
   orderSummaryPresentation,
+  pendingQuantityByMenu,
   selectOrderItemImage,
   shouldShowCurrentRoundBasket,
   summarizeCurrentRound,
@@ -264,31 +267,14 @@ export default function OrderDetailScreen() {
     [menuItems],
   );
   const currentRoundSummary = useMemo(() => summarizeCurrentRound(order?.items), [order?.items]);
+  const pendingByMenu = useMemo(() => pendingQuantityByMenu(order?.items), [order?.items]);
   const currentRoundCopy = useMemo(() => currentRoundPresentation(currentRoundSummary, language), [currentRoundSummary, language]);
   const orderSummaryCopy = useMemo(() => orderSummaryPresentation(language), [language]);
-  const filteredMenu = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return menuItems.filter((item) => {
-      const categoryMatch = categoryId === 'all' || item.category_id === Number(categoryId) || item.categories?.some((link) => link.category_id === Number(categoryId));
-      return categoryMatch && (!keyword || [item.name, item.description].some((value) => String(value || '').toLowerCase().includes(keyword)));
-    });
-  }, [categoryId, menuItems, search]);
-  // Grouped the way the table map groups by zone: a flat run of dishes gives no
-  // clue where one part of the menu ends and the next begins.
-  const menuGroups = useMemo(() => {
-    const nameById = new Map(categories.map((item) => [item.ID, item.name]));
-    const order: string[] = [];
-    const buckets = new Map<string, { label: string; items: typeof filteredMenu }>();
-    filteredMenu.forEach((item) => {
-      const key = String(item.category_id || 0);
-      if (!buckets.has(key)) {
-        buckets.set(key, { label: nameById.get(item.category_id) || copy('ไม่ระบุหมวด', 'Uncategorised'), items: [] });
-        order.push(key);
-      }
-      buckets.get(key)?.items.push(item);
-    });
-    return order.map((key) => buckets.get(key)).filter(Boolean) as Array<{ label: string; items: typeof filteredMenu }>;
-  }, [categories, copy, filteredMenu]);
+  const menuGroups = useMemo(() => groupMenuByCategory(
+    filterMenuCatalog(menuItems, { categoryId, search }),
+    categories,
+    copy('ไม่ระบุหมวด', 'Uncategorised'),
+  ), [categories, categoryId, copy, menuItems, search]);
   const locked = order?.status === 'completed' || order?.status === 'cancelled';
   const canCloseEmpty = canTakeOrder && canCloseEmptyOrder(order);
 
@@ -404,7 +390,7 @@ export default function OrderDetailScreen() {
       <Divider />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.xs }}>
         <Text selectable style={[typeScale.body, { color: palette.muted }]}>{copy('ยอดรวมออเดอร์', 'Order total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 21 }]}>{money(order.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(order.grand_total, language)}</Text>
       </View>
     </>
   ) : null;
@@ -424,94 +410,28 @@ export default function OrderDetailScreen() {
   // One row, not two — the category picker and a magnifier share it, and the
   // search field takes the picker's place only while it is being used.
   const menuFilterBar = order && !locked && canTakeOrder ? (
-    <>
-      {searchOpen ? (
-        // No close button: while this is up the whole screen is a dismiss
-        // target, so a dedicated one would only be in the way of the field it
-        // sits beside.
-        <SearchField
-          accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
-          autoFocus
-          clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
-          value={search}
-          onChangeText={setSearch}
-          placeholder={copy('ค้นหาเมนู', 'Search menu')}
-        />
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <View style={{ minWidth: 0, flex: 1 }}>
-            <Select
-              value={categoryId}
-              onChange={setCategoryId}
-              options={[{ label: copy('ทั้งหมด', 'All'), value: 'all' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))]}
-            />
-          </View>
-          <IconButton
-            accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
-            icon="search-outline"
-            onPress={() => setSearchOpen(true)}
-            variant="glass"
-          />
-        </View>
-      )}
-    </>
+    <OrderMenuFilterBar
+      categories={categories}
+      categoryId={categoryId}
+      onCategoryChange={setCategoryId}
+      search={search}
+      onSearchChange={setSearch}
+      searchOpen={searchOpen}
+      onOpenSearch={() => setSearchOpen(true)}
+    />
   ) : null;
 
+  // The badge counts only what is still in this round, as the web POS tile does.
   const menuWorkspace = order && !locked && canTakeOrder ? (
-    <View style={{ gap: spacing.md }}>
-      {menuGroups.map((group) => (
-      <View key={group.label} style={{ gap: spacing.md }}>
-      <SectionHeader title={group.label} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-        {group.items.map((item) => {
-          return (
-            <Pressable
-              accessibilityLabel={copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`)}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !item.is_available }}
-              key={item.ID}
-              disabled={!item.is_available}
-              onPress={() => router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never)}
-              style={({ pressed }) => ({
-                // Phones get an exact two-column grid. A grow factor here fights
-                // the column width and stretches a lone tile on the last row
-                // across the screen, which reads as a different, more important
-                // dish than the rest.
-                minWidth: tabletWorkspace ? 148 : 0,
-                width: tabletWorkspace ? undefined : '48%',
-                flexGrow: 0,
-                flexBasis: tabletWorkspace ? 164 : 'auto',
-                gap: spacing.sm,
-                borderRadius: radius.md,
-                backgroundColor: 'transparent',
-                opacity: !item.is_available ? 0.48 : pressed ? 0.72 : 1,
-                transform: [{ translateY: pressed ? 1 : 0 }],
-              })}
-            >
-              <MenuImage
-                accessibilityLabel={copy(`รูปเมนู ${item.name}`, `Photo of ${item.name}`)}
-                imageUrl={item.image_url}
-                variant="card"
-              />
-              {/* No reserved height on the name: it forced a second empty line
-                  under every one-line dish, which is what pushed the price so
-                  far from it. Prices in a row can now sit at different heights,
-                  which is the trade for having name and price read as one pair. */}
-              <View style={{ gap: 2, paddingHorizontal: spacing.xs, paddingBottom: spacing.sm }}>
-                <Text selectable numberOfLines={2} style={[typeScale.cardTitle, { fontWeight: '600' }]}>{item.name}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <Text selectable style={[typeScale.number, { flex: 1, fontSize: 15, fontWeight: '600' }]}>{money(item.price, language)}</Text>
-                  {!item.is_available ? <StatusBadge label={copy('หมด', 'Sold out')} tone="danger" /> : null}
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-      </View>
-      ))}
-      {!filteredMenu.length ? <EmptyState title={copy('ไม่พบเมนู', 'No menu items found')} detail={copy('ลองเปลี่ยนหมวดหรือคำค้น', 'Try another category or search.')} /> : null}
-    </View>
+    <OrderMenuGrid
+      groups={menuGroups}
+      countByMenu={pendingByMenu}
+      tabletWorkspace={tabletWorkspace}
+      onPressItem={(item) => router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never)}
+      accessibilityLabelFor={(item, inRound) => (inRound > 0
+        ? copy(`เพิ่มเมนู ${item.name} ในตะกร้า ${inRound}`, `Add ${item.name}, ${inRound} in cart`)
+        : copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`))}
+    />
   ) : null;
 
   function renderDestructiveActions() {

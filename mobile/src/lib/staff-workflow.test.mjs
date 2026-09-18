@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  auditKind,
+  teamRoleGroups,
+  memberInitials,
   allowedRoleOptions,
   auditAttribution,
   auditMessage,
@@ -501,4 +504,37 @@ test('audit attribution names the affected member without repeating the actor', 
     }, 'en'),
     'มะลิ · Target: สมชาย ใจดี',
   );
+});
+
+test('the assistant switching a menu reads as a sentence, not the raw action key', () => {
+  const log = (isAvailable) => ({
+    ID: 9,
+    restaurant_id: 20,
+    action: 'ai_set_menu_availability',
+    details: JSON.stringify({ target_menu_item_name: 'ต้มยำกุ้งน้ำข้น', previous_availability: !isAvailable, is_available: isAvailable }),
+  });
+  assert.equal(auditMessage(log(false)), 'AI ปิดขายเมนู "ต้มยำกุ้งน้ำข้น"');
+  assert.equal(auditMessage(log(true)), 'AI เปิดขายเมนู "ต้มยำกุ้งน้ำข้น"');
+  assert.equal(auditMessage(log(true), 'en'), 'AI turned on "ต้มยำกุ้งน้ำข้น"');
+  assert.equal(auditKind('ai_set_menu_availability'), 'ai');
+  assert.equal(auditKind('role_renamed'), 'role');
+  assert.equal(auditKind('something_new'), 'other');
+});
+
+test('member circles take the first letter of the first and last names', () => {
+  assert.equal(memberInitials('กรกุล สุนทร'), 'กส');
+  assert.equal(memberInitials('Test Owner'), 'TO');
+  assert.equal(memberInitials('เอก'), 'อ');
+  assert.equal(memberInitials('  mali  '), 'M');
+  assert.equal(memberInitials(''), '?');
+});
+
+test('the roles card lists every role, owner first, empty roles included', () => {
+  const R = (ID, name, is_system = true) => ({ ID, name, display_name: name, permissions: '[]', is_system });
+  const roles = [R(4, 'waiter'), R(9, 'custom_1_runner', false), R(3, 'chef'), R(1, 'owner'), R(2, 'manager')];
+  const M = (ID, roleId, status = 'active') => ({ ID, user_id: ID, restaurant_id: 1, role_id: roleId, status, joined_at: '', role: roles.find((role) => role.ID === roleId) });
+  const groups = teamRoleGroups(roles, [M(1, 1), M(2, 1), M(3, 3, 'removed'), M(4, 7), { ...M(5, 7), role: R(7, 'cashier') }]);
+  assert.deepEqual(groups.map((group) => [group.role.name, group.members.length]), [
+    ['owner', 2], ['manager', 0], ['chef', 0], ['cashier', 1], ['waiter', 0], ['custom_1_runner', 0],
+  ]);
 });

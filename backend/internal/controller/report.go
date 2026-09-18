@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"Project-M/internal/repository"
 	"Project-M/internal/service"
@@ -26,7 +27,27 @@ func (ctrl *ReportController) ManagerReport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := ctrl.reportSvc.ManagerReport(restaurantID, boundedQueryInt(c, "days", 14, 1, 90))
+	var (
+		report *service.ManagerReportResponse
+		err    error
+	)
+	from, to := strings.TrimSpace(c.Query("from")), strings.TrimSpace(c.Query("to"))
+	if from != "" || to != "" {
+		if to == "" {
+			to = from
+		}
+		if from == "" {
+			from = to
+		}
+		start, end, rangeErr := service.ParseManagerReportRange(from, to, repository.BangkokNow())
+		if rangeErr != nil {
+			respondAPIError(c, http.StatusBadRequest, rangeErr)
+			return
+		}
+		report, err = ctrl.reportSvc.ManagerReportRange(restaurantID, start, end)
+	} else {
+		report, err = ctrl.reportSvc.ManagerReport(restaurantID, boundedQueryInt(c, "days", 14, 1, 90))
+	}
 	if err != nil {
 		respondAPIError(c, http.StatusInternalServerError, err)
 		return

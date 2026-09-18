@@ -4,31 +4,31 @@ import { View } from 'react-native';
 
 import { requestPasswordReset } from '@/src/api/auth';
 import { AuthScreen } from '@/src/components/auth-screen';
-import { Button, Feedback, TextField } from '@/src/components/ui';
+import { Button, EmptyState, TextField } from '@/src/components/ui';
+import { authFailureToast } from '@/src/lib/auth-error';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { spacing } from '@/src/theme';
 
 export default function ForgotPasswordScreen() {
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
+  const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [emailMissing, setEmailMissing] = useState(false);
   const [sent, setSent] = useState(false);
 
   async function submit() {
     if (!email.trim()) {
-      setError(copy('กรอกอีเมล', 'Enter your email'));
+      setEmailMissing(true);
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       await requestPasswordReset(email.trim());
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('ส่งคำขอไม่สำเร็จ', 'Could not send the request'));
+      showToast({ tone: 'error', ...authFailureToast(err instanceof Error ? err.message : '', 'reset', language) });
     } finally {
       setSaving(false);
     }
@@ -44,22 +44,16 @@ export default function ForgotPasswordScreen() {
       showBack
     >
       <View style={{ gap: spacing.xl }}>
-        {error ? (
-          <Feedback
-            title={copy('ส่งคำขอไม่ได้', 'Could not send request')}
-            detail={error}
-            tone="danger"
-          />
-        ) : null}
         {sent ? (
           <>
-            <Feedback
+            {/* The screen's own state once the request is away, not a banner
+                stacked over the form it replaced. */}
+            <EmptyState
               title={copy('ตรวจสอบอีเมล', 'Check your email')}
               detail={copy(
                 'หากอีเมลนี้มีบัญชี คุณจะได้รับลิงก์ตั้งรหัสผ่านใหม่',
                 'If an account uses this email, you will receive a reset link.',
               )}
-              tone="success"
             />
             <Button
               icon="arrow-back"
@@ -77,10 +71,11 @@ export default function ForgotPasswordScreen() {
               value={email}
               onChangeText={(value) => {
                 setEmail(value);
-                setError(null);
+                setEmailMissing(false);
               }}
               keyboardType="email-address"
               placeholder="you@example.com"
+              error={emailMissing ? copy('กรอกอีเมล', 'Enter your email') : null}
             />
             <Button
               icon="paper-plane-outline"

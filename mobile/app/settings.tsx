@@ -1,98 +1,134 @@
+import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useWindowDimensions, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
+import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
-import { type AppIconName } from '@/src/components/app-icon';
-import { EdgeRow, EdgeSection, EdgeSectionHeader } from '@/src/components/ui';
+import { AppText as Text } from '@/src/components/app-text';
+import { ToolRow } from '@/src/components/tool-row';
 import { can } from '@/src/lib/rbac';
-import { canAccessTeam } from '@/src/lib/staff-workflow';
+import { canAccessTeam, memberInitials, roleLabel, userDisplayName } from '@/src/lib/staff-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { usePrinter } from '@/src/providers/printer-provider';
 import { breakpoints, palette, spacing } from '@/src/theme';
 
+// Settings, redrawn on 15 ก.ย. 2569 from the three-screens design. It had been
+// bare rows on white, each about 90pt tall, with "ร้านที่ใช้งาน" a heading you
+// could not tap and signing out the last row with nothing setting it apart.
+// Now: who is signed in at the top (tap to edit the account), two groups in
+// the "เพิ่มเติม" screen's rows — each saying what it is set to — and signing
+// out in a card of its own. On a tablet the groups sit side by side.
+
+const CARD_EDGE = '#EFE7DF';
+const ACCOUNT_LOOK = { wash: palette.surfaceSubtle, ink: palette.primaryInk, title: palette.textStrong };
+const SHOP_LOOK = { wash: '#F3F0ED', ink: '#5B3A2B', title: palette.textStrong };
+const DANGER_LOOK = { wash: palette.dangerSoft, ink: palette.danger, title: palette.danger };
+
+type Row = { key: string; icon: AppIconName; title: string; detail: string; onPress: () => void };
+
 export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership, signOut, user } = useAuth();
-  const { copy } = useDisplayPreferences();
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const { copy, language } = useDisplayPreferences();
+  const columns = width >= breakpoints.tabletWorkspace;
   const canManageRestaurant = can(activeMembership, 'manage_restaurant_settings');
   const canManageTeam = canAccessTeam(activeMembership);
   const { selectedPrinter, supported: printerSupported } = usePrinter();
+
+  const name = userDisplayName(user, language);
+  const shopName = activeMembership?.restaurant?.name?.trim() || copy('ร้านของฉัน', 'My restaurant');
+  const role = activeMembership?.role ? roleLabel(activeMembership.role, language) : '';
   const printerDetail = !printerSupported
     ? copy('รองรับเฉพาะ Android', 'Android only')
     : selectedPrinter?.name || copy('ยังไม่ได้เลือกเครื่องพิมพ์', 'No printer selected');
-  const settingsItems: Array<{ title: string; detail: string; href: string; icon: AppIconName; show: boolean }> = [
-    { title: copy('บัญชีของฉัน', 'My account'), detail: user?.email || copy('ชื่อและเบอร์โทร', 'Name and phone'), href: '/settings/account', icon: 'person-outline', show: true },
-    { title: copy('การแสดงผล', 'Display'), detail: copy('ภาษา', 'Language'), href: '/settings/display', icon: 'text-outline', show: true },
-    { title: copy('เครื่องพิมพ์ใบเสร็จ', 'Receipt printer'), detail: printerDetail, href: '/settings/printer', icon: 'print-outline', show: true },
-    { title: copy('ข้อมูลร้าน', 'Restaurant'), detail: copy('ข้อมูลร้าน บิล และ QR', 'Restaurant, bill and QR settings'), href: '/settings/restaurant', icon: 'storefront-outline', show: canManageRestaurant },
-    { title: copy('ทีมและสิทธิ์', 'Team and access'), detail: copy('พนักงาน บทบาท และคำเชิญ', 'Staff, roles and invitations'), href: '/staff', icon: 'people-outline', show: canManageTeam },
-    { title: copy('สลับร้าน', 'Switch restaurant'), detail: copy('เลือกร้านหรือสาขาอื่น', 'Choose another restaurant or branch'), href: '/restaurants', icon: 'swap-horizontal-outline', show: true },
-  ];
-  const items = settingsItems.filter((item) => item.show);
-  const accountItems = items.filter((item) => item.href === '/settings/account' || item.href === '/settings/display' || item.href === '/settings/printer');
-  const managementItems = items.filter((item) => item.href === '/settings/restaurant' || item.href === '/staff');
-  const restaurantItems = items.filter((item) => item.href === '/restaurants');
+  const version = Constants.expoConfig?.version;
 
-  function renderRows(rows: typeof items) {
-    return rows.map((item) => (
-      <EdgeRow
-        detail={item.detail}
-        icon={item.icon}
-        key={item.href}
-        onPress={() => router.push(item.href as never)}
-        title={item.title}
-      />
-    ));
-  }
+  const accountRows: Row[] = [
+    { key: 'display', icon: 'text-outline', title: copy('การแสดงผล', 'Display'), detail: copy('ภาษา · ไทย', 'Language · English'), onPress: () => router.push('/settings/display' as never) },
+    { key: 'printer', icon: 'print-outline', title: copy('เครื่องพิมพ์ใบเสร็จ', 'Receipt printer'), detail: printerDetail, onPress: () => router.push('/settings/printer' as never) },
+  ];
+  const shopRows: Row[] = [
+    ...(canManageRestaurant ? [{ key: 'restaurant', icon: 'storefront-outline' as const, title: copy('ข้อมูลร้าน', 'Restaurant'), detail: copy(`${shopName} · บิล · QR สั่งอาหาร`, `${shopName} · bills · ordering QR`), onPress: () => router.push('/settings/restaurant' as never) }] : []),
+    ...(canManageTeam ? [{ key: 'team', icon: 'people-outline' as const, title: copy('ทีมและสิทธิ์', 'Team and access'), detail: copy('สมาชิก บทบาท คำเชิญ', 'Members, roles, invitations'), onPress: () => router.push('/staff' as never) }] : []),
+    { key: 'switch', icon: 'swap-horizontal-outline', title: copy('สลับร้าน', 'Switch restaurant'), detail: copy(`ตอนนี้: ${shopName}`, `Now: ${shopName}`), onPress: () => router.push('/restaurants' as never) },
+  ];
+
+  const group = (title: string, rows: Row[], look: { wash: string; ink: string; title: string }) => (
+    <View style={{ gap: spacing.sm }}>
+      <Text accessibilityRole="header" style={{ fontSize: 13, fontWeight: '600', color: palette.placeholder, paddingHorizontal: 6 }}>{title}</Text>
+      <View style={{ borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
+        {rows.map((row, index) => (
+          <ToolRow key={row.key} first={index === 0} icon={row.icon} title={row.title} detail={row.detail} look={look} onPress={row.onPress} />
+        ))}
+      </View>
+    </View>
+  );
+
+  const accountCard = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={copy(`${name}, ${user?.email ?? ''} แตะเพื่อแก้บัญชี`, `${name}, ${user?.email ?? ''}, tap to edit your account`)}
+      onPress={() => router.push('/settings/account' as never)}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 22, borderCurve: 'continuous', backgroundColor: palette.surfaceSubtle, paddingVertical: columns ? 18 : 14, paddingHorizontal: columns ? 20 : 14, opacity: pressed ? 0.8 : 1 })}
+    >
+      <LinearGradient
+        colors={[palette.primary, '#EF7A35']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontSize: 19, lineHeight: 27, fontWeight: '600', color: '#fff' }}>{memberInitials(name)}</Text>
+      </LinearGradient>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: palette.textStrong }}>{name}</Text>
+        {user?.email ? (
+          <Text numberOfLines={1} style={{ fontSize: 12.5, lineHeight: 17, color: palette.muted }}>
+            {user.email}{user.auth_provider === 'google' ? copy(' · เข้าด้วย Google', ' · Google sign-in') : ''}
+          </Text>
+        ) : null}
+        <View style={{ alignSelf: 'flex-start', marginTop: 4, borderRadius: 999, paddingVertical: 1, paddingHorizontal: 9, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.accentMuted }}>
+          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '600', color: palette.primaryInk }}>{role ? `${role} · ${shopName}` : shopName}</Text>
+        </View>
+      </View>
+      <AppIcon name="chevron-forward" size={20} color={palette.placeholder} />
+    </Pressable>
+  );
+
+  const signOutCard = (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: CARD_EDGE, backgroundColor: palette.surface, overflow: 'hidden' }}>
+        <ToolRow first icon="log-out-outline" title={copy('ออกจากระบบ', 'Sign out')} detail={user?.email} look={DANGER_LOOK} onPress={signOut} showChevron={false} />
+      </View>
+      {version ? <Text style={{ fontSize: 11.5, color: palette.placeholder, textAlign: 'center' }}>{`Dishy ${version}`}</Text> : null}
+    </View>
+  );
+
+  const accountGroup = group(copy('บัญชี', 'Account'), accountRows, ACCOUNT_LOOK);
+  const shopGroup = group(copy('ร้าน', 'Restaurant'), shopRows, SHOP_LOOK);
 
   return (
-    <AppScreen title={copy('ตั้งค่า', 'Settings')} topLevel={false}>
-      <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
-        <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.6 : undefined, gap: spacing.xl }}>
-          <View style={{ gap: spacing.sm }}>
-            <EdgeSectionHeader
-              title={copy('บัญชีของคุณ', 'Your account')}
-              detail={user?.email || copy('ข้อมูลส่วนตัวและการแสดงผล', 'Personal details and display')}
-            />
-            <EdgeSection>{renderRows(accountItems)}</EdgeSection>
-          </View>
-
-          {managementItems.length ? (
-            <View style={{ gap: spacing.sm }}>
-              <EdgeSectionHeader
-                title={copy('การจัดการร้าน', 'Restaurant management')}
-                detail={copy('ข้อมูลร้าน ทีม และสิทธิ์การใช้งาน', 'Restaurant details, team and access')}
-              />
-              <EdgeSection>{renderRows(managementItems)}</EdgeSection>
+    <AppScreen title={copy('ตั้งค่า', 'Settings')} topLevel={false} centerTitle contentMaxWidth={columns ? 980 : undefined}>
+      <View style={{ gap: columns ? spacing.xl : spacing.lg }}>
+        {accountCard}
+        {columns ? (
+          // Signing out goes under the account group: two rows and a card
+          // there, three rows on the right, so the columns end level.
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
+            <View style={{ flex: 1, minWidth: 0, gap: spacing.lg }}>
+              {accountGroup}
+              {signOutCard}
             </View>
-          ) : null}
-        </View>
-
-        <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined, gap: spacing.xl }}>
-          <View style={{ gap: spacing.sm }}>
-            <EdgeSectionHeader
-              title={copy('ร้านที่ใช้งาน', 'Active restaurant')}
-              detail={activeMembership?.restaurant?.name || copy('เลือกร้านหรือสาขา', 'Choose a restaurant or branch')}
-            />
-            <EdgeSection>{renderRows(restaurantItems)}</EdgeSection>
+            <View style={{ flex: 1, minWidth: 0 }}>{shopGroup}</View>
           </View>
-
-          <View style={{ gap: spacing.sm }}>
-            <EdgeSectionHeader title={copy('การเข้าสู่ระบบ', 'Session')} />
-            <EdgeSection>
-              <EdgeRow
-                icon="log-out-outline"
-                iconColor={palette.danger}
-                onPress={signOut}
-                showChevron={false}
-                title={copy('ออกจากระบบ', 'Sign out')}
-                titleStyle={{ color: palette.danger }}
-              />
-            </EdgeSection>
-          </View>
-        </View>
+        ) : (
+          <>
+            {accountGroup}
+            {shopGroup}
+            {signOutCard}
+          </>
+        )}
       </View>
     </AppScreen>
   );

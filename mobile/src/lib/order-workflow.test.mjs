@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   createKitchenMutationGate,
@@ -34,9 +37,12 @@ import {
   isOptionSelectionBelowMinimum,
   kitchenTicketKey,
   paymentReceivedAmount,
+  SERVED_REMOVAL_REASONS,
   undeliveredOrderItems,
   validateKitchenCancelReason,
 } from './order-workflow.ts';
+
+const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 test('paid bill exits to an accessible workflow for waiter and cashier roles', () => {
   assert.equal(billExitRoute(true, false), '/tables');
@@ -359,6 +365,28 @@ test('quiet polling never supersedes a foreground request', () => {
   assert.equal(shouldStartRequest(true, true), false);
   assert.equal(shouldStartRequest(true, false), true);
   assert.equal(shouldStartRequest(false, true), true);
+});
+
+test('a served line comes off the bill by picking a reason, never by typing one', async () => {
+  // Each preset has to satisfy the reason the API demands, or the sheet offers
+  // a choice that fails on tap.
+  assert.ok(SERVED_REMOVAL_REASONS.length >= 3);
+  for (const reason of SERVED_REMOVAL_REASONS) {
+    assert.ok(reason.key && reason.th && reason.en, reason.key);
+    for (const language of ['th', 'en']) {
+      const validation = validateKitchenCancelReason(reason[language]);
+      assert.equal(validation.error, null, `${reason.key}/${language}`);
+      assert.equal(validation.reason, reason[language]);
+    }
+  }
+  assert.equal(new Set(SERVED_REMOVAL_REASONS.map((reason) => reason.key)).size, SERVED_REMOVAL_REASONS.length);
+
+  const bill = await readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8');
+  // No free-text box, and no full-width button parked under every served row.
+  assert.doesNotMatch(bill, /cancelReason/);
+  assert.doesNotMatch(bill, /<TextField/);
+  assert.match(bill, /<ChoiceSheet/);
+  assert.match(bill, /SERVED_REMOVAL_REASONS/);
 });
 
 test('a receipt is reprintable only once the order is completed and paid', () => {

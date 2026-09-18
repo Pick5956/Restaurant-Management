@@ -3,14 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Image, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
-import { listCategories, listMenuItems } from '@/src/api/menu';
-import { addOrderItem, deleteOrderItem, getBill, payOrder, sendOrderToKitchen, updateOrderItemStatus } from '@/src/api/order';
+import { listMenuItems } from '@/src/api/menu';
+import { deleteOrderItem, getBill, payOrder, sendOrderToKitchen, updateOrderItemStatus } from '@/src/api/order';
+import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { GlassMorphMenu } from '@/src/components/ai/chrome';
 import { MenuImage } from '@/src/components/menu-image';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
-import { ActionDock, Button, EmptyState, Feedback, RadioGroup, SearchField, SectionHeader, Select, StatusBadge, TextField } from '@/src/components/ui';
+import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, RadioGroup, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
 import {
   currentRoundPresentation,
@@ -23,6 +24,7 @@ import {
   billPaymentStage,
   canTakeOrderPayment,
   paymentReceivedAmount,
+  SERVED_REMOVAL_REASONS,
   undeliveredOrderItems,
   validateKitchenCancelReason,
 } from '@/src/lib/order-workflow';
@@ -35,7 +37,7 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { usePrinter } from '@/src/providers/printer-provider';
 import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
-import type { Category, MenuItem } from '@/src/types/menu';
+import type { MenuItem } from '@/src/types/menu';
 import type { Bill, OrderItem } from '@/src/types/order';
 
 /** How far the item-status chip drops to sit on the item name's optical line. */
@@ -45,12 +47,6 @@ function resolveImage(value: string) {
   if (!value) return '';
   if (value.startsWith('http')) return value;
   return `${apiUrl}${value.startsWith('/') ? '' : '/'}${value}`;
-}
-
-function hasRequiredOptions(item: MenuItem) {
-  return (item.option_groups || []).some(
-    (group) => group.is_active && Math.max(0, Number(group.min_select) || 0) > 0,
-  );
 }
 
 /**
@@ -80,10 +76,8 @@ export default function BillScreen() {
   // for a cash payment, so paying from a stale bill records money that was never
   // taken and change that was never given.
   const [billStale, setBillStale] = useState(false);
+  // Only for the row photos, when an order line carries no image of its own.
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState('all');
-  const [search, setSearch] = useState('');
   const [method, setMethod] = useState<'cash' | 'promptpay_qr'>('cash');
   // No edit MODE. The screen used to hide removal behind a `แก้รายการ` toggle
   // and then switch the toggle on by itself whenever the order had undelivered
@@ -92,14 +86,14 @@ export default function BillScreen() {
   // appears, the same gesture the retired basket screen used, so nothing about
   // the list changes state to allow it.
   const [openRowId, setOpenRowId] = useState<number | null>(null);
-  const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Reveals the take-it-off-the-bill control on lines the kitchen has already
   // made. Those are removed with a written reason rather than deleted, so they
   // get a deliberate control rather than the swipe an unsent line answers to.
   const [editingServed, setEditingServed] = useState(false);
+  // The line waiting on a reason. Picking one from the sheet removes it; there
+  // is no reason to type any more.
   const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,12 +125,8 @@ export default function BillScreen() {
       setBill(nextBill);
       setMethod(nextBill.payments.at(-1)?.method || 'cash');
       if (nextBill.payment_status !== 'paid' && canTakeOrder) {
-        const [menuResponse, categoryResponse] = await Promise.all([
-          listMenuItems(),
-          listCategories(),
-        ]);
+        const menuResponse = await listMenuItems();
         setMenuItems(menuResponse.menu_items || []);
-        setCategories(categoryResponse.categories || []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill'));
@@ -194,19 +184,6 @@ export default function BillScreen() {
     : 'due';
   const canEditBill = paymentStage === 'due' && canTakeOrder;
   const canSendRound = canEditBill && roundSummary.quantity > 0;
-  const filteredMenu = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return menuItems.filter((item) => {
-      const categoryMatch = categoryId === 'all'
-        || item.category_id === Number(categoryId)
-        || item.categories?.some((link) => link.category_id === Number(categoryId));
-      const searchMatch = !keyword
-        || [item.name, item.description].some(
-          (value) => String(value || '').toLowerCase().includes(keyword),
-        );
-      return categoryMatch && searchMatch;
-    });
-  }, [categoryId, menuItems, search]);
 
   // `null` for work that speaks for itself: deleting a row makes the row
   // disappear, and a green banner announcing it pushes the whole list down to
@@ -259,8 +236,6 @@ export default function BillScreen() {
     setOpenRowId(null);
     if (item.status !== 'pending') {
       setCancelTarget(item);
-      setCancelReason('');
-      setAdding(false);
       return;
     }
     void deletePendingItem(item);
@@ -284,42 +259,21 @@ export default function BillScreen() {
     }
   }
 
-  async function addServedItem(item: MenuItem) {
-    if (!bill || !canEditBill || saving || !item.is_available || hasRequiredOptions(item)) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await addOrderItem(orderId, {
-        menu_id: item.ID,
-        quantity: 1,
-        serve_immediately: true,
-        fulfillment_type: bill.order.order_type === 'takeaway' ? 'takeaway' : 'dine_in',
-      });
-      await refreshBillAfterMutation(copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Served item added'));
-    } catch (err) {
-      actionFailed(err instanceof Error ? err.message : copy('เพิ่มรายการไม่สำเร็จ', 'Could not add the item'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function cancelBillItem() {
-    if (!cancelTarget || !canEditBill || saving) return;
-    const validation = validateKitchenCancelReason(cancelReason);
-    if (validation.error === 'required') {
-      actionFailed(copy('กรอกเหตุผลที่นำรายการออกจากบิล', 'Enter a reason for removing the item from the bill.'));
-      return;
-    }
-    if (validation.error === 'too_long') {
-      actionFailed(copy('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'The reason must be 500 characters or fewer.'));
+  async function cancelBillItem(reason: string) {
+    const item = cancelTarget;
+    if (!item || !canEditBill || saving) return;
+    // The presets are known good; this stays as the guard between the list and
+    // the API, which will not take an empty or overlong reason.
+    const validation = validateKitchenCancelReason(reason);
+    if (validation.error) {
+      actionFailed(copy('เลือกเหตุผลที่นำรายการออกจากบิล', 'Choose a reason for removing the item from the bill.'));
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await updateOrderItemStatus(orderId, cancelTarget.ID, 'cancelled', validation.reason);
+      await updateOrderItemStatus(orderId, item.ID, 'cancelled', validation.reason);
       setCancelTarget(null);
-      setCancelReason('');
       await refreshBillAfterMutation(copy('นำรายการออกจากบิลแล้ว', 'Item removed from the bill'));
     } catch (err) {
       actionFailed(err instanceof Error ? err.message : copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
@@ -350,9 +304,7 @@ export default function BillScreen() {
       // it: a failed re-read can never strand a paid order on a screen that
       // still offers a Pay button. The receipt stays reachable from the order
       // archive, the same place the web sends people for a reprint.
-      setAdding(false);
       setCancelTarget(null);
-      setCancelReason('');
       showToast({ title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
       resetRouteStack(router, billExitRoute(canTakeOrder, canViewOrders));
     } catch (err) {
@@ -627,74 +579,56 @@ export default function BillScreen() {
                     <Text selectable style={[typeScale.number, { fontSize: 17, fontWeight: '600', lineHeight: 23 }]}>{money(item.subtotal, language)}</Text>
                     {/* The count, where the status chip used to be. `x2` in a
                         disc says quantity without spending a line on the word,
-                        which is what `จำนวน 2` under the name was doing. */}
-                    <View
-                      style={{
-                        minWidth: 32,
-                        height: 32,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: radius.full,
-                        backgroundColor: palette.neutralSoft,
-                        paddingHorizontal: 7,
-                      }}
-                    >
-                      <Text
-                        selectable
-                        style={{ color: palette.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                        which is what `จำนวน 2` under the name was doing.
+                        While served lines are being edited this same disc is
+                        the control that takes one off: one slot, no reflow, and
+                        no full-width button parked under every dish. */}
+                    {editingServed && canEditBill && item.status !== 'pending' ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={copy(`นำ ${item.menu_name} ออกจากบิล`, `Remove ${item.menu_name} from the bill`)}
+                        disabled={saving}
+                        hitSlop={8}
+                        onPress={() => setCancelTarget(item)}
+                        style={({ pressed }) => ({
+                          width: 36,
+                          height: 36,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: radius.full,
+                          borderWidth: 1,
+                          borderColor: '#FECACA',
+                          backgroundColor: palette.dangerSoft,
+                          opacity: saving ? 0.5 : pressed ? 0.7 : 1,
+                        })}
                       >
-                        {`x${item.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}`}
-                      </Text>
-                    </View>
+                        <AppIcon color={palette.danger} name="trash-outline" size={18} />
+                      </Pressable>
+                    ) : (
+                      <View
+                        style={{
+                          minWidth: 32,
+                          height: 32,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: radius.full,
+                          backgroundColor: palette.neutralSoft,
+                          paddingHorizontal: 7,
+                        }}
+                      >
+                        <Text
+                          selectable
+                          style={{ color: palette.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                        >
+                          {`x${item.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}`}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>
             </SwipeToDeleteRow>
             </View>
-            {editingServed && canEditBill && item.status !== 'pending' && cancelTarget?.ID !== item.ID ? (
-              <View style={{ paddingBottom: spacing.sm }}>
-                <Button
-                  compact
-                  icon="trash-outline"
-                  variant="secondary"
-                  label={copy('นำออกจากบิล', 'Remove from bill')}
-                  onPress={() => {
-                    setCancelTarget(item);
-                    setCancelReason('');
-                    setAdding(false);
-                  }}
-                />
-              </View>
-            ) : null}
-            {cancelTarget?.ID === item.ID ? (
-              <View style={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
-                <TextField
-                  label={copy('เหตุผลที่นำออกจากบิล', 'Reason for removing this item')}
-                  value={cancelReason}
-                  onChangeText={setCancelReason}
-                  multiline
-                />
-                <View style={{ flexDirection: width < 460 ? 'column' : 'row', gap: spacing.sm }}>
-                  <Button
-                    variant="secondary"
-                    label={copy('เก็บรายการไว้', 'Keep item')}
-                    onPress={() => {
-                      setCancelTarget(null);
-                      setCancelReason('');
-                    }}
-                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                  />
-                  <Button
-                    variant="danger"
-                    label={copy('ยืนยันนำออก', 'Remove item')}
-                    onPress={cancelBillItem}
-                    loading={saving}
-                    disabled={!cancelReason.trim()}
-                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                  />
-                </View>
-              </View>
-            ) : null}
           </View>
         );
       })}
@@ -709,105 +643,8 @@ export default function BillScreen() {
       ) : null}
 
       {splitWorkspace ? sendRoundAction : null}
-
-      {/* Only the way OUT of the catalog lives in the list. The way in moved to
-          the header menu: it is a once-in-a-while action, and a button sitting
-          under every bill for it was the first thing read after the dishes. */}
-      {adding && canEditBill ? (
-        <Button
-          icon="arrow-back"
-          variant="secondary"
-          label={copy('กลับไปดูบิล', 'Back to bill')}
-          onPress={() => {
-            setAdding(false);
-            setCancelTarget(null);
-            setCancelReason('');
-          }}
-        />
-      ) : null}
     </Panel>
   );
-
-  const addServedItemPanel = adding && canEditBill ? (
-    <Panel>
-      <SectionHeader
-        title={copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add a served item')}
-        detail={copy('รายการนี้จะไม่ส่งเข้าครัวและจะพร้อมคิดเงินทันที', 'This item skips the kitchen and is immediately ready for payment.')}
-      />
-      <SearchField
-        accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
-        clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
-        value={search}
-        onChangeText={setSearch}
-        placeholder={copy('ค้นหาเมนู', 'Search menu')}
-      />
-      <Select
-        label={copy('หมวดหมู่', 'Category')}
-        value={categoryId}
-        onChange={setCategoryId}
-        options={[
-          { label: copy('ทั้งหมด', 'All'), value: 'all' },
-          ...categories
-            .filter((category) => category.is_active)
-            .map((category) => ({ label: category.name, value: String(category.ID) })),
-        ]}
-      />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-        {filteredMenu.map((item) => {
-          const requiresOptions = hasRequiredOptions(item);
-          const disabled = saving || !item.is_available || requiresOptions;
-          return (
-            <Pressable
-              accessibilityLabel={copy(`เพิ่ม ${item.name} ลงในบิล`, `Add ${item.name} to the bill`)}
-              accessibilityRole="button"
-              accessibilityState={{ disabled }}
-              key={item.ID}
-              disabled={disabled}
-              onPress={() => {
-                void addServedItem(item);
-              }}
-              style={({ pressed }) => ({
-                // Same two-column grid as the ordering screen: a grow factor
-                // stretches a lone tile on the last row across the screen.
-                minWidth: splitWorkspace ? 148 : 0,
-                width: splitWorkspace ? undefined : '48%',
-                flexGrow: 0,
-                flexBasis: splitWorkspace ? 168 : 'auto',
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: palette.border,
-                borderRadius: radius.md,
-                backgroundColor: palette.surface,
-                opacity: disabled ? 0.46 : pressed ? 0.74 : 1,
-                transform: [{ translateY: pressed ? 1 : 0 }],
-              })}
-            >
-              <MenuImage
-                accessible={false}
-                imageUrl={item.image_url}
-                style={{ borderRadius: 0 }}
-                variant="card"
-              />
-              <View style={{ gap: 2, padding: spacing.sm }}>
-                <Text selectable numberOfLines={1} style={[typeScale.cardTitle, { minWidth: 0 }]}>{item.name}</Text>
-                <Text selectable style={{ color: palette.muted, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
-                  {money(item.price, language)}
-                </Text>
-                {!item.is_available ? <Text style={[typeScale.caption, { color: palette.danger }]}>{copy('หมด', 'Sold out')}</Text> : null}
-                {requiresOptions ? <Text style={[typeScale.caption, { color: palette.warning }]}>{copy('มีตัวเลือกบังคับ', 'Requires options')}</Text> : null}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-      {!filteredMenu.length ? (
-        <EmptyState
-          title={copy('ไม่พบเมนู', 'No menu items found')}
-          detail={copy('ลองเปลี่ยนหมวดหรือคำค้น', 'Try another category or search.')}
-        />
-      ) : null}
-    </Panel>
-  ) : null;
 
   // Only worth a card when it breaks the total into parts. With no discount,
   // service charge or VAT the single row IS the total, and the footer already
@@ -895,7 +732,7 @@ export default function BillScreen() {
       <SectionHeader title={copy('สถานะการชำระเงิน', 'Payment status')} />
       <View style={{ gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: palette.border, paddingBottom: spacing.lg }}>
         <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดคงเหลือ', 'Amount due')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 32, lineHeight: 40 }]}>{money(bill.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, lineHeight: 28, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
       </View>
       <Feedback
         title={copy('ดูบิลได้ แต่รับชำระเงินไม่ได้', 'You can view this bill but cannot take payment')}
@@ -915,10 +752,11 @@ export default function BillScreen() {
       key: 'add-served',
       icon: 'add-circle-outline' as const,
       label: copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add served item'),
+      // Its own screen, pushed so it slides in from the right like every other
+      // step forward. The bill reloads on focus when it comes back.
       onPress: () => {
-        setAdding(true);
         setCancelTarget(null);
-        setCancelReason('');
+        router.push({ pathname: '/order/served' as never, params: { id: String(orderId) } } as never);
       },
     } : null,
     canEditBill ? {
@@ -931,7 +769,6 @@ export default function BillScreen() {
       onPress: () => {
         setEditingServed((value) => !value);
         setCancelTarget(null);
-        setCancelReason('');
       },
     } : null,
     printerSupported ? {
@@ -958,7 +795,7 @@ export default function BillScreen() {
     <View style={{ gap: spacing.md, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md }}>
         <Text selectable style={[typeScale.body, { color: palette.text, fontWeight: '400' }]}>{copy('รวมทั้งหมด', 'Total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '700' }]}>{money(bill.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
       </View>
       {footerPrimaryAction}
     </View>
@@ -1040,13 +877,29 @@ export default function BillScreen() {
       <View style={{ flexDirection: splitWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
         <View style={{ width: splitWorkspace ? undefined : '100%', minWidth: 0, flex: splitWorkspace ? 1.45 : undefined, gap: spacing.lg }}>
           {billItemsPanel}
-          {addServedItemPanel}
           {billSummaryPanel}
         </View>
         <View style={{ width: splitWorkspace ? undefined : '100%', minWidth: 0, flex: splitWorkspace ? 1 : undefined }}>
           {paymentPanel}
         </View>
       </View>
+
+      {/* Taking a made dish off the bill asks one question, and the answer is
+          the whole action: the reason goes on the day's cancellation record,
+          and picking it removes the line. */}
+      <ChoiceSheet
+        open={cancelTarget !== null}
+        busy={saving}
+        title={copy('นำออกจากบิลเพราะอะไร', 'Why is this coming off the bill?')}
+        detail={cancelTarget?.menu_name}
+        options={SERVED_REMOVAL_REASONS.map((reason) => ({
+          label: copy(reason.th, reason.en),
+          value: copy(reason.th, reason.en),
+        }))}
+        cancelLabel={copy('เก็บรายการไว้', 'Keep item')}
+        onChoose={(reason) => { void cancelBillItem(reason); }}
+        onClose={() => setCancelTarget(null)}
+      />
     </AppScreen>
   );
 }

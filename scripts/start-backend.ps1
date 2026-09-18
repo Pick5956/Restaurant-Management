@@ -51,9 +51,32 @@ if ($migrationExitCode -ne 0) {
   exit $migrationExitCode
 }
 
-$exitCode = Invoke-LoggedNativeProcess `
+# Built from source to ONE fixed path on every start, then run from there.
+# `go run` compiled into Go's build cache under a folder named after the build's
+# contents, so every code change was a brand-new program to Windows Firewall: an
+# "allow access" prompt on each start, and a phone on the LAN silently cut off
+# whenever that prompt was cancelled (Cancel writes a block rule, and a block
+# beats every allow). A fixed path is one program to the firewall - allow it
+# once. It is rebuilt here every time, so it can never be a stale binary.
+# Named main.exe because deploy-public.ps1 and the stop commands find the
+# backend by that process name.
+$backendBinDir = Join-Path $backendDir "bin"
+New-Item -ItemType Directory -Force -Path $backendBinDir | Out-Null
+$backendExe = Join-Path $backendBinDir "main.exe"
+
+$buildExitCode = Invoke-LoggedNativeProcess `
   -FilePath $go `
-  -Arguments "run main.go" `
+  -Arguments "build -o `"$backendExe`" ." `
+  -StdoutPath $logs.Stdout `
+  -StderrPath $logs.Stderr
+if ($buildExitCode -ne 0) {
+  Write-Error "Backend build exited with code $buildExitCode. Check $($logs.Stderr)."
+  exit $buildExitCode
+}
+
+$exitCode = Invoke-LoggedNativeProcess `
+  -FilePath $backendExe `
+  -Arguments "" `
   -StdoutPath $logs.Stdout `
   -StderrPath $logs.Stderr
 

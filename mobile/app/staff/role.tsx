@@ -2,9 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Platform,
-  Pressable,
   useWindowDimensions,
   View,
   type TextInput as NativeTextInput,
@@ -17,23 +15,16 @@ import {
   updateRole,
   updateRolePermissions,
 } from '@/src/api/auth';
+import { listMembers } from '@/src/api/restaurant';
+import { GlassButton } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { AppScreen } from '@/src/components/app-shell';
-import {
-  AnimatedCollapse,
-  AnimatedDisclosureIcon,
-  MotionCrossfade,
-} from '@/src/components/motion';
-import {
-  ActionDock,
-  Button,
-  EmptyState,
-  Feedback,
-  SectionHeader,
-  Surface,
-} from '@/src/components/ui';
+import { DangerAction, Field, FormBody, FormCard, Note, PermissionGroups, SaveDock } from '@/src/components/form/parts';
+import { HeadingAction } from '@/src/components/heading-action';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { EmptyState, Feedback } from '@/src/components/ui';
 import {
   allPermissions,
   normalizePermissionSelection,
@@ -48,7 +39,6 @@ import {
   canFinishRoleNameEdit,
   canGrantRole,
   canManageRoles,
-  resolvePermissionGroupTransition,
   roleEditorHeading,
   roleLabel,
   roleSaveFailureMessage,
@@ -56,7 +46,15 @@ import {
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
-import type { Role } from '@/src/types/restaurant';
+import type { Membership, Role } from '@/src/types/restaurant';
+
+// The role editor, redrawn on 15 ก.ย. 2569. The permission groups had been
+// folded shut, showing only "2/2" until each was opened, and "ซ่อนบทบาท" was a
+// full-width button that read as the main action. Now: the role's name is the
+// title with a glass pencil beside it; two figures (permissions on, people
+// holding it); every group open as a card with a switch per permission and
+// "เลือกทั้งกลุ่ม"; hiding the role a quiet red line at the foot. A tablet
+// puts the role's card on the left and the groups in two columns.
 
 export default function RoleEditorScreen() {
   const { width } = useWindowDimensions();
@@ -66,10 +64,12 @@ export default function RoleEditorScreen() {
   const { activeMembership, refreshMemberships } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const actorRole = activeMembership?.role?.name;
+  const restaurantId = activeMembership?.restaurant_id;
   const allowed = canManageRoles(activeMembership);
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
+  const tablet = width >= breakpoints.tabletWorkspace;
   const nameInputRef = useRef<NativeTextInput>(null);
   const [role, setRole] = useState<Role | null>(null);
+  const [holders, setHolders] = useState<Membership[]>([]);
   const [name, setName] = useState('');
   const [initialName, setInitialName] = useState('');
   const [editingName, setEditingName] = useState(!editing);
@@ -79,7 +79,6 @@ export default function RoleEditorScreen() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [expandedPermissionGroup, setExpandedPermissionGroup] = useState(0);
 
   useEffect(() => {
     if (!editing || !allowed) {
@@ -87,8 +86,11 @@ export default function RoleEditorScreen() {
       return;
     }
     setLoading(true);
-    getRoles()
-      .then((response) => {
+    Promise.all([
+      getRoles(),
+      restaurantId ? listMembers(restaurantId).catch(() => ({ members: [] as Membership[] })) : Promise.resolve({ members: [] as Membership[] }),
+    ])
+      .then(([response, memberResponse]) => {
         const editableRoles = allowedRoleOptions(actorRole, response.data || [], allowed)
           .filter((item) => canGrantRole(activeMembership, item));
         const next = editableRoles.find((item) => item.ID === roleId) || null;
@@ -97,6 +99,7 @@ export default function RoleEditorScreen() {
         setName(nextName);
         setInitialName(nextName);
         setPermissions(parsePermissionsForRole(next?.permissions, next?.name));
+        setHolders((memberResponse.members || []).filter((member) => member.status !== 'removed' && (member.role?.ID ?? member.role_id) === roleId));
       })
       .catch((err) => {
         setError(err instanceof Error
@@ -104,7 +107,8 @@ export default function RoleEditorScreen() {
           : copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role'));
       })
       .finally(() => setLoading(false));
-  }, [activeMembership, actorRole, allowed, copy, editing, language, roleId]);
+  }, [activeMembership, actorRole, allowed, copy, editing, language, restaurantId, roleId]);
+
   const permissionGroups = permissionGroupsFor(language);
   const heading = roleEditorHeading(editing, role, language);
   const grantablePermissions = useMemo(() => new Set(
@@ -112,14 +116,15 @@ export default function RoleEditorScreen() {
       can(activeMembership, permission)
     )),
   ), [activeMembership]);
+  const grantable = (key: string) => permissionCanBeGranted(key, grantablePermissions);
   const deleteConfirmationMessage = role?.is_system
     ? copy(
-      'บทบาทนี้จะถูกซ่อนเมื่อไม่มีสมาชิกหรือคำเชิญใช้อยู่',
-      'This role will be hidden when no staff or invitations use it.',
+      'บทบาทมาตรฐานลบไม่ได้ แต่จะถูกซ่อนจากรายการเมื่อไม่มีสมาชิกหรือคำเชิญใช้อยู่',
+      'A standard role cannot be deleted; it is hidden from the list once no staff or invitation uses it.',
     )
     : copy(
       'บทบาทนี้จะถูกลบเมื่อไม่มีสมาชิกหรือคำเชิญใช้อยู่',
-      'This role will be deleted when no staff or invitations use it.',
+      'This role is deleted once no staff or invitation uses it.',
     );
 
   useEffect(() => {
@@ -128,8 +133,15 @@ export default function RoleEditorScreen() {
   }, [confirmDelete, deleteConfirmationMessage, deleteError]);
 
   function toggle(key: string) {
-    if (!permissionCanBeGranted(key, grantablePermissions)) return;
+    if (!grantable(key)) return;
     setPermissions((current) => togglePermissionSelection(current, key));
+  }
+
+  function toggleGroup(keys: string[], on: boolean) {
+    setPermissions((current) => {
+      if (on) return normalizePermissionSelection([...current, ...keys]);
+      return keys.reduce((selection, key) => (selection.includes(key) ? togglePermissionSelection(selection, key) : selection), current);
+    });
   }
 
   function finishNameEditing(): boolean {
@@ -184,11 +196,6 @@ export default function RoleEditorScreen() {
 
   async function remove() {
     if (!role || !editing) return;
-    if (!confirmDelete) {
-      setDeleteError(null);
-      setConfirmDelete(true);
-      return;
-    }
     setSaving(true);
     setError(null);
     setDeleteError(null);
@@ -203,20 +210,14 @@ export default function RoleEditorScreen() {
     }
   }
 
+  const screenTitle = editing ? copy('แก้ไขบทบาท', 'Edit role') : copy('เพิ่มบทบาท', 'Add role');
+
   if (!allowed) {
     return (
-      <AppScreen
-        title={editing
-          ? copy('แก้ไขบทบาท', 'Edit role')
-          : copy('เพิ่มบทบาท', 'Add role')}
-        topLevel={false}
-      >
+      <AppScreen title={screenTitle} topLevel={false} centerTitle>
         <EmptyState
           title={copy('ไม่มีสิทธิ์จัดการบทบาท', 'No role management access')}
-          detail={copy(
-            'บัญชีนี้ไม่ได้รับสิทธิ์จัดการบทบาทและสิทธิ์ของทีม',
-            'This account cannot manage team roles and permissions.',
-          )}
+          detail={copy('บัญชีนี้ไม่ได้รับสิทธิ์จัดการบทบาทและสิทธิ์ของทีม', 'This account cannot manage team roles and permissions.')}
         />
       </AppScreen>
     );
@@ -224,319 +225,159 @@ export default function RoleEditorScreen() {
 
   if (editing && loading) {
     return (
-      <AppScreen
-        title={copy('แก้ไขบทบาท', 'Edit role')}
-        subtitle={copy('กำลังโหลดข้อมูลบทบาท', 'Loading role details')}
-        topLevel={false}
-      >
-        <View
-          accessible
-          accessibilityLabel={copy('กำลังโหลดบทบาท', 'Loading role')}
-          accessibilityLiveRegion="polite"
-          style={{ minHeight: 160, alignItems: 'center', justifyContent: 'center', gap: spacing.sm }}
-        >
-          <ActivityIndicator color={palette.accent} />
-          <Text style={[typeScale.body, { color: palette.muted }]}>
-            {copy('กำลังโหลดบทบาท', 'Loading role')}
-          </Text>
-        </View>
+      <AppScreen title={screenTitle} topLevel={false} centerTitle>
+        <SkeletonReveal label={copy('กำลังโหลดบทบาท', 'Loading role')} style={{ gap: spacing.md }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}><Bone height={58} radius={16} style={{ flex: 1 }} /><Bone height={58} radius={16} style={{ flex: 1 }} /></View>
+          <Bone height={160} radius={18} />
+          <Bone height={160} radius={18} />
+        </SkeletonReveal>
       </AppScreen>
     );
   }
 
   if (editing && !role) {
     return (
-      <AppScreen title={copy('แก้ไขบทบาท', 'Edit role')} topLevel={false}>
+      <AppScreen title={screenTitle} topLevel={false} centerTitle>
         <EmptyState
-          title={error
-            ? copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role')
-            : copy('จัดการบทบาทนี้ไม่ได้', 'This role cannot be managed')}
-          detail={error || copy(
-            'บทบาทนี้อยู่นอกลำดับสิทธิ์ของคุณหรือถูกนำออกจากร้านแล้ว',
-            'This role is outside your permission hierarchy or was removed.',
-          )}
+          title={error ? copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role') : copy('จัดการบทบาทนี้ไม่ได้', 'This role cannot be managed')}
+          detail={error || copy('บทบาทนี้อยู่นอกลำดับสิทธิ์ของคุณหรือถูกนำออกจากร้านแล้ว', 'This role is outside your permission hierarchy or was removed.')}
         />
       </AppScreen>
     );
   }
 
-  const deleteActions = editing ? (
-    <View style={{ gap: spacing.sm }}>
-      <AnimatedCollapse expanded={confirmDelete}>
-        <View
-          accessible
-          accessibilityLabel={deleteError || deleteConfirmationMessage}
-          accessibilityLiveRegion={deleteError ? 'assertive' : 'polite'}
-          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.xs }}
-        >
-          <AppIcon color={palette.danger} name="alert-circle-outline" size={20} />
-          <Text style={[typeScale.caption, { minWidth: 0, flex: 1, color: palette.danger }]}>
-            {deleteError || deleteConfirmationMessage}
-          </Text>
+  const displayRoleName = name.trim() || heading.title;
+  const th = language === 'th';
+  const holderCount = holders.length;
+
+  // The title is the role's name; the pencil turns it into a field in place.
+  const titleContent = editingName ? (
+    <TextInput
+      ref={nameInputRef}
+      accessibilityHint={copy('แก้ชื่อแล้วกดเครื่องหมายถูก จากนั้นกดบันทึกบทบาทด้านล่าง', 'Edit the name, tap Done, then save the role below.')}
+      accessibilityLabel={copy('ชื่อบทบาท', 'Role name')}
+      autoCapitalize="words"
+      autoCorrect
+      autoFocus
+      editable={!saving}
+      onChangeText={(value) => { setName(value); setError(null); }}
+      onSubmitEditing={finishNameEditing}
+      placeholder={copy('ชื่อบทบาท', 'Role name')}
+      placeholderTextColor={palette.placeholder}
+      returnKeyType="done"
+      selectionColor={palette.accent}
+      submitBehavior="submit"
+      style={[typeScale.hero, { width: '100%', minHeight: 44, fontWeight: '600', textAlign: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 0 }]}
+      value={name}
+    />
+  ) : (
+    <Text accessibilityRole="header" numberOfLines={1} selectable style={[typeScale.hero, { fontWeight: '600', textAlign: 'center', minHeight: 44, textAlignVertical: 'center' }]}>{displayRoleName}</Text>
+  );
+  const nameAction = (
+    <GlassButton
+      icon={editingName ? 'checkmark' : 'create-outline'}
+      label={editingName ? copy('เสร็จสิ้นการแก้ชื่อ', 'Finish editing name') : copy('แก้ชื่อบทบาท', 'Edit role name')}
+      active={editingName}
+      onPress={() => { if (editingName) finishNameEditing(); else setEditingName(true); }}
+    />
+  );
+
+  const figures = (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <View accessible accessibilityLabel={th ? `เปิด ${permissions.length} จาก ${allPermissions.length} สิทธิ์` : `${permissions.length} of ${allPermissions.length} permissions on`} style={{ flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
+        <Text style={{ fontSize: 12, color: palette.placeholder }}>{th ? 'สิทธิ์ที่เปิด' : 'Permissions on'}</Text>
+        <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>
+          {permissions.length}<Text style={{ fontSize: 12.5, fontWeight: '500', color: palette.placeholder }}>{th ? ` จาก ${allPermissions.length}` : ` of ${allPermissions.length}`}</Text>
+        </Text>
+      </View>
+      {editing ? (
+        <View accessible accessibilityLabel={th ? `${holderCount} คนถือบทบาทนี้` : `${holderCount} people hold this role`} style={{ flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
+          <Text style={{ fontSize: 12, color: palette.placeholder }}>{th ? 'คนที่ถือบทบาทนี้' : 'People with this role'}</Text>
+          <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: holderCount ? palette.textStrong : palette.warning, fontVariant: ['tabular-nums'] }}>{holderCount}</Text>
         </View>
-      </AnimatedCollapse>
-      <MotionCrossfade
-        active={confirmDelete}
-        inactiveContent={(
-          <Button
-            icon="trash-outline"
-            variant="secondary"
-            label={role?.is_system
-              ? copy('ซ่อนบทบาท', 'Hide role')
-              : copy('ลบบทบาท', 'Delete role')}
-            onPress={remove}
-            loading={saving}
-          />
-        )}
-        activeContent={(
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            <Button
-              variant="secondary"
-              label={copy('เก็บบทบาทไว้', 'Keep role')}
-              onPress={() => {
-                setDeleteError(null);
-                setConfirmDelete(false);
-              }}
-              disabled={saving}
-              style={{ flex: 1 }}
-            />
-            <Button
-              variant="danger"
-              icon="trash-outline"
-              label={role?.is_system
-                ? copy('ยืนยันซ่อน', 'Confirm hide')
-                : copy('ยืนยันลบ', 'Confirm delete')}
-              onPress={remove}
-              loading={saving}
-              style={{ flex: 1 }}
-            />
-          </View>
-        )}
-      />
+      ) : null}
     </View>
+  );
+
+  const groups = (
+    <PermissionGroups
+      groups={permissionGroups}
+      selected={permissions}
+      grantable={grantable}
+      onToggle={toggle}
+      onToggleGroup={toggleGroup}
+      columns={tablet}
+      language={language}
+    />
+  );
+
+  const deleteBlock = editing ? (
+    <DangerAction
+      icon="trash-outline"
+      label={role?.is_system ? copy('ซ่อนบทบาทนี้จากรายการ', 'Hide this role from the list') : copy('ลบบทบาทนี้', 'Delete this role')}
+      confirmLabel={role?.is_system ? copy('ยืนยันซ่อน', 'Confirm hide') : copy('ยืนยันลบ', 'Confirm delete')}
+      cancelLabel={copy('เก็บบทบาทไว้', 'Keep role')}
+      message={deleteConfirmationMessage}
+      error={deleteError}
+      open={confirmDelete}
+      onOpen={() => { setDeleteError(null); setConfirmDelete(true); }}
+      onCancel={() => { setDeleteError(null); setConfirmDelete(false); }}
+      onConfirm={remove}
+      loading={saving}
+    />
   ) : null;
 
-  const displayRoleName = name.trim() || heading.title;
-  const roleTitleContent = (
-    <View style={{ minWidth: 0, minHeight: 44, flex: 1, justifyContent: 'center' }}>
-      {editingName ? (
-        <TextInput
-          ref={nameInputRef}
-          accessibilityHint={copy(
-            'แก้ชื่อแล้วกดเครื่องหมายถูก จากนั้นกดบันทึกบทบาทด้านล่าง',
-            'Edit the name, tap Done, then save the role below.',
-          )}
-          accessibilityLabel={copy('ชื่อบทบาท', 'Role name')}
-          autoCapitalize="words"
-          autoCorrect
-          autoFocus
-          editable={!saving}
-          onChangeText={(value) => {
-            setName(value);
-            setError(null);
-          }}
-          onSubmitEditing={finishNameEditing}
-          placeholder={copy('ชื่อบทบาท', 'Role name')}
-          placeholderTextColor={palette.placeholder}
-          returnKeyType="done"
-          selectionColor={palette.accent}
-          submitBehavior="submit"
-          style={[
-            typeScale.hero,
-            {
-              width: '100%',
-              minHeight: 44,
-              borderWidth: 0,
-              backgroundColor: 'transparent',
-              paddingHorizontal: 0,
-              paddingVertical: 0,
-            },
-          ]}
-          value={name}
-        />
-      ) : (
-        <Text
-          accessibilityRole="header"
-          numberOfLines={1}
-          selectable
-          style={[typeScale.hero, { minHeight: 44, textAlignVertical: 'center' }]}
-        >
-          {displayRoleName}
-        </Text>
-      )}
-    </View>
-  );
-  const roleNameAction = (
-    <Pressable
-      accessibilityHint={editingName
-        ? copy('กลับไปดูชื่อบทบาทก่อนบันทึก', 'Finish editing before saving.')
-        : copy('แก้ชื่อบทบาทที่แสดงในร้านนี้', 'Edit the role name shown in this restaurant.')}
-      accessibilityLabel={editingName
-        ? copy('เสร็จสิ้นการแก้ชื่อ', 'Finish editing name')
-        : copy('แก้ชื่อบทบาท', 'Edit role name')}
-      accessibilityRole="button"
-      disabled={saving}
-      hitSlop={4}
-      onPress={() => {
-        if (editingName) {
-          finishNameEditing();
-          return;
-        }
-        setEditingName(true);
-      }}
-      style={({ pressed }) => ({
-        width: 44,
-        height: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: saving ? 0.45 : pressed ? 0.55 : 1,
-      })}
-    >
-      <AppIcon
-        color={editingName ? palette.accent : palette.textStrong}
-        name={editingName ? 'checkmark' : 'create-outline'}
-        size={editingName ? 25 : 22}
-      />
-    </Pressable>
-  );
+  const saveLabel = editing ? copy('บันทึกบทบาท', 'Save role') : copy('เพิ่มบทบาท', 'Add role');
 
   return (
     <AppScreen
-      action={roleNameAction}
       title={displayRoleName}
-      titleContent={roleTitleContent}
-      subtitle={heading.subtitle}
+      titleContent={titleContent}
+      subtitle={editing ? (role?.is_system ? copy('บทบาทมาตรฐาน · แตะดินสอเพื่อเปลี่ยนชื่อ', 'Standard role · tap the pencil to rename') : copy('บทบาทที่ร้านสร้าง · แตะดินสอเพื่อเปลี่ยนชื่อ', 'Custom role · tap the pencil to rename')) : copy('ตั้งชื่อแล้วเปิดสิทธิ์ที่ต้องการ', 'Name it, then switch on what it may do')}
       topLevel={false}
-      footer={!tabletWorkspace ? (
-        <ActionDock separated={false}>
-          <Button
-            icon="checkmark"
-            label={editing ? copy('บันทึกบทบาท', 'Save role') : copy('เพิ่มบทบาท', 'Add role')}
-            onPress={save}
-            loading={saving}
-          />
-        </ActionDock>
-      ) : undefined}
-    >
-      {error ? (
-        <Feedback
-          title={copy('ทำรายการไม่ได้', 'Unable to complete action')}
-          detail={error}
-          tone="danger"
-        />
-      ) : null}
-
-      <Surface>
-        <SectionHeader
-          title={copy('สิทธิ์', 'Permissions')}
-          detail={copy(
-            `เลือกแล้ว ${permissions.length.toLocaleString('th-TH')} สิทธิ์`,
-            `${permissions.length.toLocaleString('en-US')} selected`,
-          )}
-        />
-        <View
-          style={{
-            flexDirection: tabletWorkspace ? 'row' : 'column',
-            flexWrap: tabletWorkspace ? 'wrap' : 'nowrap',
-            gap: tabletWorkspace ? spacing.md : 0,
-          }}
-        >
-          {permissionGroups.map((group, groupIndex) => {
-            const expanded = tabletWorkspace || expandedPermissionGroup === groupIndex;
-            const selectedCount = group.rows.filter((row) => permissions.includes(row.key)).length;
-            return (
-              <View
-                key={group.title}
-                style={{
-                  minWidth: 0,
-                  flexGrow: 1,
-                  flexBasis: tabletWorkspace ? '46%' : '100%',
-                  borderTopWidth: tabletWorkspace ? 0 : groupIndex ? 1 : 0,
-                  borderTopColor: palette.border,
-                }}
-              >
-                <Pressable
-                  accessible={!tabletWorkspace}
-                  accessibilityLabel={`${group.title}, ${selectedCount}/${group.rows.length}`}
-                  accessibilityRole={tabletWorkspace ? undefined : 'button'}
-                  accessibilityState={tabletWorkspace ? undefined : { expanded }}
-                  disabled={tabletWorkspace}
-                  onPress={() => setExpandedPermissionGroup((current) => (
-                    resolvePermissionGroupTransition(current, groupIndex)
-                  ))}
-                  style={({ pressed }) => ({
-                    minHeight: 52,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: spacing.sm,
-                    paddingVertical: spacing.sm,
-                    opacity: pressed ? 0.72 : 1,
-                  })}
-                >
-                  <Text style={[typeScale.cardTitle, { flex: 1 }]}>{group.title}</Text>
-                  <Text style={[typeScale.caption, { color: palette.muted }]}>
-                    {selectedCount}/{group.rows.length}
-                  </Text>
-                  {!tabletWorkspace ? (
-                    <AnimatedDisclosureIcon expanded={expanded} color={palette.muted} size={17} />
-                  ) : null}
-                </Pressable>
-                <AnimatedCollapse expanded={expanded}>
-                  {group.rows.map((row) => {
-                    const active = permissions.includes(row.key);
-                    const grantable = permissionCanBeGranted(row.key, grantablePermissions);
-                    return (
-                      <Pressable
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: active, disabled: !grantable }}
-                        disabled={!grantable}
-                        key={row.key}
-                        onPress={() => toggle(row.key)}
-                        style={({ pressed }) => ({
-                          minHeight: 50,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: spacing.md,
-                          backgroundColor: pressed ? palette.surfaceSubtle : palette.surface,
-                          paddingHorizontal: spacing.sm,
-                          paddingVertical: spacing.sm,
-                          opacity: !grantable ? 0.5 : pressed ? 0.75 : 1,
-                        })}
-                      >
-                        <Text style={{
-                          flex: 1,
-                          color: palette.text,
-                          fontSize: 14,
-                          fontWeight: '600',
-                        }}>
-                          {row.label}
-                        </Text>
-                        <AppIcon
-                          color={active ? palette.accent : palette.muted}
-                          name={active ? 'checkbox' : 'square-outline'}
-                          size={22}
-                        />
-                      </Pressable>
-                    );
-                  })}
-                </AnimatedCollapse>
-              </View>
-            );
-          })}
+      centerTitle
+      action={tablet ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {nameAction}
+          <HeadingAction compact={false} icon="checkmark" label={saveLabel} onPress={save} />
         </View>
-      </Surface>
-
-      {tabletWorkspace || editing ? <View style={{ gap: spacing.md }}>
-        {tabletWorkspace ? <Button
-          icon="checkmark"
-          label={editing
-            ? copy('บันทึกบทบาท', 'Save role')
-            : copy('เพิ่มบทบาท', 'Add role')}
-          onPress={save}
-          loading={saving}
-        /> : null}
-        {deleteActions}
-      </View> : null}
+      ) : nameAction}
+      contentMaxWidth={tablet ? 1180 : undefined}
+      footer={!tablet && !confirmDelete ? <SaveDock label={saveLabel} onPress={save} loading={saving} /> : undefined}
+    >
+      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete action')} detail={error} tone="danger" /> : null}
+      {!editing && !tablet ? (
+        <FormCard title={copy('ชื่อบทบาท', 'Role name')}>
+          <FormBody>
+            <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('เช่น หัวหน้ากะ', 'e.g. Shift lead')} icon="key-outline" autoCapitalize="words" />
+          </FormBody>
+        </FormCard>
+      ) : null}
+      {tablet ? (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
+          <View style={{ width: 340, gap: spacing.md }}>
+            <FormCard>
+              <View style={{ alignItems: 'center', gap: 6, padding: 16 }}>
+                <View style={{ width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
+                  <AppIcon name="key-outline" size={26} color={palette.primaryInk} />
+                </View>
+                {!editing ? <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('ชื่อบทบาท', 'Role name')} autoCapitalize="words" grow /> : <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong }}>{displayRoleName}</Text>}
+              </View>
+              <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>{figures}</View>
+            </FormCard>
+            {editing && holderCount ? <Note icon="alert-circle-outline" tone="warning" text={copy(`สิทธิ์ที่ปิดตรงนี้จะหายจากทั้ง ${holderCount} คนที่ถือบทบาทนี้ทันทีที่บันทึก เว้นแต่คนนั้นตั้ง "กำหนดเอง" ไว้`, `Anything switched off here disappears for all ${holderCount} people with this role as soon as you save, unless they have custom permissions`)} /> : null}
+            {deleteBlock}
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>{groups}</View>
+        </View>
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          {figures}
+          {editing && holderCount ? <Note icon="alert-circle-outline" tone="warning" text={copy(`สิทธิ์ที่ปิดตรงนี้จะหายจากทั้ง ${holderCount} คนที่ถือบทบาทนี้ทันทีที่บันทึก`, `Anything switched off here disappears for all ${holderCount} people with this role as soon as you save`)} /> : null}
+          {groups}
+          <View style={{ paddingTop: spacing.sm }}>{deleteBlock}</View>
+        </View>
+      )}
     </AppScreen>
   );
 }
