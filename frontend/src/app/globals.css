@@ -1390,8 +1390,10 @@ textarea {
      ChipRow never has to know where it was placed. */
   --inv-fade: var(--inv-canvas);
   --inv-shadow: 0 1px 2px rgba(15, 23, 43, 0.06);
-  --inv-radius: 6px;
-  --inv-radius-lg: 12px;
+  /* 12px to match the expenses page's cards and controls; grouped form cards
+     stay one step rounder so they still read as the container. */
+  --inv-radius: 12px;
+  --inv-radius-lg: 16px;
   /* Tokens only — no paint. The sheet portal carries this attribute so its
      children can resolve the variables, and a background here would turn that
      full-screen wrapper into an opaque wall over the page it is meant to dim.
