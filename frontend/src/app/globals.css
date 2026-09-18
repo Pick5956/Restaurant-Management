@@ -1345,9 +1345,39 @@ textarea {
     transform: scale(1);
   }
 }
+/* Closing plays the opening backwards, a little quicker and without the
+   overshoot — the dialog shrinks back and the dim lifts. Clicks are off while
+   it goes so a second tap cannot answer twice. */
+.warm-dialog-backdrop.is-closing {
+  pointer-events: none;
+  animation: warm-dialog-fade-out 0.2s ease-in both;
+}
+.warm-dialog-backdrop.is-closing .warm-dialog {
+  animation: warm-dialog-pop-out 0.2s ease-in both;
+}
+@keyframes warm-dialog-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes warm-dialog-pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .warm-dialog-backdrop,
-  .warm-dialog {
+  .warm-dialog,
+  .warm-dialog-backdrop.is-closing,
+  .warm-dialog-backdrop.is-closing .warm-dialog {
     animation-duration: 0.01ms;
   }
 }

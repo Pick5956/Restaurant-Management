@@ -603,7 +603,10 @@ export function NativeSelect<T extends string | number>({
  * caller reads `if (!(await ask(...))) return;` — render `dialog` once.
  */
 export function useWarmConfirm() {
+  // The request stays after it is answered and only `open` goes false, so the
+  // dialog keeps its words while it animates out instead of emptying first.
   const [request, setRequest] = useState<{
+    open: boolean;
     title: string;
     description: string;
     confirmLabel: string;
@@ -613,18 +616,19 @@ export function useWarmConfirm() {
 
   const ask = useCallback(
     (options: { title: string; description: string; confirmLabel: string; cancelLabel: string }) =>
-      new Promise<boolean>((resolve) => setRequest({ ...options, resolve })),
+      new Promise<boolean>((resolve) => setRequest({ ...options, open: true, resolve })),
     [],
   );
 
   const answer = (value: boolean) => {
-    request?.resolve(value);
-    setRequest(null);
+    if (!request?.open) return;
+    request.resolve(value);
+    setRequest({ ...request, open: false });
   };
 
   const dialog = (
     <WarmConfirmDialog
-      open={request !== null}
+      open={request?.open ?? false}
       title={request?.title ?? ""}
       description={request?.description ?? ""}
       confirmLabel={request?.confirmLabel ?? ""}

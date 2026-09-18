@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TriangleAlert } from "lucide-react";
 
@@ -22,6 +22,9 @@ import { TriangleAlert } from "lucide-react";
 //     focused turns a reflexive Enter into a deleted conversation.
 //   * Tab is trapped. Without it, Tab walks into the page behind the backdrop,
 //     where a screen-reader user cannot tell they have left the question.
+
+/** Matches the warm-dialog-*-out keyframes in globals.css. */
+const EXIT_MS = 200;
 
 type Props = {
   open: boolean;
@@ -69,6 +72,24 @@ export default function WarmConfirmDialog({
   // top of the page.
   const openerRef = useRef<HTMLElement | null>(null);
   const slotRef = useRef<HTMLDivElement | null>(null);
+
+  // The dialog used to vanish the frame `open` went false — it popped in and
+  // simply disappeared. It now stays mounted for the length of the exit
+  // animation. Derived during render rather than in an effect, so the closing
+  // frame is the very next paint; the timer (not animationend) ends it, so
+  // reduced-motion, where the animation is all but zero, cannot strand an
+  // invisible backdrop over the page.
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [closing, setClosing] = useState(false);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setClosing(!open);
+  }
+  useEffect(() => {
+    if (!closing) return;
+    const timer = window.setTimeout(() => setClosing(false), EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [closing]);
 
 
   const focusables = useCallback(() => {
@@ -131,16 +152,16 @@ export default function WarmConfirmDialog({
   // No DOM to portal into while the server renders. Nothing is lost by
   // returning null there: the dialog is always closed on first paint, so the
   // server and the client agree.
-  if (!open || typeof document === "undefined") return null;
+  if ((!open && !closing) || typeof document === "undefined") return null;
 
   return createPortal(
     <div
-      className="warm-dialog-backdrop"
+      className={`warm-dialog-backdrop${closing ? " is-closing" : ""}`}
       // Clicking away from a destructive question means "no". Guarded on the
       // target so a click that starts inside the dialog and drifts onto the
       // backdrop does not count as a dismissal.
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (!closing && event.target === event.currentTarget) onCancel();
       }}
     >
       <div
