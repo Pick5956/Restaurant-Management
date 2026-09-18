@@ -170,7 +170,7 @@ export default function IngredientDetailScreen() {
           <>
             <Card style={{ padding: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                <Text style={{ fontSize: 40, fontWeight: '700', lineHeight: 48, color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'] }}>{fmt(item.stock, locale)}</Text>
+                <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 28, color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'] }}>{fmt(item.stock, locale)}</Text>
                 <Text style={{ fontSize: 15, color: palette.muted }}>{item.unit}</Text>
                 <View style={{ marginLeft: 'auto' }}><StatusPill status={status} language={language} /></View>
               </View>

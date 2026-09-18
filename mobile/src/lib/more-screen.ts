@@ -17,15 +17,13 @@ export const MORE_GROUPS: { key: MoreGroupKey; itemKeys: string[] }[] = [
   { key: 'team', itemKeys: ['reports', 'ai', 'settings'] },
 ];
 
-export const MORE_DETAILS: Record<string, { th: string; en: string }> = {
-  menu: { th: 'ราคา สูตร เปิด-ปิดขาย', en: 'Prices, recipes, availability' },
-  inventory: { th: 'สต๊อก ของใกล้หมด รับของเข้า', en: 'Stock, low items, deliveries' },
-  'tables-manage': { th: 'โต๊ะ โซน และป้าย', en: 'Tables, zones and tags' },
-  expenses: { th: 'รายจ่ายรายวันและรายเดือน', en: 'Daily and monthly spending' },
-  staff: { th: 'สมาชิก บทบาท คำเชิญ', en: 'Members, roles, invitations' },
-  reports: { th: 'ยอดขาย กำไร เมนูขายดี', en: 'Sales, profit, best sellers' },
-  ai: { th: 'ถามเรื่องร้าน หรือสั่งแก้ข้อมูล', en: 'Ask about the shop or make changes' },
-  settings: { th: 'บัญชี · ร้าน · ทีมและสิทธิ์ · เครื่องพิมพ์', en: 'Account · shop · team · printer' },
+/**
+ * What a row is called on this screen. The navigation's own label is what fits
+ * a rail and a tab bar; here the row is one of four things a person came to
+ * manage, so it says which job it is. Only the ones that differ are listed.
+ */
+export const MORE_TITLES: Record<string, { th: string; en: string }> = {
+  menu: { th: 'จัดการเมนูอาหาร', en: 'Manage menu' },
 };
 
 /** Groups with only the items this person may open, empty groups dropped. */

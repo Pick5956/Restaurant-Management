@@ -1,16 +1,17 @@
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Image, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Image, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
 import { listMenuItems } from '@/src/api/menu';
 import { deleteOrderItem, getBill, payOrder, sendOrderToKitchen, updateOrderItemStatus } from '@/src/api/order';
+import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { GlassMorphMenu } from '@/src/components/ai/chrome';
 import { MenuImage } from '@/src/components/menu-image';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
-import { ActionDock, Button, EmptyState, Feedback, RadioGroup, SectionHeader, StatusBadge, TextField } from '@/src/components/ui';
+import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, RadioGroup, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
 import {
   currentRoundPresentation,
@@ -23,6 +24,7 @@ import {
   billPaymentStage,
   canTakeOrderPayment,
   paymentReceivedAmount,
+  SERVED_REMOVAL_REASONS,
   undeliveredOrderItems,
   validateKitchenCancelReason,
 } from '@/src/lib/order-workflow';
@@ -89,8 +91,9 @@ export default function BillScreen() {
   // made. Those are removed with a written reason rather than deleted, so they
   // get a deliberate control rather than the swipe an unsent line answers to.
   const [editingServed, setEditingServed] = useState(false);
+  // The line waiting on a reason. Picking one from the sheet removes it; there
+  // is no reason to type any more.
   const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -233,7 +236,6 @@ export default function BillScreen() {
     setOpenRowId(null);
     if (item.status !== 'pending') {
       setCancelTarget(item);
-      setCancelReason('');
       return;
     }
     void deletePendingItem(item);
@@ -257,23 +259,21 @@ export default function BillScreen() {
     }
   }
 
-  async function cancelBillItem() {
-    if (!cancelTarget || !canEditBill || saving) return;
-    const validation = validateKitchenCancelReason(cancelReason);
-    if (validation.error === 'required') {
-      actionFailed(copy('กรอกเหตุผลที่นำรายการออกจากบิล', 'Enter a reason for removing the item from the bill.'));
-      return;
-    }
-    if (validation.error === 'too_long') {
-      actionFailed(copy('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'The reason must be 500 characters or fewer.'));
+  async function cancelBillItem(reason: string) {
+    const item = cancelTarget;
+    if (!item || !canEditBill || saving) return;
+    // The presets are known good; this stays as the guard between the list and
+    // the API, which will not take an empty or overlong reason.
+    const validation = validateKitchenCancelReason(reason);
+    if (validation.error) {
+      actionFailed(copy('เลือกเหตุผลที่นำรายการออกจากบิล', 'Choose a reason for removing the item from the bill.'));
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await updateOrderItemStatus(orderId, cancelTarget.ID, 'cancelled', validation.reason);
+      await updateOrderItemStatus(orderId, item.ID, 'cancelled', validation.reason);
       setCancelTarget(null);
-      setCancelReason('');
       await refreshBillAfterMutation(copy('นำรายการออกจากบิลแล้ว', 'Item removed from the bill'));
     } catch (err) {
       actionFailed(err instanceof Error ? err.message : copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
@@ -305,7 +305,6 @@ export default function BillScreen() {
       // still offers a Pay button. The receipt stays reachable from the order
       // archive, the same place the web sends people for a reprint.
       setCancelTarget(null);
-      setCancelReason('');
       showToast({ title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
       resetRouteStack(router, billExitRoute(canTakeOrder, canViewOrders));
     } catch (err) {
@@ -580,73 +579,56 @@ export default function BillScreen() {
                     <Text selectable style={[typeScale.number, { fontSize: 17, fontWeight: '600', lineHeight: 23 }]}>{money(item.subtotal, language)}</Text>
                     {/* The count, where the status chip used to be. `x2` in a
                         disc says quantity without spending a line on the word,
-                        which is what `จำนวน 2` under the name was doing. */}
-                    <View
-                      style={{
-                        minWidth: 32,
-                        height: 32,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: radius.full,
-                        backgroundColor: palette.neutralSoft,
-                        paddingHorizontal: 7,
-                      }}
-                    >
-                      <Text
-                        selectable
-                        style={{ color: palette.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                        which is what `จำนวน 2` under the name was doing.
+                        While served lines are being edited this same disc is
+                        the control that takes one off: one slot, no reflow, and
+                        no full-width button parked under every dish. */}
+                    {editingServed && canEditBill && item.status !== 'pending' ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={copy(`นำ ${item.menu_name} ออกจากบิล`, `Remove ${item.menu_name} from the bill`)}
+                        disabled={saving}
+                        hitSlop={8}
+                        onPress={() => setCancelTarget(item)}
+                        style={({ pressed }) => ({
+                          width: 36,
+                          height: 36,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: radius.full,
+                          borderWidth: 1,
+                          borderColor: '#FECACA',
+                          backgroundColor: palette.dangerSoft,
+                          opacity: saving ? 0.5 : pressed ? 0.7 : 1,
+                        })}
                       >
-                        {`x${item.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}`}
-                      </Text>
-                    </View>
+                        <AppIcon color={palette.danger} name="trash-outline" size={18} />
+                      </Pressable>
+                    ) : (
+                      <View
+                        style={{
+                          minWidth: 32,
+                          height: 32,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: radius.full,
+                          backgroundColor: palette.neutralSoft,
+                          paddingHorizontal: 7,
+                        }}
+                      >
+                        <Text
+                          selectable
+                          style={{ color: palette.text, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                        >
+                          {`x${item.quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}`}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>
             </SwipeToDeleteRow>
             </View>
-            {editingServed && canEditBill && item.status !== 'pending' && cancelTarget?.ID !== item.ID ? (
-              <View style={{ paddingBottom: spacing.sm }}>
-                <Button
-                  compact
-                  icon="trash-outline"
-                  variant="secondary"
-                  label={copy('นำออกจากบิล', 'Remove from bill')}
-                  onPress={() => {
-                    setCancelTarget(item);
-                    setCancelReason('');
-                  }}
-                />
-              </View>
-            ) : null}
-            {cancelTarget?.ID === item.ID ? (
-              <View style={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
-                <TextField
-                  label={copy('เหตุผลที่นำออกจากบิล', 'Reason for removing this item')}
-                  value={cancelReason}
-                  onChangeText={setCancelReason}
-                  multiline
-                />
-                <View style={{ flexDirection: width < 460 ? 'column' : 'row', gap: spacing.sm }}>
-                  <Button
-                    variant="secondary"
-                    label={copy('เก็บรายการไว้', 'Keep item')}
-                    onPress={() => {
-                      setCancelTarget(null);
-                      setCancelReason('');
-                    }}
-                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                  />
-                  <Button
-                    variant="danger"
-                    label={copy('ยืนยันนำออก', 'Remove item')}
-                    onPress={cancelBillItem}
-                    loading={saving}
-                    disabled={!cancelReason.trim()}
-                    style={width < 460 ? { width: '100%' } : { flex: 1 }}
-                  />
-                </View>
-              </View>
-            ) : null}
           </View>
         );
       })}
@@ -750,7 +732,7 @@ export default function BillScreen() {
       <SectionHeader title={copy('สถานะการชำระเงิน', 'Payment status')} />
       <View style={{ gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: palette.border, paddingBottom: spacing.lg }}>
         <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดคงเหลือ', 'Amount due')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 32, lineHeight: 40 }]}>{money(bill.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, lineHeight: 28, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
       </View>
       <Feedback
         title={copy('ดูบิลได้ แต่รับชำระเงินไม่ได้', 'You can view this bill but cannot take payment')}
@@ -774,7 +756,6 @@ export default function BillScreen() {
       // step forward. The bill reloads on focus when it comes back.
       onPress: () => {
         setCancelTarget(null);
-        setCancelReason('');
         router.push({ pathname: '/order/served' as never, params: { id: String(orderId) } } as never);
       },
     } : null,
@@ -788,7 +769,6 @@ export default function BillScreen() {
       onPress: () => {
         setEditingServed((value) => !value);
         setCancelTarget(null);
-        setCancelReason('');
       },
     } : null,
     printerSupported ? {
@@ -815,7 +795,7 @@ export default function BillScreen() {
     <View style={{ gap: spacing.md, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md }}>
         <Text selectable style={[typeScale.body, { color: palette.text, fontWeight: '400' }]}>{copy('รวมทั้งหมด', 'Total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '700' }]}>{money(bill.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
       </View>
       {footerPrimaryAction}
     </View>
@@ -903,6 +883,23 @@ export default function BillScreen() {
           {paymentPanel}
         </View>
       </View>
+
+      {/* Taking a made dish off the bill asks one question, and the answer is
+          the whole action: the reason goes on the day's cancellation record,
+          and picking it removes the line. */}
+      <ChoiceSheet
+        open={cancelTarget !== null}
+        busy={saving}
+        title={copy('นำออกจากบิลเพราะอะไร', 'Why is this coming off the bill?')}
+        detail={cancelTarget?.menu_name}
+        options={SERVED_REMOVAL_REASONS.map((reason) => ({
+          label: copy(reason.th, reason.en),
+          value: copy(reason.th, reason.en),
+        }))}
+        cancelLabel={copy('เก็บรายการไว้', 'Keep item')}
+        onChoose={(reason) => { void cancelBillItem(reason); }}
+        onClose={() => setCancelTarget(null)}
+      />
     </AppScreen>
   );
 }

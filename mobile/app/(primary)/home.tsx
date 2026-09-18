@@ -676,7 +676,7 @@ export default function HomeScreen() {
       title={copy('ภาพรวมร้าน', 'Restaurant overview')}
       titleContent={tabletWorkspace ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.lg }}>
-          <Text accessibilityRole="header" style={[typeScale.hero, { fontWeight: '600' }]}>{copy('ภาพรวมร้าน', 'Restaurant overview')}</Text>
+          <Text accessibilityRole="header" style={typeScale.hero}>{copy('ภาพรวมร้าน', 'Restaurant overview')}</Text>
           <DayStrip compact days={days} language={language} onSelect={selectDate} />
         </View>
       ) : undefined}

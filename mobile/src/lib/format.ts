@@ -6,6 +6,22 @@ export function money(value: number | null | undefined, language: DisplayLanguag
   return `฿${Number(value || 0).toLocaleString(language === 'th' ? 'th-TH' : 'en-US', { maximumFractionDigits: 0 })}`;
 }
 
+/**
+ * A phone number the way it is written on a Thai card: 080-000-0000, or
+ * 02-123-4567 for a nine-digit line. A +66 prefix becomes the leading 0.
+ * Anything else - a foreign number, a test string of twelve digits - is
+ * shown as it was typed rather than cut into groups that mean nothing.
+ */
+export function formatPhone(value: string | null | undefined): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  const national = digits.length === 11 && digits.startsWith('66') ? `0${digits.slice(2)}` : digits;
+  if (national.length === 10) return `${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`;
+  if (national.length === 9) return `${national.slice(0, 2)}-${national.slice(2, 5)}-${national.slice(5)}`;
+  return raw;
+}
+
 export function tableStatusLabel(status: TableStatus, language: DisplayLanguage = 'th') {
   const labels: Record<TableStatus, Record<DisplayLanguage, string>> = {
     free: { th: 'ว่าง', en: 'Available' },

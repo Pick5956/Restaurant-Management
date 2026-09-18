@@ -672,7 +672,7 @@ export function SettingsSheet({
               over the sidebar, and the subject's name sits over its pane. */}
           {wide ? (
             <>
-              <Text numberOfLines={1} style={{ width: SIDEBAR - 18, paddingLeft: 6, fontSize: 20, fontWeight: '700', color: ai.ink }}>{t('การตั้งค่า', 'Settings')}</Text>
+              <Text numberOfLines={1} style={{ width: SIDEBAR - 18, paddingLeft: 6, fontSize: 20, fontWeight: '600', color: ai.ink }}>{t('การตั้งค่า', 'Settings')}</Text>
               <Text numberOfLines={1} style={{ flex: 1, paddingLeft: 6, fontSize: 18, fontWeight: '700', color: ai.ink }}>{page === 'root' ? '' : heading}</Text>
               <GlassButton icon="close" label={t('ปิด', 'Close')} onPress={onClose} size={44} />
             </>

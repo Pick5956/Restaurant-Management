@@ -81,7 +81,7 @@ export default function AccountSettingsScreen() {
       <View style={{ gap: spacing.lg }}>
         <View style={{ alignItems: 'center', gap: 6, paddingTop: 4 }}>
           <LinearGradient colors={[palette.primary, '#EF7A35']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 26, fontWeight: '700', color: '#fff' }}>{memberInitials(name)}</Text>
+            <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff' }}>{memberInitials(name)}</Text>
           </LinearGradient>
           <View style={{ alignItems: 'center' }}>
             <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '700', color: palette.textStrong }}>{name}</Text>

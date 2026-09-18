@@ -6,7 +6,8 @@ import { register } from '@/src/api/auth';
 import { AppIcon } from '@/src/components/app-icon';
 import { AuthScreen } from '@/src/components/auth-screen';
 import { AppText as Text } from '@/src/components/app-text';
-import { Button, Feedback, TextField } from '@/src/components/ui';
+import { Button, EmptyState, TextField } from '@/src/components/ui';
+import { authFailureToast } from '@/src/lib/auth-error';
 import {
   validateRegistrationInput,
   type RegistrationValidation,
@@ -19,17 +20,10 @@ import {
 import { invitationTokenFrom } from '@/src/lib/staff-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { palette, radius, spacing } from '@/src/theme';
 
 type RegistrationError = Exclude<RegistrationValidation, { valid: true }>['error'];
-
-interface RegistrationFeedback {
-  title: string;
-  detail: string;
-  tone: 'danger' | 'warning';
-  field?: 'confirmPassword';
-  validationError?: RegistrationError;
-}
 
 type Copy = (thai: string, english: string) => string;
 
@@ -58,21 +52,13 @@ function validationMessage(error: RegistrationError, copy: Copy): string {
   );
 }
 
-function failureMessage(error: unknown, copy: Copy): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : copy(
-      'สร้างบัญชีไม่สำเร็จ กรุณาลองอีกครั้ง',
-      'Could not create your account. Please try again.',
-    );
-}
-
 export default function RegisterScreen() {
   const { width } = useWindowDimensions();
   const { inviteToken: rawInviteToken } = useLocalSearchParams<{ inviteToken?: string }>();
   const inviteToken = invitationTokenFrom(rawInviteToken || '');
   const { signIn } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
+  const { showToast } = useToast();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -81,7 +67,9 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [feedback, setFeedback] = useState<RegistrationFeedback | null>(null);
+  // Only the field error stays on the page - it belongs to the box it is
+  // under. Everything else the form has to say is a toast (16 ก.ย. 2569).
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [accountCreated, setAccountCreated] = useState(false);
   const [optionalOpen, setOptionalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -92,16 +80,12 @@ export default function RegisterScreen() {
 
   function updatePassword(value: string) {
     setPassword(value);
-    if (feedback?.field === 'confirmPassword') {
-      setFeedback(null);
-    }
+    setConfirmError(null);
   }
 
   function updateConfirmPassword(value: string) {
     setConfirmPassword(value);
-    if (feedback?.field === 'confirmPassword') {
-      setFeedback(null);
-    }
+    setConfirmError(null);
   }
 
   async function submit() {
@@ -113,12 +97,15 @@ export default function RegisterScreen() {
       confirmPassword,
     });
     if (!validation.valid) {
-      setFeedback({
+      const detail = validationMessage(validation.error, copy);
+      if (validation.error === 'password_mismatch') {
+        setConfirmError(detail);
+        return;
+      }
+      showToast({
+        tone: 'error',
         title: copy('ตรวจสอบข้อมูลอีกครั้ง', 'Check your information'),
-        detail: validationMessage(validation.error, copy),
-        tone: 'danger',
-        field: validation.error === 'password_mismatch' ? 'confirmPassword' : undefined,
-        validationError: validation.error,
+        message: detail,
       });
       return;
     }
@@ -133,7 +120,7 @@ export default function RegisterScreen() {
     };
 
     setSubmitting(true);
-    setFeedback(null);
+    setConfirmError(null);
     const result = await registerAndSignIn(registrationInput, {
       registerAccount: register,
       signIn,
@@ -149,31 +136,18 @@ export default function RegisterScreen() {
     }
 
     if (result.status === 'register_failed') {
-      setFeedback({
-        title: copy('สร้างบัญชีไม่ได้', 'Unable to create account'),
-        detail: failureMessage(result.error, copy),
-        tone: 'danger',
+      showToast({
+        tone: 'error',
+        ...authFailureToast(result.error instanceof Error ? result.error.message : '', 'register', language),
       });
       return;
     }
 
+    // The account exists; only the automatic sign-in did not happen, so the
+    // screen becomes the one thing left to do and says why.
     setAccountCreated(true);
-    setFeedback({
-      title: copy('สร้างบัญชีแล้ว', 'Account created'),
-      detail: copy(
-        'ระบบเข้าสู่ระบบอัตโนมัติไม่ได้ บัญชีนี้พร้อมใช้งานแล้ว กรุณาเข้าสู่ระบบด้วยอีเมลและรหัสผ่านเดิม โดยไม่ต้องสมัครซ้ำ',
-        'Automatic sign-in was unsuccessful, but your account is ready. Sign in with the same email and password; there is no need to register again.',
-      ),
-      tone: 'warning',
-    });
+    showToast({ title: copy('สร้างบัญชีแล้ว', 'Account created') });
   }
-
-  const feedbackTitle = feedback?.validationError
-    ? copy('ตรวจสอบข้อมูลอีกครั้ง', 'Check your information')
-    : feedback?.title;
-  const feedbackDetail = feedback?.validationError
-    ? validationMessage(feedback.validationError, copy)
-    : feedback?.detail;
 
   return (
     <AuthScreen
@@ -187,16 +161,21 @@ export default function RegisterScreen() {
       showBack
     >
       <View style={{ gap: spacing.xl }}>
-        {feedback && !feedback.field ? (
-          <Feedback title={feedbackTitle || ''} detail={feedbackDetail} tone={feedback.tone} />
-        ) : null}
-
         {accountCreated ? (
-          <Button
-            icon="log-in-outline"
-            label={copy('ไปหน้าเข้าสู่ระบบ', 'Go to sign in')}
-            onPress={goToLogin}
-          />
+          <>
+            <EmptyState
+              title={copy('สร้างบัญชีแล้ว', 'Account created')}
+              detail={copy(
+                'เข้าสู่ระบบด้วยอีเมลและรหัสผ่านเดิมได้เลย ไม่ต้องสมัครซ้ำ',
+                'Sign in with the same email and password; there is no need to register again.',
+              )}
+            />
+            <Button
+              icon="log-in-outline"
+              label={copy('ไปหน้าเข้าสู่ระบบ', 'Go to sign in')}
+              onPress={goToLogin}
+            />
+          </>
         ) : (
           <>
             <View style={{ flexDirection: width >= 360 ? 'row' : 'column', gap: spacing.md }}>
@@ -254,7 +233,7 @@ export default function RegisterScreen() {
               secureTextEntry
               revealLabel={copy('แสดง', 'Show')}
               hideLabel={copy('ซ่อน', 'Hide')}
-              error={feedback?.field === 'confirmPassword' ? feedbackDetail : null}
+              error={confirmError}
             />
 
             <Pressable

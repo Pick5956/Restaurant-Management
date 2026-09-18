@@ -17,6 +17,7 @@ import {
   Surface,
 } from '@/src/components/ui';
 import { loadFilteredReplacement } from '@/src/lib/filter-reload';
+import { formatPhone } from '@/src/lib/format';
 import { can } from '@/src/lib/rbac';
 import { createRequestGeneration } from '@/src/lib/request-generation';
 import { canViewReservationHistory } from '@/src/lib/table-workflow';
@@ -42,6 +43,16 @@ function formatDateTime(value: string | null | undefined, language: 'th' | 'en')
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/** "T4 ริมน้ำ", or "T4 ไม่มีโซน": the table and its zone in the same voice; a missing zone is said, never left blank. */
+function tableTitle(reservation: Reservation, copy: (th: string, en: string) => string): string {
+  const label = reservation.table_label
+    || reservation.table?.display_label
+    || reservation.table?.table_number
+    || copy('ไม่ระบุโต๊ะ', 'Unknown table');
+  const zone = reservation.table?.table_zone?.name?.trim() || reservation.table?.zone?.trim() || copy('ไม่มีโซน', 'No zone');
+  return `${label} ${zone}`;
 }
 
 export default function ReservationsScreen() {
@@ -192,22 +203,20 @@ export default function ReservationsScreen() {
                       <AppIcon color={palette.text} name="calendar-outline" size={20} />
                     </View>
                     <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
-                      <Text selectable style={typeScale.cardTitle}>
-                        {reservation.table_label
-                          || reservation.table?.display_label
-                          || reservation.table?.table_number
-                          || copy('ไม่ระบุโต๊ะ', 'Unknown table')}
-                      </Text>
-                      <Text selectable style={[typeScale.body, { color: palette.text }]}>
-                        {reservation.name || copy('ไม่ระบุชื่อ', 'No guest name')}
-                      </Text>
+                      <Text selectable style={typeScale.cardTitle}>{tableTitle(reservation, copy)}</Text>
+                      {/* Name, phone and guest count on one line, as on the phone list. */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
+                        <Text numberOfLines={1} selectable style={[typeScale.body, { flexShrink: 1, color: palette.text }]}>
+                          {reservation.name || copy('ไม่ระบุชื่อ', 'No guest name')}
+                        </Text>
+                        <Text numberOfLines={1} selectable style={[typeScale.body, { flexShrink: 0, color: palette.muted, fontVariant: ['tabular-nums'] }]}>
+                          {`, ${formatPhone(reservation.phone) || '−'}`}
+                          {reservation.guest_count ? `, ${copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`)}` : ''}
+                        </Text>
+                      </View>
                     </View>
                     <StatusBadge label={statusCopy[reservation.status]} tone={statusTone[reservation.status]} />
                   </View>
-                  <Text selectable style={[typeScale.caption, { color: palette.muted }]}>
-                    {copy('เบอร์โทร', 'Phone')}: {reservation.phone || '−'}
-                    {reservation.guest_count ? ` · ${copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`)}` : ''}
-                  </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg }}>
                     {/* Only booked-for-later reservations carry a time. A hold
                         has none by design, and printing an empty field for it
@@ -278,29 +287,39 @@ export default function ReservationsScreen() {
                 <EmptyState title={copy('กำลังโหลดประวัติการจอง', 'Loading reservation history')} />
               </View>
             ) : reservations.length ? reservations.map((reservation) => {
-              const tableLabel = reservation.table_label
-                || reservation.table?.display_label
-                || reservation.table?.table_number
-                || copy('ไม่ระบุโต๊ะ', 'Unknown table');
+              const tableLabel = tableTitle(reservation, copy);
               const guestName = reservation.name || copy('ไม่ระบุชื่อ', 'No guest name');
-              const detail = [
-                `${guestName} · ${copy('เบอร์โทร', 'Phone')}: ${reservation.phone || '−'}${reservation.guest_count ? ` · ${copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`)}` : ''}`,
-                // Only a scheduled booking has a time to arrive at; a hold does not.
-                ...(reservation.reserved_for
-                  ? [`${copy('นัดเวลา', 'Arriving')}: ${formatDateTime(reservation.reserved_for, language)}`]
-                  : []),
-                `${copy('จองเมื่อ', 'Reserved at')}: ${formatDateTime(reservation.CreatedAt, language)}`,
-                `${copy('ปิดรายการเมื่อ', 'Closed at')}: ${formatDateTime(reservation.resolved_at, language)}`,
-              ].join('\n');
+              // Two lines, each held to one: who, how to reach them and how
+              // many on the first; when the booking was made on the second.
+              // The owner's rule (16 ก.ย. 2569): name, phone and guest count
+              // share a line, and the last line is "จองเมื่อ" and nothing else.
+              // The name is the part that gives way - it shrinks to an ellipsis
+              // before the phone or the count lose a digit. The arrival and
+              // closing times stay on the tablet's wider row.
+              const phoneLine = [
+                formatPhone(reservation.phone) || '−',
+                reservation.guest_count ? copy(`${reservation.guest_count} คน`, `${reservation.guest_count} guests`) : null,
+              ].filter(Boolean).join(', ');
               const isActive = reservation.status === 'active' && canResolve;
 
               return (
                 <EdgeRow
                   key={reservation.ID}
                   title={tableLabel}
-                  detail={detail}
+                  detailContent={(
+                    <View style={{ gap: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
+                        <Text numberOfLines={1} selectable style={{ flexShrink: 1, color: palette.text, fontSize: 13, lineHeight: 18 }}>{guestName}</Text>
+                        <Text numberOfLines={1} selectable style={{ flexShrink: 0, color: palette.muted, fontSize: 13, lineHeight: 18, fontVariant: ['tabular-nums'] }}>{`, ${phoneLine}`}</Text>
+                      </View>
+                      <Text numberOfLines={1} selectable style={{ color: palette.muted, fontSize: 13, lineHeight: 18, fontVariant: ['tabular-nums'] }}>
+                        {copy('จองเมื่อ', 'Reserved at')}: {formatDateTime(reservation.CreatedAt, language)}
+                      </Text>
+                    </View>
+                  )}
                   icon="calendar-outline"
-                  style={{ minHeight: 104 }}
+                  // No fixed height: two lines of detail fit the row's own 72,
+                  // and the stacked buttons below grow it when they are there.
                   // Stacked, not side by side. `EdgeRow`'s trailing slot has no
                   // flex, so it never shrinks and the title/detail column absorbs
                   // every pixel it takes. Two Thai labels in a row came to about

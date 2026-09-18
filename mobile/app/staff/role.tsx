@@ -286,14 +286,14 @@ export default function RoleEditorScreen() {
     <View style={{ flexDirection: 'row', gap: 8 }}>
       <View accessible accessibilityLabel={th ? `เปิด ${permissions.length} จาก ${allPermissions.length} สิทธิ์` : `${permissions.length} of ${allPermissions.length} permissions on`} style={{ flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
         <Text style={{ fontSize: 12, color: palette.placeholder }}>{th ? 'สิทธิ์ที่เปิด' : 'Permissions on'}</Text>
-        <Text style={{ fontSize: 21, lineHeight: 27, fontWeight: '700', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>
+        <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'] }}>
           {permissions.length}<Text style={{ fontSize: 12.5, fontWeight: '500', color: palette.placeholder }}>{th ? ` จาก ${allPermissions.length}` : ` of ${allPermissions.length}`}</Text>
         </Text>
       </View>
       {editing ? (
         <View accessible accessibilityLabel={th ? `${holderCount} คนถือบทบาทนี้` : `${holderCount} people hold this role`} style={{ flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E4D8CD', backgroundColor: palette.surface, paddingVertical: 7, paddingHorizontal: 12 }}>
           <Text style={{ fontSize: 12, color: palette.placeholder }}>{th ? 'คนที่ถือบทบาทนี้' : 'People with this role'}</Text>
-          <Text style={{ fontSize: 21, lineHeight: 27, fontWeight: '700', color: holderCount ? palette.textStrong : palette.warning, fontVariant: ['tabular-nums'] }}>{holderCount}</Text>
+          <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: holderCount ? palette.textStrong : palette.warning, fontVariant: ['tabular-nums'] }}>{holderCount}</Text>
         </View>
       ) : null}
     </View>
@@ -361,7 +361,7 @@ export default function RoleEditorScreen() {
                 <View style={{ width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
                   <AppIcon name="key-outline" size={26} color={palette.primaryInk} />
                 </View>
-                {!editing ? <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('ชื่อบทบาท', 'Role name')} autoCapitalize="words" grow /> : <Text style={{ fontSize: 20, fontWeight: '700', color: palette.textStrong }}>{displayRoleName}</Text>}
+                {!editing ? <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('ชื่อบทบาท', 'Role name')} autoCapitalize="words" grow /> : <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong }}>{displayRoleName}</Text>}
               </View>
               <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>{figures}</View>
             </FormCard>

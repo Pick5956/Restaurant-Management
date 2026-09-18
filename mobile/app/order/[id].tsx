@@ -390,7 +390,7 @@ export default function OrderDetailScreen() {
       <Divider />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.xs }}>
         <Text selectable style={[typeScale.body, { color: palette.muted }]}>{copy('ยอดรวมออเดอร์', 'Order total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 21 }]}>{money(order.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(order.grand_total, language)}</Text>
       </View>
     </>
   ) : null;

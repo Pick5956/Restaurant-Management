@@ -314,7 +314,10 @@ func (r *OrderRepository) ListOrders(restaurantID uint, status string, tableID u
 	ordersQuery := orderListBaseQuery(r.db, restaurantID, tableID, orderDate, paymentStatus, search).
 		Preload("Table").
 		Preload("Table.TableZone").
-		Preload("Items", func(db *gorm.DB) *gorm.DB { return db.Order("created_at asc, id asc") })
+		Preload("Items", func(db *gorm.DB) *gorm.DB { return db.Order("created_at asc, id asc") }).
+		// The archive roll shows who took the bill and how it was paid.
+		Preload("Staff", orderStaffColumns).
+		Preload("Payments", func(db *gorm.DB) *gorm.DB { return db.Order("paid_at asc, id asc") })
 	ordersQuery = applyOrderListStatus(ordersQuery, status)
 	offset := (page - 1) * limit
 	if err := ordersQuery.

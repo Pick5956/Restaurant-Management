@@ -138,7 +138,7 @@ export default function ExpenseItemScreen() {
             ) : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 30, fontWeight: '700', color: 'rgba(255,255,255,0.9)' }}>฿</Text>
+            <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>฿</Text>
             <TextInput
               accessibilityLabel={copy('จำนวนเงิน (บาท)', 'Amount (THB)')}
               autoFocus={!editing}
@@ -151,7 +151,7 @@ export default function ExpenseItemScreen() {
               placeholder="0.00"
               placeholderTextColor="rgba(255,255,255,0.45)"
               selectionColor="#fff"
-              style={{ flex: 1, fontSize: 36, lineHeight: 44, fontWeight: '700', color: '#fff', paddingVertical: 0, fontVariant: ['tabular-nums'] }}
+              style={{ flex: 1, fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff', paddingVertical: 0, fontVariant: ['tabular-nums'] }}
               value={amount}
             />
           </View>

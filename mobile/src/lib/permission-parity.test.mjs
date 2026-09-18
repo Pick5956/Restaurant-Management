@@ -263,6 +263,17 @@ test('an empty search is sent as an empty string rather than a stray filter', ()
   );
 });
 
+test('a chosen day travels as the date filter and an unchosen one sends nothing', () => {
+  assert.deepEqual(
+    orderListRequest('archive', { date: '2026-09-16', page: 1, limit: 25 }),
+    { payment_status: 'paid', search: '', date: '2026-09-16', page: 1, limit: 25 },
+  );
+  assert.deepEqual(
+    orderListRequest('archive', { date: null, page: 1, limit: 25 }),
+    { payment_status: 'paid', search: '', page: 1, limit: 25 },
+  );
+});
+
 test('no permission means no request at all', () => {
   assert.equal(orderListRequest('denied', { page: 1, limit: 25 }), null);
 });

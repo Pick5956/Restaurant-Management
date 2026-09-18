@@ -139,7 +139,7 @@ export function FloatingHeader({
           <View style={{ flex: 1, minWidth: 0 }}>
             {!centered ? (
               <>
-                <Text numberOfLines={1} style={{ fontSize: 24, fontWeight: '700', color: palette.textStrong, lineHeight: 30 }}>{title}</Text>
+                <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '600', color: palette.textStrong, lineHeight: 30 }}>{title}</Text>
                 {subtitle ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: palette.muted, marginTop: 1 }}>{subtitle}</Text> : null}
               </>
             ) : null}
@@ -300,11 +300,11 @@ export function TotalsCard({ value, needsOrder, language }: { value: number; nee
     <Card style={{ paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
       <View>
         <Text style={{ fontSize: 11.5, color: palette.muted }}>{language === 'th' ? 'มูลค่าคลังรวม' : 'Inventory value'}</Text>
-        <Text style={{ fontSize: 22, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{money(value, language)}</Text>
+        <Text style={{ fontSize: 20, fontWeight: '600', color: palette.textStrong, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{money(value, language)}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={{ fontSize: 11.5, color: palette.muted }}>{language === 'th' ? 'ต้องสั่งของ' : 'To reorder'}</Text>
-        <Text style={{ fontSize: 22, fontWeight: '600', color: palette.primaryInk, fontVariant: ['tabular-nums'], lineHeight: 28 }}>
+        <Text style={{ fontSize: 20, fontWeight: '600', color: palette.primaryInk, fontVariant: ['tabular-nums'], lineHeight: 28 }}>
           {needsOrder}
           <Text style={{ fontSize: 11.5, fontWeight: '500', color: palette.muted }}> {language === 'th' ? 'รายการ' : 'items'}</Text>
         </Text>
@@ -438,7 +438,7 @@ export function IngredientCard({
             <StatusPill status={status} language={language} />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-            <Text style={{ fontSize: 22, fontWeight: '600', color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{fmt(item.stock, locale)}</Text>
+            <Text style={{ fontSize: 20, fontWeight: '600', color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'], lineHeight: 28 }}>{fmt(item.stock, locale)}</Text>
             <Text style={{ fontSize: 12, color: palette.muted }}>{item.unit}</Text>
             <Text style={{ marginLeft: 'auto', fontSize: 12, color: palette.muted, fontVariant: ['tabular-nums'] }}>฿{fmt(item.cost_per_unit, locale)} / {item.unit}</Text>
           </View>
@@ -557,7 +557,7 @@ export function Stepper({ value, step, unit, onChange }: { value: number; step: 
           keyboardType="decimal-pad"
           selectTextOnFocus
           accessibilityLabel={unit}
-          style={{ minWidth: 72, textAlign: 'center', fontSize: 30, fontWeight: '700', color: palette.textStrong, paddingVertical: 0, fontVariant: ['tabular-nums'] }}
+          style={{ minWidth: 72, textAlign: 'center', fontSize: 20, fontWeight: '600', color: palette.textStrong, paddingVertical: 0, fontVariant: ['tabular-nums'] }}
         />
         <Text style={{ fontSize: 14, color: palette.muted }}>{unit}</Text>
       </View>

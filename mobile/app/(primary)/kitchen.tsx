@@ -13,7 +13,6 @@ import {
   KitchenSkeleton,
   KitchenTile,
   LANE_WIDTH,
-  LiveChip,
   SortSwitch,
   Ticket,
   TicketButton,
@@ -640,7 +639,7 @@ export default function KitchenScreen() {
   // from their chip. The queue still refreshes live and every minute.
   const tabletHeading = (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-      <Text accessibilityRole="header" style={[typeScale.hero, { fontWeight: '600', marginRight: 6 }]}>{copy('ครัว', 'Kitchen')}</Text>
+      <Text accessibilityRole="header" style={[typeScale.hero, { marginRight: 6 }]}>{copy('ครัว', 'Kitchen')}</Text>
       <CountChip icon="flame-outline" label={copy('กำลังทำ', 'Cooking')} value={count(stats.cookingRounds)} suffix={copy('รอบ', 'rounds')} tone="brand" />
       <CountChip icon="timer-outline" label={copy('เกินเวลา', 'Overdue')} value={count(stats.overdueRounds)} tone="danger" />
       <CountChip
@@ -673,12 +672,12 @@ export default function KitchenScreen() {
       title={copy('ครัว', 'Kitchen')}
       titleContent={isTablet ? tabletHeading : undefined}
       topLevel
-      action={isTablet ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {cookingTickets.length > 1 ? <SortSwitch sort={sortMode} onSort={setSortMode} language={language} /> : null}
-          <LiveChip live={realtimeStatus !== 'offline'} language={language} />
-        </View>
-      ) : <LiveChip live={realtimeStatus !== 'offline'} language={language} />}
+      // No live-connection chip. It was green for the whole shift and said
+      // nothing anyone acts on; when the feed does drop, the warning above the
+      // board says so and what to do about it (16 ก.ย. 2569).
+      action={isTablet && cookingTickets.length > 1
+        ? <SortSwitch sort={sortMode} onSort={setSortMode} language={language} />
+        : undefined}
       refreshControl={isTablet ? undefined : <AppRefreshControl onRefresh={() => load()} />}
       scroll={!isTablet}
       contentMaxWidth={isTablet ? 4000 : 1320}

@@ -1059,10 +1059,11 @@ function ScreenHeading({
         {/* No gap: the two lines belong to each other, and the leading built
             into each line already separates them. */}
         <View style={{ minWidth: 0, flex: 1 }}>
-          {/* 600, not the scale's 700. A screen title is already the largest
-              thing on the screen; bold on top of that made it the only thing. */}
+          {/* typeScale.hero is 20/600 and it is the app's ceiling: a screen
+              title is already the largest thing on its page, and nothing else
+              in the app may be drawn larger or heavier than this. */}
           {titleContent ?? (
-            <Text accessibilityRole="header" selectable style={[typeScale.hero, { fontWeight: '600' }, centerTitle ? { textAlign: 'center' } : null]}>{title}</Text>
+            <Text accessibilityRole="header" selectable style={[typeScale.hero, centerTitle ? { textAlign: 'center' } : null]}>{title}</Text>
           )}
           {subtitle ? <Text selectable style={[typeScale.body, { color: palette.muted }, centerTitle ? { textAlign: 'center' } : null]}>{subtitle}</Text> : null}
         </View>
