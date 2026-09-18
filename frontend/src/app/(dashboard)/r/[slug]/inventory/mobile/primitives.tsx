@@ -384,7 +384,9 @@ export function ChipRow<T extends string | number>({
 }) {
   const { ref, scrollable, ratio, progress } = useScrollAffordance();
   // One value feeds both the width and the travel, so they can never disagree.
-  const thumb = Math.max(ratio * 100, 18);
+  // The floor is higher than a full-width bar needs: the track is short, and a
+  // thumb much under a third of it stops reading as a thumb.
+  const thumb = Math.max(ratio * 100, 35);
 
   return (
     <div className="relative">
@@ -429,8 +431,10 @@ export function ChipRow<T extends string | number>({
             }`}
           />
           {/* 10px of air between the chips and the bar; the pale grey iOS
-              indicator used to touch them. */}
-          <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-(--inv-surface-strong)">
+              indicator used to touch them. A short centred track, not the full
+              width: it only has to say "there is more to the right", and a bar
+              spanning the whole card read as a divider line. */}
+          <div className="mx-auto mt-2.5 h-[3px] w-12 overflow-hidden rounded-full bg-(--inv-surface-strong)">
             {/* No transition: the thumb must track the finger frame for frame.
                 With one it lagged behind the chips and read as stutter. */}
             <div
