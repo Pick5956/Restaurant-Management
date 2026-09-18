@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Minus, Plus, X } from "lucide-react";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 
 /** 44px is the smallest target a finger hits reliably; 52 is for primary actions. */
 export const TAP = "min-h-[44px]";
@@ -593,4 +594,45 @@ export function NativeSelect<T extends string | number>({
       </select>
     </div>
   );
+}
+
+/**
+ * Ask before destroying something, with the same dialog the AI chat uses to
+ * delete a chat (WarmConfirmDialog): the big warning icon, the red button on
+ * top and the safe one under it, focus on the safe one. Promise-shaped so a
+ * caller reads `if (!(await ask(...))) return;` — render `dialog` once.
+ */
+export function useWarmConfirm() {
+  const [request, setRequest] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    resolve: (answer: boolean) => void;
+  } | null>(null);
+
+  const ask = useCallback(
+    (options: { title: string; description: string; confirmLabel: string; cancelLabel: string }) =>
+      new Promise<boolean>((resolve) => setRequest({ ...options, resolve })),
+    [],
+  );
+
+  const answer = (value: boolean) => {
+    request?.resolve(value);
+    setRequest(null);
+  };
+
+  const dialog = (
+    <WarmConfirmDialog
+      open={request !== null}
+      title={request?.title ?? ""}
+      description={request?.description ?? ""}
+      confirmLabel={request?.confirmLabel ?? ""}
+      cancelLabel={request?.cancelLabel ?? ""}
+      onConfirm={() => answer(true)}
+      onCancel={() => answer(false)}
+    />
+  );
+
+  return { ask, dialog };
 }

@@ -19,7 +19,6 @@ import {
   X,
 } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { useConfirm } from "@/src/components/shared/FeedbackProvider";
 import { inventoryErrorMessage } from "../inventoryFormValidation";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportStockCSV } from "@/src/lib/ingredient";
@@ -55,6 +54,7 @@ import {
   TAP,
   inputBase,
   useIOSActiveStates,
+  useWarmConfirm,
   useToastStack,
 } from "./primitives";
 import {
@@ -222,7 +222,7 @@ export default function InventoryMobile({
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
   const { ingredients, categories, loading, reload, actions } = useInventoryData(canView);
   const { toast, show } = useToastStack();
-  const confirm = useConfirm();
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
   useIOSActiveStates();
 
   const [screen, setScreen] = useState<Screen>("list");
@@ -369,12 +369,11 @@ export default function InventoryMobile({
     // A delete cannot be undone from here, so it always asks first — the row
     // sheet's "ลบ" sits one tap from "แก้ไข" and is easy to hit by mistake.
     setSheet("none");
-    const confirmed = await confirm({
+    const confirmed = await ask({
       title: copy.removeTitle(item.name),
-      message: copy.removeBody,
+      description: copy.removeBody,
       confirmLabel: copy.removeConfirm,
       cancelLabel: copy.cancel,
-      tone: "danger",
     });
     if (!confirmed) return;
     await guard(async () => {
@@ -468,6 +467,8 @@ export default function InventoryMobile({
         onChanged={reload}
         onNotice={show}
         sheet={
+          <>
+          {confirmDialog}
           <RestockAndCountSheets
             active={active}
             sheet={sheet}
@@ -484,6 +485,7 @@ export default function InventoryMobile({
             submitRestock={submitRestock}
             submitCount={submitCount}
           />
+          </>
         }
       />
     );
@@ -974,6 +976,8 @@ export default function InventoryMobile({
           <p className="mt-3 text-[11px] leading-snug text-(--inv-faint)">{copy.batchExpenseNote}</p>
         )}
       </BottomSheet>
+
+      {confirmDialog}
 
       <BottomSheet open={sheet === "manage"} title={copy.manage} onClose={() => setSheet("none")}>
         <div className="space-y-1">
