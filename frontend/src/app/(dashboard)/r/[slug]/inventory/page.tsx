@@ -2193,8 +2193,24 @@ export default function InventoryPage() {
                   </div>
                   {editingMaxStock > 0 ? (
                     <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
-                      {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
+                      {(() => {
+                        // Read back in the unit picked beside the number — "2 ลัง",
+                        // not "72 ขวด" — with the stock-unit amount alongside.
+                        const unit = typed.minIn || form.unit;
+                        const factor = purchaseFactor(form, unit) ?? 1;
+                        const warnAt =
+                          factor === 1
+                            ? `${formatNumber(form.min_stock, lang)}`
+                            : `${formatNumber(form.min_stock / factor, lang)}`;
+                        const inStock =
+                          factor === 1 ? "" : ` (${formatNumber(form.min_stock, lang)} ${form.unit})`;
+                        return (
+                          <>
+                            {copy.warnsAt(warnAt, unit)}
+                            {inStock} · {copy.ofFull(formatNumber(editingMaxStock / factor, lang), unit)}
+                          </>
+                        );
+                      })()}
                     </p>
                   ) : null}
                 </div>
