@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
+import { useConfirm } from "@/src/components/shared/FeedbackProvider";
+import { inventoryErrorMessage } from "../inventoryFormValidation";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportStockCSV } from "@/src/lib/ingredient";
 import type { Ingredient } from "@/src/types/ingredient";
@@ -130,9 +132,14 @@ function buildCopy(lang: "th" | "en") {
         restocked: (name: string, n: string, unit: string) => `เติม ${name} แล้ว ${n} ${unit}`,
         countSaved: (name: string) => `บันทึกยอด ${name} แล้ว`,
         deleted: (name: string) => `ลบ ${name} แล้ว`,
+        removeTitle: (name: string) => `ลบ "${name}"?`,
+        removeBody: "วัตถุดิบนี้จะหายจากคลังและรายการทั้งหมด ถ้าอยู่ในสูตรเมนู ระบบจะไม่ให้ลบ",
+        removeConfirm: "ลบวัตถุดิบ",
+        cancel: "ยกเลิก",
         exported: (n: number) => `ดาวน์โหลดแล้ว ${n} รายการ`,
         failed: "ทำรายการไม่สำเร็จ",
         countZeroNote: "นับได้ 0 จะบันทึกเป็นการตัดออกทั้งหมด",
+        countSame: "ยอดเท่าเดิม ไม่มีอะไรให้บันทึก",
       }
     : {
         search: "Search ingredient",
@@ -191,9 +198,14 @@ function buildCopy(lang: "th" | "en") {
         restocked: (name: string, n: string, unit: string) => `Added ${n} ${unit} to ${name}`,
         countSaved: (name: string) => `Saved the count for ${name}`,
         deleted: (name: string) => `Deleted ${name}`,
+        removeTitle: (name: string) => `Delete "${name}"?`,
+        removeBody: "It disappears from the inventory. An ingredient used in a menu recipe cannot be deleted.",
+        removeConfirm: "Delete ingredient",
+        cancel: "Cancel",
         exported: (n: number) => `Downloaded ${n} rows`,
         failed: "That did not go through",
         countZeroNote: "A count of 0 is saved as removing everything",
+        countSame: "Same as the shelf — nothing to save",
       };
 }
 
@@ -210,6 +222,7 @@ export default function InventoryMobile({
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
   const { ingredients, categories, loading, reload, actions } = useInventoryData(canView);
   const { toast, show } = useToastStack();
+  const confirm = useConfirm();
   useIOSActiveStates();
 
   const [screen, setScreen] = useState<Screen>("list");
@@ -298,8 +311,14 @@ export default function InventoryMobile({
     setBusy(true);
     try {
       await action();
-    } catch {
-      show(copy.failed);
+    } catch (err) {
+      show(
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          copy.failed,
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -347,6 +366,17 @@ export default function InventoryMobile({
   async function removeActive() {
     if (!active) return;
     const item = active;
+    // A delete cannot be undone from here, so it always asks first — the row
+    // sheet's "ลบ" sits one tap from "แก้ไข" and is easy to hit by mistake.
+    setSheet("none");
+    const confirmed = await confirm({
+      title: copy.removeTitle(item.name),
+      message: copy.removeBody,
+      confirmLabel: copy.removeConfirm,
+      cancelLabel: copy.cancel,
+      tone: "danger",
+    });
+    if (!confirmed) return;
     await guard(async () => {
       await actions.remove(item.ID);
       show(copy.deleted(item.name));
@@ -434,7 +464,7 @@ export default function InventoryMobile({
         onRestock={() => openSheet(fresh, "restock")}
         onCount={() => openSheet(fresh, "count")}
         onEdit={() => setScreen("edit")}
-        onDelete={() => openSheet(fresh, "row")}
+        onDelete={removeActive}
         onChanged={reload}
         onNotice={show}
         sheet={
@@ -464,6 +494,7 @@ export default function InventoryMobile({
       <AddIngredientScreen
         lang={lang}
         categories={categories}
+        existingNames={ingredients.map((item) => item.name)}
         editing={screen === "edit" ? active : null}
         onCancel={() => setScreen(screen === "edit" ? "detail" : "list")}
         onSaved={(name) => {
@@ -480,6 +511,7 @@ export default function InventoryMobile({
       <BulkAddScreen
         lang={lang}
         categories={categories}
+        existingNames={ingredients.map((item) => item.name)}
         onCancel={() => setScreen("list")}
         onSaved={(count) => {
           show(lang === "th" ? `บันทึก ${count} รายการแล้ว` : `Saved ${count} items`);
@@ -1089,7 +1121,7 @@ function RestockAndCountSheets({
         title={`${copy.count} · ${active.name}`}
         onClose={close}
         footer={
-          <PrimaryButton onClick={submitCount} disabled={busy}>
+          <PrimaryButton onClick={submitCount} disabled={busy || Math.abs(difference) < 1e-9}>
             {copy.saveCount}
           </PrimaryButton>
         }
@@ -1120,8 +1152,11 @@ function RestockAndCountSheets({
             {formatNumber(difference, lang)} {active.unit}
           </span>
         </div>
-        {amount === 0 && (
+        {amount === 0 && active.stock > 0 && (
           <p className="mt-2 text-[11px] text-(--inv-faint)">{copy.countZeroNote}</p>
+        )}
+        {Math.abs(difference) < 1e-9 && (
+          <p className="mt-2 text-[11px] text-(--inv-faint)">{copy.countSame}</p>
         )}
       </BottomSheet>
     </>

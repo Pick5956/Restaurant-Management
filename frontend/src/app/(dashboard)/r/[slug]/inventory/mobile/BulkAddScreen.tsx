@@ -7,6 +7,7 @@ import type { IngredientCategory } from "@/src/types/ingredient";
 import { UNITS } from "../inventoryPageUtils";
 import type { useInventoryData } from "./useInventoryData";
 import { ChipRow, NativeSelect, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
+import { inventoryErrorMessage, validateBulkRows } from "../inventoryFormValidation";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
@@ -34,9 +35,12 @@ export default function BulkAddScreen({
   onCancel,
   onSaved,
   actions,
+  existingNames,
 }: {
   lang: "th" | "en";
   categories: IngredientCategory[];
+  /** Every ingredient name already in the restaurant, for the duplicate check. */
+  existingNames: string[];
   onCancel: () => void;
   onSaved: (count: number) => void;
   actions: Actions;
@@ -122,7 +126,19 @@ export default function BulkAddScreen({
     setRows((current) => [...current, emptyRow(key, defaultCategory, UNITS[1])]);
   }
 
+  // Worked out every render but shown only after a save was tried.
+  const rowProblems = validateBulkRows(rows, existingNames, lang);
+  const [showRowErrors, setShowRowErrors] = useState(false);
+
   async function save() {
+    const bad = rowProblems.filter(Boolean).length;
+    if (bad > 0) {
+      setShowRowErrors(true);
+      setError(
+        lang === "th" ? `ยังบันทึกไม่ได้ มี ${bad} แถวต้องแก้ (ขึ้นสีแดง)` : `${bad} rows need fixing (marked in red)`,
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -142,7 +158,7 @@ export default function BulkAddScreen({
         // row, and a generic message sends people looking for the wrong cause.
         setError(
           `${copy.partial(results.length - failed.length, failed.length)}: ${failed
-            .map((f) => `${f.name}${f.error ? ` (${f.error})` : ""}`)
+            .map((f) => `${f.name}${f.error ? ` (${inventoryErrorMessage(f.error, lang)})` : ""}`)
             .join(", ")}`,
         );
         setBusy(false);
@@ -195,7 +211,8 @@ export default function BulkAddScreen({
           </button>
         </div>
 
-        {rows.map((row) => {
+        {rows.map((row, rowIndex) => {
+          const problem = showRowErrors ? rowProblems[rowIndex] : null;
           const subtotal = (Number(row.quantity) || 0) * (Number(row.price) || 0);
           const categoryName =
             categories.find((c) => c.ID === row.categoryId)?.name ?? copy.noCategory;
@@ -209,8 +226,9 @@ export default function BulkAddScreen({
                 value={row.name}
                 onChange={(event) => patch(row.key, { name: event.target.value })}
                 placeholder={copy.name}
-                className={`${inputBase} h-[52px] border-(--inv-hairline)`}
+                className={`${inputBase} h-[52px] ${problem ? "border-(--inv-out)" : "border-(--inv-hairline)"}`}
               />
+              {problem ? <p className="mt-1 px-1 text-[12px] text-(--inv-out)">{problem}</p> : null}
 
               <div className="mt-2 grid grid-cols-3 overflow-hidden rounded-(--inv-radius) border border-(--inv-hairline)">
                 <input

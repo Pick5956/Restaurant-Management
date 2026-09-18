@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { discardLot, listLots, listTransactions, updateLotExpiry } from "@/src/lib/ingredient";
 import type { Ingredient, IngredientLot, IngredientTransaction } from "@/src/types/ingredient";
@@ -175,7 +175,7 @@ export default function IngredientDetailScreen({
               onClick={onEdit}
               className={`ui-press flex h-11 w-11 items-center justify-center rounded-full text-(--inv-muted) ${TAP}`}
             >
-              <MoreHorizontal className="h-5 w-5" strokeWidth={2} />
+              <Pencil className="h-5 w-5" strokeWidth={2} />
             </button>
           ) : null
         }
@@ -364,8 +364,9 @@ export default function IngredientDetailScreen({
         <button
           type="button"
           onClick={onDelete}
-          className={`ui-press mt-6 w-full px-4 text-center text-[13px] font-semibold text-(--inv-out) ${TAP}`}
+          className={`ui-press mx-4 mt-6 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-(--inv-radius) border border-(--inv-out) bg-(--inv-surface) px-4 text-[15px] font-semibold text-(--inv-out) ${TAP}`}
         >
+          <Trash2 className="h-4 w-4" strokeWidth={2} />
           {lang === "th" ? "ลบวัตถุดิบ" : "Delete ingredient"}
         </button>
       )}

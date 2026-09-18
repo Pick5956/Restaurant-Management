@@ -24,6 +24,11 @@ import {
 } from "../inventoryUnitUtils";
 import type { useInventoryData } from "./useInventoryData";
 import {
+  hasFieldErrors,
+  inventoryErrorMessage,
+  validateIngredientForm,
+} from "../inventoryFormValidation";
+import {
   FormGroup,
   FormRow,
   NativeSelect,
@@ -42,9 +47,12 @@ export default function AddIngredientScreen({
   onCancel,
   onSaved,
   actions,
+  existingNames,
 }: {
   lang: "th" | "en";
   categories: IngredientCategory[];
+  /** Every ingredient name already in the restaurant, for the duplicate check. */
+  existingNames: string[];
   editing: Ingredient | null;
   onCancel: () => void;
   onSaved: (name: string) => void;
@@ -213,6 +221,7 @@ export default function AddIngredientScreen({
   }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showErrors, setShowErrors] = useState(false);
 
   const openingValue = resolved.stock * resolved.cost_per_unit;
   // One quiet line under a row whenever the number was typed in a unit other
@@ -231,17 +240,27 @@ export default function AddIngredientScreen({
 
   const categoryName = categories.find((c) => c.ID === categoryId)?.name ?? copy.noCategory;
 
+  const fieldErrors = validateIngredientForm(
+    {
+      name,
+      existingNames,
+      ownName: editing?.name,
+      packUnit,
+      packSize,
+      caseUnit,
+      caseSize,
+      stockText: typed.stock,
+      costText: typed.cost,
+      creating: !editing,
+    },
+    lang,
+  );
+  const shown = showErrors ? fieldErrors : {};
+
   async function save() {
-    if (!name.trim()) {
-      setError(copy.nameRequired);
-      return;
-    }
-    if (packUnit && !(Number(packSize) > 0)) {
-      setError(ucopy.packSizeRequired(packUnit));
-      return;
-    }
-    if (packUnit && caseUnit && !(Number(caseSize) > 0)) {
-      setError(ucopy.caseSizeRequired(caseUnit));
+    if (hasFieldErrors(fieldErrors)) {
+      setShowErrors(true);
+      setError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
     setBusy(true);
@@ -281,9 +300,10 @@ export default function AddIngredientScreen({
       onSaved(payload.name);
     } catch (err) {
       setError(
-        String(
-          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-            (lang === "th" ? "บันทึกไม่สำเร็จ" : "Could not save"),
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          lang === "th" ? "บันทึกไม่สำเร็จ" : "Could not save",
         ),
       );
     } finally {
@@ -309,6 +329,7 @@ export default function AddIngredientScreen({
               className="w-full bg-transparent text-right text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
             />
           </FormRow>
+          {shown.name ? <FieldError>{shown.name}</FieldError> : null}
           <NativeSelect
             label={copy.category}
             value={categoryId}
@@ -415,6 +436,11 @@ export default function AddIngredientScreen({
             </>
           ) : null}
         </FormGroup>
+        {shown.packSize || shown.caseSize ? (
+          <p className="-mt-4 mb-2 px-1 text-[12px] leading-snug text-(--inv-out)">
+            {[shown.packSize, shown.caseSize].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
         <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
           {packExample(packShape, lang) ?? ucopy.buyNote}
         </p>
@@ -441,6 +467,7 @@ export default function AddIngredientScreen({
             />
           </FormRow>
           {stockNote ? <RowNote>{stockNote}</RowNote> : null}
+          {shown.stock ? <FieldError>{shown.stock}</FieldError> : null}
           {/* px-4 rather than the row's px-3: the chip row bleeds 16px to scroll
               edge to edge, and the card clips anything past its own padding. */}
           {!editing && resolved.stock > 0 ? (
@@ -472,6 +499,7 @@ export default function AddIngredientScreen({
             />
           </FormRow>
           {priceNote ? <RowNote>{priceNote}</RowNote> : null}
+          {shown.cost ? <FieldError>{shown.cost}</FieldError> : null}
           {/* Set by the slider alone, in whole tens of the full level — the same
               control as the web form. The note under it says what it comes to. */}
           <FormRow label={copy.minStock} suffix="%" divider={false}>
@@ -614,6 +642,15 @@ function UnitButton({
 function RowNote({ children }: { children: ReactNode }) {
   return (
     <div className="-mt-2 border-b border-(--inv-hairline) px-3 pb-2 text-right text-[11px] tabular-nums text-(--inv-faint)">
+      {children}
+    </div>
+  );
+}
+
+/** A field's problem, in red, right under the row that has it. */
+function FieldError({ children }: { children: ReactNode }) {
+  return (
+    <div className="border-b border-(--inv-hairline) px-3 pb-2 pt-1 text-right text-[12px] text-(--inv-out)">
       {children}
     </div>
   );

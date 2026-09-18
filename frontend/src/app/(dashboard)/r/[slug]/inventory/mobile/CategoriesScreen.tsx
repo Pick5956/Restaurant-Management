@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/format";
+import { useConfirm } from "@/src/components/shared/FeedbackProvider";
+import { inventoryErrorMessage } from "../inventoryFormValidation";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
 import { categoryUsage, type useInventoryData } from "./useInventoryData";
 import {
@@ -28,6 +30,7 @@ export default function CategoriesScreen({
   onBack: () => void;
   actions: Actions;
 }) {
+  const confirm = useConfirm();
   const copy = useMemo(
     () =>
       lang === "th"
@@ -114,11 +117,28 @@ export default function CategoriesScreen({
   }
 
   async function remove(category: IngredientCategory) {
+    const confirmed = await confirm({
+      title: lang === "th" ? `ลบหมวด "${category.name}"?` : `Delete category "${category.name}"?`,
+      message:
+        lang === "th"
+          ? "หมวดนี้จะหายไป วัตถุดิบไม่ได้หายไปด้วย (ลบได้เฉพาะหมวดที่ไม่มีวัตถุดิบแล้ว)"
+          : "Only the category goes; it can only be deleted once no ingredient uses it.",
+      confirmLabel: lang === "th" ? "ลบหมวด" : "Delete category",
+      cancelLabel: lang === "th" ? "ยกเลิก" : "Cancel",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await actions.removeCategory(category.ID);
-    } catch {
-      setError(copy.failed);
+    } catch (err) {
+      setError(
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          copy.failed,
+        ),
+      );
     } finally {
       setBusy(false);
     }

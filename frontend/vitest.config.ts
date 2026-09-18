@@ -48,6 +48,7 @@ export default defineConfig({
       "src/app/(dashboard)/r/[slug]/inventory/inventoryHistoryUtils.test.ts",
       "src/app/(dashboard)/r/[slug]/inventory/inventoryExpiryUtils.test.ts",
       "src/app/(dashboard)/r/[slug]/inventory/inventoryUnitUtils.test.ts",
+      "src/app/(dashboard)/r/[slug]/inventory/inventoryFormValidation.test.ts",
       "src/app/(dashboard)/r/[slug]/expenses/expensesPage.test.ts",
       "src/app/(dashboard)/r/[slug]/staff/staffPermissionPolicy.test.ts",
       "src/components/shared/RealtimeConnectionNotice.test.tsx",

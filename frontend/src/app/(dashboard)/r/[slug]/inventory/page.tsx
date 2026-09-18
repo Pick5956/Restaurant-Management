@@ -56,6 +56,12 @@ import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
 import {
+  hasFieldErrors,
+  inventoryErrorMessage,
+  validateBulkRows,
+  validateIngredientForm,
+} from "./inventoryFormValidation";
+import {
   PACK_UNITS,
   emptyTypedAmounts,
   formatPackCount,
@@ -451,6 +457,9 @@ export default function InventoryPage() {
   // Stock, reorder level and price exactly as typed, each with the unit it was
   // typed in. `form` always holds the stock-unit values the server stores.
   const [typed, setTyped] = useState<TypedAmounts>(emptyTypedAmounts);
+  // Field errors are worked out on every render but only shown once a save has
+  // been tried, so an empty new form does not open covered in red.
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
   // Where the reorder slider's handle sits. A percent set by dragging is kept as
   // it is; a quantity typed by hand is shown at the place it falls on this
@@ -730,6 +739,7 @@ export default function InventoryPage() {
     setForm(emptyForm);
     setFormExpiryDays(defaultShelfLifeDays(emptyForm.storage_type));
     setTyped(emptyTypedAmounts);
+    setShowFieldErrors(false);
     setFormError("");
     setModalOpen(true);
   }
@@ -755,6 +765,7 @@ export default function InventoryPage() {
     // pack — "3 แผง", "แผงละ ฿100" — which is how they were meant.
     const pack = item.pack_unit && (item.pack_size ?? 0) > 0 ? item.pack_unit : "";
     const packSize = pack ? (item.pack_size as number) : 1;
+    setShowFieldErrors(false);
     setTyped({
       stock: "",
       stockIn: "",
@@ -769,19 +780,12 @@ export default function InventoryPage() {
 
   async function handleSave() {
     setFormError("");
-    if (!form.name.trim()) {
-      setFormError(lang === "th" ? "กรุณาระบุชื่อวัตถุดิบ" : "Name is required");
+    if (hasFieldErrors(fieldErrors)) {
+      setShowFieldErrors(true);
+      setFormError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
     const stockTypedIn = typed.stockIn && typed.stockIn !== form.unit ? typed.stockIn : "";
-    if (form.pack_unit && !((form.pack_size ?? 0) > 0)) {
-      setFormError(ucopy.packSizeRequired(form.pack_unit));
-      return;
-    }
-    if (form.pack_unit && form.case_unit && !((form.case_size ?? 0) > 0)) {
-      setFormError(ucopy.caseSizeRequired(form.case_unit));
-      return;
-    }
 
     await saveOnce.current(async () => {
       setSubmitting(true);
@@ -806,7 +810,7 @@ export default function InventoryPage() {
         closeModal();
       } catch (error: unknown) {
         const err = error as { response?: { data?: { error?: string } } };
-        setFormError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+        setFormError(inventoryErrorMessage(err?.response?.data?.error, lang));
       } finally {
         setSubmitting(false);
       }
@@ -830,7 +834,7 @@ export default function InventoryPage() {
       showToast({ title: copy.categoryCreated });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      setCategoryError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+      setCategoryError(inventoryErrorMessage(err?.response?.data?.error, lang));
     } finally {
       setCategorySubmitting(false);
     }
@@ -856,7 +860,7 @@ export default function InventoryPage() {
       showToast({ title: copy.categoryUpdated });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      setCategoryError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+      setCategoryError(inventoryErrorMessage(err?.response?.data?.error, lang));
     } finally {
       setCategorySubmitting(false);
     }
@@ -930,6 +934,22 @@ export default function InventoryPage() {
   // to divide a total by — an edit, or a new ingredient with no opening stock.
   const priceUnitOptions = purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }));
   const pricingTotal = typed.costIn === TOTAL_PRICE;
+  const fieldErrors = validateIngredientForm(
+    {
+      name: form.name,
+      existingNames: ingredients.map((item) => item.name),
+      ownName: editingItem?.name,
+      packUnit: form.pack_unit ?? "",
+      packSize: form.pack_size ? String(form.pack_size) : "",
+      caseUnit: form.case_unit ?? "",
+      caseSize: form.case_size ? String(form.case_size) : "",
+      stockText: typed.stock,
+      costText: typed.cost,
+      creating: !editingItem,
+    },
+    lang,
+  );
+  const shownErrors = showFieldErrors ? fieldErrors : {};
 
   // Everything that changes what a typed number means goes through here: the
   // typed text, the unit beside it, and the pack fields that size those units.
@@ -982,6 +1002,16 @@ export default function InventoryPage() {
     const rows = bulkRows.filter((row) => row.name.trim() !== "");
     if (rows.length === 0) {
       setBulkError(lang === "th" ? "กรอกชื่อวัตถุดิบอย่างน้อย 1 รายการ" : "Enter at least one ingredient name");
+      return;
+    }
+    const rowProblems = validateBulkRows(
+      rows.map((row) => ({ name: row.name, quantity: row.stock, price: row.cost_per_unit })),
+      ingredients.map((item) => item.name),
+      lang,
+    );
+    const firstBad = rowProblems.findIndex(Boolean);
+    if (firstBad >= 0) {
+      setBulkError(`${rows[firstBad].name.trim()}: ${rowProblems[firstBad]}`);
       return;
     }
     setBulkError("");
@@ -1042,6 +1072,20 @@ export default function InventoryPage() {
       setAdjustError(lang === "th" ? "กรุณาระบุจำนวนที่ถูกต้อง" : "Enter a valid quantity");
       return;
     }
+    // Checked here, in the shelf's own unit, so the message can say how much is
+    // actually there instead of the server's bare "not enough stock".
+    const adjustFactor =
+      !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    if (adjustType === "out" && qty * adjustFactor > adjustTarget.stock + 1e-9) {
+      setAdjustError(
+        lang === "th"
+          ? `จ่ายออกเกินที่มี (เหลือ ${formatNumber(adjustTarget.stock, lang)} ${adjustTarget.unit})`
+          : `More than is on the shelf (${formatNumber(adjustTarget.stock, lang)} ${adjustTarget.unit} left)`,
+      );
+      return;
+    }
     const paidAmount = Number(adjustPaidAmount);
     if (
       adjustType === "in" &&
@@ -1081,7 +1125,7 @@ export default function InventoryPage() {
         showToast({ title: copy.stockAdjusted });
       } catch (error: unknown) {
         const err = error as { response?: { data?: { error?: string } } };
-        setAdjustError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+        setAdjustError(inventoryErrorMessage(err?.response?.data?.error, lang));
       } finally {
         setAdjusting(false);
       }
@@ -1135,7 +1179,7 @@ export default function InventoryPage() {
       await Promise.all([loadLots(txTarget.ID), refreshIngredientRow(txTarget.ID)]);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      showToast({ title: err?.response?.data?.error ?? xcopy.failed, tone: "error" });
+      showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang, xcopy.failed), tone: "error" });
     } finally {
       setLotSaving(false);
     }
@@ -1161,7 +1205,7 @@ export default function InventoryPage() {
       setTransactions(history.data.transactions ?? []);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      showToast({ title: err?.response?.data?.error ?? xcopy.failed, tone: "error" });
+      showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang, xcopy.failed), tone: "error" });
     } finally {
       setLotSaving(false);
     }
@@ -1858,7 +1902,11 @@ export default function InventoryPage() {
             {...modalBackdrop}
             className={`${modalClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-40 cursor-default bg-gray-950/45 backdrop-blur-sm`}
           />
+          {/* noValidate: the browser's own check stops a negative number with an
+              English tooltip before handleSave runs, so the Thai messages under
+              each field — and the duplicate-name check — never got a chance. */}
           <form
+            noValidate
             onSubmit={(event) => {
               event.preventDefault();
               void handleSave();
@@ -1894,6 +1942,7 @@ export default function InventoryPage() {
                       className={inputCls}
                       autoFocus
                     />
+                    {shownErrors.name ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.name}</p> : null}
                   </div>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -2027,6 +2076,8 @@ export default function InventoryPage() {
                       ) : null}
                     </div>
                   ) : null}
+                  {shownErrors.packSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.packSize}</p> : null}
+                  {shownErrors.caseSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.caseSize}</p> : null}
                   <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
                     {packExample(form, lang) ?? ucopy.buyNote}
                   </p>
@@ -2065,6 +2116,7 @@ export default function InventoryPage() {
                           {ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
                         </p>
                       ) : null}
+                      {shownErrors.stock ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.stock}</p> : null}
                     </div>
                   ) : null}
                   <div>
@@ -2121,6 +2173,7 @@ export default function InventoryPage() {
                           .join(" · ")}
                       </p>
                     ) : null}
+                    {shownErrors.cost ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.cost}</p> : null}
                   </div>
                 </div>
                 {!editingItem && form.stock > 0 ? (
