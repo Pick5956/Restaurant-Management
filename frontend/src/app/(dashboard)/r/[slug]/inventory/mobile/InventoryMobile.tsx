@@ -287,7 +287,7 @@ export default function InventoryMobile({
   function openSheet(item: Ingredient, kind: SheetKind) {
     setActive(item);
     if (kind === "restock" || kind === "count") {
-      const unit = defaultEntryUnit(item);
+      const unit = defaultEntryUnit(item, kind);
       const factor = stockPerEntryUnit(item, unit) ?? 1;
       setEntryUnit(unit);
       if (kind === "restock") {

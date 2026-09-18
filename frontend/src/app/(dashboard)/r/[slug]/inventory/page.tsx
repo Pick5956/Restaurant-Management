@@ -65,6 +65,7 @@ import {
   emptyTypedAmounts,
   entryChain,
   formatPackCount,
+  largestPurchaseUnit,
   packExample,
   packUnitChoices,
   purchaseFactor,
@@ -1072,7 +1073,7 @@ export default function InventoryPage() {
     // Default to the shelf's own unit every time, so a unit chosen for one
     // ingredient never carries into the next one.
     // Deliveries arrive in packs, so open on the pack when the ingredient has one.
-    setAdjustUnit(item.pack_unit && (item.pack_size ?? 0) > 0 ? item.pack_unit : item.unit);
+    setAdjustUnit(largestPurchaseUnit(item));
     setAdjustPaidAmount("");
     setAdjustNote("");
     setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
@@ -2118,7 +2119,8 @@ export default function InventoryPage() {
                       </div>
                       {typed.stockIn && form.stock > 0 ? (
                         <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                          {ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
+                          {entryChain(form, parseFloat(typed.stock) || 0, typed.stockIn, lang) ??
+                            ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
                         </p>
                       ) : null}
                       {shownErrors.stock ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.stock}</p> : null}

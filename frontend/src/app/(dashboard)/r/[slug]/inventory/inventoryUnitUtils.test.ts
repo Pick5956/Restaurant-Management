@@ -69,8 +69,10 @@ describe("entryUnitOptions", () => {
 });
 
 describe("defaultEntryUnit", () => {
-  it("opens on the pack when there is one", () => {
-    expect(defaultEntryUnit(fishSauce)).toBe("ขวด");
+  it("restocks by the biggest container and counts by the pack", () => {
+    expect(defaultEntryUnit(fishSauce)).toBe("ลัง");
+    expect(defaultEntryUnit(fishSauce, "count")).toBe("ขวด");
+    expect(defaultEntryUnit({ ...fishSauce, case_unit: "", case_size: 0 })).toBe("ขวด");
     expect(defaultEntryUnit(plain)).toBe("มิลลิลิตร");
   });
 });
@@ -142,7 +144,8 @@ describe("resolveTypedAmounts", () => {
 describe("retargetTypedUnits", () => {
   it("switches empty fields to the pack the moment one is set", () => {
     const got = retargetTypedUnits(noPack, eggs, { ...emptyTypedAmounts, cost: "10" });
-    expect(got.stockIn).toBe("แผง");
+    // Opening stock follows the biggest container; the reorder level stays on the pack.
+    expect(got.stockIn).toBe("ลัง");
     expect(got.minIn).toBe("แผง");
     // A price already typed keeps meaning "per ฟอง".
     expect(got.costIn).toBe("");

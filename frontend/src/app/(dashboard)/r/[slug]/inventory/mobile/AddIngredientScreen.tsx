@@ -10,6 +10,7 @@ import ExpiryPicker from "./ExpiryPicker";
 import {
   TOTAL_PRICE,
   emptyTypedAmounts,
+  entryChain,
   packExample,
   packUnitChoices,
   priceBreakdown,
@@ -229,7 +230,8 @@ export default function AddIngredientScreen({
   // the conversion inside the 50px row itself.
   const stockNote =
     !editing && typed.stockIn && resolved.stock > 0
-      ? ucopy.inStockUnit(formatNumber(resolved.stock, lang), unit)
+      ? (entryChain(shape, parseFloat(typed.stock) || 0, typed.stockIn, lang) ??
+        ucopy.inStockUnit(formatNumber(resolved.stock, lang), unit))
       : null;
   const priceNote =
     resolved.cost_per_unit > 0 && (pricingTotal || typed.costIn)

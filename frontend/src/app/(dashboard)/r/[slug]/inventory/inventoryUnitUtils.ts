@@ -129,12 +129,26 @@ export function entryUnitOptions(item: Ingredient): IngredientUnitOption[] {
   return picked.length > 0 ? picked : [{ unit: item.unit, stock_per_unit: 1 }];
 }
 
-/** Deliveries arrive in packs, so a sheet opens on the pack when there is one. */
-export function defaultEntryUnit(item: Ingredient): string {
-  if (hasPack(item) && item.unit_family?.some((option) => option.unit === item.pack_unit)) {
-    return item.pack_unit as string;
-  }
+/**
+ * The biggest container this ingredient is packaged in — the case when one is
+ * set, else the pack, else the stock unit. It is how a delivery arrives: if a
+ * ลัง is defined at all, the ingredient is bought by the ลัง.
+ */
+export function largestPurchaseUnit(item: PackShape): string {
+  if (hasCase(item)) return item.case_unit as string;
+  if (hasPack(item)) return item.pack_unit as string;
   return item.unit;
+}
+
+/**
+ * A restock opens on the biggest container, because that is what was just
+ * carried in. A count opens on the pack, because a shelf is counted a bottle
+ * at a time even when it was delivered by the case.
+ */
+export function defaultEntryUnit(item: Ingredient, purpose: "restock" | "count" = "restock"): string {
+  const offered = (unit: string) => item.unit_family?.some((option) => option.unit === unit) ?? false;
+  const wanted = purpose === "restock" ? largestPurchaseUnit(item) : hasPack(item) ? (item.pack_unit as string) : item.unit;
+  return wanted !== item.unit && offered(wanted) ? wanted : item.unit;
 }
 
 /** Restates an amount when the unit chip changes, so the quantity on screen stays the same stuff. */
@@ -283,12 +297,17 @@ export function retargetTypedUnits(before: PackShape, after: PackShape, typed: T
     ["costIn", "cost"],
   ] as const;
   const newPack = hasPack(after) && (!hasPack(before) || before.pack_unit !== after.pack_unit);
+  const newCase = hasCase(after) && (!hasCase(before) || before.case_unit !== after.case_unit);
   for (const [unitKey, textKey] of pairs) {
     if (next[unitKey] === TOTAL_PRICE) continue;
     if (next[unitKey] === after.unit) next[unitKey] = "";
     if (next[unitKey] && !valid.has(next[unitKey])) next[unitKey] = fallback;
     if (newPack && typedNumber(next[textKey]) === 0) next[unitKey] = after.pack_unit as string;
   }
+  // Opening stock is a delivery, so an untouched box follows the biggest
+  // container the moment one exists. The reorder level and price stay on the
+  // pack — a shelf is counted, and a price remembered, per bottle.
+  if ((newPack || newCase) && typedNumber(next.stock) === 0) next.stockIn = largestPurchaseUnit(after);
   return next;
 }
 
