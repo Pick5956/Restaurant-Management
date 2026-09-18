@@ -31,10 +31,15 @@ export const PACK_UNITS = [
  * it only decides what a picker lists first. The stock unit the recipe
  * consumes says what kind of thing the ingredient is.
  */
-const LIKELY_CONTAINERS: Record<"volume" | "mass" | "egg" | "container" | "other", { pack: string[]; case: string[] }> = {
+const LIKELY_CONTAINERS: Record<
+  "volume" | "mass" | "egg" | "count" | "container" | "other",
+  { pack: string[]; case: string[] }
+> = {
   volume: { pack: ["ขวด", "กระป๋อง", "ถุง", "แกลลอน", "ถัง", "ปี๊บ", "กล่อง"], case: ["ลัง", "แพ็ก"] },
   mass: { pack: ["ถุง", "ห่อ", "ซอง", "กระสอบ", "กล่อง", "ถัง", "ลัง"], case: ["ลัง", "กระสอบ"] },
   egg: { pack: ["แผง"], case: ["ลัง"] },
+  // ไส้กรอกแพ็กละ 20 ชิ้น · มะนาวถุงละ 50 ลูก · กุ้งกล่องละ 40 ตัว
+  count: { pack: ["แพ็ก", "ถุง", "กล่อง", "ห่อ"], case: ["ลัง", "กระสอบ"] },
   container: { pack: ["แพ็ก", "ลัง"], case: ["ลัง"] },
   other: { pack: [], case: [] },
 };
@@ -43,7 +48,8 @@ function stockKind(unit: string): keyof typeof LIKELY_CONTAINERS {
   if (unit === "มิลลิลิตร" || unit === "ลิตร") return "volume";
   if (unit === "กรัม" || unit === "กิโลกรัม") return "mass";
   if (unit === "ฟอง") return "egg";
-  if (unit === "ขวด" || unit === "กระป๋อง") return "container";
+  if (unit === "ชิ้น" || unit === "ลูก" || unit === "ตัว") return "count";
+  if (unit === "ขวด" || unit === "กระป๋อง" || unit === "กล่อง" || unit === "ซอง") return "container";
   return "other";
 }
 

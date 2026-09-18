@@ -21,6 +21,7 @@ import MenuImageCropper from "@/src/components/menu/MenuImageCropper";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import NumberInput from "@/src/components/shared/NumberInput";
+import { SEALED_UNITS } from "../inventory/inventoryPageUtils";
 import {
   AvailabilitySwitch,
   emptyItem,
@@ -1605,6 +1606,23 @@ export default function MenuPage() {
                             return (
                               <p className="text-[11px] text-gray-500 dark:text-gray-400">
                                 = <span className="font-mono tabular-nums">{inStockUnit.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span> {selectedIngredient.unit}
+                              </p>
+                            );
+                          })()}
+                          {(() => {
+                            // A sealed container is used whole. "0.2 ขวด" means the
+                            // thing is really poured, and the ingredient should be
+                            // kept in millilitres with the bottle as its packaging.
+                            if (!selectedIngredient || !SEALED_UNITS.has(selectedIngredient.unit) || !component.quantity) return null;
+                            const chosen = component.unit || selectedIngredient.unit;
+                            const perUnit = selectedIngredient.unit_family?.find((entry) => entry.unit === chosen)?.stock_per_unit ?? 1;
+                            const whole = component.quantity * perUnit;
+                            if (Math.abs(whole - Math.round(whole)) < 1e-9) return null;
+                            return (
+                              <p className="text-[11px] font-medium text-red-600 dark:text-red-300">
+                                {language === "th"
+                                  ? `${selectedIngredient.name} ใช้ทั้ง${selectedIngredient.unit} ใส่เป็นจำนวนเต็ม ถ้าเทแบ่งใช้ ให้แก้วัตถุดิบเป็นมิลลิลิตรแล้วตั้ง "บรรจุใน" เป็น${selectedIngredient.unit}`
+                                  : `${selectedIngredient.name} is used a whole ${selectedIngredient.unit} at a time. If it is poured, keep it in millilitres with the ${selectedIngredient.unit} as its packaging.`}
                               </p>
                             );
                           })()}

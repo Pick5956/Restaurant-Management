@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { formatCurrency, formatAdaptiveNumber as formatNumber } from "@/src/lib/format";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
-import { STORAGE_TYPES, UNITS, reorderQuantityFor } from "../inventoryPageUtils";
+import { STORAGE_TYPES, UNITS, reorderQuantityFor, stockUnitOptions } from "../inventoryPageUtils";
 import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
 import ExpiryPicker from "./ExpiryPicker";
 import {
@@ -362,7 +362,7 @@ export default function AddIngredientScreen({
             label={ucopy.stockUnitLabel}
             value={unit}
             onChange={(value) => reshape({ unit: value })}
-            options={(UNITS.includes(unit) ? UNITS : [unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
+            options={stockUnitOptions(lang, unit)}
           >
             <FormRow label={ucopy.stockUnitLabel}>
               <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>

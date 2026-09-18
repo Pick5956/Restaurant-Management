@@ -101,7 +101,7 @@ import {
   reorderQuantityFor,
   inputCls,
   STORAGE_TYPES,
-  UNITS,
+  stockUnitRows,
   type ItemStatus,
   type StockStatus,
 } from "./inventoryPageUtils";
@@ -411,7 +411,7 @@ export default function InventoryPage() {
   const canManageExpenses = can(activeMembership, "manage_expenses");
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
-  const unitOptions = useMemo(() => UNITS.map((unit) => ({ value: unit, label: unit })), []);
+  const unitOptions = useMemo(() => stockUnitRows(lang), [lang]);
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
   const ucopy = useMemo(() => unitCopy(lang), [lang]);
   const storageOptions = useMemo(
@@ -1995,7 +1995,7 @@ export default function InventoryPage() {
                       aria-label={ucopy.stockUnitLabel}
                       value={form.unit}
                       onChange={(value) => changePackFields({ unit: value })}
-                      options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
+                      options={stockUnitRows(lang, form.unit)}
                     />
                   </div>
                   <div>

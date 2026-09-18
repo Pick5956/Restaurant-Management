@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/format";
 import type { IngredientCategory } from "@/src/types/ingredient";
-import { UNITS } from "../inventoryPageUtils";
+import { UNITS, stockUnitOptions } from "../inventoryPageUtils";
 import type { useInventoryData } from "./useInventoryData";
 import { ChipRow, NativeSelect, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
 import { inventoryErrorMessage, validateBulkRows } from "../inventoryFormValidation";
@@ -243,7 +243,7 @@ export default function BulkAddScreen({
                   label={copy.pickUnit}
                   value={row.unit}
                   onChange={(value) => patch(row.key, { unit: value })}
-                  options={(UNITS.includes(row.unit) ? UNITS : [row.unit, ...UNITS]).map((u) => ({ value: u, label: u }))}
+                  options={stockUnitOptions(lang, row.unit)}
                   className="flex"
                 >
                   <span

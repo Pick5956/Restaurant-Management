@@ -110,8 +110,13 @@ test('matches the canonical Thai unit choices used by the web inventory form', (
     'มิลลิลิตร',
     'ลิตร',
     'ฟอง',
+    'ชิ้น',
+    'ลูก',
+    'ตัว',
     'ขวด',
     'กระป๋อง',
+    'กล่อง',
+    'ซอง',
   ]);
 });
 

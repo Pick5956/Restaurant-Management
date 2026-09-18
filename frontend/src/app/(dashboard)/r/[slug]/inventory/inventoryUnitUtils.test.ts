@@ -232,7 +232,8 @@ describe("packUnitChoices", () => {
   it("still offers everything, just later", () => {
     const { likely, other } = packUnitChoices("กรัม", "pack");
     expect(likely.length + other.length).toBe(15);
-    expect(packUnitChoices("ลูก", "pack").likely).toEqual([]);
+    // A unit outside the list (an old ingredient's "หัว") gets no suggestions, only the full list.
+    expect(packUnitChoices("หัว", "pack").likely).toEqual([]);
   });
 });
 
@@ -248,5 +249,12 @@ describe("chains", () => {
     expect(entryChain(water, 3, "ขวด", "th")).toBe("= 2,250 มิลลิลิตร");
     expect(entryChain(water, 3, "มิลลิลิตร", "th")).toBeNull();
     expect(entryChain(water, 3, "ลิตร", "th")).toBeNull();
+  });
+});
+
+describe("containers for counted stock", () => {
+  it("offers packs and bags for pieces", () => {
+    expect(packUnitChoices("ชิ้น", "pack").likely.slice(0, 2)).toEqual(["แพ็ก", "ถุง"]);
+    expect(packUnitChoices("กล่อง", "pack").likely).toEqual(["แพ็ก", "ลัง"]);
   });
 });

@@ -8,7 +8,69 @@ import { localeForLanguage } from "@/src/lib/format";
  * inventoryUnitUtils.ts. An existing ingredient on a unit not listed here keeps
  * it: the pickers prepend the current value.
  */
-export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ฟอง", "ขวด", "กระป๋อง"];
+export const UNITS = [
+  "กรัม",
+  "กิโลกรัม",
+  "มิลลิลิตร",
+  "ลิตร",
+  "ฟอง",
+  "ชิ้น",
+  "ลูก",
+  "ตัว",
+  "ขวด",
+  "กระป๋อง",
+  "กล่อง",
+  "ซอง",
+];
+
+/**
+ * The stock-unit picker in four headed groups, so the choice reads as "how is
+ * this used" before "which word": weighed, poured, counted, or used a whole
+ * sealed container at a time.
+ */
+export const UNIT_GROUPS: { th: string; en: string; units: string[] }[] = [
+  { th: "ชั่งน้ำหนัก", en: "Weighed", units: ["กรัม", "กิโลกรัม"] },
+  { th: "ตวงปริมาตร", en: "Poured", units: ["มิลลิลิตร", "ลิตร"] },
+  { th: "นับเป็นชิ้น", en: "Counted", units: ["ฟอง", "ชิ้น", "ลูก", "ตัว"] },
+  { th: "ใช้ทั้งภาชนะ", en: "Used whole", units: ["ขวด", "กระป๋อง", "กล่อง", "ซอง"] },
+];
+
+/**
+ * Stock units that are sealed containers: a recipe should take a whole one.
+ * "0.2 ขวด" of something means it is really poured, and belongs in millilitres.
+ */
+export const SEALED_UNITS = new Set(["ขวด", "กระป๋อง", "กล่อง", "ซอง"]);
+
+/**
+ * The stock-unit options with their group, for any picker. A unit stored on an
+ * older ingredient that is no longer offered stays selectable at the top.
+ */
+export function stockUnitOptions(
+  lang: "th" | "en",
+  current?: string,
+): { value: string; label: string; group?: string }[] {
+  const grouped = UNIT_GROUPS.flatMap((group) =>
+    group.units.map((unit) => ({ value: unit, label: unit, group: lang === "th" ? group.th : group.en })),
+  );
+  return current && !UNITS.includes(current) ? [{ value: current, label: current }, ...grouped] : grouped;
+}
+
+/** The same list for the web dropdown, which has no group headings: a disabled row stands in for each. */
+export function stockUnitRows(
+  lang: "th" | "en",
+  current?: string,
+): { value: string; label: string; disabled?: boolean }[] {
+  const rows: { value: string; label: string; disabled?: boolean }[] = [];
+  let lastGroup: string | undefined;
+  for (const option of stockUnitOptions(lang, current)) {
+    if (option.group && option.group !== lastGroup) {
+      rows.push({ value: `__group__${option.group}`, label: `── ${option.group} ──`, disabled: true });
+      lastGroup = option.group;
+    }
+    rows.push({ value: option.value, label: option.label });
+  }
+  return rows;
+}
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {
