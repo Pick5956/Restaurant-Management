@@ -464,11 +464,6 @@ export default function InventoryPage() {
       : editingMaxStock > 0
         ? Math.max(0, Math.min(100, Math.round((form.min_stock / editingMaxStock) * 100)))
         : 0;
-  // The reorder slider counts whole units of whatever the reorder box is typed
-  // in, from nothing up to the most the shelf has held.
-  const minFactor = purchaseFactor(form, typed.minIn) ?? 1;
-  const sliderMax = Math.max(1, Math.floor(editingMaxStock / minFactor));
-  const sliderValue = Math.min(sliderMax, Math.round(form.min_stock / minFactor));
   const [modalOpen, setModalOpen] = useState(false);
   const [modalClosing, setModalClosing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -2172,19 +2167,23 @@ export default function InventoryPage() {
                     ) : null}
                     {editingMaxStock > 0 ? (
                       <>
-                        {/* Steps one whole unit at a time in the unit picked beside
-                            the number — 1 ลัง, 2 ลัง — because a 5% step of a
-                            70-ลัง shelf lands on 3.5 ลัง, which nobody can count.
-                            The level it sets is a plain quantity, not a share. */}
+                        {/* Whole tens only — 10%, 20% … 100% — so the reorder level
+                            is always a share people can say out loud. */}
                         <input
                           type="range"
                           min={0}
-                          max={sliderMax}
-                          step={1}
-                          value={sliderValue}
+                          max={100}
+                          step={10}
+                          value={Math.round(warnPercent / 10) * 10}
                           onChange={(event) => {
-                            const units = Number(event.target.value);
-                            applyTyped({ ...form, min_percent: 0 }, { ...typed, min: units > 0 ? String(units) : "" });
+                            const percent = Number(event.target.value);
+                            const min = reorderQuantityFor(editingMaxStock, percent);
+                            const factor = purchaseFactor(form, typed.minIn) ?? 1;
+                            applyTyped(
+                              { ...form, min_percent: percent, min_stock: min },
+                              { ...typed, min: typedText(min / factor) },
+                              false,
+                            );
                           }}
                           className="h-9 min-w-0 flex-1 accent-orange-500"
                         />
