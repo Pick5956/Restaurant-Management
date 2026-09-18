@@ -161,6 +161,8 @@ export interface IngredientInput {
   storage_type?: string;
   /** YYYY-MM-DD for the opening lot when `stock` is above zero; omit for "ไม่ระบุ". */
   expires_at?: string;
+  /** The unit `stock` was typed in, on create only. Omit for the ingredient's own unit. */
+  stock_unit?: string;
   /**
    * Purchase units. Omit a field to leave what is stored alone; send "" as
    * pack_unit to clear the pack and its case.

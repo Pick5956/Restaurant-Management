@@ -198,3 +198,24 @@ func purchaseUnitClashes(purchaseUnit, stockUnit string) error {
 	}
 	return nil
 }
+
+// openingStockFromRequest restates a new ingredient's opening stock in its own
+// unit when it was typed in a purchase unit ("2 ลัง" of eggs kept by the ฟอง),
+// and returns the "กรอก 2 ลัง" note the history row carries — the same note a
+// restock entered in a pack gets, so the ledger shows how it was counted.
+func openingStockFromRequest(quantity float64, enteredUnit, stockUnit string, packs packFields) (float64, string, error) {
+	entered := strings.TrimSpace(enteredUnit)
+	if entered == "" || sameUnit(entered, stockUnit) || quantity <= 0 {
+		return quantity, "", nil
+	}
+	shape := &entity.Ingredient{Unit: stockUnit}
+	packs.applyTo(shape)
+	converted, ok := IngredientQuantityInStockUnit(quantity, entered, shape)
+	if !ok {
+		return 0, "", errors.New("stock unit cannot be converted to the ingredient unit")
+	}
+	if converted > maxIngredientQuantity {
+		return 0, "", errors.New("stock value is too large")
+	}
+	return converted, noteWithEnteredUnit("", quantity, entered, stockUnit), nil
+}

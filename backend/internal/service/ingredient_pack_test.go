@@ -142,3 +142,23 @@ func TestResolvePackFields(t *testing.T) {
 		}
 	})
 }
+
+func TestOpeningStockFromRequest(t *testing.T) {
+	eggs := packFields{PackUnit: "แผง", PackSize: 20, CaseUnit: "ลัง", CaseSize: 50}
+
+	got, note, err := openingStockFromRequest(2, "ลัง", "ฟอง", eggs)
+	if err != nil || got != 2000 || note != "กรอก 2 ลัง" {
+		t.Fatalf("2 ลัง = %v %q %v, want 2000 \"กรอก 2 ลัง\"", got, note, err)
+	}
+	got, note, err = openingStockFromRequest(500, "", "ฟอง", eggs)
+	if err != nil || got != 500 || note != "" {
+		t.Fatalf("no unit = %v %q %v, want 500 untouched", got, note, err)
+	}
+	got, note, err = openingStockFromRequest(500, "ฟอง", "ฟอง", eggs)
+	if err != nil || got != 500 || note != "" {
+		t.Fatalf("own unit = %v %q %v, want 500 untouched", got, note, err)
+	}
+	if _, _, err := openingStockFromRequest(2, "ลัง", "ฟอง", packFields{}); err == nil {
+		t.Fatal("a case the ingredient does not have must be refused")
+	}
+}

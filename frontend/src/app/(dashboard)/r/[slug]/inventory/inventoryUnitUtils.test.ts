@@ -7,7 +7,11 @@ import {
   formatPackCount,
   packExample,
   packSummary,
+  purchaseFactor,
+  resolveTypedAmounts,
+  retargetTypedUnits,
   stockPerEntryUnit,
+  emptyTypedAmounts,
 } from "./inventoryUnitUtils";
 
 // What the API returns for fish sauce after migration 31: a ml shelf bought by
@@ -87,5 +91,62 @@ describe("pack text", () => {
     const text = packExample(fishSauce, "th") ?? "";
     expect(text.startsWith("รับของ 1 ลัง = 8,400 มิลลิลิตร · ขวดละ ")).toBe(true);
     expect(text).toContain("35");
+  });
+});
+
+// The form the owner filled in on 18 Sep: eggs by the ฟอง, 20 to a แผง, 50 แผง to a ลัง.
+const eggs = { unit: "ฟอง", pack_unit: "แผง", pack_size: 20, case_unit: "ลัง", case_size: 50 };
+const noPack = { unit: "ฟอง", pack_unit: "", pack_size: 0, case_unit: "", case_size: 0 };
+
+describe("purchaseFactor", () => {
+  it("reads the form's own pack fields", () => {
+    expect(purchaseFactor(eggs, "")).toBe(1);
+    expect(purchaseFactor(eggs, "ฟอง")).toBe(1);
+    expect(purchaseFactor(eggs, "แผง")).toBe(20);
+    expect(purchaseFactor(eggs, "ลัง")).toBe(1000);
+    expect(purchaseFactor(noPack, "แผง")).toBeNull();
+  });
+});
+
+describe("resolveTypedAmounts", () => {
+  it("turns 500 แผง into 10,000 ฟอง, not 500", () => {
+    const got = resolveTypedAmounts(eggs, { ...emptyTypedAmounts, stock: "500", stockIn: "แผง" });
+    expect(got.stock).toBe(10000);
+  });
+  it("scales quantities up and a price down", () => {
+    const got = resolveTypedAmounts(eggs, {
+      stock: "2",
+      stockIn: "ลัง",
+      min: "3",
+      minIn: "แผง",
+      cost: "100",
+      costIn: "แผง",
+    });
+    expect(got).toEqual({ stock: 2000, min_stock: 60, cost_per_unit: 5 });
+  });
+  it("leaves everything alone in the stock unit", () => {
+    expect(resolveTypedAmounts(noPack, { ...emptyTypedAmounts, stock: "500", min: "30", cost: "5" })).toEqual({
+      stock: 500,
+      min_stock: 30,
+      cost_per_unit: 5,
+    });
+  });
+});
+
+describe("retargetTypedUnits", () => {
+  it("switches empty fields to the pack the moment one is set", () => {
+    const got = retargetTypedUnits(noPack, eggs, { ...emptyTypedAmounts, cost: "10" });
+    expect(got.stockIn).toBe("แผง");
+    expect(got.minIn).toBe("แผง");
+    // A price already typed keeps meaning "per ฟอง".
+    expect(got.costIn).toBe("");
+  });
+  it("falls back when the unit a field used is removed", () => {
+    const typed = { ...emptyTypedAmounts, stock: "2", stockIn: "ลัง", min: "3", minIn: "แผง" };
+    const withoutCase = { ...eggs, case_unit: "", case_size: 0 };
+    expect(retargetTypedUnits(eggs, withoutCase, typed).stockIn).toBe("แผง");
+    const got = retargetTypedUnits(eggs, noPack, typed);
+    expect(got.stockIn).toBe("");
+    expect(got.minIn).toBe("");
   });
 });

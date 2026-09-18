@@ -55,7 +55,19 @@ import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
-import { PACK_UNITS, formatPackCount, packExample, unitCopy } from "./inventoryUnitUtils";
+import {
+  PACK_UNITS,
+  emptyTypedAmounts,
+  formatPackCount,
+  packExample,
+  purchaseFactor,
+  purchaseUnitChoices,
+  resolveTypedAmounts,
+  retargetTypedUnits,
+  typedText,
+  unitCopy,
+  type TypedAmounts,
+} from "./inventoryUnitUtils";
 import {
   daysUntil,
   defaultShelfLifeDays,
@@ -434,7 +446,9 @@ export default function InventoryPage() {
   const [bulkError, setBulkError] = useState("");
 
   const [form, setForm] = useState<IngredientInput>(emptyForm);
-  const [costText, setCostText] = useState("");
+  // Stock, reorder level and price exactly as typed, each with the unit it was
+  // typed in. `form` always holds the stock-unit values the server stores.
+  const [typed, setTyped] = useState<TypedAmounts>(emptyTypedAmounts);
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
   // Where the reorder slider's handle sits. A percent set by dragging is kept as
   // it is; a quantity typed by hand is shown at the place it falls on this
@@ -713,7 +727,7 @@ export default function InventoryPage() {
     setEditingItem(null);
     setForm(emptyForm);
     setFormExpiryDays(defaultShelfLifeDays(emptyForm.storage_type));
-    setCostText("");
+    setTyped(emptyTypedAmounts);
     setFormError("");
     setModalOpen(true);
   }
@@ -735,7 +749,18 @@ export default function InventoryPage() {
       case_unit: item.case_unit ?? "",
       case_size: item.case_size ?? 0,
     });
-    setCostText(item.cost_per_unit ? String(item.cost_per_unit) : "");
+    // An ingredient with a pack opens with its reorder level and price in that
+    // pack — "3 แผง", "แผงละ ฿100" — which is how they were meant.
+    const pack = item.pack_unit && (item.pack_size ?? 0) > 0 ? item.pack_unit : "";
+    const packSize = pack ? (item.pack_size as number) : 1;
+    setTyped({
+      stock: "",
+      stockIn: "",
+      min: typedText(item.min_stock / packSize),
+      minIn: pack,
+      cost: typedText(item.cost_per_unit * packSize, pack ? 2 : 4),
+      costIn: pack,
+    });
     setFormError("");
     setModalOpen(true);
   }
@@ -746,6 +771,7 @@ export default function InventoryPage() {
       setFormError(lang === "th" ? "กรุณาระบุชื่อวัตถุดิบ" : "Name is required");
       return;
     }
+    const stockTypedIn = typed.stockIn && typed.stockIn !== form.unit ? typed.stockIn : "";
     if (form.pack_unit && !((form.pack_size ?? 0) > 0)) {
       setFormError(ucopy.packSizeRequired(form.pack_unit));
       return;
@@ -763,11 +789,15 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const response = await createIngredient(
-            form.stock > 0 && formExpiryDays !== null
-              ? { ...form, expires_at: expiryDateFromDays(formExpiryDays) }
-              : form,
-          );
+          const payload: IngredientInput = { ...form };
+          // Opening stock typed in a pack goes up as typed, so the history row
+          // reads "ยอดเริ่มต้น · กรอก 2 ลัง" — the server does the conversion.
+          if (stockTypedIn && form.stock > 0) {
+            payload.stock = parseFloat(typed.stock) || 0;
+            payload.stock_unit = stockTypedIn;
+          }
+          if (form.stock > 0 && formExpiryDays !== null) payload.expires_at = expiryDateFromDays(formExpiryDays);
+          const response = await createIngredient(payload);
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
@@ -892,6 +922,38 @@ export default function InventoryPage() {
       setBulkOpen(false);
       setBulkClosing(false);
     }, 260);
+  }
+
+  // Everything that changes what a typed number means goes through here: the
+  // typed text, the unit beside it, and the pack fields that size those units.
+  function applyTyped(nextForm: IngredientInput, nextTyped: TypedAmounts, minFromTyped = true) {
+    const resolved = resolveTypedAmounts(nextForm, nextTyped);
+    setTyped(nextTyped);
+    setForm({
+      ...nextForm,
+      stock: resolved.stock,
+      cost_per_unit: resolved.cost_per_unit,
+      min_stock: minFromTyped ? resolved.min_stock : nextForm.min_stock,
+    });
+  }
+
+  function changePackFields(patch: Partial<IngredientInput>) {
+    const nextForm = { ...form, ...patch };
+    applyTyped(nextForm, retargetTypedUnits(form, nextForm, typed));
+  }
+
+  function changeTypedStock(patch: Partial<TypedAmounts>) {
+    const nextTyped = { ...typed, ...patch };
+    const stock = resolveTypedAmounts(form, nextTyped).stock;
+    // The shelf just changed size, so a reorder level held as a share of it is
+    // recomputed rather than left as a quantity from the old shelf.
+    if ((form.min_percent ?? 0) > 0) {
+      const min = reorderQuantityFor(stock, form.min_percent ?? 0);
+      const factor = purchaseFactor(form, nextTyped.minIn) ?? 1;
+      applyTyped({ ...form, min_stock: min }, { ...nextTyped, min: typedText(min / factor) }, false);
+      return;
+    }
+    applyTyped(form, nextTyped);
   }
 
   function updateBulkRow(index: number, patch: Partial<BulkRow>) {
@@ -1841,32 +1903,30 @@ export default function InventoryPage() {
                     />
                   </div>
                 </div>
+                {/* Order follows what each field depends on: the stock unit, then
+                    the packs sized in it, then the price, stock and reorder level
+                    that may be typed in those packs. */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.stockUnit}</label>
                     <ThemedSelect
                       aria-label={copy.stockUnit}
                       value={form.unit}
-                      onChange={(value) => setForm((current) => ({ ...current, unit: value }))}
+                      onChange={(value) => changePackFields({ unit: value })}
                       options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {copy.costPerUnit} (THB)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      inputMode="decimal"
-                      value={costText}
-                      onChange={(event) => {
-                        const raw = event.target.value;
-                        setCostText(raw);
-                        setForm((current) => ({ ...current, cost_per_unit: parseFloat(raw) || 0 }));
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
+                    <ThemedSelect
+                      aria-label={copy.storageType}
+                      value={form.storage_type ?? "room_temp"}
+                      onChange={(value) => {
+                        setForm((current) => ({ ...current, storage_type: value }));
+                        // A new storage type means a new shelf life for the opening lot.
+                        setFormExpiryDays(defaultShelfLifeDays(value));
                       }}
-                      className={inputCls}
+                      options={storageOptions}
                     />
                   </div>
                 </div>
@@ -1878,13 +1938,12 @@ export default function InventoryPage() {
                         aria-label={ucopy.buyAs}
                         value={form.pack_unit ?? ""}
                         onChange={(value) =>
-                          setForm((current) => ({
-                            ...current,
+                          changePackFields({
                             pack_unit: value,
-                            pack_size: value ? current.pack_size : 0,
-                            case_unit: value ? current.case_unit : "",
-                            case_size: value ? current.case_size : 0,
-                          }))
+                            pack_size: value ? form.pack_size : 0,
+                            case_unit: value ? form.case_unit : "",
+                            case_size: value ? form.case_size : 0,
+                          })
                         }
                         options={[
                           { value: "", label: ucopy.none },
@@ -1902,9 +1961,7 @@ export default function InventoryPage() {
                             inputMode="decimal"
                             aria-label={ucopy.perPack(form.pack_unit)}
                             value={form.pack_size || ""}
-                            onChange={(event) =>
-                              setForm((current) => ({ ...current, pack_size: parseFloat(event.target.value) || 0 }))
-                            }
+                            onChange={(event) => changePackFields({ pack_size: parseFloat(event.target.value) || 0 })}
                             className={inputCls}
                           />
                         </div>
@@ -1918,9 +1975,7 @@ export default function InventoryPage() {
                         <ThemedSelect
                           aria-label={ucopy.caseAs}
                           value={form.case_unit ?? ""}
-                          onChange={(value) =>
-                            setForm((current) => ({ ...current, case_unit: value, case_size: value ? current.case_size : 0 }))
-                          }
+                          onChange={(value) => changePackFields({ case_unit: value, case_size: value ? form.case_size : 0 })}
                           options={[
                             { value: "", label: `${ucopy.caseAs}: ${ucopy.none}` },
                             ...PACK_UNITS.filter((unit) => unit !== form.pack_unit && unit !== form.unit).map((unit) => ({
@@ -1940,9 +1995,7 @@ export default function InventoryPage() {
                               inputMode="decimal"
                               aria-label={ucopy.perCase(form.case_unit)}
                               value={form.case_size || ""}
-                              onChange={(event) =>
-                                setForm((current) => ({ ...current, case_size: parseFloat(event.target.value) || 0 }))
-                              }
+                              onChange={(event) => changePackFields({ case_size: parseFloat(event.target.value) || 0 })}
                               className={inputCls}
                             />
                           </div>
@@ -1955,46 +2008,75 @@ export default function InventoryPage() {
                     {packExample(form, lang) ?? ucopy.buyNote}
                   </p>
                 </div>
-                {/* Storage pairs with the opening stock when there is one; on an
+                {/* Price pairs with the opening stock when there is one; on an
                     existing item it takes the whole row rather than leaving half
                     of one empty. */}
                 <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
-                    <ThemedSelect
-                      aria-label={copy.storageType}
-                      value={form.storage_type ?? "room_temp"}
-                      onChange={(value) => {
-                        setForm((current) => ({ ...current, storage_type: value }));
-                        // A new storage type means a new shelf life for the opening lot.
-                        setFormExpiryDays(defaultShelfLifeDays(value));
-                      }}
-                      options={storageOptions}
-                    />
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {purchaseUnitChoices(form).length > 1 ? ucopy.price : `${copy.costPerUnit} (THB)`}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        aria-label={ucopy.price}
+                        value={typed.cost}
+                        onChange={(event) => applyTyped(form, { ...typed, cost: event.target.value })}
+                        className={inputCls}
+                      />
+                      {purchaseUnitChoices(form).length > 1 ? (
+                        <>
+                          <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
+                          <div className="w-28 shrink-0">
+                            <ThemedSelect
+                              aria-label={ucopy.price}
+                              value={typed.costIn || form.unit}
+                              onChange={(value) => applyTyped(form, { ...typed, costIn: value === form.unit ? "" : value })}
+                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                            />
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                    {typed.costIn && form.cost_per_unit > 0 ? (
+                      <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                        {ucopy.pricePerStockUnit(form.unit, formatCurrency(form.cost_per_unit, lang, 2))}
+                      </p>
+                    ) : null}
                   </div>
                   {!editingItem ? (
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.stock}
-                        onChange={(event) => {
-                          const stock = parseFloat(event.target.value) || 0;
-                          setForm((current) => ({
-                            ...current,
-                            stock,
-                            // The shelf just changed size, so a reorder level held
-                            // as a share of it is recomputed rather than left as a
-                            // quantity from the old shelf.
-                            min_stock:
-                              (current.min_percent ?? 0) > 0
-                                ? reorderQuantityFor(stock, current.min_percent ?? 0)
-                                : current.min_stock,
-                          }));
-                        }}
-                        className={inputCls}
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="decimal"
+                          aria-label={copy.initialStock}
+                          placeholder="0"
+                          value={typed.stock}
+                          onChange={(event) => changeTypedStock({ stock: event.target.value })}
+                          className={inputCls}
+                        />
+                        {purchaseUnitChoices(form).length > 1 ? (
+                          <div className="w-28 shrink-0">
+                            <ThemedSelect
+                              aria-label={copy.initialStock}
+                              value={typed.stockIn || form.unit}
+                              onChange={(value) => changeTypedStock({ stockIn: value === form.unit ? "" : value })}
+                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                      {typed.stockIn && form.stock > 0 ? (
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                          {ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -2024,19 +2106,28 @@ export default function InventoryPage() {
                       <input
                         type="number"
                         min={0}
-                        value={form.min_stock}
+                        inputMode="decimal"
+                        placeholder="0"
+                        aria-label={copy.minStock}
+                        value={typed.min}
                         onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            min_stock: parseFloat(event.target.value) || 0,
-                            // Typed by hand: a quantity the owner means, not a
-                            // share of the shelf, so it stops tracking the maximum.
-                            min_percent: 0,
-                          }))
+                          // Typed by hand: a quantity the owner means, not a
+                          // share of the shelf, so it stops tracking the maximum.
+                          applyTyped({ ...form, min_percent: 0 }, { ...typed, min: event.target.value })
                         }
                         className={inputCls}
                       />
                     </div>
+                    {purchaseUnitChoices(form).length > 1 ? (
+                      <div className="w-28 shrink-0">
+                        <ThemedSelect
+                          aria-label={copy.minStock}
+                          value={typed.minIn || form.unit}
+                          onChange={(value) => applyTyped(form, { ...typed, minIn: value === form.unit ? "" : value })}
+                          options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                        />
+                      </div>
+                    ) : null}
                     {editingMaxStock > 0 ? (
                       <>
                         <input
@@ -2047,11 +2138,13 @@ export default function InventoryPage() {
                           value={warnPercent}
                           onChange={(event) => {
                             const percent = Number(event.target.value);
-                            setForm((current) => ({
-                              ...current,
-                              min_percent: percent,
-                              min_stock: reorderQuantityFor(editingMaxStock, percent),
-                            }));
+                            const min = reorderQuantityFor(editingMaxStock, percent);
+                            const factor = purchaseFactor(form, typed.minIn) ?? 1;
+                            applyTyped(
+                              { ...form, min_percent: percent, min_stock: min },
+                              { ...typed, min: typedText(min / factor) },
+                              false,
+                            );
                           }}
                           className="h-9 min-w-0 flex-1 accent-orange-500"
                         />

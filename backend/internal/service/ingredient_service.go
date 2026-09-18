@@ -44,6 +44,10 @@ type IngredientRequest struct {
 	// Purchase units — see ingredient_pack.go. Pointers because leaving them
 	// out has to mean "leave them as they are": the Expo app and the assistant
 	// send none of these, and must not wipe a pack set on the web.
+	// StockUnit is the unit the opening `stock` was typed in — "2" with "ลัง".
+	// Empty means the ingredient's own unit. Only Create reads it: an edit
+	// never writes stock.
+	StockUnit string `json:"stock_unit" binding:"max=40"`
 	PackUnit *string  `json:"pack_unit" binding:"omitempty,max=40"`
 	PackSize *float64 `json:"pack_size"`
 	CaseUnit *string  `json:"case_unit" binding:"omitempty,max=40"`
@@ -219,6 +223,11 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 	if err != nil {
 		return nil, err
 	}
+	openingStock, openingNote, err := openingStockFromRequest(req.Stock, req.StockUnit, unit, packs)
+	if err != nil {
+		return nil, err
+	}
+	req.Stock = openingStock
 	ingredient := &entity.Ingredient{
 		RestaurantID: restaurantID,
 		Name:         name,
@@ -247,6 +256,9 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 		initialTx := buildInitialStockTransaction(ingredient, userID)
 		if initialTx == nil {
 			return nil
+		}
+		if openingNote != "" {
+			initialTx.Note += " · " + openingNote
 		}
 		if err := tx.CreateTransaction(initialTx); err != nil {
 			return err

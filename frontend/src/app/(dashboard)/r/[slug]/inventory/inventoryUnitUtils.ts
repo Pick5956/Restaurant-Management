@@ -120,6 +120,98 @@ export function packExample(item: PackShape & { cost_per_unit?: number }, lang: 
   return parts.join(" · ");
 }
 
+/**
+ * How many stock units one `unit` holds, from the form's own pack fields — the
+ * form is editing them, so the server's unit_family is not current yet. "" and
+ * the stock unit are 1; a unit the shape does not have is null.
+ */
+export function purchaseFactor(shape: PackShape, unit: string): number | null {
+  if (!unit || unit === shape.unit) return 1;
+  if (hasPack(shape) && unit === shape.pack_unit) return shape.pack_size as number;
+  if (hasCase(shape) && unit === shape.case_unit) {
+    return (shape.case_size as number) * (shape.pack_size as number);
+  }
+  return null;
+}
+
+/** The units a number on the form may be typed in: the stock unit, then pack, then case. */
+export function purchaseUnitChoices(shape: PackShape): string[] {
+  const units = [shape.unit];
+  if (hasPack(shape)) units.push(shape.pack_unit as string);
+  if (hasCase(shape)) units.push(shape.case_unit as string);
+  return units;
+}
+
+/**
+ * The three numbers the ingredient form collects, exactly as typed, with the
+ * unit each was typed in ("" = the stock unit). They stay as typed so that
+ * picking another unit or changing a pack size re-reads them instead of
+ * silently rescaling what the person entered.
+ */
+export type TypedAmounts = {
+  stock: string;
+  min: string;
+  cost: string;
+  stockIn: string;
+  minIn: string;
+  costIn: string;
+};
+
+export const emptyTypedAmounts: TypedAmounts = { stock: "", min: "", cost: "", stockIn: "", minIn: "", costIn: "" };
+
+function typedNumber(raw: string): number {
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * What the typed numbers mean in the stock unit — the only unit the server
+ * stores. Quantities multiply by the unit's size; a price divides by it, since
+ * "แผงละ 100" is 5 a ฟอง when a แผง holds 20.
+ */
+export function resolveTypedAmounts(
+  shape: PackShape,
+  typed: TypedAmounts,
+): { stock: number; min_stock: number; cost_per_unit: number } {
+  const factor = (unit: string) => purchaseFactor(shape, unit) ?? 1;
+  return {
+    stock: typedNumber(typed.stock) * factor(typed.stockIn),
+    min_stock: typedNumber(typed.min) * factor(typed.minIn),
+    cost_per_unit: typedNumber(typed.cost) / factor(typed.costIn),
+  };
+}
+
+/**
+ * Keeps each field's unit valid after the pack fields change: a unit that no
+ * longer exists falls back to the pack (or the stock unit), and when a pack is
+ * first set, every still-empty field switches to it — people count shelves and
+ * remember prices by the แผง, not the ฟอง. A field that already holds a number
+ * keeps its unit, so setting a pack never changes what a typed number means.
+ */
+export function retargetTypedUnits(before: PackShape, after: PackShape, typed: TypedAmounts): TypedAmounts {
+  const valid = new Set(purchaseUnitChoices(after));
+  const fallback = hasPack(after) ? (after.pack_unit as string) : "";
+  const next = { ...typed };
+  const pairs = [
+    ["stockIn", "stock"],
+    ["minIn", "min"],
+    ["costIn", "cost"],
+  ] as const;
+  for (const [unitKey, textKey] of pairs) {
+    if (next[unitKey] && !valid.has(next[unitKey])) next[unitKey] = fallback;
+    if (!hasPack(before) && hasPack(after) && !next[unitKey] && typedNumber(next[textKey]) === 0) {
+      next[unitKey] = after.pack_unit as string;
+    }
+  }
+  return next;
+}
+
+/** A number for a text box: no trailing zeros, at most four decimals. */
+export function typedText(value: number, decimals = 4): string {
+  if (!(value > 0)) return "";
+  return String(Math.round(value * 10 ** decimals) / 10 ** decimals);
+}
+
 export function unitCopy(lang: "th" | "en") {
   return lang === "th"
     ? {
@@ -133,6 +225,10 @@ export function unitCopy(lang: "th" | "en") {
         buyNote: "ใส่เมื่อซื้อของเป็นภาชนะแต่สูตรใช้เป็น กรัม/มล. ตอนรับของและนับของจะกรอกเป็นภาชนะได้เลย",
         pickPack: "ซื้อเป็น",
         pickCase: "หน่วยใหญ่",
+        price: "ราคา (THB)",
+        perWord: "ต่อ",
+        inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
+        pricePerStockUnit: (unit: string, price: string) => `= ${unit}ละ ${price}`,
         packSizeRequired: (pack: string) => `ใส่ว่า 1 ${pack} มีเท่าไหร่`,
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
@@ -147,6 +243,10 @@ export function unitCopy(lang: "th" | "en") {
         buyNote: "Set this when an ingredient is bought in containers but used by weight or volume — deliveries and counts can then be entered per container.",
         pickPack: "Bought as",
         pickCase: "Larger unit",
+        price: "Price (THB)",
+        perWord: "per",
+        inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
+        pricePerStockUnit: (unit: string, price: string) => `= ${price} per ${unit}`,
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,
       };
