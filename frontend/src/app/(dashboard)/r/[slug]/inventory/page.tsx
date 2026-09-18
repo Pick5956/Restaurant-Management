@@ -925,24 +925,10 @@ export default function InventoryPage() {
     }, 260);
   }
 
-  // The price may be typed per any unit of the ingredient, or — on a new
-  // ingredient with opening stock — as the total paid for that stock. The total
-  // option stays listed once chosen, even if the stock is cleared, so the
-  // select never shows a value it has no label for.
-  const priceUnitOptions = [
-    ...purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit })),
-    ...(!editingItem && (form.stock > 0 || typed.costIn === TOTAL_PRICE)
-      ? [
-          {
-            value: TOTAL_PRICE,
-            label: ucopy.totalOf(
-              typed.stock ? formatNumber(parseFloat(typed.stock) || 0, lang) : "0",
-              typed.stockIn || form.unit,
-            ),
-          },
-        ]
-      : []),
-  ];
+  // A price is typed per a unit of the ingredient only when there is no stock
+  // to divide a total by — an edit, or a new ingredient with no opening stock.
+  const priceUnitOptions = purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }));
+  const pricingTotal = typed.costIn === TOTAL_PRICE;
 
   // Everything that changes what a typed number means goes through here: the
   // typed text, the unit beside it, and the pack fields that size those units.
@@ -964,14 +950,14 @@ export default function InventoryPage() {
 
   function changeTypedStock(patch: Partial<TypedAmounts>) {
     const nextTyped = { ...typed, ...patch };
-    // With opening stock on the form the natural price to type is what that
-    // stock cost, so an untouched price box switches to "total paid" and the
-    // price per unit is worked out from it. A price already typed keeps its
-    // unit — switching it would change what the number means.
-    if (!editingItem && nextTyped.cost.trim() === "") {
+    // With opening stock on the form, the only price anyone knows is what that
+    // stock cost, so the price box always means "total paid" and the price per
+    // unit is worked out from it — there is no mode to pick. With no stock
+    // there is nothing to divide by, and it goes back to a price per unit.
+    if (!editingItem) {
       const hasStock = (parseFloat(nextTyped.stock) || 0) > 0;
-      if (hasStock && nextTyped.costIn !== TOTAL_PRICE) nextTyped.costIn = TOTAL_PRICE;
-      if (!hasStock && nextTyped.costIn === TOTAL_PRICE) {
+      if (hasStock) nextTyped.costIn = TOTAL_PRICE;
+      else if (nextTyped.costIn === TOTAL_PRICE) {
         nextTyped.costIn = form.pack_unit && (form.pack_size ?? 0) > 0 ? form.pack_unit : "";
       }
     }
@@ -2077,8 +2063,11 @@ export default function InventoryPage() {
                   ) : null}
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {typed.costIn === TOTAL_PRICE
-                        ? ucopy.totalPaid
+                      {pricingTotal
+                        ? ucopy.totalPaidFor(
+                            formatNumber(parseFloat(typed.stock) || 0, lang),
+                            typed.stockIn || form.unit,
+                          )
                         : priceUnitOptions.length > 1
                           ? ucopy.price
                           : `${copy.costPerUnit} (THB)`}
@@ -2094,12 +2083,10 @@ export default function InventoryPage() {
                         onChange={(event) => applyTyped(form, { ...typed, cost: event.target.value })}
                         className={inputCls}
                       />
-                      {priceUnitOptions.length > 1 ? (
+                      {!pricingTotal && priceUnitOptions.length > 1 ? (
                         <>
-                          {typed.costIn !== TOTAL_PRICE ? (
-                            <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
-                          ) : null}
-                          <div className="w-32 shrink-0">
+                          <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
+                          <div className="w-28 shrink-0">
                             <ThemedSelect
                               aria-label={ucopy.price}
                               value={typed.costIn || form.unit}
@@ -2110,9 +2097,7 @@ export default function InventoryPage() {
                         </>
                       ) : null}
                     </div>
-                    {typed.costIn === TOTAL_PRICE && !(form.stock > 0) ? (
-                      <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{ucopy.totalNeedsStock}</p>
-                    ) : typed.costIn && form.cost_per_unit > 0 ? (
+                    {typed.costIn && form.cost_per_unit > 0 ? (
                       <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
                         {/* Every price the typed one implies, so the owner can check
                             it against the shelf tag: แพ็กละ ฿60 · ขวดละ ฿5. */}

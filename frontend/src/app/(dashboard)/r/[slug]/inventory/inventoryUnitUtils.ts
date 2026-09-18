@@ -250,9 +250,7 @@ export function unitCopy(lang: "th" | "en") {
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
         pricePerStockUnit: (unit: string, price: string) => `= ${unit}ละ ${price}`,
         pricePerUnit: (unit: string, price: string) => `${unit}ละ ${price}`,
-        totalOf: (amount: string, unit: string) => `รวม ${amount} ${unit}`,
-        totalPaid: "จ่ายไปทั้งหมด (THB)",
-        totalNeedsStock: "ใส่สต็อกเริ่มต้นก่อน ระบบถึงหารราคาให้ได้",
+        totalPaidFor: (amount: string, unit: string) => `จ่ายไปทั้งหมดสำหรับ ${amount} ${unit} (THB)`,
         packSizeRequired: (pack: string) => `ใส่ว่า 1 ${pack} มีเท่าไหร่`,
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
@@ -272,9 +270,7 @@ export function unitCopy(lang: "th" | "en") {
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
         pricePerStockUnit: (unit: string, price: string) => `= ${price} per ${unit}`,
         pricePerUnit: (unit: string, price: string) => `${price} per ${unit}`,
-        totalOf: (amount: string, unit: string) => `total for ${amount} ${unit}`,
-        totalPaid: "Total paid (THB)",
-        totalNeedsStock: "Enter the opening stock first so the price can be split",
+        totalPaidFor: (amount: string, unit: string) => `Total paid for ${amount} ${unit} (THB)`,
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,
       };
