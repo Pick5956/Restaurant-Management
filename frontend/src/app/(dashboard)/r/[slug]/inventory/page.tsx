@@ -964,6 +964,17 @@ export default function InventoryPage() {
 
   function changeTypedStock(patch: Partial<TypedAmounts>) {
     const nextTyped = { ...typed, ...patch };
+    // With opening stock on the form the natural price to type is what that
+    // stock cost, so an untouched price box switches to "total paid" and the
+    // price per unit is worked out from it. A price already typed keeps its
+    // unit — switching it would change what the number means.
+    if (!editingItem && nextTyped.cost.trim() === "") {
+      const hasStock = (parseFloat(nextTyped.stock) || 0) > 0;
+      if (hasStock && nextTyped.costIn !== TOTAL_PRICE) nextTyped.costIn = TOTAL_PRICE;
+      if (!hasStock && nextTyped.costIn === TOTAL_PRICE) {
+        nextTyped.costIn = form.pack_unit && (form.pack_size ?? 0) > 0 ? form.pack_unit : "";
+      }
+    }
     const stock = resolveTypedAmounts(form, nextTyped).stock;
     // The shelf just changed size, so a reorder level held as a share of it is
     // recomputed rather than left as a quantity from the old shelf.
@@ -2028,13 +2039,49 @@ export default function InventoryPage() {
                     {packExample(form, lang) ?? ucopy.buyNote}
                   </p>
                 </div>
-                {/* Price pairs with the opening stock when there is one; on an
-                    existing item it takes the whole row rather than leaving half
-                    of one empty. */}
+                {/* Opening stock comes first because the price can be read off
+                    it: type what was paid for that stock and the price per unit
+                    follows. On an existing item the price takes the whole row. */}
                 <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
+                  {!editingItem ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="decimal"
+                          aria-label={copy.initialStock}
+                          placeholder="0"
+                          value={typed.stock}
+                          onChange={(event) => changeTypedStock({ stock: event.target.value })}
+                          className={inputCls}
+                        />
+                        {purchaseUnitChoices(form).length > 1 ? (
+                          <div className="w-28 shrink-0">
+                            <ThemedSelect
+                              aria-label={copy.initialStock}
+                              value={typed.stockIn || form.unit}
+                              onChange={(value) => changeTypedStock({ stockIn: value === form.unit ? "" : value })}
+                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                      {typed.stockIn && form.stock > 0 ? (
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                          {ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {priceUnitOptions.length > 1 ? ucopy.price : `${copy.costPerUnit} (THB)`}
+                      {typed.costIn === TOTAL_PRICE
+                        ? ucopy.totalPaid
+                        : priceUnitOptions.length > 1
+                          ? ucopy.price
+                          : `${copy.costPerUnit} (THB)`}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -2084,38 +2131,6 @@ export default function InventoryPage() {
                       </p>
                     ) : null}
                   </div>
-                  {!editingItem ? (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="decimal"
-                          aria-label={copy.initialStock}
-                          placeholder="0"
-                          value={typed.stock}
-                          onChange={(event) => changeTypedStock({ stock: event.target.value })}
-                          className={inputCls}
-                        />
-                        {purchaseUnitChoices(form).length > 1 ? (
-                          <div className="w-28 shrink-0">
-                            <ThemedSelect
-                              aria-label={copy.initialStock}
-                              value={typed.stockIn || form.unit}
-                              onChange={(value) => changeTypedStock({ stockIn: value === form.unit ? "" : value })}
-                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                      {typed.stockIn && form.stock > 0 ? (
-                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                          {ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
                 {!editingItem && form.stock > 0 ? (
                   <div>
