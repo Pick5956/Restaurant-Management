@@ -13,6 +13,8 @@ import {
   stockPerEntryUnit,
   emptyTypedAmounts,
   TOTAL_PRICE,
+  priceBreakdown,
+  stockUnitHint,
 } from "./inventoryUnitUtils";
 
 // What the API returns for fish sauce after migration 31: a ml shelf bought by
@@ -192,5 +194,21 @@ describe("retargetTypedUnits when the pack is swapped", () => {
     const got = retargetTypedUnits(before, water, { ...emptyTypedAmounts, cost: "10", costIn: "ขวด" });
     // ขวด is the stock unit now, which the form writes as "".
     expect(got.costIn).toBe("");
+  });
+});
+
+describe("priceBreakdown", () => {
+  it("restates the price biggest unit first", () => {
+    const coconut = { unit: "ขวด", pack_unit: "ลัง", pack_size: 50, case_unit: "", case_size: 0 };
+    expect(priceBreakdown(coconut, 2, "", "th")).toBe("ลังละ ฿100.00 · ขวดละ ฿2.00");
+    expect(priceBreakdown(coconut, 2, "ลัง", "th")).toBe("ขวดละ ฿2.00");
+  });
+});
+
+describe("stockUnitHint", () => {
+  it("warns a whole-container unit about pouring", () => {
+    expect(stockUnitHint("ขวด", "th")).toContain("ถ้าเทแบ่งใช้");
+    expect(stockUnitHint("มิลลิลิตร", "th")).toContain("ตวงใช้");
+    expect(stockUnitHint("ลูก", "th")).toBeNull();
   });
 });

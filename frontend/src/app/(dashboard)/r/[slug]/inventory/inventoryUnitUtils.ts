@@ -226,6 +226,58 @@ export function retargetTypedUnits(before: PackShape, after: PackShape, typed: T
   return next;
 }
 
+/**
+ * "ลังละ ฿100.00 · ขวดละ ฿2.00" — the price per stock unit restated in every
+ * unit the ingredient has, biggest first, so it can be checked against a shelf
+ * tag. `except` drops the unit the price was typed in, which needs no echo.
+ */
+export function priceBreakdown(
+  shape: PackShape,
+  costPerUnit: number,
+  except: string,
+  lang: "th" | "en",
+): string {
+  const copy = unitCopy(lang);
+  return purchaseUnitChoices(shape)
+    .slice()
+    .reverse()
+    .filter((unit) => unit !== except)
+    .map((unit) => copy.pricePerUnit(unit, formatCurrency(costPerUnit * (purchaseFactor(shape, unit) ?? 1), lang, 2)))
+    .join(" · ");
+}
+
+/**
+ * The line under the stock-unit picker. The unit is what a recipe deducts, and
+ * the one mistake worth catching early is a container picked for something
+ * poured a little at a time — fish sauce by the ขวด cannot take "15 มล." in a
+ * recipe. The form does not refuse it (nothing on it says whether a thing is
+ * poured or used whole); it says so while it is still cheap to change.
+ */
+export function stockUnitHint(unit: string, lang: "th" | "en"): string | null {
+  const th = lang === "th";
+  switch (unit) {
+    case "กรัม":
+    case "กิโลกรัม":
+      return th
+        ? "ชั่งใช้ เช่น หมูสับ ผัก · สูตรใส่เป็นกรัมหรือกิโลกรัมก็ได้"
+        : "Weighed out, e.g. minced pork · recipes may use grams or kilograms";
+    case "มิลลิลิตร":
+    case "ลิตร":
+      return th
+        ? "ตวงใช้ เช่น น้ำปลา กะทิ · ถ้าซื้อมาเป็นขวด ตั้งหน่วยซื้อด้านล่าง"
+        : "Poured, e.g. fish sauce · bought in bottles? set a purchase unit below";
+    case "ฟอง":
+      return th ? "นับเป็นฟอง เช่น ไข่" : "Counted one by one, e.g. eggs";
+    case "ขวด":
+    case "กระป๋อง":
+      return th
+        ? `ใช้ทั้ง${unit} เช่น น้ำดื่ม โค้ก · ถ้าเทแบ่งใช้ ให้เลือกมิลลิลิตรแล้วตั้งหน่วยซื้อเป็น${unit}`
+        : `Used a whole ${unit} at a time, e.g. water · poured a little at a time? pick ml and buy by the ${unit}`;
+    default:
+      return null;
+  }
+}
+
 /** A number for a text box: no trailing zeros, at most four decimals. */
 export function typedText(value: number, decimals = 4): string {
   if (!(value > 0)) return "";
@@ -251,6 +303,11 @@ export function unitCopy(lang: "th" | "en") {
         pricePerStockUnit: (unit: string, price: string) => `= ${unit}ละ ${price}`,
         pricePerUnit: (unit: string, price: string) => `${unit}ละ ${price}`,
         totalPaidFor: (amount: string, unit: string) => `จ่ายไปทั้งหมดสำหรับ ${amount} ${unit} (THB)`,
+        totalPaid: "จ่ายไปทั้งหมด",
+        totalFor: (amount: string, unit: string) => `สำหรับ ${amount} ${unit}`,
+        baht: "บาท",
+        stockUnitLabel: "เมนูตัดสต็อกเป็น",
+        pickEntryUnit: "เลือกหน่วย",
         packSizeRequired: (pack: string) => `ใส่ว่า 1 ${pack} มีเท่าไหร่`,
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
@@ -271,6 +328,11 @@ export function unitCopy(lang: "th" | "en") {
         pricePerStockUnit: (unit: string, price: string) => `= ${price} per ${unit}`,
         pricePerUnit: (unit: string, price: string) => `${price} per ${unit}`,
         totalPaidFor: (amount: string, unit: string) => `Total paid for ${amount} ${unit} (THB)`,
+        totalPaid: "Total paid",
+        totalFor: (amount: string, unit: string) => `for ${amount} ${unit}`,
+        baht: "THB",
+        stockUnitLabel: "Menus deduct in",
+        pickEntryUnit: "Pick a unit",
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,
       };

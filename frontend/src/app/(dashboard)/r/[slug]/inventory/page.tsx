@@ -64,6 +64,7 @@ import {
   purchaseUnitChoices,
   resolveTypedAmounts,
   retargetTypedUnits,
+  stockUnitHint,
   typedText,
   unitCopy,
   TOTAL_PRICE,
@@ -1925,13 +1926,18 @@ export default function InventoryPage() {
                     that may be typed in those packs. */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.stockUnit}</label>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.stockUnitLabel}</label>
                     <ThemedSelect
-                      aria-label={copy.stockUnit}
+                      aria-label={ucopy.stockUnitLabel}
                       value={form.unit}
                       onChange={(value) => changePackFields({ unit: value })}
                       options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
                     />
+                    {stockUnitHint(form.unit, lang) ? (
+                      <p className="mt-1.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+                        {stockUnitHint(form.unit, lang)}
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
