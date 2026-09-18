@@ -66,6 +66,7 @@ import {
   retargetTypedUnits,
   typedText,
   unitCopy,
+  TOTAL_PRICE,
   type TypedAmounts,
 } from "./inventoryUnitUtils";
 import {
@@ -923,6 +924,25 @@ export default function InventoryPage() {
       setBulkClosing(false);
     }, 260);
   }
+
+  // The price may be typed per any unit of the ingredient, or — on a new
+  // ingredient with opening stock — as the total paid for that stock. The total
+  // option stays listed once chosen, even if the stock is cleared, so the
+  // select never shows a value it has no label for.
+  const priceUnitOptions = [
+    ...purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit })),
+    ...(!editingItem && (form.stock > 0 || typed.costIn === TOTAL_PRICE)
+      ? [
+          {
+            value: TOTAL_PRICE,
+            label: ucopy.totalOf(
+              typed.stock ? formatNumber(parseFloat(typed.stock) || 0, lang) : "0",
+              typed.stockIn || form.unit,
+            ),
+          },
+        ]
+      : []),
+  ];
 
   // Everything that changes what a typed number means goes through here: the
   // typed text, the unit beside it, and the pack fields that size those units.
@@ -2014,7 +2034,7 @@ export default function InventoryPage() {
                 <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {purchaseUnitChoices(form).length > 1 ? ucopy.price : `${copy.costPerUnit} (THB)`}
+                      {priceUnitOptions.length > 1 ? ucopy.price : `${copy.costPerUnit} (THB)`}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -2027,23 +2047,40 @@ export default function InventoryPage() {
                         onChange={(event) => applyTyped(form, { ...typed, cost: event.target.value })}
                         className={inputCls}
                       />
-                      {purchaseUnitChoices(form).length > 1 ? (
+                      {priceUnitOptions.length > 1 ? (
                         <>
-                          <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
-                          <div className="w-28 shrink-0">
+                          {typed.costIn !== TOTAL_PRICE ? (
+                            <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
+                          ) : null}
+                          <div className="w-32 shrink-0">
                             <ThemedSelect
                               aria-label={ucopy.price}
                               value={typed.costIn || form.unit}
                               onChange={(value) => applyTyped(form, { ...typed, costIn: value === form.unit ? "" : value })}
-                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                              options={priceUnitOptions}
                             />
                           </div>
                         </>
                       ) : null}
                     </div>
-                    {typed.costIn && form.cost_per_unit > 0 ? (
+                    {typed.costIn === TOTAL_PRICE && !(form.stock > 0) ? (
+                      <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{ucopy.totalNeedsStock}</p>
+                    ) : typed.costIn && form.cost_per_unit > 0 ? (
                       <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                        {ucopy.pricePerStockUnit(form.unit, formatCurrency(form.cost_per_unit, lang, 2))}
+                        {/* Every price the typed one implies, so the owner can check
+                            it against the shelf tag: แพ็กละ ฿60 · ขวดละ ฿5. */}
+                        {"= "}
+                        {purchaseUnitChoices(form)
+                          .slice()
+                          .reverse()
+                          .filter((unit) => unit !== typed.costIn)
+                          .map((unit) =>
+                            ucopy.pricePerUnit(
+                              unit,
+                              formatCurrency(form.cost_per_unit * (purchaseFactor(form, unit) ?? 1), lang, 2),
+                            ),
+                          )
+                          .join(" · ")}
                       </p>
                     ) : null}
                   </div>

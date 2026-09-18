@@ -157,6 +157,13 @@ export type TypedAmounts = {
   costIn: string;
 };
 
+/**
+ * A price "unit" meaning "what I paid for the whole opening stock". The price
+ * per stock unit is then that total over the opening quantity — the number on
+ * the receipt, with no division left to the person.
+ */
+export const TOTAL_PRICE = "__total__";
+
 export const emptyTypedAmounts: TypedAmounts = { stock: "", min: "", cost: "", stockIn: "", minIn: "", costIn: "" };
 
 function typedNumber(raw: string): number {
@@ -174,19 +181,31 @@ export function resolveTypedAmounts(
   typed: TypedAmounts,
 ): { stock: number; min_stock: number; cost_per_unit: number } {
   const factor = (unit: string) => purchaseFactor(shape, unit) ?? 1;
+  const stock = typedNumber(typed.stock) * factor(typed.stockIn);
+  const cost =
+    typed.costIn === TOTAL_PRICE
+      ? stock > 0
+        ? typedNumber(typed.cost) / stock
+        : 0
+      : typedNumber(typed.cost) / factor(typed.costIn);
   return {
-    stock: typedNumber(typed.stock) * factor(typed.stockIn),
+    stock,
     min_stock: typedNumber(typed.min) * factor(typed.minIn),
-    cost_per_unit: typedNumber(typed.cost) / factor(typed.costIn),
+    cost_per_unit: cost,
   };
 }
 
 /**
  * Keeps each field's unit valid after the pack fields change: a unit that no
- * longer exists falls back to the pack (or the stock unit), and when a pack is
- * first set, every still-empty field switches to it — people count shelves and
- * remember prices by the แผง, not the ฟอง. A field that already holds a number
- * keeps its unit, so setting a pack never changes what a typed number means.
+ * longer exists falls back to the pack (or the stock unit), and whenever a
+ * pack is set or swapped for another, every still-empty field switches to it —
+ * people count shelves and remember prices by the แผง, not the ฟอง. A field
+ * that already holds a number keeps its unit, so setting a pack never changes
+ * what a typed number means.
+ *
+ * "Swapped" matters: set ขวด as the pack of a ml shelf, then make ขวด the stock
+ * unit and แพ็ก the pack. The fields were on ขวด, which still exists — as the
+ * stock unit now — so a first-pack-only rule left the price on ขวด.
  */
 export function retargetTypedUnits(before: PackShape, after: PackShape, typed: TypedAmounts): TypedAmounts {
   const valid = new Set(purchaseUnitChoices(after));
@@ -197,11 +216,12 @@ export function retargetTypedUnits(before: PackShape, after: PackShape, typed: T
     ["minIn", "min"],
     ["costIn", "cost"],
   ] as const;
+  const newPack = hasPack(after) && (!hasPack(before) || before.pack_unit !== after.pack_unit);
   for (const [unitKey, textKey] of pairs) {
+    if (next[unitKey] === TOTAL_PRICE) continue;
+    if (next[unitKey] === after.unit) next[unitKey] = "";
     if (next[unitKey] && !valid.has(next[unitKey])) next[unitKey] = fallback;
-    if (!hasPack(before) && hasPack(after) && !next[unitKey] && typedNumber(next[textKey]) === 0) {
-      next[unitKey] = after.pack_unit as string;
-    }
+    if (newPack && typedNumber(next[textKey]) === 0) next[unitKey] = after.pack_unit as string;
   }
   return next;
 }
@@ -229,6 +249,9 @@ export function unitCopy(lang: "th" | "en") {
         perWord: "ต่อ",
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
         pricePerStockUnit: (unit: string, price: string) => `= ${unit}ละ ${price}`,
+        pricePerUnit: (unit: string, price: string) => `${unit}ละ ${price}`,
+        totalOf: (amount: string, unit: string) => `รวม ${amount} ${unit}`,
+        totalNeedsStock: "ใส่สต็อกเริ่มต้นก่อน ระบบถึงหารราคาให้ได้",
         packSizeRequired: (pack: string) => `ใส่ว่า 1 ${pack} มีเท่าไหร่`,
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
@@ -247,6 +270,9 @@ export function unitCopy(lang: "th" | "en") {
         perWord: "per",
         inStockUnit: (amount: string, unit: string) => `= ${amount} ${unit}`,
         pricePerStockUnit: (unit: string, price: string) => `= ${price} per ${unit}`,
+        pricePerUnit: (unit: string, price: string) => `${price} per ${unit}`,
+        totalOf: (amount: string, unit: string) => `total for ${amount} ${unit}`,
+        totalNeedsStock: "Enter the opening stock first so the price can be split",
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,
       };

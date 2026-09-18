@@ -12,6 +12,7 @@ import {
   retargetTypedUnits,
   stockPerEntryUnit,
   emptyTypedAmounts,
+  TOTAL_PRICE,
 } from "./inventoryUnitUtils";
 
 // What the API returns for fish sauce after migration 31: a ml shelf bought by
@@ -148,5 +149,48 @@ describe("retargetTypedUnits", () => {
     const got = retargetTypedUnits(eggs, noPack, typed);
     expect(got.stockIn).toBe("");
     expect(got.minIn).toBe("");
+  });
+});
+
+// The owner's form on 18 Sep: drinking water by the ขวด, 12 to a แพ็ก.
+const water = { unit: "ขวด", pack_unit: "แพ็ก", pack_size: 12, case_unit: "", case_size: 0 };
+
+describe("total price", () => {
+  it("splits what was paid for the opening stock over it", () => {
+    const got = resolveTypedAmounts(water, {
+      ...emptyTypedAmounts,
+      stock: "3",
+      stockIn: "แพ็ก",
+      cost: "180",
+      costIn: TOTAL_PRICE,
+    });
+    expect(got.stock).toBe(36);
+    expect(got.cost_per_unit).toBe(5);
+  });
+  it("is 0, not Infinity, before any stock is typed", () => {
+    const got = resolveTypedAmounts(water, { ...emptyTypedAmounts, cost: "180", costIn: TOTAL_PRICE });
+    expect(got.cost_per_unit).toBe(0);
+  });
+  it("survives a pack change", () => {
+    const typed = { ...emptyTypedAmounts, cost: "180", costIn: TOTAL_PRICE };
+    expect(retargetTypedUnits(noPack, water, typed).costIn).toBe(TOTAL_PRICE);
+  });
+});
+
+describe("retargetTypedUnits when the pack is swapped", () => {
+  it("moves empty fields from the old pack to the new one", () => {
+    // ขวด was the pack of a ml shelf; now ขวด is the stock unit and แพ็ก the pack.
+    const before = { unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 750, case_unit: "", case_size: 0 };
+    const typed = { ...emptyTypedAmounts, stockIn: "ขวด", minIn: "ขวด", costIn: "ขวด" };
+    const got = retargetTypedUnits(before, water, typed);
+    expect(got.stockIn).toBe("แพ็ก");
+    expect(got.minIn).toBe("แพ็ก");
+    expect(got.costIn).toBe("แพ็ก");
+  });
+  it("keeps a typed number on the unit it was typed in", () => {
+    const before = { unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 750, case_unit: "", case_size: 0 };
+    const got = retargetTypedUnits(before, water, { ...emptyTypedAmounts, cost: "10", costIn: "ขวด" });
+    // ขวด is the stock unit now, which the form writes as "".
+    expect(got.costIn).toBe("");
   });
 });
