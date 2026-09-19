@@ -4,8 +4,9 @@
  *   <div ref={smoothScroll} className="overflow-y-auto">…</div>
  *
  * Each wheel notch moves a target, and the list eases toward it and slows to a
- * stop — the glide the time wheel has — instead of jumping 100px at a time. A
- * quick run of notches goes further than the same notches spaced out.
+ * stop — the glide the time wheel has — instead of jumping 100px at a time.
+ * A notch coasts one and a half notches' worth, and a quick run of notches goes
+ * further than the same notches spaced out.
  * At the top or bottom the wheel is left alone, so the page itself scrolls on
  * and a list never traps the wheel. Touch and trackpad momentum are the
  * browser's own and untouched; there is no mouse drag here, only the wheel.
@@ -16,9 +17,12 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
   if (!node) return;
 
   // Fraction of the remaining distance covered each frame: the ease-out.
-  // 0.12 glides for about 0.6s after a notch; 0.2 was over in a quarter
-  // second and read as a jump.
-  const EASE = 0.12;
+  // 0.07 glides for about a second after a notch. 0.2 was over in a quarter
+  // second and read as a jump; 0.12 still stopped right on the notch and did
+  // not read as a slide.
+  const EASE = 0.07;
+  // Each notch carries past its own 100px, the way a flicked wheel coasts.
+  const CARRY = 1.5;
   // Notches closer together than this count as one spin and build speed.
   const SPIN_GAP_MS = 120;
 
@@ -71,7 +75,7 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
     // run adds a quarter more than the one before, up to double.
     streak = event.timeStamp - lastWheel < SPIN_GAP_MS ? streak + 1 : 0;
     lastWheel = event.timeStamp;
-    const boost = Math.min(2, 1 + streak * 0.25);
+    const boost = CARRY * Math.min(2, 1 + streak * 0.35);
     const base = target ?? node.scrollTop;
     const next = clamp(base + event.deltaY * unit * boost);
     // Nothing left to scroll this way: let the page have the wheel.
