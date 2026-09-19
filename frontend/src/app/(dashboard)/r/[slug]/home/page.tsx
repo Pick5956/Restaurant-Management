@@ -746,13 +746,18 @@ function CollapsibleCard({
                     // and the count above it is something you can eyeball.
                     <div
                       key={item.key}
-                      style={{ fontSize: `calc(${rowText} * 1.2)` }}
-                      // Each pip is as wide as what it says and they wrap when
-                      // the line runs out, rather than every pip being stamped
-                      // to one column width.
-                      // Centred: a short last line of dice sits in the middle
-                      // rather than hugging the left edge.
-                      className="flex flex-wrap justify-center gap-1.5 px-2 py-1.5 leading-none"
+                      // The dice fill the line: as many columns as fit at the
+                      // dice's own width, then each column stretches to share
+                      // what is left, so a row spans the block edge to edge
+                      // instead of leaving a gap on the right. The lone "+" of
+                      // an empty lane stays a small square.
+                      style={{
+                        fontSize: `calc(${rowText} * 1.2)`,
+                        ...(item.key.endsWith("-none")
+                          ? {}
+                          : { gridTemplateColumns: `repeat(auto-fill, minmax(${chipWidth(item.chips)}, 1fr))` }),
+                      }}
+                      className={`gap-1.5 px-2 py-1.5 leading-none ${item.key.endsWith("-none") ? "flex flex-wrap" : "grid"}`}
                     >
                       {item.chips.map((chip, index) => (
                         <span
