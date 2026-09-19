@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, X } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
@@ -173,6 +174,17 @@ export default function AIAssistantPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // The thread coasts on the mouse wheel like the overview page. A stable
+  // callback ref, so re-renders (the "latest" button flips on every scroll)
+  // do not detach it and cut a coast short; it still fills scrollAreaRef.
+  const attachScrollArea = useCallback((el: HTMLDivElement | null) => {
+    scrollAreaRef.current = el;
+    const release = smoothScroll(el);
+    return () => {
+      release?.();
+      scrollAreaRef.current = null;
+    };
+  }, []);
   // The jump button only earns its place when the reader is not already at the
   // end; shown always, it covers a message to offer a trip to where they are.
   const [atLatest, setAtLatest] = useState(true);
@@ -844,7 +856,7 @@ export default function AIAssistantPage() {
           {/* Messages — scroll area bleeds to the window's right edge so its
               scrollbar sits flush; pr-8 keeps the bubbles off the scrollbar. */}
           <div
-            ref={scrollAreaRef}
+            ref={attachScrollArea}
             onScroll={() => {
               const area = scrollAreaRef.current;
               if (!area) return;
@@ -1214,7 +1226,7 @@ export default function AIAssistantPage() {
           {/* No chrome of its own: the close control rides the panel's own title
               row. A bar holding nothing but an X was a thick empty band above the
               heading — two rows of furniture for one list. */}
-          <div className="ai-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
+          <div ref={smoothScroll} className="ai-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
             <AIInsightsPanel
               language={language}
               onCount={setInsightsCount}

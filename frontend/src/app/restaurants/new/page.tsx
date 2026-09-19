@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Info } from "lucide-react";
 
 import { useAuth } from "@/src/providers/AuthProvider";
 import { createRestaurant, type CreateRestaurantInput } from "@/src/lib/restaurant";
@@ -43,6 +44,76 @@ type StepCopy = {
 
 type RestaurantType = string;
 
+/**
+ * The required star that also carries a field's explanation: hover it, or
+ * Tab to it, and the text appears above it.
+ *
+ * The text goes in the browser's top layer (the Popover API), which sits over
+ * everything on the page whatever its z-index or overflow — the card this
+ * form is in, the time pickers, the page header. Where the Popover API is
+ * missing it falls back to a fixed box at the highest z-index the app uses.
+ */
+function HintStar({ hint, mark = "star" }: { hint: string; mark?: "star" | "info" }) {
+  const starRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+
+  const show = () => {
+    const star = starRef.current;
+    const tip = tipRef.current;
+    if (!star || !tip) return;
+    try {
+      tip.showPopover();
+    } catch {
+      tip.style.display = "block";
+    }
+    const rect = star.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8);
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(rect.top - tip.offsetHeight - 6)}px`;
+  };
+
+  const hide = () => {
+    const tip = tipRef.current;
+    if (!tip) return;
+    try {
+      tip.hidePopover();
+    } catch {
+      tip.style.display = "none";
+    }
+  };
+
+  return (
+    <span className="ml-1 inline-block">
+      <span
+        ref={starRef}
+        tabIndex={0}
+        aria-label={hint}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        className={`cursor-help rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
+          mark === "star" ? "text-orange-600 dark:text-orange-400" : "inline-flex align-[-2px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+        }`}
+      >
+        {/* A field that is not required gets an ⓘ instead: a red star there
+            would read as "must fill in". */}
+        {mark === "star" ? "*" : <Info className="h-3.5 w-3.5" aria-hidden="true" />}
+      </span>
+      <span
+        ref={tipRef}
+        popover="manual"
+        role="tooltip"
+        className="pointer-events-none fixed z-[var(--z-toast)] m-0 hidden w-max max-w-[20rem] rounded-md border-0 bg-gray-900 px-2.5 py-1.5 text-xs font-normal leading-snug text-white shadow-lg [&:popover-open]:block dark:bg-gray-700"
+        style={{ inset: "auto", top: 0, left: 0 }}
+      >
+        {hint}
+      </span>
+    </span>
+  );
+}
+
 type FieldProps = {
   label: string;
   value: string;
@@ -50,6 +121,8 @@ type FieldProps = {
   placeholder?: string;
   error?: string;
   help?: string;
+  /** Shown on hover over the required star instead of as a line under the box. */
+  hint?: string;
   required?: boolean;
   type?: "text" | "tel" | "number";
   min?: number;
@@ -64,6 +137,7 @@ function Field({
   placeholder,
   error,
   help,
+  hint,
   required,
   type = "text",
   min,
@@ -75,6 +149,8 @@ function Field({
       <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
         {label}
         {required ? <span className="ml-1 text-orange-600 dark:text-orange-400">*</span> : null}
+        {/* The explanation sits in an ⓘ, the same as the zones checkbox beside it. */}
+        {hint ? <HintStar hint={hint} mark="info" /> : null}
       </span>
       <input
         className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-orange-500 disabled:bg-gray-50 disabled:text-gray-500 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:disabled:bg-gray-900/60 dark:disabled:text-gray-500 ${
@@ -253,6 +329,7 @@ export default function NewRestaurantPage() {
         openTime: "เวลาเปิด",
         closeTime: "เวลาปิด",
         initialTables: "จำนวนโต๊ะเริ่มต้น",
+        zonesLabel: "โซนโต๊ะ",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
         splitZonesHelp: "ระบบจะแบ่งโต๊ะออกเป็นโซนตามประเภทร้าน (เช่น โซนหน้าร้าน โซนครอบครัว)",
         noSplitZonesHelp: "สร้างโต๊ะเรียงลำดับ T1–T{count} โดยไม่แบ่งโซน",
@@ -325,6 +402,7 @@ export default function NewRestaurantPage() {
         openTime: "Opening time",
         closeTime: "Closing time",
         initialTables: "Initial tables",
+        zonesLabel: "Table zones",
         splitZonesLabel: "Split into zones automatically",
         splitZonesHelp: "Tables are divided into zones based on the restaurant type (e.g. front, family).",
         noSplitZonesHelp: "Create tables numbered T1–T{count} in sequence, without zones.",
@@ -663,34 +741,46 @@ export default function NewRestaurantPage() {
                   />
                 </div>
 
-                <Field
-                  label={copy.initialTables}
-                  value={initialTables}
-                  onChange={setInitialTables}
-                  type="number"
-                  min={1}
-                  max={300}
-                  error={errors.initialTables}
-                  help={copy.tableHelp}
-                  required
-                />
-
-                <label className="flex cursor-pointer items-start justify-between gap-4 rounded-md border border-gray-300 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
-                    <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                      {splitZones
-                        ? copy.splitZonesHelp
-                        : copy.noSplitZonesHelp.replace("{count}", Number.isInteger(tableCount) && tableCount > 0 ? String(tableCount) : "N")}
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={splitZones}
-                    onChange={(event) => setSplitZones(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
+                {/* Side by side: the count and how those tables are laid out are one
+                    decision. The checkbox card is the input's height and its
+                    explanation sits under it, so the two columns line up row for row. */}
+                <div className="grid items-start gap-4 sm:grid-cols-2">
+                  <Field
+                    label={copy.initialTables}
+                    value={initialTables}
+                    onChange={setInitialTables}
+                    type="number"
+                    min={1}
+                    max={300}
+                    error={errors.initialTables}
+                    hint={copy.tableHelp}
+                    required
                   />
-                </label>
+                  {/* A heading like the field beside it, then the checkbox in a box
+                      the input's height, so the two columns line up. */}
+                  <div className="block space-y-2">
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {copy.zonesLabel}
+                      <HintStar
+                        mark="info"
+                        hint={
+                          splitZones
+                            ? copy.splitZonesHelp
+                            : copy.noSplitZonesHelp.replace("{count}", Number.isInteger(tableCount) && tableCount > 0 ? String(tableCount) : "N")
+                        }
+                      />
+                    </span>
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
+                      <input
+                        type="checkbox"
+                        checked={splitZones}
+                        onChange={(event) => setSplitZones(event.target.checked)}
+                        className="h-4 w-4 shrink-0 accent-orange-600"
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
             ) : null}
 

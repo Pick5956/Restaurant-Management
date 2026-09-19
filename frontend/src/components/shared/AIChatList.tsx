@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { MessageSquareText, MoreHorizontal, Pencil, Plus, Search, SquarePen, Trash2, X } from "lucide-react";
 import { deleteAIConversation, listAIConversations, renameAIConversation } from "@/src/lib/ai";
 import { matchesThreadQuery, notifyConversationsChanged, threadGroup, useConversationsVersion, type AIThreadGroup } from "@/src/lib/aiThreads";
@@ -230,7 +231,7 @@ export default function AIChatList({
     "group flex w-full items-start gap-2 rounded-xl py-2 pl-2.5 pr-9 text-left transition-colors";
 
   const list = (
-    <div className="ai-scroll min-h-0 flex-1 overflow-y-auto overflow-x-visible px-2 pb-3">
+    <div ref={smoothScroll} className="ai-scroll min-h-0 flex-1 overflow-y-auto overflow-x-visible px-2 pb-3">
       {conversations === null ? (
         <p className="px-2 py-6 text-center text-[12px] text-gray-400">…</p>
       ) : visibleCount === 0 ? (

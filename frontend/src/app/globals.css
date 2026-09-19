@@ -1602,3 +1602,109 @@ textarea {
   .ai-chatlist-sheet-in, .ai-chatlist-sheet-out, .ai-chatlist-fade, .ai-chatlist-pop,
   .ai-chatlist-panel-in .ai-chatlist-card, .ai-chatlist-panel-out .ai-chatlist-card { animation: none; }
 }
+
+/* Inventory tables (stock + history): the column titles stay under the page's
+   sticky toolbar, and keep the card's rounded top while they do. A plain sticky
+   cell is a square box, so once the card's own rounded top had scrolled away the
+   header turned into a hard-cornered bar. The corner cells therefore paint
+   themselves: ::before is a square of page colour that hides the rows sliding
+   underneath, ::after the rounded grey fill with the card's border on it. Both sit
+   at z-index -1, inside the stacking context the sticky cell already makes, so the
+   title text stays on top. `--inv-th-top` is the toolbar's measured height. */
+.inv-thead {
+  --inv-head-bg: var(--color-slate-50);
+  --inv-head-line: var(--color-slate-200);
+  --inv-head-page: #f1f5f9;
+}
+.dark .inv-thead {
+  --inv-head-bg: #151515;
+  --inv-head-line: var(--color-gray-800);
+  --inv-head-page: #0f0f0f;
+}
+.inv-thead th {
+  position: sticky;
+  top: calc(3.5rem + var(--inv-th-top, 0px));
+  z-index: 10;
+  background-color: var(--inv-head-bg);
+  border-bottom: 1px solid var(--inv-head-line);
+}
+@media (min-width: 1024px) {
+  .inv-thead th { top: var(--inv-th-top, 0px); }
+}
+.inv-thead th:first-child,
+.inv-thead th:last-child { background-color: transparent; }
+.inv-thead th:first-child::before,
+.inv-thead th:last-child::before,
+.inv-thead th:first-child::after,
+.inv-thead th:last-child::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.inv-thead th:first-child::before,
+.inv-thead th:last-child::before {
+  top: -1px;
+  width: 1rem;
+  height: 1rem;
+  background-color: var(--inv-head-page);
+}
+.inv-thead th:first-child::before { left: -1px; }
+.inv-thead th:last-child::before { right: -1px; }
+.inv-thead th:first-child::after,
+.inv-thead th:last-child::after {
+  top: -1px;
+  bottom: 0;
+  background-color: var(--inv-head-bg);
+  border-top: 1px solid var(--inv-head-line);
+}
+.inv-thead th:first-child::after {
+  left: -1px;
+  right: 0;
+  border-left: 1px solid var(--inv-head-line);
+  border-top-left-radius: 1rem;
+}
+.inv-thead th:last-child::after {
+  right: -1px;
+  left: 0;
+  border-right: 1px solid var(--inv-head-line);
+  border-top-right-radius: 1rem;
+}
+/* The middle cells carry the card's top edge too, for when it is stuck. */
+.inv-thead th:not(:first-child):not(:last-child) {
+  box-shadow: 0 -1px 0 var(--inv-head-line);
+}
+
+/* Inventory: stock <-> history (19 ก.ย. 2569). The view that comes in rises a
+   few pixels as it fades up, and the switch's dark thumb slides across to it.
+   The animation leaves no transform behind once it ends, so the sticky column
+   titles keep sticking to the page. */
+@keyframes inv-view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.inv-view-enter {
+  animation: inv-view-enter 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inv-tab-thumb {
+  transition: none;
+}
+
+.inv-tab-thumb.is-moving {
+  transition: left 260ms cubic-bezier(0.32, 0.72, 0, 1), width 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* With Reduce Motion on (iPads often have it) the view still fades in and the
+   thumb still moves, only without the rise: turning the switch off entirely
+   made it look like nothing had been built at all. */
+@keyframes inv-view-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv-view-enter { animation-name: inv-view-fade; }
+  .inv-tab-thumb.is-moving { transition-duration: 180ms; }
+}

@@ -26,6 +26,34 @@ export function defaultShelfLifeDays(storageType?: string | null): number {
   return DEFAULT_SHELF_LIFE_DAYS[storageType ?? ""] ?? DEFAULT_SHELF_LIFE_DAYS.room_temp;
 }
 
+/**
+ * The expiry chips a restock offers, shortest first — the first one is what the
+ * picker opens on. They follow how the thing is kept: a bag of pork on the
+ * counter is gone in days, a sealed bottle of fish sauce lasts a year or more,
+ * so one fixed row of "2 · 3 · 30 · 180 วัน" was wrong for most of the shelf.
+ * `sealed` is a bottle, can, box or sachet kept at room temperature, which is
+ * shelf-stable goods whatever the storage field says.
+ */
+export function restockShelfLifePresets(storageType?: string | null, sealed = false): number[] {
+  if (storageType === "dry" || (sealed && (storageType ?? "room_temp") === "room_temp")) return [180, 365, 730];
+  if (storageType === "frozen") return [30, 60, 90];
+  if (storageType === "chilled") return [3, 5, 7];
+  return [2, 3, 7];
+}
+
+/** "2 วัน" · "3 เดือน" · "1 ปี" — whole months and years read as such. */
+export function formatShelfLife(days: number, lang: "th" | "en"): string {
+  if (days > 0 && days % 365 === 0) {
+    const n = days / 365;
+    return lang === "th" ? `${n} ปี` : `${n} ${n === 1 ? "year" : "years"}`;
+  }
+  if (days > 0 && days % 30 === 0) {
+    const n = days / 30;
+    return lang === "th" ? `${n} เดือน` : `${n} ${n === 1 ? "month" : "months"}`;
+  }
+  return lang === "th" ? `${days} วัน` : `${days} ${days === 1 ? "day" : "days"}`;
+}
+
 export function storageLabel(storageType: string | null | undefined, lang: "th" | "en"): string {
   const labels: Record<string, [string, string]> = {
     room_temp: ["อุณหภูมิห้อง", "Room temp"],

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
   ArrowUp,
@@ -305,6 +306,17 @@ export default function AIOperationsFloatingChat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // The thread coasts on the mouse wheel like the overview page. A stable
+  // callback ref, so re-renders during a scroll do not detach it and cut a
+  // coast short; it still fills scrollAreaRef.
+  const attachScrollArea = useCallback((el: HTMLDivElement | null) => {
+    scrollAreaRef.current = el;
+    const release = smoothScroll(el);
+    return () => {
+      release?.();
+      scrollAreaRef.current = null;
+    };
+  }, []);
   // Whether the thread is scrolled to its end. The jump button only earns its
   // place when it is not: shown always, it covers a message to offer a trip to
   // where the reader already is.
@@ -935,7 +947,7 @@ export default function AIOperationsFloatingChat() {
               Phone: extra top padding clears the floating controls, and the same
               top fade as the AI page lets content dissolve instead of being cut. */}
           <div
-            ref={scrollAreaRef}
+            ref={attachScrollArea}
             onScroll={handleThreadScroll}
             className="ai-sheet-fade flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-14 space-y-4 scrollbar-thin sm:px-4 sm:pt-4"
           >
