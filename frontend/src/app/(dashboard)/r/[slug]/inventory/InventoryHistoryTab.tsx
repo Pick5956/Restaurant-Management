@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, RotateCcw, Search } from "lucide-react";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
@@ -107,9 +108,18 @@ const typeChip: Record<TransactionType, { wrap: string; value: string; Icon: typ
 export default function InventoryHistoryTab({
   categories,
   lang,
+  toolbarSlot,
+  viewTabs,
+  stickyTop = 0,
 }: {
   categories: IngredientCategory[];
   lang: "th" | "en";
+  /** The page's sticky bar; the filter row is portalled into it so it stays put. */
+  toolbarSlot?: HTMLElement | null;
+  /** The stock/history switch, placed beside the filters as on the stock tab. */
+  viewTabs?: ReactNode;
+  /** Height of the sticky bar, which the column titles stick under. */
+  stickyTop?: number;
 }) {
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const { showToast } = useToast();
@@ -221,174 +231,186 @@ export default function InventoryHistoryTab({
     setSearch("");
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Two groups, not one long row with a spacer wedged in the middle. A
-          `flex-1` spacer inside a wrapping row stays on the first line, which is
-          what stranded the export button at the left of the second one. */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Narrower between the phone layout and lg, which is where an iPad in
-            portrait sits: at the old widths the five controls came to more than
-            the row and the export button was pushed onto a line of its own. */}
-        <div className="relative w-full sm:w-48 lg:w-56">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder={copy.searchPlaceholder}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className={`${inputCls} !h-9 !rounded-xl pl-7 pr-3 shadow-(--dashboard-control-shadow)`}
+  const toolbar = (
+    <>
+        {/* Two groups, not one long row with a spacer wedged in the middle. A
+            `flex-1` spacer inside a wrapping row stays on the first line, which is
+            what stranded the export button at the left of the second one. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Narrower between the phone layout and lg, which is where an iPad in
+              portrait sits: at the old widths the five controls came to more than
+              the row and the export button was pushed onto a line of its own. */}
+          <div className="relative w-full sm:w-48 lg:w-56">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder={copy.searchPlaceholder}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className={`${inputCls} !h-9 !rounded-xl pl-7 pr-3 shadow-(--dashboard-control-shadow)`}
+            />
+          </div>
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={rangeOpen}
+              aria-label={copy.range}
+              onClick={() => setRangeOpen((open) => !open)}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
+                rangeOpen || rangeKey !== "30d"
+                  ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              <CalendarDays className="h-4 w-4" />
+              {formatHistoryRange(from, to, lang)}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
+            </button>
+            {rangeOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
+                <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl border border-slate-200 bg-white p-3 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
+                  {/* A four-column grid, not a wrapping row: the labels differ in
+                      width per language and one of them kept falling to its own line. */}
+                  <div className="mb-3 grid grid-cols-4 gap-1.5">
+                    {HISTORY_RANGE_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          const next = historyRangeFor(preset);
+                          setFrom(next.from);
+                          setTo(next.to);
+                          setRangeOpen(false);
+                        }}
+                        className={`rounded-full border px-1 py-1 text-center text-[11.5px] font-semibold transition ${
+                          rangeKey === preset
+                            ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
+                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {historyRangeLabel(preset, lang)}
+                      </button>
+                    ))}
+                  </div>
+                  {/* The fields stay for the odd window a preset cannot express.
+                      Stacked, not side by side: a native date field is as wide as
+                      the locale makes it, and Safari in Thai renders "13 Aug BE
+                      2569" — half again what Chrome shows — which spilled the
+                      second field straight out of the panel. */}
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-2">
+                      <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
+                      <input
+                        type="date"
+                        value={from}
+                        max={to || undefined}
+                        onChange={(event) => setFrom(event.target.value)}
+                        className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
+                      <input
+                        type="date"
+                        value={to}
+                        min={from || undefined}
+                        onChange={(event) => setTo(event.target.value)}
+                        className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <ThemedSelect
+            aria-label={copy.type}
+            compact
+            className="w-28 lg:w-32"
+            triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
+            value={type}
+            onChange={(value) => setType(value as TransactionType | "")}
+            options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
           />
-        </div>
 
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={rangeOpen}
-            aria-label={copy.range}
-            onClick={() => setRangeOpen((open) => !open)}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
-              rangeOpen || rangeKey !== "30d"
-                ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-            }`}
-          >
-            <CalendarDays className="h-4 w-4" />
-            {formatHistoryRange(from, to, lang)}
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
-          </button>
-          {rangeOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
-              <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl border border-slate-200 bg-white p-3 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-                {/* A four-column grid, not a wrapping row: the labels differ in
-                    width per language and one of them kept falling to its own line. */}
-                <div className="mb-3 grid grid-cols-4 gap-1.5">
-                  {HISTORY_RANGE_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => {
-                        const next = historyRangeFor(preset);
-                        setFrom(next.from);
-                        setTo(next.to);
-                        setRangeOpen(false);
-                      }}
-                      className={`rounded-full border px-1 py-1 text-center text-[11.5px] font-semibold transition ${
-                        rangeKey === preset
-                          ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
-                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
-                      }`}
-                    >
-                      {historyRangeLabel(preset, lang)}
-                    </button>
-                  ))}
-                </div>
-                {/* The fields stay for the odd window a preset cannot express.
-                    Stacked, not side by side: a native date field is as wide as
-                    the locale makes it, and Safari in Thai renders "13 Aug BE
-                    2569" — half again what Chrome shows — which spilled the
-                    second field straight out of the panel. */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-2">
-                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
-                    <input
-                      type="date"
-                      value={from}
-                      max={to || undefined}
-                      onChange={(event) => setFrom(event.target.value)}
-                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
-                    />
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
-                    <input
-                      type="date"
-                      value={to}
-                      min={from || undefined}
-                      onChange={(event) => setTo(event.target.value)}
-                      className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
-                    />
-                  </label>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+          <ThemedSelect
+            aria-label={copy.allCategories}
+            compact
+            className="w-36 lg:w-40"
+            triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
+            value={String(categoryId)}
+            onChange={(value) => setCategoryId(Number(value))}
+            options={[
+              { value: "0", label: copy.allCategories },
+              ...categories.map((category) => ({ value: String(category.ID), label: category.name })),
+            ]}
+          />
 
-        <ThemedSelect
-          aria-label={copy.type}
-          compact
-          className="w-28 lg:w-32"
-          triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
-          value={type}
-          onChange={(value) => setType(value as TransactionType | "")}
-          options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
-        />
-
-        <ThemedSelect
-          aria-label={copy.allCategories}
-          compact
-          className="w-36 lg:w-40"
-          triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
-          value={String(categoryId)}
-          onChange={(value) => setCategoryId(Number(value))}
-          options={[
-            { value: "0", label: copy.allCategories },
-            ...categories.map((category) => ({ value: String(category.ID), label: category.name })),
-          ]}
-        />
+          {viewTabs}
 
         {filtersTouched && (
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            {copy.clear}
-          </button>
-        )}
-
-        <div className="relative ml-auto shrink-0">
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={() => setExportOpen((open) => !open)}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <Download className="h-4 w-4" />
-            {exporting ? copy.exporting : copy.export}
-          </button>
-          {exportOpen && !exporting && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
-              <div className="smooth-pop absolute right-0 top-full z-50 mt-2 w-56 origin-top-right rounded-xl border border-slate-200 bg-white p-1.5 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-                <button
-                  type="button"
-                  onClick={() => runExport("filtered")}
-                  className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
-                >
-                  {copy.exportFiltered}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runExport("all")}
-                  className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
-                >
-                  {copy.exportAll}
-                </button>
-              </div>
-            </>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              {copy.clear}
+            </button>
           )}
-        </div>
-      </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400 dark:bg-gray-950/40 dark:text-slate-500">
+          <div className="relative ml-auto shrink-0">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportOpen((open) => !open)}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-(--dashboard-control-shadow) transition hover:bg-slate-50 disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+            >
+              <Download className="h-4 w-4" />
+              {exporting ? copy.exporting : copy.export}
+            </button>
+            {exportOpen && !exporting && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
+                <div className="smooth-pop absolute right-0 top-full z-50 mt-2 w-56 origin-top-right rounded-xl border border-slate-200 bg-white p-1.5 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
+                  <button
+                    type="button"
+                    onClick={() => runExport("filtered")}
+                    className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
+                  >
+                    {copy.exportFiltered}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runExport("all")}
+                    className="block w-full rounded-md px-3 py-2 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
+                  >
+                    {copy.exportAll}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-4">
+      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar}
+      {/* clip, not hidden/auto: a scrolling wrapper would become what the
+          column titles stick to, and they would not stick at all. */}
+      <div className="overflow-x-clip rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div>
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
+            <thead
+              className="inv-thead text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500"
+              style={{ "--inv-th-top": `${stickyTop}px` } as CSSProperties}
+            >
               <tr>
                 {/* The count belongs beside what it counts, the way the stock
                     tab reads "ชื่อวัตถุดิบ (28)". On the toolbar it was a result
@@ -405,7 +427,7 @@ export default function InventoryHistoryTab({
                 <th className="px-4 py-2.5 font-semibold">{copy.note}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+            <tbody className="[&>tr:not(:last-child)>td]:border-b [&>tr>td]:border-slate-100 dark:[&>tr>td]:border-gray-800">
               {loading ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
@@ -448,7 +470,7 @@ export default function InventoryHistoryTab({
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-semibold ${chip.wrap}`}
+                          className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold ${chip.wrap}`}
                         >
                           <chip.Icon className="h-3 w-3" />
                           {historyTypeLabel(tx.type, lang)}

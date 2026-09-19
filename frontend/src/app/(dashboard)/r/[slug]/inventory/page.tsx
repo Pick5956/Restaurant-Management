@@ -548,6 +548,7 @@ export default function InventoryPage() {
   // spacer is hidden there and no measurement is needed.
   const stickyToolbarRef = useRef<HTMLDivElement>(null);
   const [stickyToolbarHeight, setStickyToolbarHeight] = useState(0);
+  const [historyToolbarSlot, setHistoryToolbarSlot] = useState<HTMLDivElement | null>(null);
   const categoryOptions = useMemo(
     () => [
       { value: "0", label: categories.length === 0 ? copy.noCategories : copy.uncategorized },
@@ -701,8 +702,9 @@ export default function InventoryPage() {
   // sticky cell against the table's own box every frame — which is the shimmy
   // the header had while the list scrolled. Separated borders give the cell its
   // own, so it rides steady and the underline below can be a plain border.
-  const stickyThCls =
-    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900 lg:top-[var(--inv-th-top,0px)]";
+  // Stickiness, fill and the rounded corners come from `.inv-thead` in
+  // globals.css, shared with the history table.
+  const stickyThCls = "px-4 py-2.5";
 
   const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
     const active = sortKey === key;
@@ -1387,7 +1389,9 @@ export default function InventoryPage() {
               slab covering most of a phone screen, so the children are grouped:
               search + filter share one row, and the actions wrap instead of
               stacking. Same shape the tables page uses. */}
-          {tab === "history" && viewTabs}
+          {/* The history tab renders its own filter row into this slot, so its
+              controls and the tabs share the sticky bar just like the stock tab. */}
+          {tab === "history" && <div ref={setHistoryToolbarSlot} />}
           {tab === "stock" && (
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
@@ -1698,11 +1702,8 @@ export default function InventoryPage() {
                   </div>
                 ) : (
                   <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
-                    <thead>
-                      <tr
-                        className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500"
-                        style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}
-                      >
+                    <thead className="inv-thead" style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         {canManage && (
                           <th className={`${stickyThCls} w-12 text-center align-middle`}>
                             <input
@@ -1918,7 +1919,15 @@ export default function InventoryPage() {
         </>
         )}
 
-        {tab === "history" && <InventoryHistoryTab categories={categories} lang={lang} />}
+        {tab === "history" && (
+          <InventoryHistoryTab
+            categories={categories}
+            lang={lang}
+            toolbarSlot={historyToolbarSlot}
+            viewTabs={viewTabs}
+            stickyTop={stickyToolbarHeight}
+          />
+        )}
         </div>
 
       {modalOpen && (
