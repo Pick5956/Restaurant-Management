@@ -148,11 +148,9 @@ function Field({
     <label className="block space-y-2">
       <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
         {label}
-        {required && hint ? (
-          <HintStar hint={hint} />
-        ) : required ? (
-          <span className="ml-1 text-orange-600 dark:text-orange-400">*</span>
-        ) : null}
+        {required ? <span className="ml-1 text-orange-600 dark:text-orange-400">*</span> : null}
+        {/* The explanation sits in an ⓘ, the same as the zones checkbox beside it. */}
+        {hint ? <HintStar hint={hint} mark="info" /> : null}
       </span>
       <input
         className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-orange-500 disabled:bg-gray-50 disabled:text-gray-500 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:disabled:bg-gray-900/60 dark:disabled:text-gray-500 ${
