@@ -43,6 +43,72 @@ type StepCopy = {
 
 type RestaurantType = string;
 
+/**
+ * The required star that also carries a field's explanation: hover it, or
+ * Tab to it, and the text appears above it.
+ *
+ * The text goes in the browser's top layer (the Popover API), which sits over
+ * everything on the page whatever its z-index or overflow — the card this
+ * form is in, the time pickers, the page header. Where the Popover API is
+ * missing it falls back to a fixed box at the highest z-index the app uses.
+ */
+function HintStar({ hint }: { hint: string }) {
+  const starRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+
+  const show = () => {
+    const star = starRef.current;
+    const tip = tipRef.current;
+    if (!star || !tip) return;
+    try {
+      tip.showPopover();
+    } catch {
+      tip.style.display = "block";
+    }
+    const rect = star.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8);
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(rect.top - tip.offsetHeight - 6)}px`;
+  };
+
+  const hide = () => {
+    const tip = tipRef.current;
+    if (!tip) return;
+    try {
+      tip.hidePopover();
+    } catch {
+      tip.style.display = "none";
+    }
+  };
+
+  return (
+    <span className="ml-1 inline-block">
+      <span
+        ref={starRef}
+        tabIndex={0}
+        aria-label={hint}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        className="cursor-help rounded-sm text-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-orange-300 dark:text-orange-400"
+      >
+        *
+      </span>
+      <span
+        ref={tipRef}
+        popover="manual"
+        role="tooltip"
+        className="pointer-events-none fixed z-[var(--z-toast)] m-0 hidden w-max max-w-[20rem] rounded-md border-0 bg-gray-900 px-2.5 py-1.5 text-xs font-normal leading-snug text-white shadow-lg [&:popover-open]:block dark:bg-gray-700"
+        style={{ inset: "auto", top: 0, left: 0 }}
+      >
+        {hint}
+      </span>
+    </span>
+  );
+}
+
 type FieldProps = {
   label: string;
   value: string;
@@ -78,22 +144,7 @@ function Field({
       <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
         {label}
         {required && hint ? (
-          // The explanation folds into the star: hover or focus it to read.
-          <span className="group relative ml-1 inline-block">
-            <span
-              tabIndex={0}
-              aria-label={hint}
-              className="cursor-help rounded-sm text-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-orange-300 dark:text-orange-400"
-            >
-              *
-            </span>
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-max max-w-[20rem] -translate-x-1/2 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-gray-700"
-            >
-              {hint}
-            </span>
-          </span>
+          <HintStar hint={hint} />
         ) : required ? (
           <span className="ml-1 text-orange-600 dark:text-orange-400">*</span>
         ) : null}
