@@ -477,7 +477,7 @@ const profitValueClass = (value: number) => (value < 0 ? costValueClass : "text-
 // wrapped tabs of mixed widths read as debris, not as a selector. From `sm`
 // they go back to sitting at their natural width.
 const cardTabShape =
-  "ui-press inline-flex max-w-full items-center rounded-t-lg border text-left max-sm:min-w-0 max-sm:flex-1 max-sm:justify-center max-sm:gap-1 max-sm:px-2 sm:gap-2.5 sm:px-4 py-2";
+  "ui-press inline-flex max-w-full items-center rounded-t-xl border text-left max-sm:min-w-0 max-sm:flex-1 max-sm:justify-center max-sm:gap-1 max-sm:px-2 sm:gap-2.5 sm:px-4 py-2";
 
 // Font size for a collapsed-tile line, so the whole string fits on one line
 // instead of truncating: cap it relative to the tile (`cqi` = 1% of the tile's
@@ -658,7 +658,7 @@ function CollapsibleCard({
         type="button"
         onClick={onToggle}
         style={{ order: collapsedRank }}
-        className={`ui-press group relative flex w-full flex-col items-stretch justify-between gap-3 rounded-xl border border-gray-200 bg-slate-50 p-6 text-left hover:border-2 hover:border-orange-700/60 dark:border-gray-800 sm:aspect-[3/4] !transition-all !duration-300 !ease-out motion-reduce:!transition-none hover:z-10 hover:-rotate-1 hover:scale-[1.05] motion-reduce:hover:rotate-0 motion-reduce:hover:scale-100 hover:shadow-lg dark:bg-gray-900 ${faceClass ?? ""}`}
+        className={`ui-press group relative flex w-full flex-col items-stretch justify-between gap-3 rounded-2xl border border-gray-200 bg-slate-50 p-6 text-left hover:border-2 hover:border-orange-700/60 dark:border-gray-800 sm:aspect-[3/4] !transition-all !duration-300 !ease-out motion-reduce:!transition-none hover:z-10 hover:-rotate-1 hover:scale-[1.05] motion-reduce:hover:rotate-0 motion-reduce:hover:scale-100 hover:shadow-lg dark:bg-gray-900 ${faceClass ?? ""}`}
       >
         {/* The card's own name is the loudest thing on it: bigger than
             anything below and on a tinted band of its own, so the tile reads
@@ -666,7 +666,7 @@ function CollapsibleCard({
             a card that is only worth opening — the name takes the middle of
             the tile instead of sitting on top of empty space. */}
         <div className={`text-center ${hasFaceTable ? "" : "my-auto"}`}>
-          <h2 className={`text-[24px] font-bold leading-tight text-gray-950 dark:text-white ${hasFaceTable ? "rounded-lg bg-gray-100 px-3 py-2 dark:bg-gray-800" : ""}`}>{title}</h2>
+          <h2 className={`text-[24px] font-bold leading-tight text-gray-950 dark:text-white ${hasFaceTable ? "rounded-xl bg-gray-100 px-3 py-2 dark:bg-gray-800" : ""}`}>{title}</h2>
           {subtitle ? <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-500">{subtitle}</p> : null}
         </div>
         {rows?.length ? (
@@ -699,7 +699,7 @@ function CollapsibleCard({
                 // even under "reduce motion": it is a short resize the owner
                 // asked for, not a decorative flourish, and without it the
                 // switch read as a jump.
-                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-lg bg-white transition-[height] duration-300 ease-out dark:bg-gray-800"
+                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-xl bg-white transition-[height] duration-300 ease-out dark:bg-gray-800"
               >
                 {block.head.heading ? (
                 <div
@@ -770,7 +770,7 @@ function CollapsibleCard({
                           // the position is what tells them apart.
                           key={`${chip.text}-${chip.note ?? ""}-${index}`}
                           style={{ minWidth: item.key.endsWith("-none") ? `calc(2ch + 0.75rem)` : chipWidth(item.chips) }}
-                          className={`inline-flex max-w-full flex-col items-center justify-center gap-0.5 rounded-md border-2 border-current/30 bg-current/10 px-1.5 font-mono ${
+                          className={`inline-flex max-w-full flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-current/30 bg-current/10 px-1.5 font-mono ${
                             // A one-line die of Thai text (the stock names) needs
                             // a taller line: at leading-none the vowels and tone
                             // marks above and below were clipped by the truncate.
@@ -816,7 +816,7 @@ function CollapsibleCard({
                   // Container query context so the two lines below can size
                   // themselves against this tile rather than the viewport.
                   style={{ containerType: "inline-size" }}
-                  className={`flex min-h-0 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center ${item.tone ? cardToneTile[item.tone] : cardToneNeutral}`}
+                  className={`flex min-h-0 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border p-2 text-center ${item.tone ? cardToneTile[item.tone] : cardToneNeutral}`}
                 >
                   <p style={{ fontSize: textSize }} className="flex min-w-0 items-center gap-1 font-bold uppercase tracking-wide leading-tight">
                     {TileIcon ? <TileIcon style={{ width: textSize, height: textSize }} className="shrink-0 opacity-80" aria-hidden="true" /> : null}
@@ -866,13 +866,13 @@ function CollapsibleCard({
       <section
         ref={smoothScroll}
         style={{ order: 100 }}
-        className={`scroll-minimal col-span-full max-h-[70dvh] w-full overflow-y-auto overflow-x-hidden rounded-b-xl border sm:rounded-tr-xl border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${
+        className={`scroll-minimal col-span-full max-h-[70dvh] w-full overflow-y-auto overflow-x-hidden rounded-b-2xl border sm:rounded-tr-2xl border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${
           fixedBody ? "xl:flex xl:h-[70dvh] xl:flex-col xl:overflow-hidden" : ""
         }`}
       >
         {summary?.length && showSummaryWhenExpanded ? (
           // Sits flush in the body's top corners, so it has to match them.
-          <div className="grid grid-cols-2 gap-px overflow-hidden border-b border-gray-200 bg-gray-200 dark:border-gray-800 dark:bg-gray-800 sm:rounded-tr-xl lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden border-b border-gray-200 bg-gray-200 dark:border-gray-800 dark:bg-gray-800 sm:rounded-tr-2xl lg:grid-cols-4">
             {summary.map((item) => {
               // A tile with an `href` drills into its own page.
               const className = `px-4 py-3.5 ${item.tone ? cardToneRow[item.tone] : "bg-white text-gray-500 dark:bg-gray-900 dark:text-gray-400"} ${item.href ? "cursor-pointer hover:brightness-95 dark:hover:brightness-125" : ""}`;
@@ -1808,7 +1808,7 @@ export default function Home() {
         {/* The date sits in the same stack as the cards it filters, and rides
             the same swipe: change the day and control and content move as one. */}
         <div className="flex items-center gap-2">
-          <div className="inline-flex min-w-0 flex-1 overflow-hidden rounded-md border border-gray-200 bg-white sm:flex-initial dark:border-gray-800 dark:bg-gray-900">
+          <div className="inline-flex min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white sm:flex-initial dark:border-gray-800 dark:bg-gray-900">
             <button type="button" onClick={() => selectDate(shiftDashboardDate(selectedDate, -1))} aria-label={copy.previousDay} title={copy.previousDay} className="ui-press inline-flex h-10 w-10 items-center justify-center border-r border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -1837,13 +1837,13 @@ export default function Home() {
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-          {!isToday ? <button type="button" onClick={() => selectDate(today)} className="ui-press h-10 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.today}</button> : null}
+          {!isToday ? <button type="button" onClick={() => selectDate(today)} className="ui-press h-10 shrink-0 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.today}</button> : null}
         </div>
-        {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div> : null}
+        {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div> : null}
         <RealtimeConnectionNotice language={language} status={realtimeStatus} />
 
         {dateLoading ? (
-          <div className="flex min-h-72 items-center justify-center rounded-xl border border-gray-200 bg-white text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+          <div className="flex min-h-72 items-center justify-center rounded-2xl border border-gray-200 bg-white text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {copy.loading}
           </div>
@@ -1906,7 +1906,7 @@ export default function Home() {
                 <div className={`min-w-0 p-4 ${salesPane === "day" ? "" : "hidden"}`}>
                   <div className="mb-3 mt-3 grid grid-cols-3 gap-2">
                     {summary.filter((item) => item.key !== "cost").map((item) => {
-                      const tileClass = `rounded-lg border px-3 py-2 text-left ${item.tone ? cardToneTile[item.tone] : cardToneNeutral}`;
+                      const tileClass = `rounded-xl border px-3 py-2 text-left ${item.tone ? cardToneTile[item.tone] : cardToneNeutral}`;
                       const Icon = metricIcon[item.key];
                       // Only the orders tile does anything, so only it gets the
                       // chevron — an affordance on a dead tile is a worse lie
@@ -1942,7 +1942,7 @@ export default function Home() {
                   </div>
 
                   {dayOrdersOpen ? (
-                    <div className="mb-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                    <div className="mb-3 rounded-xl border border-gray-200 dark:border-gray-800">
                       <div id="day-orders-sheet">
                         <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
                           <div className="min-w-0">
@@ -1955,7 +1955,7 @@ export default function Home() {
                             type="button"
                             onClick={() => printA4("day-orders-sheet")}
                             disabled={!validOrders.length}
-                            className="ui-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden"
+                            className="ui-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden"
                           >
                             <Download className="h-3.5 w-3.5" aria-hidden="true" />
                             {copy.exportPdf}
@@ -2031,7 +2031,7 @@ export default function Home() {
                   ) : peakHours.length ? (
                     <ol className="mt-2 space-y-1.5">
                       {peakHours.map((entry) => (
-                        <li key={entry.hour} className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
+                        <li key={entry.hour} className="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-[12px] font-semibold text-gray-950 dark:text-white">
                               {hourRangeLabel(entry.hour)}
@@ -2067,7 +2067,7 @@ export default function Home() {
                       { key: "profit", label: copy.metricProfit, value: formatCurrency(monthProfit, language, 0, "exceptZero"), tone: (monthProfit < 0 ? "cost" : "profit") as CardTone, valueClass: profitValueClass(monthProfit) },
                       { key: "orders", label: copy.ordersTotal, value: monthOrders.toLocaleString() },
                     ].map((stat) => {
-                      const tileClass = `block rounded-lg border px-3 py-2 ${stat.tone ? cardToneTile[stat.tone] : cardToneNeutral} ${
+                      const tileClass = `block rounded-xl border px-3 py-2 ${stat.tone ? cardToneTile[stat.tone] : cardToneNeutral} ${
                         stat.href ? "ui-press cursor-pointer shadow-sm transition hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 dark:hover:brightness-125" : ""
                       }`;
                       const Icon = metricIcon[stat.key];
@@ -2140,7 +2140,7 @@ export default function Home() {
 
                     <div className="min-w-0 flex-1 max-xl:mt-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="inline-flex overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+                        <div className="inline-flex overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
                           {metricOptions.map(({ key: metric, label }) => (
                             <button
                               key={metric}
@@ -2156,7 +2156,7 @@ export default function Home() {
                             </button>
                           ))}
                         </div>
-                        <div className="inline-flex overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+                        <div className="inline-flex overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
                           {chartModeOptions.map((option) => (
                             <button
                               key={option.key}
@@ -2196,7 +2196,7 @@ export default function Home() {
                       </div>
 
                       {activeDetailBar ? (
-                        <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                        <div className="mt-3 rounded-xl border border-gray-200 dark:border-gray-800">
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
                             <div className="min-w-0">
                               <h4 className="text-[12px] font-semibold text-gray-950 dark:text-white">
@@ -2218,7 +2218,7 @@ export default function Home() {
                             <button
                               type="button"
                               onClick={() => setDetailBar(null)}
-                              className="ui-press shrink-0 rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+                              className="ui-press shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
                             >
                               {copy.drillClose}
                             </button>
@@ -2331,14 +2331,14 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => { void exportMonthPdf(); }}
-                    className="ui-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden"
+                    className="ui-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden"
                   >
                     <Download className="h-3.5 w-3.5" aria-hidden="true" />
                     {copy.exportPdf}
                   </button>
                 </div>
                 {monthPdfError ? (
-                  <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{monthPdfError}</p>
+                  <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{monthPdfError}</p>
                 ) : null}
 
                 <div className="grid gap-4 pt-3 lg:grid-cols-2">
@@ -2438,7 +2438,7 @@ export default function Home() {
                 className={
                   openCard !== null
                     ? `${cardTabShape} translate-y-px border-gray-200 bg-slate-300 text-[12px] text-gray-600 dark:border-gray-800 dark:bg-black dark:text-gray-300`
-                    : "flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-6 text-center text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
+                    : "flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white p-6 text-center text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
                 }
               >
                 <CalendarDays
@@ -2469,7 +2469,7 @@ export default function Home() {
                         <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.kitchenQueue}</h3>
                         <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{tickets.length} {copy.tickets}</p>
                       </div>
-                      <button type="button" onClick={() => router.push("/kitchen")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewKitchen}<ArrowRight className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => router.push("/kitchen")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewKitchen}<ArrowRight className="h-3.5 w-3.5" /></button>
                     </div>
                     {/* Stacked, a lane keeps a ticket's width rather than the
                         card's: a table number and an order number stretched
@@ -2548,7 +2548,7 @@ export default function Home() {
                       <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.dailyOrders}</h3>
                       <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{validOrders.length} {copy.order}</p>
                     </div>
-                    <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {orders.length ? (
                     <div ref={smoothScroll} className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-none xl:min-h-0 xl:flex-1">
@@ -2582,7 +2582,7 @@ export default function Home() {
                       <h3 className="text-[13px] font-semibold">{copy.stockRisks}</h3>
                       <p className="mt-0.5 text-[11px] opacity-80">{stockRisks.length} {copy.ingredients}</p>
                     </div>
-                    <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {stockRisks.length ? (
                     <div ref={smoothScroll} className="grid max-h-56 content-start gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:max-h-none xl:min-h-0 xl:flex-1 xl:grid-cols-1">
@@ -2591,7 +2591,7 @@ export default function Home() {
                           key={risk.id}
                           type="button"
                           onClick={() => router.push(`/inventory?adjust=${risk.id}`)}
-                          className="ui-press w-full rounded-md border border-gray-200 px-3 py-2.5 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800"
+                          className="ui-press w-full rounded-xl border border-gray-200 px-3 py-2.5 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -2627,7 +2627,7 @@ export default function Home() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                     <p className="text-[11px] text-gray-500 dark:text-gray-400">{copy.occupied} {occupied.length} · {copy.available} {availableTables.length} · {copy.reserved} {reservedTables.length}</p>
-                    <button type="button" onClick={() => router.push("/pos/tables")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.openOrderTaking}<ArrowRight className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => router.push("/pos/tables")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.openOrderTaking}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   <div className="grid grid-cols-2 gap-px bg-gray-200 dark:bg-gray-800 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                     {tables.map((table) => (
@@ -2668,7 +2668,7 @@ export default function Home() {
         <div
           ref={ticketTipRef}
           style={{ left: ticketTip.x, top: ticketTip.y }}
-          className="fixed z-50 max-w-[15rem] overflow-hidden rounded-md border border-gray-200 bg-white text-[13px] leading-snug text-gray-700 shadow-lg dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200"
+          className="fixed z-50 max-w-[15rem] overflow-hidden rounded-xl border border-gray-200 bg-white text-[13px] leading-snug text-gray-700 shadow-lg dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200"
         >
           <div className="flex items-baseline justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-gray-800 dark:bg-gray-800/60">
             <span className="truncate font-semibold text-gray-950 dark:text-white">{ticketTip.table}</span>
