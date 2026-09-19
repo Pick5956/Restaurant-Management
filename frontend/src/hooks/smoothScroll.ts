@@ -43,12 +43,18 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
   };
 
   const step = (now: number) => {
-    const dt = Math.min(48, now - last); // a dropped frame is not a leap
-    last = now;
+    // A frame's timestamp is when the frame began, which can be a little
+    // before the wheel event that started the glide — a negative step that
+    // pushed the list backwards into the top edge and stopped it dead on the
+    // first frame. Never negative; a dropped frame is not a leap either.
+    const dt = Math.min(48, Math.max(0, now - last));
+    last = Math.max(last, now);
     position += velocity * dt;
     velocity *= Math.exp(-dt / FRICTION_MS);
     const max = maxTop();
-    if (position <= 0 || position >= max) {
+    // Only an edge it is moving toward stops it: a glide that starts at the
+    // very top on its way down is not "at the top".
+    if ((position <= 0 && velocity < 0) || (position >= max && velocity > 0)) {
       position = Math.min(Math.max(position, 0), max);
       node.scrollTop = position;
       stop();
