@@ -5,8 +5,10 @@ import {
   defaultShelfLifeDays,
   expiryDateFromDays,
   expiryState,
+  formatShelfLife,
   matchesExpiryFilter,
   parseExpiry,
+  restockShelfLifePresets,
 } from "./inventoryExpiryUtils";
 
 // A fixed "now" so the tests do not drift with the calendar: 17 Sep 2026, noon.
@@ -102,5 +104,35 @@ describe("a picked date round-trips through days", () => {
     const days = daysUntil("2026-09-25", today);
     expect(days).toBe(6);
     expect(expiryDateFromDays(days, today)).toBe("2026-09-25");
+  });
+});
+
+describe("restockShelfLifePresets", () => {
+  it("follows the storage type, and opens on that type's default", () => {
+    expect(restockShelfLifePresets("room_temp")).toEqual([2, 3, 7]);
+    expect(restockShelfLifePresets("chilled")).toEqual([3, 5, 7]);
+    expect(restockShelfLifePresets("frozen")).toEqual([30, 60, 90]);
+    expect(restockShelfLifePresets("dry")).toEqual([180, 365, 730]);
+    for (const type of ["room_temp", "chilled", "frozen", "dry"]) {
+      expect(restockShelfLifePresets(type)[0]).toBe(defaultShelfLifeDays(type));
+    }
+  });
+
+  it("treats a sealed bottle on the shelf as shelf-stable, not as two-day food", () => {
+    expect(restockShelfLifePresets("room_temp", true)).toEqual([180, 365, 730]);
+    expect(restockShelfLifePresets(undefined, true)).toEqual([180, 365, 730]);
+    // Sealed but chilled (a carton of milk) keeps the fridge's short range.
+    expect(restockShelfLifePresets("chilled", true)).toEqual([3, 5, 7]);
+  });
+});
+
+describe("formatShelfLife", () => {
+  it("reads whole months and years as such", () => {
+    expect(formatShelfLife(2, "th")).toBe("2 วัน");
+    expect(formatShelfLife(30, "th")).toBe("1 เดือน");
+    expect(formatShelfLife(180, "th")).toBe("6 เดือน");
+    expect(formatShelfLife(365, "th")).toBe("1 ปี");
+    expect(formatShelfLife(730, "th")).toBe("2 ปี");
+    expect(formatShelfLife(45, "th")).toBe("45 วัน");
   });
 });

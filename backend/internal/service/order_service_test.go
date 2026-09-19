@@ -96,14 +96,25 @@ func TestOrderListFiltersAndOrderNumberAreBounded(t *testing.T) {
 		}
 	}
 	// New format plus legacy letter-prefixed numbers (kept valid for old orders).
-	for _, valid := range []string{"20260724-015", "20260724-001", "20260724-1000", "A001", "Z999", "AA001"} {
+	for _, valid := range []string{"20260724-015", "20260724-001", "20260724-1000", "A001", "Z999", "AA001", "20260919-001 (Test)", "20260919-1000 (Test)"} {
 		if !validOrderNumber(valid) {
 			t.Fatalf("validOrderNumber(%q) = false", valid)
 		}
 	}
-	for _, invalid := range []string{"", "A01", "a001", "001", "2026072-015", "20260724015", "20260724-01", "2026072a-015", "20260724-" + strings.Repeat("0", 30)} {
+	for _, invalid := range []string{"", "A01", "a001", "001", "2026072-015", "20260724015", "20260724-01", "2026072a-015", "20260724-" + strings.Repeat("0", 30), "20260919-001 (test)x", "DA-2026-09-06-101294-022", " (Test)"} {
 		if validOrderNumber(invalid) {
 			t.Fatalf("validOrderNumber(%q) = true", invalid)
+		}
+	}
+	// The route upper-cases the number it is given; the seeded suffix comes back.
+	for in, want := range map[string]string{
+		"20260919-001 (TEST)": "20260919-001 (Test)",
+		"20260919-001 (Test)": "20260919-001 (Test)",
+		"20260919-001":        "20260919-001",
+		"A001":                "A001",
+	} {
+		if got := canonicalOrderNumber(in); got != want {
+			t.Fatalf("canonicalOrderNumber(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
