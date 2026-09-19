@@ -241,7 +241,14 @@ export default function AISettingsModal({
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
-    window.setTimeout(onClose, 200);
+    window.setTimeout(() => {
+      onClose();
+      // Cleared here, not on the next open: the component stays mounted while
+      // shut, so a flag left set made the next open paint one frame of the
+      // exit animation (card on screen, then fading) before the entrance
+      // replaced it — the blink when the settings opened.
+      setClosing(false);
+    }, 200);
   };
 
   const [loading, setLoading] = useState(false);
@@ -272,7 +279,10 @@ export default function AISettingsModal({
   useEffect(() => {
     if (!open) return;
     setError("");
-    setLoading(true);
+    // A spinner only when there is nothing to show yet. On later opens the
+    // settings from last time stay on screen while they refresh, instead of
+    // flashing old settings → spinner → settings.
+    setLoading((current) => current || view === null);
     setConfirmClear(false);
     setClearedCount(null);
     setMobileOpen(false);
@@ -763,11 +773,18 @@ export default function AISettingsModal({
             </header>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
-              {loading ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-                </div>
-              ) : error ? (
+              {/* Nothing loaded yet: the spinner from the very first frame (the
+                  request starts in an effect, a frame after the sheet appears).
+                  Once there is a view it stays up through later refreshes. */}
+              {!view ? (
+                error ? (
+                  <p className="text-sm text-red-500">{error}</p>
+                ) : (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  </div>
+                )
+              ) : error && !loading ? (
                 <p className="text-sm text-red-500">{error}</p>
               ) : (
                 renderSection()
