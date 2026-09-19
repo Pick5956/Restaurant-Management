@@ -331,7 +331,7 @@ export default function InventoryHistoryTab({
             aria-label={copy.type}
             compact
             className="w-28 lg:w-32"
-            triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
+            triggerClassName="rounded-xl font-semibold shadow-(--dashboard-control-shadow)"
             value={type}
             onChange={(value) => setType(value as TransactionType | "")}
             options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
@@ -341,7 +341,7 @@ export default function InventoryHistoryTab({
             aria-label={copy.allCategories}
             compact
             className="w-36 lg:w-40"
-            triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
+            triggerClassName="rounded-xl font-semibold shadow-(--dashboard-control-shadow)"
             value={String(categoryId)}
             onChange={(value) => setCategoryId(Number(value))}
             options={[
