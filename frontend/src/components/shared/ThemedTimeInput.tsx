@@ -5,20 +5,23 @@ import { ChevronDown, Clock } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0"));
-const MINUTES = Array.from({ length: 60 }, (_, index) => index.toString().padStart(2, "0"));
+// Opening hours are set on the quarter hour. The old picker scrolled through
+// sixty minutes to reach one of these four.
+const QUARTERS = ["00", "15", "30", "45"];
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-const CELL_HEIGHT = 40;
-const CELL_GAP = 2;
+// The wheel: five rows on screen, the middle one is the value.
+const ROW = 36;
 const VISIBLE_ROWS = 5;
-const COLUMN_WIDTH = 68;
-const COLUMN_HEIGHT = VISIBLE_ROWS * CELL_HEIGHT + (VISIBLE_ROWS - 1) * CELL_GAP;
-const COLUMN_GAP = 8;
-const PANEL_PADDING = 10;
-const LABEL_BLOCK = 23;
-const PANEL_WIDTH = COLUMN_WIDTH * 2 + COLUMN_GAP + PANEL_PADDING * 2;
-const PANEL_HEIGHT = COLUMN_HEIGHT + LABEL_BLOCK + PANEL_PADDING * 2;
+const WHEEL_HEIGHT = ROW * VISIBLE_ROWS;
+const EDGE_PAD = ROW * Math.floor(VISIBLE_ROWS / 2);
+const PANEL_WIDTH = 232;
+const PANEL_PADDING = 12;
+const DONE_BLOCK = 46;
+const PANEL_HEIGHT = WHEEL_HEIGHT + DONE_BLOCK + PANEL_PADDING * 2;
 const VIEWPORT_MARGIN = 8;
+// How long the column must sit still before the value under the band counts.
+const SETTLE_MS = 120;
 
 function normalizeTime(value: string) {
   const match = value.match(TIME_PATTERN);
@@ -35,83 +38,113 @@ function formatPreview(value: string) {
 }
 
 /**
- * Centre a column on its selected row by setting scrollTop directly.
- * scrollIntoView would also scroll the settings form behind the panel.
+ * One drum of the wheel. The row resting under the band is the value: it is
+ * read once scrolling settles (scroll-snap has lined it up by then), and a
+ * tap on any row rolls that row to the band. While it turns, the row nearest
+ * the band is drawn large from the live scroll position, so the wheel shows
+ * what it will land on before it lands.
  */
-function centerOn(column: HTMLElement | null, index: number, smooth: boolean) {
-  if (!column || index < 0) return;
-  const target = index * (CELL_HEIGHT + CELL_GAP) - (COLUMN_HEIGHT - CELL_HEIGHT) / 2;
-  const top = Math.max(0, Math.min(target, column.scrollHeight - column.clientHeight));
-  column.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
-}
-
-function TimeColumn({
+function WheelColumn({
   label,
   values,
   selected,
   onSelect,
-  columnRef,
+  open,
 }: {
   label: string;
   values: string[];
   selected: string;
-  onSelect: (value: string, viaKeyboard: boolean) => void;
-  columnRef: React.RefObject<HTMLDivElement | null>;
+  onSelect: (value: string) => void;
+  open: boolean;
 }) {
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
-    if (!step && event.key !== "Home" && event.key !== "End") return;
-    event.preventDefault();
-    const index = values.indexOf(selected);
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? values.length - 1
-          : Math.min(Math.max(index + step, 0), values.length - 1);
-    onSelect(values[next], true);
+  const ref = useRef<HTMLDivElement>(null);
+  const settleTimer = useRef<number | null>(null);
+  const selectedIndex = Math.max(0, values.indexOf(selected));
+  const [live, setLive] = useState(selectedIndex);
+
+  // Land on the saved value before the panel paints, without animating.
+  useLayoutEffect(() => {
+    if (!open || !ref.current) return;
+    ref.current.scrollTop = selectedIndex * ROW;
+    setLive(selectedIndex);
+    // Only on open; later moves roll themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    },
+    [],
+  );
+
+  const rollTo = (index: number) => {
+    const clamped = Math.min(Math.max(index, 0), values.length - 1);
+    ref.current?.scrollTo({ top: clamped * ROW, behavior: "smooth" });
+  };
+
+  const onScroll = () => {
+    const node = ref.current;
+    if (!node) return;
+    const index = Math.min(Math.max(Math.round(node.scrollTop / ROW), 0), values.length - 1);
+    setLive(index);
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      if (values[index] !== selected) onSelect(values[index]);
+    }, SETTLE_MS);
   };
 
   return (
-    <div className="min-w-0">
-      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
-      <div
-        ref={columnRef}
-        role="listbox"
-        aria-label={label}
-        aria-activedescendant={`${label}-${selected}`}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        style={{ height: COLUMN_HEIGHT, width: COLUMN_WIDTH }}
-        className="snap-y snap-mandatory overflow-y-auto rounded-md bg-gray-50 p-1 outline-none dark:bg-gray-800/50"
-      >
-        <div className="flex flex-col" style={{ gap: CELL_GAP }}>
-          {values.map((entry) => {
-            const isSelected = entry === selected;
-            return (
-              <button
-                key={entry}
-                id={`${label}-${entry}`}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                tabIndex={-1}
-                onClick={() => onSelect(entry, false)}
-                style={{ height: CELL_HEIGHT }}
-                className={`flex w-full shrink-0 snap-center items-center justify-center rounded-md font-mono text-[14px] font-semibold tabular-nums transition-colors ${
-                  isSelected
-                    ? "bg-orange-700 text-white"
-                    : "text-gray-600 hover:bg-white hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
-                }`}
-              >
-                {entry}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+    <div
+      ref={ref}
+      role="listbox"
+      aria-label={label}
+      aria-activedescendant={`${label}-${values[live]}`}
+      tabIndex={0}
+      onScroll={onScroll}
+      onKeyDown={(event) => {
+        const step = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+        if (!step) return;
+        event.preventDefault();
+        rollTo(live + step);
+      }}
+      style={{
+        height: WHEEL_HEIGHT,
+        paddingTop: EDGE_PAD,
+        paddingBottom: EDGE_PAD,
+        // Inline, because a site-wide rule sets every scroller to a thin bar
+        // and outranks a utility class.
+        scrollbarWidth: "none",
+        // Rows fade out toward the top and bottom edge, the way a drum turns away.
+        maskImage: "linear-gradient(to bottom, transparent 0%, black 32%, black 68%, transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 32%, black 68%, transparent 100%)",
+      }}
+      className="relative w-16 snap-y snap-mandatory overflow-y-auto overscroll-contain outline-none [&::-webkit-scrollbar]:hidden"
+    >
+      {values.map((entry, index) => {
+        const distance = Math.abs(index - live);
+        return (
+          <button
+            key={entry}
+            id={`${label}-${entry}`}
+            type="button"
+            role="option"
+            aria-selected={index === live}
+            tabIndex={-1}
+            onClick={() => rollTo(index)}
+            style={{ height: ROW }}
+            className={`flex w-full snap-center items-center justify-center tabular-nums transition-[font-size,color] duration-100 ${
+              distance === 0
+                ? "text-[22px] font-semibold text-gray-900 dark:text-white"
+                : distance === 1
+                  ? "text-[16px] font-medium text-gray-400 dark:text-gray-500"
+                  : "text-[14px] font-medium text-gray-300 dark:text-gray-600"
+            }`}
+          >
+            {entry}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -133,8 +166,6 @@ export default function ThemedTimeInput({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const hourColumnRef = useRef<HTMLDivElement>(null);
-  const minuteColumnRef = useRef<HTMLDivElement>(null);
   const buttonId = useId();
   const pickerId = useId();
   const descriptionId = useId();
@@ -142,11 +173,14 @@ export default function ThemedTimeInput({
 
   const current = normalizeTime(value);
   const [currentHour, currentMinute] = current.split(":");
+  // A time saved before the wheel went to quarters (10:20) keeps its own row,
+  // so the wheel still shows what is actually stored.
+  const minutes = QUARTERS.includes(currentMinute) ? QUARTERS : [...QUARTERS, currentMinute].sort();
 
   const copy =
     language === "th"
-      ? { hour: "ชั่วโมง", minute: "นาที", choose: "เลือกเวลา" }
-      : { hour: "Hour", minute: "Minute", choose: "Choose time" };
+      ? { hour: "ชั่วโมง", minute: "นาที", choose: "เลือกเวลา", done: "เสร็จ" }
+      : { hour: "Hour", minute: "Minute", choose: "Choose time", done: "Done" };
 
   const closePicker = useCallback(() => {
     setOpen(false);
@@ -184,7 +218,7 @@ export default function ThemedTimeInput({
       setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" || event.key === "Enter") {
         event.stopPropagation();
         closePicker();
       }
@@ -213,16 +247,11 @@ export default function ThemedTimeInput({
     };
   }, [applyPosition, closePicker, open]);
 
-  // Land both columns on the saved time before the panel paints, so it never
-  // shows 00:00 first and scrolls afterwards.
+  // Place the panel before it paints, so it never flashes at the corner.
   useLayoutEffect(() => {
     if (!open) return;
     applyPosition();
-    centerOn(hourColumnRef.current, HOURS.indexOf(currentHour), false);
-    centerOn(minuteColumnRef.current, MINUTES.indexOf(currentMinute), false);
-    // Open is the only trigger; later moves scroll themselves in onSelect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [applyPosition, open]);
 
   return (
     <div ref={rootRef} className="relative">
@@ -277,31 +306,41 @@ export default function ThemedTimeInput({
           role="dialog"
           aria-labelledby={buttonId}
           aria-label={copy.choose}
-          className="motion-dialog-stationary fixed z-[var(--z-dropdown)] rounded-md border border-gray-200 bg-white shadow-lg shadow-gray-900/10 dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40"
+          className="motion-dialog-stationary fixed z-[var(--z-dropdown)] rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40"
           style={{ left: 0, top: 0, width: PANEL_WIDTH, padding: PANEL_PADDING, willChange: "transform" }}
         >
-          <div className="flex" style={{ gap: COLUMN_GAP }}>
-            <TimeColumn
+          <div className="relative flex items-center justify-center gap-1" style={{ height: WHEEL_HEIGHT }}>
+            {/* The band behind the middle row: whatever rests on it is the time. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 rounded-xl bg-gray-100 dark:bg-gray-800"
+              style={{ top: EDGE_PAD, height: ROW }}
+            />
+            <WheelColumn
               label={copy.hour}
               values={HOURS}
               selected={currentHour}
-              columnRef={hourColumnRef}
-              onSelect={(hour, viaKeyboard) => {
-                onChange(`${hour}:${currentMinute}`);
-                if (viaKeyboard) centerOn(hourColumnRef.current, HOURS.indexOf(hour), true);
-              }}
+              open={open}
+              onSelect={(hour) => onChange(`${hour}:${currentMinute}`)}
             />
-            <TimeColumn
+            <span aria-hidden="true" className="relative pb-0.5 text-[22px] font-semibold text-gray-900 dark:text-white">
+              :
+            </span>
+            <WheelColumn
               label={copy.minute}
-              values={MINUTES}
+              values={minutes}
               selected={currentMinute}
-              columnRef={minuteColumnRef}
-              onSelect={(minute, viaKeyboard) => {
-                onChange(`${currentHour}:${minute}`);
-                if (viaKeyboard) centerOn(minuteColumnRef.current, MINUTES.indexOf(minute), true);
-              }}
+              open={open}
+              onSelect={(minute) => onChange(`${currentHour}:${minute}`)}
             />
           </div>
+          <button
+            type="button"
+            onClick={closePicker}
+            className="mt-2.5 h-9 w-full rounded-xl bg-orange-700 text-[13px] font-semibold text-white transition hover:bg-orange-800"
+          >
+            {copy.done}
+          </button>
         </div>
       )}
     </div>
