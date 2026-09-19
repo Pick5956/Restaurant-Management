@@ -390,12 +390,16 @@ export default function Sidebar() {
 
   return (
     <>
-      {mobileOpen && (
-        <div
-          {...mobileBackdrop}
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-        />
-      )}
+      {/* Always mounted so it fades with the slide; it used to mount and
+          unmount, so the dark layer snapped on and off and the open/close read
+          as a pop rather than a slide (19 ก.ย. 2569). */}
+      <div
+        {...mobileBackdrop}
+        aria-hidden="true"
+        className={`fixed inset-0 z-40 bg-black/50 transition-[opacity,visibility] duration-300 ease-out lg:hidden ${
+          mobileOpen ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0'
+        }`}
+      />
 
       <aside
         data-nav-rail=""
@@ -413,10 +417,15 @@ export default function Sidebar() {
            translated away, kept both bars orange after it closed
            (19 ก.ย. 2569). Opening shows it at once (visibility is not
            transitioned then); closing keeps it visible until the slide out
-           ends, so the motion is unchanged. */
+           ends, so the motion is unchanged.
+           The transition names `translate`, not `transform`: Tailwind v4's
+           translate-x-* set the translate property, so with `transform` listed
+           the drawer never slid at all — it jumped in and out. */
         className={`
-          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] duration-300 ease-in-out will-change-transform lg:hidden
-          ${mobileOpen ? 'visible translate-x-0 shadow-2xl transition-[transform,box-shadow]' : 'invisible -translate-x-full pointer-events-none shadow-none transition-[transform,box-shadow,visibility]'}
+          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] will-change-transform lg:hidden
+          ${mobileOpen
+            ? 'visible translate-x-0 shadow-2xl transition-[translate,box-shadow] duration-[340ms] ease-[cubic-bezier(0.32,0.72,0,1)]'
+            : 'invisible -translate-x-full pointer-events-none shadow-none transition-[translate,box-shadow,visibility] duration-[260ms] ease-[cubic-bezier(0.4,0,1,1)]'}
         `}
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">

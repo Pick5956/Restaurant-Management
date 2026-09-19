@@ -173,7 +173,7 @@ export default function MobileNavHandle() {
       aria-label={language === 'th' ? 'เปิดเมนู' : 'Open menu'}
       aria-hidden={mobileOpen}
       tabIndex={mobileOpen ? -1 : undefined}
-      className={`fixed left-0 top-[max(0.75rem,env(safe-area-inset-top))] z-30 flex h-10 w-11 origin-left touch-none select-none items-center justify-center rounded-r-xl border border-l-0 bg-white/90 text-gray-500 backdrop-blur transition-[opacity,box-shadow,transform,border-color] duration-200 [-webkit-touch-callout:none] active:bg-gray-100 dark:bg-gray-900/90 dark:text-gray-300 lg:hidden ${
+      className={`fixed left-0 top-[max(0.75rem,env(safe-area-inset-top))] z-30 flex h-10 w-11 origin-left touch-none select-none items-center justify-center rounded-r-xl border border-l-0 bg-white/90 text-gray-500 backdrop-blur transition-[opacity,box-shadow,scale,border-color] duration-200 [-webkit-touch-callout:none] active:bg-gray-100 dark:bg-gray-900/90 dark:text-gray-300 lg:hidden ${
         dragging
           ? 'scale-110 border-orange-300 shadow-xl dark:border-orange-700'
           : 'border-gray-200 shadow-md dark:border-gray-800'
