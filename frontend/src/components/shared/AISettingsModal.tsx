@@ -39,10 +39,10 @@ type SectionKey = "general" | "actions" | "notifications";
 // thing to the owner ("ยอดขายเปลี่ยนผิดปกติ").
 type InsightRow = { id: string; kinds: AIInsightKind[]; th: [string, string]; en: [string, string] };
 const INSIGHT_ROWS: InsightRow[] = [
-  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "เมื่อเหลือต่ำกว่าขั้นต่ำที่ตั้งไว้ของแต่ละตัว"], en: ["Ingredient running low", "When stock falls under the minimum you set"] },
-  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "วัตถุดิบที่มีในคลังแต่ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Ingredients on the shelf that nothing used in 30 days"] },
-  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุดขึ้นหรือลงชัดเจนเมื่อเทียบกับ 7 วันก่อนหน้า"], en: ["Unusual sales change", "The last 7 days clearly up or down against the 7 before"] },
-  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "จานที่สั่งบ่อยแต่ทำเงินให้ร้านน้อย ควรดูต้นทุนหรือราคา"], en: ["Popular but low-margin menu", "Ordered often, earns little — worth a look at cost or price"] },
+  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "ต่ำกว่าขั้นต่ำที่ตั้งไว้"], en: ["Ingredient running low", "Under the minimum you set"] },
+  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Unused for 30 days"] },
+  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุด เทียบ 7 วันก่อน"], en: ["Unusual sales change", "Last 7 days against the 7 before"] },
+  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "สั่งบ่อยแต่ทำเงินน้อย"], en: ["Popular but low-margin menu", "Ordered often, earns little"] },
 ];
 
 type ActionRow = { type: AIActionType; group: "menu" | "ingredients" | "money"; th: [string, string]; en: [string, string] };
@@ -69,25 +69,24 @@ function copy(language: "th" | "en") {
         saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
         sections: {
           general: { name: "ทั่วไป", blurb: "ชื่อที่เรียกคุณ · คำถามแนะนำ · ประวัติแชท" },
-          actions: { name: "สิ่งที่ทำแทนคุณได้", blurb: "เลือกได้ทีละอย่างว่าให้แก้อะไรได้บ้าง" },
+          actions: { name: "สิ่งที่ทำแทนคุณได้", blurb: "เลือกว่าแก้อะไรได้บ้าง" },
           notifications: { name: "การแจ้งเตือน", blurb: "ของใกล้หมด · ของค้าง · ยอดขายผิดปกติ" },
         },
         groupAnswers: "การตอบ",
         titleLabel: "ชื่อที่ผู้ช่วยใช้เรียกคุณ",
-        titleHint: "ใช้ตอนทักทายและในคำตอบ เว้นว่างไว้ = “คุณผู้จัดการ”",
+        titleHint: "เว้นว่าง = “คุณผู้จัดการ”",
         titlePlaceholder: "คุณผู้จัดการ",
         followUps: "คำถามแนะนำใต้คำตอบ",
-        followUpsHint: "เสนอคำถามต่อยอด 2–3 ข้อหลังแต่ละคำตอบ (เฉพาะเครื่องนี้)",
+        followUpsHint: "2–3 ข้อหลังแต่ละคำตอบ · เฉพาะเครื่องนี้",
         groupHistory: "ประวัติแชท",
-        memoryNote: "แชทเก็บไว้จนกว่าคุณจะลบ ผู้ช่วยจำเรื่องที่คุยในแต่ละแชทแยกกัน · ที่ลบไปอยู่ในถังขยะ 7 วันก่อนหายถาวร",
         clearAll: "ย้ายทุกแชทลงถังขยะ",
-        clearAllHint: "รายการแชทจะว่าง กู้คืนทีละแชทได้จากถังขยะภายใน 7 วัน",
+        clearAllHint: "กู้คืนได้ใน 7 วัน",
         clearButton: "ล้างรายการ…",
         clearConfirm: "ย้ายทั้งหมดลงถังขยะ",
         clearCancel: "ไม่ย้าย",
         cleared: "ย้ายแล้ว",
         trash: "ถังขยะ",
-        trashHint: "แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน หลังจากนั้นระบบลบถาวรให้เอง",
+        trashHint: "เก็บ 7 วัน แล้วลบถาวร",
         trashOpen: "ดูถังขยะ",
         trashClose: "ซ่อนถังขยะ",
         trashEmpty: "ถังขยะว่าง",
@@ -100,15 +99,15 @@ function copy(language: "th" | "en") {
         purgeIn: (days: number) => (days <= 0 ? "จะถูกลบถาวรวันนี้" : `จะถูกลบถาวรในอีก ${days} วัน`),
         untitled: "แชทไม่มีชื่อ",
         master: "ให้ผู้ช่วยแก้ข้อมูลร้านได้",
-        masterHint: "ปิดสวิตช์นี้ = ผู้ช่วยดูข้อมูลได้อย่างเดียว รายการข้างล่างจะไม่มีผล",
-        unavailable: "ตอนนี้ความสามารถนี้ถูกปิดจากระบบส่วนกลาง เปิดสวิตช์ไว้ได้ แต่จะยังไม่มีผลจนกว่าระบบจะเปิดให้",
+        masterHint: "ปิด = ดูข้อมูลได้อย่างเดียว",
+        unavailable: "ระบบกลางปิดความสามารถนี้อยู่ ยังใช้ไม่ได้",
         groupMenu: "เมนู",
         groupIngredients: "วัตถุดิบ",
         groupMoney: "การเงิน",
-        confirmNote: "ทุกคำสั่งจะถูกเตรียมเป็นรายการให้ดูก่อน อยู่ได้ 1 นาที ถ้าไม่กดยืนยันจะถูกยกเลิกเอง · กดยืนยันได้เฉพาะเจ้าของร้าน",
+        confirmNote: "ทุกคำสั่งรอเจ้าของร้านกดยืนยันภายใน 1 นาที",
         groupStock: "วัตถุดิบ",
         groupSales: "ยอดขายและเมนู",
-        bellNote: "การแจ้งเตือนขึ้นที่กระดิ่งมุมขวาบนตอนเปิดแอป ยังไม่มีการส่งออกไปนอกแอป",
+        bellNote: "ขึ้นที่กระดิ่งมุมขวาบน เฉพาะตอนเปิดแอป",
       }
     : {
         settings: "Assistant settings",
@@ -120,25 +119,24 @@ function copy(language: "th" | "en") {
         saveError: "Could not save, try again",
         sections: {
           general: { name: "General", blurb: "What it calls you · suggestions · chat history" },
-          actions: { name: "What it can do for you", blurb: "Choose, one by one, what it may change" },
+          actions: { name: "What it can do for you", blurb: "Choose what it may change" },
           notifications: { name: "Notifications", blurb: "Low stock · dead stock · unusual sales" },
         },
         groupAnswers: "Answers",
         titleLabel: "What the assistant calls you",
-        titleHint: "Used in greetings and answers. Leave empty for “Manager”",
+        titleHint: "Empty = “Manager”",
         titlePlaceholder: "Manager",
         followUps: "Follow-up suggestions under answers",
-        followUpsHint: "Offer 2–3 next questions after each answer (this device only)",
+        followUpsHint: "2–3 after each answer · this device only",
         groupHistory: "Chat history",
-        memoryNote: "Chats are kept until you delete them; the assistant remembers each chat on its own. Deleted chats wait in the trash for 7 days.",
         clearAll: "Move every chat to the trash",
-        clearAllHint: "The chat list empties. Each chat can be restored from the trash within 7 days.",
+        clearAllHint: "Restorable for 7 days",
         clearButton: "Clear list…",
         clearConfirm: "Move all to trash",
         clearCancel: "Keep",
         cleared: "Moved",
         trash: "Trash",
-        trashHint: "Deleted chats can be restored within 7 days; after that they are removed for good.",
+        trashHint: "Kept 7 days, then deleted",
         trashOpen: "Show trash",
         trashClose: "Hide trash",
         trashEmpty: "The trash is empty",
@@ -151,15 +149,15 @@ function copy(language: "th" | "en") {
         purgeIn: (days: number) => (days <= 0 ? "removed for good today" : `removed for good in ${days} day${days === 1 ? "" : "s"}`),
         untitled: "Untitled chat",
         master: "Let the assistant change shop data",
-        masterHint: "Off = the assistant only reads. Nothing below applies.",
-        unavailable: "This capability is currently off system-wide. You can leave the switch on, but it takes effect only once the system enables it.",
+        masterHint: "Off = read only",
+        unavailable: "Turned off system-wide for now",
         groupMenu: "Menu",
         groupIngredients: "Ingredients",
         groupMoney: "Money",
-        confirmNote: "Every command is prepared as a list for you to check first. It lasts 1 minute and cancels itself if not confirmed · only the owner can confirm",
+        confirmNote: "Every command waits 1 minute for the owner to confirm",
         groupStock: "Ingredients",
         groupSales: "Sales and menu",
-        bellNote: "Notifications appear on the bell at the top right when the app is open. Nothing is sent outside the app yet.",
+        bellNote: "On the bell, top right, while the app is open",
       };
 }
 
@@ -233,6 +231,18 @@ export default function AISettingsModal({
   onConversationsCleared?: () => void;
 }) {
   const t = copy(language);
+
+  // Leaving plays the exit first, then tells the parent to unmount — the same
+  // way the chat list closes (19 ก.ย. 2569: it had snapped open and shut).
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) setClosing(false);
+  }, [open]);
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 200);
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -547,7 +557,6 @@ export default function AISettingsModal({
               {trashError && <p className="px-3 py-2 text-[11px] text-red-500">{trashError}</p>}
             </div>
           )}
-          <Note>{t.memoryNote}</Note>
         </>
       );
     }
@@ -669,9 +678,13 @@ export default function AISettingsModal({
   // phone's top bar no matter its z-index — on a phone the header with the
   // back button sat under that bar and the sheet could not be left.
   return createPortal(
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
+    <div
+      className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-0 sm:p-4`}
+      onClick={requestClose}
+    >
+      <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/50" />
       <div
-        className="flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
+        className="ai-settings-card relative flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Desktop sidebar */}
@@ -688,7 +701,7 @@ export default function AISettingsModal({
             <div className="flex min-h-0 flex-1 flex-col sm:hidden">
               <header className="flex items-center justify-between border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
                 <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white">{t.settings}</h2>
-                <button onClick={onClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </header>
@@ -743,7 +756,7 @@ export default function AISettingsModal({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {saveBadge}
-                <button onClick={onClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </div>

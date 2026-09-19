@@ -1712,3 +1712,24 @@ textarea {
   .inv-view-enter { animation-name: inv-view-fade; }
   .inv-tab-thumb.is-moving { transition-duration: 180ms; }
 }
+
+/* The assistant's settings sheet opens and closes like the chat list: the
+   backdrop fades, the card grows from 96% and settles; leaving is the reverse.
+   With Reduce Motion both only fade. */
+@keyframes ai-settings-card-in {
+  from { transform: translateY(8px) scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes ai-settings-card-out {
+  from { transform: none; opacity: 1; }
+  to { transform: translateY(8px) scale(0.96); opacity: 0; }
+}
+.ai-settings-in .ai-settings-backdrop { animation: ai-chatlist-fade 0.2s ease-out both; }
+.ai-settings-in .ai-settings-card { animation: ai-settings-card-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.ai-settings-out { pointer-events: none; }
+.ai-settings-out .ai-settings-backdrop { animation: ai-chatlist-fade-out 0.2s ease-in both; }
+.ai-settings-out .ai-settings-card { animation: ai-settings-card-out 0.18s ease-in both; }
+@media (prefers-reduced-motion: reduce) {
+  .ai-settings-in .ai-settings-card { animation: ai-chatlist-fade 0.18s ease-out both; }
+  .ai-settings-out .ai-settings-card { animation: ai-chatlist-fade-out 0.16s ease-in both; }
+}
