@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, RotateCcw, Search } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
 import type { IngredientCategory, IngredientTransaction, TransactionQuery, TransactionType } from "@/src/types/ingredient";
-import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { inputCls } from "./inventoryPageUtils";
 import { InventoryHistoryRowsSkeleton } from "./InventorySkeletons";
@@ -32,6 +31,10 @@ function buildCopy(lang: "th" | "en") {
         to: "ถึง",
         range: "ช่วงวันที่",
         allCategories: "ทุกหมวด",
+        filter: "ตัวกรอง",
+        category: "หมวด",
+        close: "ปิด",
+        clearTypeCategory: "ล้างตัวกรอง",
         clear: "ล้างตัวกรอง",
         export: "ส่งออก CSV",
         exportFiltered: "เฉพาะที่กรองอยู่",
@@ -62,6 +65,10 @@ function buildCopy(lang: "th" | "en") {
         to: "To",
         range: "Date range",
         allCategories: "All categories",
+        filter: "Filter",
+        category: "Category",
+        close: "Close",
+        clearTypeCategory: "Clear filters",
         clear: "Clear filters",
         export: "Export CSV",
         exportFiltered: "Current filters only",
@@ -152,6 +159,17 @@ export default function InventoryHistoryTab({
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersClosing, setFiltersClosing] = useState(false);
+  // Same close as the stock tab's filter panel: it shrinks away before it goes.
+  function closeFilters() {
+    if (filtersClosing) return;
+    setFiltersClosing(true);
+    window.setTimeout(() => {
+      setFiltersOpen(false);
+      setFiltersClosing(false);
+    }, 260);
+  }
 
   // Typing must not fire a request per keystroke; the rest of the filters apply
   // immediately because each one is a deliberate single click.
@@ -234,6 +252,7 @@ export default function InventoryHistoryTab({
   // Which preset the current range is, so the button and the chips agree about
   // what is selected without either of them owning the state.
   const rangeKey = historyRangeKeyOf(from, to);
+  const activeFilterCount = (type !== "" ? 1 : 0) + (categoryId !== 0 ? 1 : 0);
   const filtersTouched =
     type !== "" || categoryId !== 0 || search !== "" || from !== initialRange.from || to !== initialRange.to;
 
@@ -254,7 +273,7 @@ export default function InventoryHistoryTab({
           {/* Narrower between the phone layout and lg, which is where an iPad in
               portrait sits: at the old widths the five controls came to more than
               the row and the export button was pushed onto a line of its own. */}
-          <div className="relative w-full sm:w-48 lg:w-56">
+          <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -264,6 +283,114 @@ export default function InventoryHistoryTab({
               className={`${inputCls} !h-9 !rounded-xl pl-7 pr-3 shadow-(--dashboard-control-shadow)`}
             />
           </div>
+
+          {/* Type and category live behind one button, the same panel as the
+              stock tab's filter (19 ก.ย. 2569). The two dropdowns took two
+              places on the bar and pushed the view switch to the right, so it
+              sat somewhere else on each tab. */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={filtersOpen}
+              onClick={() => (filtersOpen ? closeFilters() : setFiltersOpen(true))}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
+                activeFilterCount > 0
+                  ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              <Filter className="h-4 w-4" />
+              {copy.filter}
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            {filtersOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={closeFilters} />
+                <div
+                  role="dialog"
+                  aria-label={copy.filter}
+                  className={`${filtersClosing ? "smooth-pop-exit" : "smooth-pop"} absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl border border-slate-200 bg-white p-4 text-left shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900`}
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{copy.filter}</p>
+                    <button
+                      type="button"
+                      onClick={closeFilters}
+                      aria-label={copy.close}
+                      className="-mr-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-800 dark:hover:text-slate-200"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.type}</p>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {HISTORY_TYPES.map((option) => (
+                      <button
+                        key={option || "all"}
+                        type="button"
+                        onClick={() => setType(option)}
+                        className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
+                            type === option
+                              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                          }`}
+                      >
+                        {historyTypeLabel(option, lang)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.category}</p>
+                  <div className="flex max-h-40 flex-wrap gap-2 overflow-auto">
+                    <button
+                      type="button"
+                      onClick={() => setCategoryId(0)}
+                      className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
+                            categoryId === 0
+                              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                          }`}
+                    >
+                      {copy.allCategories}
+                    </button>
+                    {categories.map((category) => (
+                      <button
+                        key={category.ID}
+                        type="button"
+                        onClick={() => setCategoryId(category.ID)}
+                        className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
+                            categoryId === category.ID
+                              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                          }`}
+                      >
+                        {category.name}
+                      </button>
+                    ))}
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setType("");
+                        setCategoryId(0);
+                      }}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {copy.clearTypeCategory}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {viewTabs}
 
           <div className="relative shrink-0">
             <button
@@ -340,31 +467,6 @@ export default function InventoryHistoryTab({
               </>
             )}
           </div>
-
-          <ThemedSelect
-            aria-label={copy.type}
-            compact
-            className="w-28 lg:w-32"
-            triggerClassName="rounded-xl font-semibold shadow-(--dashboard-control-shadow)"
-            value={type}
-            onChange={(value) => setType(value as TransactionType | "")}
-            options={HISTORY_TYPES.map((option) => ({ value: option, label: historyTypeLabel(option, lang) }))}
-          />
-
-          <ThemedSelect
-            aria-label={copy.allCategories}
-            compact
-            className="w-36 lg:w-40"
-            triggerClassName="rounded-xl font-semibold shadow-(--dashboard-control-shadow)"
-            value={String(categoryId)}
-            onChange={(value) => setCategoryId(Number(value))}
-            options={[
-              { value: "0", label: copy.allCategories },
-              ...categories.map((category) => ({ value: String(category.ID), label: category.name })),
-            ]}
-          />
-
-          {viewTabs}
 
         {filtersTouched && (
             <button
