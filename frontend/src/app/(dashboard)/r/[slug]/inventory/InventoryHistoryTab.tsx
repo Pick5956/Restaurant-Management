@@ -112,6 +112,7 @@ export default function InventoryHistoryTab({
   toolbarSlot,
   viewTabs,
   stickyTop = 0,
+  active = true,
 }: {
   categories: IngredientCategory[];
   lang: "th" | "en";
@@ -121,6 +122,9 @@ export default function InventoryHistoryTab({
   viewTabs?: ReactNode;
   /** Height of the sticky bar, which the column titles stick under. */
   stickyTop?: number;
+  /** Showing now. The page keeps this tab mounted while the stock tab is up;
+   *  coming back refreshes the rows quietly, keeping the old ones on screen. */
+  active?: boolean;
 }) {
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const { showToast } = useToast();
@@ -135,6 +139,14 @@ export default function InventoryHistoryTab({
   const [page, setPage] = useState(1);
 
   const [rows, setRows] = useState<IngredientTransaction[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  // Bumped when the tab is shown again, so a stock change made meanwhile shows up.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) setRefreshTick((tick) => tick + 1);
+    wasActive.current = active;
+  }, [active]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -178,6 +190,7 @@ export default function InventoryHistoryTab({
         if (cancelled) return;
         setRows(response.data.transactions ?? []);
         setTotal(response.data.total ?? 0);
+        setHasLoaded(true);
       })
       .catch(() => {
         if (cancelled) return;
@@ -191,7 +204,7 @@ export default function InventoryHistoryTab({
     return () => {
       cancelled = true;
     };
-  }, [query, page, copy.loadFailed, showToast]);
+  }, [query, page, refreshTick, copy.loadFailed, showToast]);
 
   const runExport = useCallback(
     async (scope: "filtered" | "all") => {
@@ -428,8 +441,11 @@ export default function InventoryHistoryTab({
                 <th className="px-4 py-2.5 font-semibold">{copy.note}</th>
               </tr>
             </thead>
-            <tbody className="[&>tr:not(:last-child)>td]:border-b [&>tr>td]:border-slate-100 dark:[&>tr>td]:border-gray-800">
-              {loading ? (
+            <tbody className={`transition-opacity duration-200 [&>tr:not(:last-child)>td]:border-b [&>tr>td]:border-slate-100 dark:[&>tr>td]:border-gray-800 ${loading && hasLoaded ? "opacity-60" : ""}`}>
+              {/* The skeleton is for the first load only. A filter, a page or a
+                  return to this tab keeps the rows up, dimmed, until the new
+                  ones arrive — a skeleton there flashed on every click. */}
+              {loading && !hasLoaded ? (
                 <InventoryHistoryRowsSkeleton />
               ) : rows.length === 0 ? (
                 <tr>

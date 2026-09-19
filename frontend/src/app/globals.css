@@ -1696,7 +1696,15 @@ textarea {
   transition: left 260ms cubic-bezier(0.32, 0.72, 0, 1), width 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* With Reduce Motion on (iPads often have it) the view still fades in and the
+   thumb still moves, only without the rise: turning the switch off entirely
+   made it look like nothing had been built at all. */
+@keyframes inv-view-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .inv-view-enter { animation: none; }
-  .inv-tab-thumb.is-moving { transition: none; }
+  .inv-view-enter { animation-name: inv-view-fade; }
+  .inv-tab-thumb.is-moving { transition-duration: 180ms; }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowDownLeft,
@@ -460,11 +460,37 @@ export default function InventoryPage() {
   const [tab, setTab] = useState<InventoryView>("stock");
   // Where the view switch's thumb slides from: the view that was showing.
   const [previousTab, setPreviousTab] = useState<InventoryView>("stock");
+  // Both views stay mounted once opened and only the one showing is visible, so
+  // switching back is instant: the history is not fetched and redrawn from a
+  // skeleton on every visit, which read as a flash rather than a switch.
+  const [historyVisited, setHistoryVisited] = useState(false);
   const switchTab = (next: InventoryView) => {
     if (next === tab) return;
     setPreviousTab(tab);
+    if (next === "history") setHistoryVisited(true);
     setTab(next);
   };
+  const stockToolbarRef = useRef<HTMLDivElement>(null);
+  const historyToolbarRef = useRef<HTMLDivElement>(null);
+  const stockViewRef = useRef<HTMLDivElement>(null);
+  const historyViewRef = useRef<HTMLDivElement>(null);
+  const firstViewPaint = useRef(true);
+  // Play the entrance on the toolbar and the view that just became visible.
+  // The class is taken off and put back with a forced layout between, so the
+  // animation restarts on an element that stays mounted.
+  useLayoutEffect(() => {
+    if (firstViewPaint.current) {
+      firstViewPaint.current = false;
+      return;
+    }
+    const shown = tab === "stock" ? [stockToolbarRef.current, stockViewRef.current] : [historyToolbarRef.current, historyViewRef.current];
+    for (const element of shown) {
+      if (!element) continue;
+      element.classList.remove("inv-view-enter");
+      void element.offsetWidth;
+      element.classList.add("inv-view-enter");
+    }
+  }, [tab]);
   const [stockExporting, setStockExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockStatus>("all");
@@ -1428,8 +1454,10 @@ export default function InventoryPage() {
               stacking. Same shape the tables page uses. */}
           {/* The history tab renders its own filter row into this slot, so its
               controls and the tabs share the sticky bar just like the stock tab. */}
-          {tab === "history" && <div ref={setHistoryToolbarSlot} />}
-          {tab === "stock" && (
+          <div ref={historyToolbarRef} hidden={tab !== "history"}>
+            <div ref={setHistoryToolbarSlot} />
+          </div>
+          <div ref={stockToolbarRef} hidden={tab !== "stock"}>
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
           <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
@@ -1661,7 +1689,7 @@ export default function InventoryPage() {
           )}
           </div>
           </header>
-          )}
+          </div>
           {/* Active filters ride in the bar too: anything between the bar and the
               table pushes the table down at the top of the page, and it then jumps
               up to meet the bar once the column titles start sticking. */}
@@ -1717,8 +1745,7 @@ export default function InventoryPage() {
       <div aria-hidden="true" className="lg:hidden" style={{ height: stickyToolbarHeight }} />
       <div className="min-h-dvh bg-slate-100 px-4 pb-4 pt-0 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:pb-6">
         <div className="space-y-5">
-        {tab === "stock" && (
-        <div key="stock" className="inv-view-enter">
+        <div ref={stockViewRef} hidden={tab !== "stock"}>
 
           <div className="grid gap-4">
             {/* The radius and the clipping live on the same element, or the
@@ -1954,16 +1981,16 @@ export default function InventoryPage() {
             </section>
           </div>
         </div>
-        )}
 
-        {tab === "history" && (
-          <div key="history" className="inv-view-enter">
+        {historyVisited && (
+          <div ref={historyViewRef} hidden={tab !== "history"}>
           <InventoryHistoryTab
             categories={categories}
             lang={lang}
             toolbarSlot={historyToolbarSlot}
             viewTabs={viewTabs}
             stickyTop={stickyToolbarHeight}
+            active={tab === "history"}
           />
           </div>
         )}
