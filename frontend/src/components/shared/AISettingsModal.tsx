@@ -39,10 +39,10 @@ type SectionKey = "general" | "actions" | "notifications";
 // thing to the owner ("ยอดขายเปลี่ยนผิดปกติ").
 type InsightRow = { id: string; kinds: AIInsightKind[]; th: [string, string]; en: [string, string] };
 const INSIGHT_ROWS: InsightRow[] = [
-  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "เมื่อเหลือต่ำกว่าขั้นต่ำที่ตั้งไว้ของแต่ละตัว"], en: ["Ingredient running low", "When stock falls under the minimum you set"] },
-  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "วัตถุดิบที่มีในคลังแต่ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Ingredients on the shelf that nothing used in 30 days"] },
-  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุดขึ้นหรือลงชัดเจนเมื่อเทียบกับ 7 วันก่อนหน้า"], en: ["Unusual sales change", "The last 7 days clearly up or down against the 7 before"] },
-  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "จานที่สั่งบ่อยแต่ทำเงินให้ร้านน้อย ควรดูต้นทุนหรือราคา"], en: ["Popular but low-margin menu", "Ordered often, earns little — worth a look at cost or price"] },
+  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "ต่ำกว่าขั้นต่ำที่ตั้งไว้"], en: ["Ingredient running low", "Under the minimum you set"] },
+  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Unused for 30 days"] },
+  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุด เทียบ 7 วันก่อน"], en: ["Unusual sales change", "Last 7 days against the 7 before"] },
+  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "สั่งบ่อยแต่ทำเงินน้อย"], en: ["Popular but low-margin menu", "Ordered often, earns little"] },
 ];
 
 type ActionRow = { type: AIActionType; group: "menu" | "ingredients" | "money"; th: [string, string]; en: [string, string] };
@@ -69,25 +69,24 @@ function copy(language: "th" | "en") {
         saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
         sections: {
           general: { name: "ทั่วไป", blurb: "ชื่อที่เรียกคุณ · คำถามแนะนำ · ประวัติแชท" },
-          actions: { name: "สิ่งที่ทำแทนคุณได้", blurb: "เลือกได้ทีละอย่างว่าให้แก้อะไรได้บ้าง" },
+          actions: { name: "สิ่งที่ทำแทนคุณได้", blurb: "เลือกว่าแก้อะไรได้บ้าง" },
           notifications: { name: "การแจ้งเตือน", blurb: "ของใกล้หมด · ของค้าง · ยอดขายผิดปกติ" },
         },
         groupAnswers: "การตอบ",
         titleLabel: "ชื่อที่ผู้ช่วยใช้เรียกคุณ",
-        titleHint: "ใช้ตอนทักทายและในคำตอบ เว้นว่างไว้ = “คุณผู้จัดการ”",
+        titleHint: "เว้นว่าง = “คุณผู้จัดการ”",
         titlePlaceholder: "คุณผู้จัดการ",
         followUps: "คำถามแนะนำใต้คำตอบ",
-        followUpsHint: "เสนอคำถามต่อยอด 2–3 ข้อหลังแต่ละคำตอบ (เฉพาะเครื่องนี้)",
+        followUpsHint: "2–3 ข้อหลังแต่ละคำตอบ · เฉพาะเครื่องนี้",
         groupHistory: "ประวัติแชท",
-        memoryNote: "แชทเก็บไว้จนกว่าคุณจะลบ ผู้ช่วยจำเรื่องที่คุยในแต่ละแชทแยกกัน · ที่ลบไปอยู่ในถังขยะ 7 วันก่อนหายถาวร",
         clearAll: "ย้ายทุกแชทลงถังขยะ",
-        clearAllHint: "รายการแชทจะว่าง กู้คืนทีละแชทได้จากถังขยะภายใน 7 วัน",
+        clearAllHint: "กู้คืนได้ใน 7 วัน",
         clearButton: "ล้างรายการ…",
         clearConfirm: "ย้ายทั้งหมดลงถังขยะ",
         clearCancel: "ไม่ย้าย",
         cleared: "ย้ายแล้ว",
         trash: "ถังขยะ",
-        trashHint: "แชทที่ลบไว้ กู้คืนได้ภายใน 7 วัน หลังจากนั้นระบบลบถาวรให้เอง",
+        trashHint: "เก็บ 7 วัน แล้วลบถาวร",
         trashOpen: "ดูถังขยะ",
         trashClose: "ซ่อนถังขยะ",
         trashEmpty: "ถังขยะว่าง",
@@ -100,16 +99,15 @@ function copy(language: "th" | "en") {
         purgeIn: (days: number) => (days <= 0 ? "จะถูกลบถาวรวันนี้" : `จะถูกลบถาวรในอีก ${days} วัน`),
         untitled: "แชทไม่มีชื่อ",
         master: "ให้ผู้ช่วยแก้ข้อมูลร้านได้",
-        masterHint: "ปิดสวิตช์นี้ = ผู้ช่วยดูข้อมูลได้อย่างเดียว รายการข้างล่างจะไม่มีผล",
-        unavailable: "ตอนนี้ความสามารถนี้ถูกปิดจากระบบส่วนกลาง เปิดสวิตช์ไว้ได้ แต่จะยังไม่มีผลจนกว่าระบบจะเปิดให้",
+        masterHint: "ปิด = ดูข้อมูลได้อย่างเดียว",
+        unavailable: "ระบบกลางปิดความสามารถนี้อยู่ ยังใช้ไม่ได้",
         groupMenu: "เมนู",
         groupIngredients: "วัตถุดิบ",
         groupMoney: "การเงิน",
-        example: "เช่น",
-        confirmNote: "ทุกคำสั่งจะถูกเตรียมเป็นรายการให้ดูก่อน อยู่ได้ 1 นาที ถ้าไม่กดยืนยันจะถูกยกเลิกเอง · กดยืนยันได้เฉพาะเจ้าของร้าน",
+        confirmNote: "ทุกคำสั่งรอเจ้าของร้านกดยืนยันภายใน 1 นาที",
         groupStock: "วัตถุดิบ",
         groupSales: "ยอดขายและเมนู",
-        bellNote: "การแจ้งเตือนขึ้นที่กระดิ่งมุมขวาบนตอนเปิดแอป ยังไม่มีการส่งออกไปนอกแอป",
+        bellNote: "ขึ้นที่กระดิ่งมุมขวาบน เฉพาะตอนเปิดแอป",
       }
     : {
         settings: "Assistant settings",
@@ -121,25 +119,24 @@ function copy(language: "th" | "en") {
         saveError: "Could not save, try again",
         sections: {
           general: { name: "General", blurb: "What it calls you · suggestions · chat history" },
-          actions: { name: "What it can do for you", blurb: "Choose, one by one, what it may change" },
+          actions: { name: "What it can do for you", blurb: "Choose what it may change" },
           notifications: { name: "Notifications", blurb: "Low stock · dead stock · unusual sales" },
         },
         groupAnswers: "Answers",
         titleLabel: "What the assistant calls you",
-        titleHint: "Used in greetings and answers. Leave empty for “Manager”",
+        titleHint: "Empty = “Manager”",
         titlePlaceholder: "Manager",
         followUps: "Follow-up suggestions under answers",
-        followUpsHint: "Offer 2–3 next questions after each answer (this device only)",
+        followUpsHint: "2–3 after each answer · this device only",
         groupHistory: "Chat history",
-        memoryNote: "Chats are kept until you delete them; the assistant remembers each chat on its own. Deleted chats wait in the trash for 7 days.",
         clearAll: "Move every chat to the trash",
-        clearAllHint: "The chat list empties. Each chat can be restored from the trash within 7 days.",
+        clearAllHint: "Restorable for 7 days",
         clearButton: "Clear list…",
         clearConfirm: "Move all to trash",
         clearCancel: "Keep",
         cleared: "Moved",
         trash: "Trash",
-        trashHint: "Deleted chats can be restored within 7 days; after that they are removed for good.",
+        trashHint: "Kept 7 days, then deleted",
         trashOpen: "Show trash",
         trashClose: "Hide trash",
         trashEmpty: "The trash is empty",
@@ -152,16 +149,15 @@ function copy(language: "th" | "en") {
         purgeIn: (days: number) => (days <= 0 ? "removed for good today" : `removed for good in ${days} day${days === 1 ? "" : "s"}`),
         untitled: "Untitled chat",
         master: "Let the assistant change shop data",
-        masterHint: "Off = the assistant only reads. Nothing below applies.",
-        unavailable: "This capability is currently off system-wide. You can leave the switch on, but it takes effect only once the system enables it.",
+        masterHint: "Off = read only",
+        unavailable: "Turned off system-wide for now",
         groupMenu: "Menu",
         groupIngredients: "Ingredients",
         groupMoney: "Money",
-        example: "e.g.",
-        confirmNote: "Every command is prepared as a list for you to check first. It lasts 1 minute and cancels itself if not confirmed · only the owner can confirm",
+        confirmNote: "Every command waits 1 minute for the owner to confirm",
         groupStock: "Ingredients",
         groupSales: "Sales and menu",
-        bellNote: "Notifications appear on the bell at the top right when the app is open. Nothing is sent outside the app yet.",
+        bellNote: "On the bell, top right, while the app is open",
       };
 }
 
@@ -174,20 +170,17 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (nex
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      // A track with a little depth and a knob that sits on top of it. The knob
-      // keeps the same 2px inset on both ends: 44px track, 20px knob, 22px travel.
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.28),inset_0_0_0_1px_rgba(0,0,0,0.06)] transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
-        on
-          ? "bg-gradient-to-b from-orange-400 to-orange-600"
-          : "bg-gradient-to-b from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-800"
+      // A flat track and a plain white knob (19 ก.ย. 2569: the owner asked for
+      // an ordinary switch, not the raised 3D one). The knob keeps the same 2px
+      // inset on both ends: 44px track, 20px knob, 20px travel.
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
+        on ? "bg-orange-500" : "bg-gray-300 dark:bg-gray-600"
       }`}
     >
       <span
         // Pinned 2px from the top and the left; "on" slides it by the free
-        // width (44 − 20 − 2×2 = 20px) so the right inset is the same 2px. The
-        // shadow drops straight down — a soft spread to the side read as extra
-        // room on the right.
-        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-gradient-to-b from-white to-gray-100 shadow-[0_1px_1px_rgba(0,0,0,0.35),0_2px_3px_-1px_rgba(0,0,0,0.25),inset_0_-1px_1px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-transform duration-200 ease-out ${
+        // width (44 − 20 − 2×2 = 20px) so the right inset is the same 2px.
+        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
           on ? "translate-x-5" : "translate-x-0"
         }`}
       />
@@ -239,6 +232,25 @@ export default function AISettingsModal({
 }) {
   const t = copy(language);
 
+  // Leaving plays the exit first, then tells the parent to unmount — the same
+  // way the chat list closes (19 ก.ย. 2569: it had snapped open and shut).
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) setClosing(false);
+  }, [open]);
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(() => {
+      onClose();
+      // Cleared here, not on the next open: the component stays mounted while
+      // shut, so a flag left set made the next open paint one frame of the
+      // exit animation (card on screen, then fading) before the entrance
+      // replaced it — the blink when the settings opened.
+      setClosing(false);
+    }, 200);
+  };
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [view, setView] = useState<AISettingsView | null>(null);
@@ -267,7 +279,10 @@ export default function AISettingsModal({
   useEffect(() => {
     if (!open) return;
     setError("");
-    setLoading(true);
+    // A spinner only when there is nothing to show yet. On later opens the
+    // settings from last time stay on screen while they refresh, instead of
+    // flashing old settings → spinner → settings.
+    setLoading((current) => current || view === null);
     setConfirmClear(false);
     setClearedCount(null);
     setMobileOpen(false);
@@ -552,7 +567,6 @@ export default function AISettingsModal({
               {trashError && <p className="px-3 py-2 text-[11px] text-red-500">{trashError}</p>}
             </div>
           )}
-          <Note>{t.memoryNote}</Note>
         </>
       );
     }
@@ -583,17 +597,11 @@ export default function AISettingsModal({
           {groups.map((group) => (
             <Group key={group.key} title={group.title}>
               {ACTION_ROWS.filter((row) => row.group === group.key).map((row) => {
-                const [label, example] = language === "th" ? row.th : row.en;
+                // The name alone: the example line under each one ("เช่น …") was
+                // taken out on 19 ก.ย. 2569 at the owner's request.
+                const [label] = language === "th" ? row.th : row.en;
                 return (
-                  <Row
-                    key={row.type}
-                    label={label}
-                    hint={
-                      <>
-                        <span className="text-gray-400 dark:text-gray-500">{t.example}</span> {example}
-                      </>
-                    }
-                  >
+                  <Row key={row.type} label={label}>
                     <Switch
                       on={view.action_types[row.type] !== false}
                       disabled={!actionsOn}
@@ -680,9 +688,13 @@ export default function AISettingsModal({
   // phone's top bar no matter its z-index — on a phone the header with the
   // back button sat under that bar and the sheet could not be left.
   return createPortal(
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
+    <div
+      className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-0 sm:p-4`}
+      onClick={requestClose}
+    >
+      <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/50" />
       <div
-        className="flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
+        className="ai-settings-card relative flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Desktop sidebar */}
@@ -699,7 +711,7 @@ export default function AISettingsModal({
             <div className="flex min-h-0 flex-1 flex-col sm:hidden">
               <header className="flex items-center justify-between border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
                 <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white">{t.settings}</h2>
-                <button onClick={onClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </header>
@@ -754,18 +766,25 @@ export default function AISettingsModal({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {saveBadge}
-                <button onClick={onClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </header>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
-              {loading ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-                </div>
-              ) : error ? (
+              {/* Nothing loaded yet: the spinner from the very first frame (the
+                  request starts in an effect, a frame after the sheet appears).
+                  Once there is a view it stays up through later refreshes. */}
+              {!view ? (
+                error ? (
+                  <p className="text-sm text-red-500">{error}</p>
+                ) : (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  </div>
+                )
+              ) : error && !loading ? (
                 <p className="text-sm text-red-500">{error}</p>
               ) : (
                 renderSection()

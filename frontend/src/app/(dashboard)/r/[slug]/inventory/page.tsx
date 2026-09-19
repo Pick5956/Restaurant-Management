@@ -55,7 +55,7 @@ import type {
 import { InventoryPageSkeleton } from "./InventorySkeletons";
 import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
-import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
+import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
@@ -100,11 +100,10 @@ import {
 } from "./inventoryExpiryUtils";
 import RestockExpiryChips from "./RestockExpiryChips";
 import InventoryMobile from "./mobile/InventoryMobile";
-import { useIsMobile } from "./mobile/primitives";
+import { useIsMobile, useWarmConfirm } from "./mobile/primitives";
 import {
   emptyForm,
   buildAdjustStockPayload,
-  getInventoryValue,
   getStatus,
   getReorderPercent,
   getStockPercent,
@@ -199,6 +198,9 @@ function buildCopy(language: "th" | "en") {
         cancel: "ยกเลิก",
         confirmDelete: "ยืนยันการลบ",
         deleteMsg: (name: string) => `ลบ "${name}" ออกจากคลังวัตถุดิบ?`,
+        removeTitle: (name: string) => `ลบ "${name}"?`,
+        removeBody: "วัตถุดิบนี้จะหายจากคลังและรายการทั้งหมด ถ้าอยู่ในสูตรเมนู ระบบจะไม่ให้ลบ",
+        removeConfirm: "ลบวัตถุดิบ",
         adjustTitle: "ปรับสต็อก",
         adjustIn: "รับเข้า",
         spentAmount: "ยอดที่จ่ายจริง (ไม่บังคับ)",
@@ -303,6 +305,9 @@ function buildCopy(language: "th" | "en") {
         cancel: "Cancel",
         confirmDelete: "Confirm delete",
         deleteMsg: (name: string) => `Remove "${name}" from inventory?`,
+        removeTitle: (name: string) => `Delete "${name}"?`,
+        removeBody: "It disappears from the inventory. An ingredient used in a menu recipe cannot be deleted.",
+        removeConfirm: "Delete ingredient",
         adjustTitle: "Adjust stock",
         adjustIn: "Stock in",
         spentAmount: "Actual amount paid (optional)",
@@ -437,7 +442,9 @@ export default function InventoryPage() {
   useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { language } = useLanguage();
   const { showToast } = useToast();
-  const confirm = useConfirm();
+  // Every "are you sure" on this page is the warm dialog the AI chat uses for
+  // deleting a conversation (and the phone layout already uses here).
+  const { ask, dialog: warmDialog } = useWarmConfirm();
   const lang = language as "th" | "en";
   const canManage = can(activeMembership, "manage_inventory");
   const canManageExpenses = can(activeMembership, "manage_expenses");
@@ -553,8 +560,6 @@ export default function InventoryPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
-  const [deleteTarget, setDeleteTarget] = useState<Ingredient | null>(null);
-  const [deleteClosing, setDeleteClosing] = useState(false);
 
   const [adjustTarget, setAdjustTarget] = useState<Ingredient | null>(null);
   const [adjustClosing, setAdjustClosing] = useState(false);
@@ -686,7 +691,6 @@ export default function InventoryPage() {
   }, [ingredients]);
 
   const totalItems = ingredients.length;
-  const totalValue = ingredients.reduce((sum, item) => sum + getInventoryValue(item), 0);
   const categoryNameById = useMemo(
     () => new Map(categories.map((category) => [category.ID, category.name])),
     [categories],
@@ -945,11 +949,14 @@ export default function InventoryPage() {
   }
 
   async function handleDeleteCategory(category: IngredientCategory) {
-    const confirmed = await confirm({
+    const confirmed = await ask({
       title: copy.confirmDeleteCategory(category.name),
+      description:
+        lang === "th"
+          ? "หมวดนี้จะหายไป วัตถุดิบไม่ได้หายไปด้วย (ลบได้เฉพาะหมวดที่ไม่มีวัตถุดิบแล้ว)"
+          : "Only the category goes; it can only be deleted once no ingredient uses it.",
       confirmLabel: copy.deleteCategory,
       cancelLabel: copy.cancel,
-      tone: "danger",
     });
     if (!confirmed) return;
     try {
@@ -964,15 +971,22 @@ export default function InventoryPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  async function requestDelete(target: Ingredient) {
+    const confirmed = await ask({
+      title: copy.removeTitle(target.name),
+      description: copy.removeBody,
+      confirmLabel: copy.removeConfirm,
+      cancelLabel: copy.cancel,
+    });
+    if (!confirmed) return;
     await deleteOnce.current(async () => {
       try {
-        await deleteIngredient(deleteTarget.ID);
-        setIngredients((prev) => prev.filter((item) => item.ID !== deleteTarget.ID));
+        await deleteIngredient(target.ID);
+        setIngredients((prev) => prev.filter((item) => item.ID !== target.ID));
         showToast({ title: copy.ingredientDeleted });
-      } finally {
-        closeDeleteModal();
+      } catch (error: unknown) {
+        const err = error as { response?: { data?: { error?: string } } };
+        showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang), tone: "error" });
       }
     });
   }
@@ -1201,12 +1215,11 @@ export default function InventoryPage() {
       return;
     }
     if (adjustType !== "in") {
-      const confirmed = await confirm({
+      const confirmed = await ask({
         title: copy.confirmAdjustTitle,
-        message: copy.confirmAdjustBody,
+        description: copy.confirmAdjustBody,
         confirmLabel: copy.confirmAdjust,
         cancelLabel: copy.cancel,
-        tone: "warning",
       });
       if (!confirmed) return;
     }
@@ -1295,12 +1308,11 @@ export default function InventoryPage() {
   async function handleDiscardLot(lot: IngredientLot) {
     if (!txTarget) return;
     const target = txTarget;
-    const confirmed = await confirm({
+    const confirmed = await ask({
       title: xcopy.discardTitle,
-      message: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
+      description: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
       confirmLabel: xcopy.discard,
       cancelLabel: copy.cancel,
-      tone: "danger",
     });
     if (!confirmed) return;
     setLotSaving(true);
@@ -1362,15 +1374,6 @@ export default function InventoryPage() {
     }, 260);
   }
 
-  function closeDeleteModal() {
-    if (deleteClosing) return;
-    setDeleteClosing(true);
-    window.setTimeout(() => {
-      setDeleteTarget(null);
-      setDeleteClosing(false);
-    }, 260);
-  }
-
   function closeAdjustModal() {
     if (adjustClosing) return;
     setAdjustClosing(true);
@@ -1416,7 +1419,6 @@ export default function InventoryPage() {
   }
   const modalBackdrop = useBackdropClose(closeModal);
   const categoryBackdrop = useBackdropClose(closeCategoryModal);
-  const deleteBackdrop = useBackdropClose(closeDeleteModal);
   const adjustBackdrop = useBackdropClose(closeAdjustModal);
   const txBackdrop = useBackdropClose(closeTxDrawer);
 
@@ -1602,17 +1604,12 @@ export default function InventoryPage() {
           </div>
           {viewTabs}
           </div>
-          {/* Value and the action buttons wrap onto as few rows as fit, rather than
-              one row each. The flex-1 spacer only exists to push them right on a
-              wide row, so it is hidden where the header is a column. */}
+          {/* The action buttons wrap onto as few rows as fit, rather than one row
+              each. The flex-1 spacer only exists to push them right on a wide row,
+              so it is hidden where the header is a column. The stock value chip
+              that used to lead this group was removed on the owner's call. */}
           <div className="hidden flex-1 sm:block" />
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <div className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-orange-200/80 bg-orange-50/80 px-3 text-center dark:border-orange-900/40 dark:bg-orange-950/20">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">{lang === "th" ? "มูลค่า" : "Value"}</span>
-            <span className="text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">
-              {formatCurrency(totalValue, lang)}
-            </span>
-          </div>
           <div className="relative shrink-0">
             <button
               type="button"
@@ -1648,8 +1645,8 @@ export default function InventoryPage() {
                         ? "กำลังสร้างไฟล์…"
                         : "Preparing…"
                       : lang === "th"
-                        ? "ส่งออก CSV"
-                        : "Export CSV"}
+                        ? "ส่งออกเป็นตาราง"
+                        : "Export as sheet"}
                   </button>
                   {canManage && (
                     <button
@@ -1778,7 +1775,7 @@ export default function InventoryPage() {
                                 if (el) el.indeterminate = selectedIds.size > 0 && !allSelected;
                               }}
                               onChange={toggleSelectAll}
-                              className="h-4 w-4 cursor-pointer accent-orange-500"
+                              className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                             />
                           </th>
                         )}
@@ -1812,7 +1809,7 @@ export default function InventoryPage() {
                                   aria-label={`select ${item.name}`}
                                   checked={selectedIds.has(item.ID)}
                                   onChange={() => toggleSelect(item.ID)}
-                                  className="h-4 w-4 cursor-pointer accent-orange-500"
+                                  className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                                 />
                               </td>
                             )}
@@ -1906,7 +1903,7 @@ export default function InventoryPage() {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setDeleteTarget(item)}
+                                      onClick={() => void requestDelete(item)}
                                       title={copy.delete}
                                       className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
                                     >
@@ -2631,33 +2628,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {deleteTarget && (
-        <div {...deleteBackdrop} className={`${deleteClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${deleteClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="px-6 py-5">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-300">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">{copy.confirmDelete}</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{copy.deleteMsg(deleteTarget.name)}</p>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-gray-800">
-              <button
-                onClick={closeDeleteModal}
-                className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
-              >
-                {copy.cancel}
-              </button>
-              <button
-                onClick={handleDelete}
-                className="rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
-              >
-                {copy.delete}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {warmDialog}
 
       {adjustTarget && (() => {
         const t = adjustTarget;

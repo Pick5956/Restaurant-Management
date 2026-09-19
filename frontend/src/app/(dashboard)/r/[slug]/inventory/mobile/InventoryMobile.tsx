@@ -97,7 +97,7 @@ function buildCopy(lang: "th" | "en") {
         bulk: "เพิ่มหลายรายการ",
         selectMany: "เลือกหลายรายการ",
         categories: "จัดการหมวดหมู่",
-        exportCsv: "ส่งออกเป็น CSV",
+        exportCsv: "ส่งออกเป็นตาราง",
         wholeHistory: "ประวัติทั้งคลัง",
         filter: "ตัวกรอง",
         category: "หมวดหมู่",
@@ -163,7 +163,7 @@ function buildCopy(lang: "th" | "en") {
         bulk: "Add several",
         selectMany: "Select several",
         categories: "Manage categories",
-        exportCsv: "Export CSV",
+        exportCsv: "Export as sheet",
         wholeHistory: "Whole-inventory history",
         filter: "Filters",
         category: "Category",
@@ -616,14 +616,10 @@ export default function InventoryMobile({
           ]}
         />
 
+        {/* Only what needs ordering: the stock value that sat on the left was
+            removed on the owner's call. */}
         <div className="flex items-end justify-between gap-3 rounded-(--inv-radius) border border-(--inv-hairline) bg-(--inv-surface) px-4 py-3 shadow-(--inv-shadow)">
           <div className="min-w-0">
-            <p className="text-[11px] text-(--inv-muted)">{copy.totalValue}</p>
-            <p className="truncate text-[20px] font-semibold tabular-nums text-(--inv-heading)">
-              {formatCurrency(totals.value, lang)}
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
             <p className="text-[11px] text-(--inv-muted)">{copy.needsOrder}</p>
             <p className="text-[20px] font-semibold tabular-nums text-(--inv-action)">
               {totals.needsOrder}
