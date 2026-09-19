@@ -756,7 +756,7 @@ export default function NewRestaurantPage() {
                     hint={copy.tableHelp}
                     required
                   />
-                  {/* A heading like the field beside it, then the checkbox in a row
+                  {/* A heading like the field beside it, then the checkbox in a box
                       the input's height, so the two columns line up. */}
                   <div className="block space-y-2">
                     <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -770,14 +770,14 @@ export default function NewRestaurantPage() {
                         }
                       />
                     </span>
-                    <label className="flex h-[43.6px] cursor-pointer items-center gap-2.5">
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
                       <input
                         type="checkbox"
                         checked={splitZones}
                         onChange={(event) => setSplitZones(event.target.checked)}
                         className="h-4 w-4 shrink-0 accent-orange-600"
                       />
-                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
                     </label>
                   </div>
                 </div>
