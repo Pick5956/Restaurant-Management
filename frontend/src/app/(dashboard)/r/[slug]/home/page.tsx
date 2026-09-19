@@ -431,9 +431,17 @@ type CardRow = CardSummaryItem & { heading?: boolean; tint?: string; chips?: Car
 // One width for every pip in a row, set by the longest line any of them
 // carries — a row of mixed widths reads as a ragged list, not as a set. `ch`
 // is exact here: the pips are monospaced. The addend is the horizontal padding.
+// A two-line die (table + order number, table + state) is never narrower than
+// the floor card's table dice, so the order dice in the work card and the table
+// dice beside it come out one size — "F02 / 029" had been 3ch wide against
+// "F01 / ใช้งาน" at 6ch.
+const DIE_MIN_CH = 6;
 const chipWidth = (chips: CardChip[] = []) =>
   chips.length
-    ? `calc(${Math.max(...chips.map((chip) => Math.max(chip.text.length, chip.note?.length ?? 0)))}ch + 0.75rem)`
+    ? `calc(${Math.max(
+        chips.some((chip) => chip.note) ? DIE_MIN_CH : 0,
+        ...chips.map((chip) => Math.max(chip.text.length, chip.note?.length ?? 0)),
+      )}ch + 0.75rem)`
     : undefined;
 
 // Border and wash for a topic's partition, keyed by what the topic means:
