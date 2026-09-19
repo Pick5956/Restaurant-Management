@@ -407,9 +407,16 @@ export default function Sidebar() {
         onKeyDown={(event) => {
           if (event.key === 'Escape') setMobileOpen(false);
         }}
+        /* Hidden (visibility) once it has slid away, not only moved off
+           screen. iPhone Safari (iOS 26) colours its status bar and toolbar
+           from fixed boxes at the screen edges; the orange drawer, merely
+           translated away, kept both bars orange after it closed
+           (19 ก.ย. 2569). Opening shows it at once (visibility is not
+           transitioned then); closing keeps it visible until the slide out
+           ends, so the motion is unchanged. */
         className={`
-          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] transition-[transform,box-shadow] duration-300 ease-in-out will-change-transform lg:hidden
-          ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full pointer-events-none shadow-none'}
+          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] duration-300 ease-in-out will-change-transform lg:hidden
+          ${mobileOpen ? 'visible translate-x-0 shadow-2xl transition-[transform,box-shadow]' : 'invisible -translate-x-full pointer-events-none shadow-none transition-[transform,box-shadow,visibility]'}
         `}
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
