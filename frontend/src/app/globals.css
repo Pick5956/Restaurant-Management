@@ -109,6 +109,9 @@ body {
 }
 
 html {
+  /* Painted here too, not only on body: phone Safari reads the root's colour
+     for the bands around the page. */
+  background: var(--background);
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
