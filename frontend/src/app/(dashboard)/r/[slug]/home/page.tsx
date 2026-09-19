@@ -2513,7 +2513,7 @@ export default function Home() {
                               {/* The whole lane, scrolled: a busy service is
                                   exactly when you need the tickets under the
                                   fifth one, and the three lanes stay level. */}
-                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-none xl:min-h-0 xl:flex-1">
+                              <div ref={smoothScroll} className="grid max-h-64 content-start gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 xl:max-h-none xl:min-h-0 xl:flex-1">
                                 {lane.items.length ? lane.items.map((ticket) => (
                                   <button key={`${lane.key}-${ticket.id}`} type="button" onClick={(event) => {
                                       if (openTicket !== ticket.id && ticket.items.length && window.matchMedia("(hover: none)").matches) {
@@ -2530,7 +2530,9 @@ export default function Home() {
                                       setTicketTip({ x: Math.min(rect.left, window.innerWidth - 260), y: rect.bottom + 6, capped: false, table: ticket.table, orderNumber: ticket.orderNumber, items: ticket.items });
                                     }}
                                     onMouseLeave={() => setTicketTip(null)}
-                                    className="ui-press block w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800">
+                                    // A card per ticket, the same as the stock risks beside
+                                    // the orders: bordered, rounded, spaced apart.
+                                    className="ui-press block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
                                     <div className="flex items-center justify-between gap-3">
                                       <span className="text-[13px] font-semibold text-gray-900 dark:text-white">{ticket.table}</span>
                                       <span className="font-mono text-[11px] text-gray-500">#{ticket.orderNumber}</span>
@@ -2544,7 +2546,7 @@ export default function Home() {
                                       <span className="font-mono text-gray-500 dark:text-gray-400">{formatCurrency(ticket.total, language)}</span>
                                     </div>
                                   </button>
-                                )) : <p className="px-4 py-8 text-center text-[12px] text-gray-500">{copy.noKitchen}</p>}
+                                )) : <p className="py-5 text-center text-[12px] text-gray-500">{copy.noKitchen}</p>}
                               </div>
                             </div>
                           );
