@@ -516,6 +516,10 @@ function CollapsibleCard({
   // Off when the expanded body already shows the same figures in a section of
   // its own — the collapsed tile and row still need `summary` either way.
   showSummaryWhenExpanded = true,
+  // Pointing at a topic's heading gives that topic the face's room and folds
+  // the rest down to their headings; it stays until another heading is
+  // pointed at. For a face with more rows than it can show at once.
+  focusOnHover = false,
   expanded,
   dimmed,
   collapsedRank,
@@ -529,6 +533,7 @@ function CollapsibleCard({
   summary?: CardSummaryItem[];
   rows?: CardRow[];
   showSummaryWhenExpanded?: boolean;
+  focusOnHover?: boolean;
   expanded: boolean;
   dimmed?: boolean;
   collapsedRank: number;
@@ -539,6 +544,8 @@ function CollapsibleCard({
   // face that is only a name does not — the name is the whole tile.
   const { href: restaurantPageHref } = useRestaurantNav();
   const hasFaceTable = Boolean(rows?.length || summary?.length);
+  // The topic whose heading was pointed at last; null until one is.
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   // Opening, closing and switching cards all happen in one render — no fades,
   // no deferred unmount, no FLIP on the tabs that shuffle around them. Every
   // tab keeps its fixed slot via `collapsedRank`; only the open card's body
@@ -593,6 +600,9 @@ function CollapsibleCard({
               // which shows every table as one grid) renders its head as content
               // and skips the topic bar entirely.
               const contentRows = block.head.heading ? block.items : [block.head, ...block.items];
+              // With a topic in focus it takes all the spare room and the
+              // others shrink to their heading bar; before any, all share.
+              const focused = focusOnHover && focusKey !== null ? focusKey === block.head.key : null;
               return (
               <div
                 key={block.head.key}
@@ -600,10 +610,13 @@ function CollapsibleCard({
                 // the tile's spare space is split from there — a lane with
                 // nothing in it is a strip, a full one takes the room. Past
                 // that it scrolls inside itself.
-                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-800"
+                className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-white transition-[flex-grow] duration-300 ease-out motion-reduce:transition-none dark:bg-gray-800 ${
+                  focused === null ? "flex-auto" : focused ? "flex-[1_1_0%]" : "flex-none"
+                }`}
               >
                 {block.head.heading ? (
                 <div
+                  onMouseEnter={focusOnHover ? () => setFocusKey(block.head.key) : undefined}
                   style={{ fontSize: rowTopicText }}
                   className={`flex items-baseline gap-1.5 border-b border-gray-200 bg-gray-50 px-2 py-0.5 leading-tight dark:border-gray-800 dark:bg-gray-700 ${block.head.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
                 >
@@ -614,7 +627,10 @@ function CollapsibleCard({
                 {/* The lane's own scroller: a state with a dozen free tables
                     lists them all, and the block stays the height of its
                     neighbours instead of clipping the tail off. */}
-                <div ref={smoothScroll} className="scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                <div
+                  ref={smoothScroll}
+                  className={`scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 ${focused === false ? "hidden" : ""}`}
+                >
                   {contentRows.map((item) => item.chips ? (
                     // A lane whose tables carry no clock shows them as pips
                     // rather than one line each: the whole set fits the block,
@@ -2312,6 +2328,7 @@ export default function Home() {
                 title={copy.liveWork}
                 icon={AlertTriangle}
                 rows={attentionRows}
+                focusOnHover
                 expanded={openCard === "liveWork"}
                 dimmed={isCardDimmed("liveWork")}
                 collapsedRank={collapsedRank("liveWork")}
