@@ -50,6 +50,8 @@ type FieldProps = {
   placeholder?: string;
   error?: string;
   help?: string;
+  /** Shown on hover over the required star instead of as a line under the box. */
+  hint?: string;
   required?: boolean;
   type?: "text" | "tel" | "number";
   min?: number;
@@ -64,6 +66,7 @@ function Field({
   placeholder,
   error,
   help,
+  hint,
   required,
   type = "text",
   min,
@@ -74,7 +77,26 @@ function Field({
     <label className="block space-y-2">
       <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
         {label}
-        {required ? <span className="ml-1 text-orange-600 dark:text-orange-400">*</span> : null}
+        {required && hint ? (
+          // The explanation folds into the star: hover or focus it to read.
+          <span className="group relative ml-1 inline-block">
+            <span
+              tabIndex={0}
+              aria-label={hint}
+              className="cursor-help rounded-sm text-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-orange-300 dark:text-orange-400"
+            >
+              *
+            </span>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-max max-w-[20rem] -translate-x-1/2 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-gray-700"
+            >
+              {hint}
+            </span>
+          </span>
+        ) : required ? (
+          <span className="ml-1 text-orange-600 dark:text-orange-400">*</span>
+        ) : null}
       </span>
       <input
         className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-orange-500 disabled:bg-gray-50 disabled:text-gray-500 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:disabled:bg-gray-900/60 dark:disabled:text-gray-500 ${
@@ -671,7 +693,7 @@ export default function NewRestaurantPage() {
                     min={1}
                     max={300}
                     error={errors.initialTables}
-                    help={copy.tableHelp}
+                    hint={copy.tableHelp}
                     required
                   />
                   {/* Just the checkbox — its words say what it does. An empty line
