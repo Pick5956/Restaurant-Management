@@ -58,6 +58,7 @@ import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { SEALED_UNITS } from "./inventoryPageUtils";
 import NumberInput from "@/src/components/shared/NumberInput";
 import {
@@ -429,6 +430,10 @@ export default function InventoryPage() {
   // One tree renders at a time rather than two hidden by CSS: both mounted would
   // run the inventory fetch twice and keep two copies of the same state.
   const isMobile = useIsMobile();
+  // The page glides on the mouse wheel and coasts on after it, like the
+  // overview page. The scroller belongs to the shell layout, so it is wired
+  // up here and let go when the page is left.
+  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { language } = useLanguage();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -1541,7 +1546,7 @@ export default function InventoryPage() {
                     ))}
                   </div>
                   <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.category}</p>
-                  <div className="flex max-h-40 flex-wrap gap-2 overflow-auto">
+                  <div ref={smoothScroll} className="flex max-h-40 flex-wrap gap-2 overflow-auto">
                     <button
                       onClick={() => setCategoryFilter(0)}
                       className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
@@ -2017,7 +2022,7 @@ export default function InventoryPage() {
                 <X className="mx-auto h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
@@ -2355,7 +2360,7 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-auto p-4">
               <div className="mb-3 flex flex-wrap items-end gap-2">
                 <div className="w-56">
                   <p className="mb-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
@@ -2519,7 +2524,7 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="max-h-[46vh] space-y-1 overflow-y-auto px-4 py-3">
+            <div ref={smoothScroll} className="max-h-[46vh] space-y-1 overflow-y-auto px-4 py-3">
               {categories.length === 0 ? (
                 <p className="px-2 py-6 text-center text-sm text-slate-400">{copy.noCategories}</p>
               ) : (
@@ -2928,7 +2933,7 @@ export default function InventoryPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div ref={smoothScroll} className="flex-1 overflow-y-auto px-5 py-4">
               {lots.length > 0 && (
                 <div className="mb-6">
                   <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
