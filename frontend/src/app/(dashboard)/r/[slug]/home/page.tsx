@@ -750,7 +750,9 @@ function CollapsibleCard({
                       // Each pip is as wide as what it says and they wrap when
                       // the line runs out, rather than every pip being stamped
                       // to one column width.
-                      className="flex flex-wrap gap-1.5 px-2 py-1.5 leading-none"
+                      // Centred: a short last line of dice sits in the middle
+                      // rather than hugging the left edge.
+                      className="flex flex-wrap justify-center gap-1.5 px-2 py-1.5 leading-none"
                     >
                       {item.chips.map((chip, index) => (
                         <span
