@@ -1863,17 +1863,25 @@ export default function InventoryPage() {
                 <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
                     <span>{copy.perPage}</span>
-                    <select
-                      value={pageSize}
-                      onChange={(event) => setPageSize(Number(event.target.value))}
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 outline-none transition focus:border-orange-400 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200"
-                    >
+                    {/* Four sizes fit side by side, so they are buttons rather than a
+                        native select: one tap, and no browser-drawn popup. */}
+                    <div role="group" aria-label={copy.perPage} className="flex h-8 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-[3px] dark:border-gray-800 dark:bg-gray-900">
                       {[10, 25, 50, 100].map((size) => (
-                        <option key={size} value={size}>
+                        <button
+                          key={size}
+                          type="button"
+                          aria-pressed={pageSize === size}
+                          onClick={() => setPageSize(size)}
+                          className={`inline-flex h-6 min-w-[34px] items-center justify-center rounded-md px-2 text-xs font-semibold tabular-nums transition ${
+                            pageSize === size
+                              ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
+                          }`}
+                        >
                           {size}
-                        </option>
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
                     <span className="tabular-nums">
