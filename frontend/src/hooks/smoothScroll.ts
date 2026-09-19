@@ -63,6 +63,9 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
 
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey || !event.deltaY) return; // pinch-zoom, sideways
+    // A list nested inside already took this notch; the page around it must
+    // not scroll on the same notch as well.
+    if (event.defaultPrevented) return;
     const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? node.clientHeight : 1;
     // A fast spin carries further, the way a flick does: each notch in a quick
     // run adds a quarter more than the one before, up to double.
