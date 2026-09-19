@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Info } from "lucide-react";
 
 import { useAuth } from "@/src/providers/AuthProvider";
 import { createRestaurant, type CreateRestaurantInput } from "@/src/lib/restaurant";
@@ -52,7 +53,7 @@ type RestaurantType = string;
  * form is in, the time pickers, the page header. Where the Popover API is
  * missing it falls back to a fixed box at the highest z-index the app uses.
  */
-function HintStar({ hint }: { hint: string }) {
+function HintStar({ hint, mark = "star" }: { hint: string; mark?: "star" | "info" }) {
   const starRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
 
@@ -92,9 +93,13 @@ function HintStar({ hint }: { hint: string }) {
         onMouseLeave={hide}
         onFocus={show}
         onBlur={hide}
-        className="cursor-help rounded-sm text-orange-600 outline-none focus-visible:ring-2 focus-visible:ring-orange-300 dark:text-orange-400"
+        className={`cursor-help rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
+          mark === "star" ? "text-orange-600 dark:text-orange-400" : "inline-flex align-[-2px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+        }`}
       >
-        *
+        {/* A field that is not required gets an ⓘ instead: a red star there
+            would read as "must fill in". */}
+        {mark === "star" ? "*" : <Info className="h-3.5 w-3.5" aria-hidden="true" />}
       </span>
       <span
         ref={tipRef}
@@ -328,6 +333,8 @@ export default function NewRestaurantPage() {
         initialTables: "จำนวนโต๊ะเริ่มต้น",
         zonesLabel: "โซนโต๊ะ",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
+        splitZonesHelp: "ระบบจะแบ่งโต๊ะออกเป็นโซนตามประเภทร้าน (เช่น โซนหน้าร้าน โซนครอบครัว)",
+        noSplitZonesHelp: "สร้างโต๊ะเรียงลำดับ T1–T{count} โดยไม่แบ่งโซน",
         zonedSummary: "แบ่งโซนอัตโนมัติ",
         flatSummary: "ไม่แบ่งโซน (เรียงลำดับ)",
         optional: "ไม่บังคับ",
@@ -399,6 +406,8 @@ export default function NewRestaurantPage() {
         initialTables: "Initial tables",
         zonesLabel: "Table zones",
         splitZonesLabel: "Split into zones automatically",
+        splitZonesHelp: "Tables are divided into zones based on the restaurant type (e.g. front, family).",
+        noSplitZonesHelp: "Create tables numbered T1–T{count} in sequence, without zones.",
         zonedSummary: "Auto-split into zones",
         flatSummary: "No zones (sequential)",
         optional: "Optional",
@@ -752,7 +761,17 @@ export default function NewRestaurantPage() {
                   {/* A heading like the field beside it, then the checkbox in a row
                       the input's height, so the two columns line up. */}
                   <div className="block space-y-2">
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{copy.zonesLabel}</span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {copy.zonesLabel}
+                      <HintStar
+                        mark="info"
+                        hint={
+                          splitZones
+                            ? copy.splitZonesHelp
+                            : copy.noSplitZonesHelp.replace("{count}", Number.isInteger(tableCount) && tableCount > 0 ? String(tableCount) : "N")
+                        }
+                      />
+                    </span>
                     <label className="flex h-[43.6px] cursor-pointer items-center gap-2.5">
                       <input
                         type="checkbox"
