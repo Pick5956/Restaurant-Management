@@ -33,11 +33,16 @@ export default function ExpiryChips({
 }) {
   const copy = expiryCopy(lang);
   const fallback = defaultShelfLifeDays(storageType);
-  const { chip, custom, draft, pick, typeDraft } = useExpiryChoice(value, onChange, fallback);
+  const { chip, custom, byDate, date, today, draft, pick, typeDraft, pickDate } = useExpiryChoice(
+    value,
+    onChange,
+    fallback,
+  );
   const options = [
     { value: "none", label: copy.none },
     ...SHELF_LIFE_PRESETS.map((days) => ({ value: String(days), label: copy.preset(days) })),
     { value: "custom", label: copy.custom },
+    { value: "date", label: copy.byDate },
   ];
 
   return (
@@ -56,6 +61,18 @@ export default function ExpiryChips({
           </button>
         ))}
       </div>
+      {byDate ? (
+        <div className="mt-2 w-44">
+          <input
+            type="date"
+            min={today}
+            value={date}
+            onChange={(event) => pickDate(event.target.value)}
+            aria-label={copy.byDate}
+            className={inputCls}
+          />
+        </div>
+      ) : null}
       {custom ? (
         <div className="mt-2 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
           <span>{copy.customDays}</span>

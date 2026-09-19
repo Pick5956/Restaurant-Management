@@ -124,15 +124,33 @@ export function useExpiryChoice(
   fallback: number,
 ) {
   const [custom, setCustom] = useState(value !== null && !SHELF_LIFE_PRESETS.includes(value));
+  // "ระบุวันที่": the date printed on the package, picked from a calendar. It is
+  // still stored as days from today, so everything downstream is unchanged.
+  const [byDate, setByDate] = useState(false);
   const [draft, setDraft] = useState(value === null ? "" : String(value));
-  const chip = value === null ? "none" : custom ? "custom" : String(value);
+  const chip = value === null ? "none" : byDate ? "date" : custom ? "custom" : String(value);
+  const date = value === null ? "" : expiryDateFromDays(value);
+  const today = expiryDateFromDays(0);
+
+  function pickDate(iso: string) {
+    if (!iso) return;
+    onChange(Math.max(0, daysUntil(iso)));
+  }
 
   function pick(next: string) {
     if (next === "none") {
       setCustom(false);
+      setByDate(false);
       onChange(null);
       return;
     }
+    if (next === "date") {
+      setByDate(true);
+      setCustom(false);
+      if (value === null) onChange(fallback);
+      return;
+    }
+    setByDate(false);
     if (next === "custom") {
       setCustom(true);
       const typed = Number(draft);
@@ -151,7 +169,7 @@ export function useExpiryChoice(
     if (raw !== "" && Number.isFinite(typed)) onChange(Math.max(0, Math.round(typed)));
   }
 
-  return { chip, custom, draft, pick, typeDraft };
+  return { chip, custom, byDate, date, today, draft, pick, typeDraft, pickDate };
 }
 
 export function expiryCopy(lang: "th" | "en") {
@@ -160,6 +178,7 @@ export function expiryCopy(lang: "th" | "en") {
         label: "วันหมดอายุ",
         none: "ไม่ระบุ",
         custom: "กำหนดเอง",
+        byDate: "ระบุวันที่",
         preset: (n: number) => `${n} วัน`,
         customDays: "อีก",
         dayUnit: "วัน",
@@ -191,6 +210,7 @@ export function expiryCopy(lang: "th" | "en") {
         label: "Expiry date",
         none: "Not set",
         custom: "Custom",
+        byDate: "Pick a date",
         preset: (n: number) => `${n} days`,
         customDays: "In",
         dayUnit: "days",

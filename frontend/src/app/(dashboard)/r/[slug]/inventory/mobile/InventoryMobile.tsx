@@ -110,7 +110,7 @@ function buildCopy(lang: "th" | "en") {
         sortName: "ชื่อ ก-ฮ",
         sortValue: "มูลค่าสูงสุด",
         afterRestock: "คงเหลือหลังเติม",
-        save: (n: string) => `บันทึก +${n} หน่วย`,
+        save: (n: string, unit: string) => `บันทึก +${n} ${unit}`,
         counted: "จำนวนที่นับได้",
         difference: "ส่วนต่าง",
         saveCount: "บันทึกยอดที่นับได้",
@@ -176,7 +176,7 @@ function buildCopy(lang: "th" | "en") {
         sortName: "Name A-Z",
         sortValue: "Highest value",
         afterRestock: "Stock after",
-        save: (n: string) => `Save +${n}`,
+        save: (n: string, unit: string) => `Save +${n} ${unit}`,
         counted: "Counted quantity",
         difference: "Difference",
         saveCount: "Save counted quantity",
@@ -1095,7 +1095,7 @@ function RestockAndCountSheets({
         onClose={close}
         footer={
           <PrimaryButton onClick={submitRestock} disabled={amount <= 0 || busy}>
-            {copy.save(formatNumber(amount, lang))}
+            {copy.save(formatNumber(amount, lang), unit)}
           </PrimaryButton>
         }
       >

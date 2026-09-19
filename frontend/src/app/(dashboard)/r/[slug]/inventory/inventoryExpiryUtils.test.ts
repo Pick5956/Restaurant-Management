@@ -95,3 +95,12 @@ describe("defaultShelfLifeDays", () => {
     expect(defaultShelfLifeDays("weird")).toBe(2);
   });
 });
+
+describe("a picked date round-trips through days", () => {
+  it("stores 25 Sep as the days from today and gives 25 Sep back", () => {
+    const today = new Date(2026, 8, 19, 18, 0);
+    const days = daysUntil("2026-09-25", today);
+    expect(days).toBe(6);
+    expect(expiryDateFromDays(days, today)).toBe("2026-09-25");
+  });
+});
