@@ -706,7 +706,12 @@ function CollapsibleCard({
                       : undefined
                   }
                   style={{ fontSize: rowTopicText }}
-                  className={`flex items-baseline gap-1.5 border-b border-gray-200 bg-gray-50 px-2 py-0.5 leading-tight dark:border-gray-800 dark:bg-gray-700 ${block.head.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
+                  // On a touch screen the bar is what gets tapped to open the
+                  // topic, so it is a full 44px target there; a mouse keeps
+                  // the slim bar.
+                  className={`flex items-baseline gap-1.5 border-b border-gray-200 bg-gray-50 px-2 py-0.5 leading-tight dark:border-gray-800 dark:bg-gray-700 ${
+                    focusOnHover ? "[@media(hover:none)]:min-h-11 [@media(hover:none)]:items-center [@media(hover:none)]:px-3 [@media(hover:none)]:py-2" : ""
+                  } ${block.head.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
                 >
                   <span className="truncate font-bold uppercase tracking-wide">{block.head.label}</span>
                   <span className="ml-auto shrink-0 font-mono font-bold tabular-nums">{block.head.value}</span>
