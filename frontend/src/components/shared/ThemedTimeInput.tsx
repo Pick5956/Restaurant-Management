@@ -5,9 +5,7 @@ import { ChevronDown, Clock } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0"));
-// Opening hours are set on the quarter hour. The old picker scrolled through
-// sixty minutes to reach one of these four.
-const QUARTERS = ["00", "15", "30", "45"];
+const MINUTES = Array.from({ length: 60 }, (_, index) => index.toString().padStart(2, "0"));
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 // The wheel: five rows on screen, the middle one is the value.
@@ -49,8 +47,7 @@ function formatPreview(value: string) {
  * It loops: past 23 comes 00 again. The values are laid out several times
  * over, the wheel opens on the middle copy, and each time it comes to rest it
  * is moved — without animation — to the same value in the middle copy, so
- * there is always a full turn left in either direction. Minutes have only four
- * values, so they get more copies to have the same room to spin.
+ * there is always a full turn left in either direction.
  */
 function WheelColumn({
   label,
@@ -291,9 +288,6 @@ export default function ThemedTimeInput({
 
   const current = normalizeTime(value);
   const [currentHour, currentMinute] = current.split(":");
-  // A time saved before the wheel went to quarters (10:20) keeps its own row,
-  // so the wheel still shows what is actually stored.
-  const minutes = QUARTERS.includes(currentMinute) ? QUARTERS : [...QUARTERS, currentMinute].sort();
 
   const copy =
     language === "th"
@@ -451,7 +445,7 @@ export default function ThemedTimeInput({
             </span>
             <WheelColumn
               label={copy.minute}
-              values={minutes}
+              values={MINUTES}
               selected={currentMinute}
               open={open}
               onSelect={(minute) => onChange(`${currentHour}:${minute}`)}
