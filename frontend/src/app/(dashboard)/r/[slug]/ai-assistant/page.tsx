@@ -229,9 +229,10 @@ export default function AIAssistantPage() {
   // Switching chats leaves the current one behind, and a preview waiting on
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
-    if (pendingActionPreview && !(await discardPendingActionPreview())) return;
+    if (pendingActionPreview && !(await discardPendingActionPreview())) return false;
     setListOpen(false);
     setActiveThread(storageKey, conversationId);
+    return true;
   };
 
   const welcomeMessage = (): Message => ({ id: "welcome", role: "assistant", content: welcomeText, createdAt: new Date() });

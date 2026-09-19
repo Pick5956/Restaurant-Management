@@ -1598,9 +1598,13 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ai-stream-caret { animation: none; }
 }
+/* Reduce Motion (on many iPads) used to switch the chat list's animations off
+   altogether, so it snapped open and shut. It now keeps a short fade — no
+   slide, no scale — which is what the setting asks for. */
 @media (prefers-reduced-motion: reduce) {
-  .ai-chatlist-sheet-in, .ai-chatlist-sheet-out, .ai-chatlist-fade, .ai-chatlist-pop,
-  .ai-chatlist-panel-in .ai-chatlist-card, .ai-chatlist-panel-out .ai-chatlist-card { animation: none; }
+  .ai-chatlist-sheet-in, .ai-chatlist-fade, .ai-chatlist-pop,
+  .ai-chatlist-panel-in .ai-chatlist-card { animation: ai-chatlist-fade 0.18s ease-out both; }
+  .ai-chatlist-sheet-out, .ai-chatlist-panel-out .ai-chatlist-card { animation: ai-chatlist-fade-out 0.16s ease-in both; }
 }
 
 /* Inventory tables (stock + history): the column titles stay under the page's

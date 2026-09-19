@@ -105,7 +105,6 @@ function copy(language: "th" | "en") {
         groupMenu: "เมนู",
         groupIngredients: "วัตถุดิบ",
         groupMoney: "การเงิน",
-        example: "เช่น",
         confirmNote: "ทุกคำสั่งจะถูกเตรียมเป็นรายการให้ดูก่อน อยู่ได้ 1 นาที ถ้าไม่กดยืนยันจะถูกยกเลิกเอง · กดยืนยันได้เฉพาะเจ้าของร้าน",
         groupStock: "วัตถุดิบ",
         groupSales: "ยอดขายและเมนู",
@@ -157,7 +156,6 @@ function copy(language: "th" | "en") {
         groupMenu: "Menu",
         groupIngredients: "Ingredients",
         groupMoney: "Money",
-        example: "e.g.",
         confirmNote: "Every command is prepared as a list for you to check first. It lasts 1 minute and cancels itself if not confirmed · only the owner can confirm",
         groupStock: "Ingredients",
         groupSales: "Sales and menu",
@@ -174,20 +172,17 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (nex
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      // A track with a little depth and a knob that sits on top of it. The knob
-      // keeps the same 2px inset on both ends: 44px track, 20px knob, 22px travel.
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.28),inset_0_0_0_1px_rgba(0,0,0,0.06)] transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
-        on
-          ? "bg-gradient-to-b from-orange-400 to-orange-600"
-          : "bg-gradient-to-b from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-800"
+      // A flat track and a plain white knob (19 ก.ย. 2569: the owner asked for
+      // an ordinary switch, not the raised 3D one). The knob keeps the same 2px
+      // inset on both ends: 44px track, 20px knob, 20px travel.
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
+        on ? "bg-orange-500" : "bg-gray-300 dark:bg-gray-600"
       }`}
     >
       <span
         // Pinned 2px from the top and the left; "on" slides it by the free
-        // width (44 − 20 − 2×2 = 20px) so the right inset is the same 2px. The
-        // shadow drops straight down — a soft spread to the side read as extra
-        // room on the right.
-        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-gradient-to-b from-white to-gray-100 shadow-[0_1px_1px_rgba(0,0,0,0.35),0_2px_3px_-1px_rgba(0,0,0,0.25),inset_0_-1px_1px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-transform duration-200 ease-out ${
+        // width (44 − 20 − 2×2 = 20px) so the right inset is the same 2px.
+        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
           on ? "translate-x-5" : "translate-x-0"
         }`}
       />
@@ -583,17 +578,11 @@ export default function AISettingsModal({
           {groups.map((group) => (
             <Group key={group.key} title={group.title}>
               {ACTION_ROWS.filter((row) => row.group === group.key).map((row) => {
-                const [label, example] = language === "th" ? row.th : row.en;
+                // The name alone: the example line under each one ("เช่น …") was
+                // taken out on 19 ก.ย. 2569 at the owner's request.
+                const [label] = language === "th" ? row.th : row.en;
                 return (
-                  <Row
-                    key={row.type}
-                    label={label}
-                    hint={
-                      <>
-                        <span className="text-gray-400 dark:text-gray-500">{t.example}</span> {example}
-                      </>
-                    }
-                  >
+                  <Row key={row.type} label={label}>
                     <Switch
                       on={view.action_types[row.type] !== false}
                       disabled={!actionsOn}
