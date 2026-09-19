@@ -14,29 +14,35 @@ function cn(...classes: Array<string | undefined | null | false>) {
 // Every frame the orb repaints six conic gradients through a blur + contrast
 // filter, with a backdrop-filter layer over them. On an iPhone that competed
 // with scrolling: the expenses page stuttered with the floating orb in the
-// corner (19 ก.ย. 2569). While anything on the page scrolls, <html> carries
-// data-scrolling and every orb holds still; it turns again 180ms after the
-// scroll stops. One listener for all orbs, added by the first one mounted.
+// corner (19 ก.ย. 2569). While anything on the page scrolls, every orb carries
+// data-scrolling and holds still; it turns again 180ms after the scroll stops.
+// The flag goes on the orbs themselves, not on <html>: flipping an attribute on
+// the root restyles the whole document at the start and end of every scroll.
+// One listener for all orbs, added by the first one mounted.
 const SCROLL_IDLE_MS = 180;
-let scrollWatchers = 0;
+const liveOrbs = new Set<HTMLElement>();
+let scrolling = false;
 let scrollIdleTimer: number | undefined;
-function onAnyScroll() {
-  const root = document.documentElement;
-  if (!root.hasAttribute("data-scrolling")) root.setAttribute("data-scrolling", "");
-  window.clearTimeout(scrollIdleTimer);
-  scrollIdleTimer = window.setTimeout(() => root.removeAttribute("data-scrolling"), SCROLL_IDLE_MS);
+function setScrolling(next: boolean) {
+  scrolling = next;
+  for (const orb of liveOrbs) orb.toggleAttribute("data-scrolling", next);
 }
-function watchScrolling() {
-  scrollWatchers += 1;
+function onAnyScroll() {
+  if (!scrolling) setScrolling(true);
+  window.clearTimeout(scrollIdleTimer);
+  scrollIdleTimer = window.setTimeout(() => setScrolling(false), SCROLL_IDLE_MS);
+}
+function watchScrolling(orb: HTMLElement) {
+  liveOrbs.add(orb);
   // capture: also hears scrolls of inner scrollers (lists, sheets), which do
   // not bubble to window.
-  if (scrollWatchers === 1) window.addEventListener("scroll", onAnyScroll, { passive: true, capture: true });
+  if (liveOrbs.size === 1) window.addEventListener("scroll", onAnyScroll, { passive: true, capture: true });
   return () => {
-    scrollWatchers -= 1;
-    if (scrollWatchers > 0) return;
+    liveOrbs.delete(orb);
+    if (liveOrbs.size > 0) return;
     window.removeEventListener("scroll", onAnyScroll, { capture: true });
     window.clearTimeout(scrollIdleTimer);
-    document.documentElement.removeAttribute("data-scrolling");
+    scrolling = false;
   };
 }
 
@@ -95,7 +101,12 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
   level = 0,
   paused = false,
 }) => {
-  React.useEffect(watchScrolling, []);
+  const orbRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const orb = orbRef.current;
+    if (!orb) return;
+    return watchScrolling(orb);
+  }, []);
 
   // Warm palette tuned to the app's orange/amber theme.
   const defaultColors = {
@@ -160,6 +171,7 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
 
   return (
     <div
+      ref={orbRef}
       className={cn("siri-orb", className)}
       data-paused={paused ? "" : undefined}
       style={
@@ -240,7 +252,7 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
         @keyframes siri-orb-rotate { to { --angle: 360deg; } }
         .siri-orb[data-paused]::before,
         [data-orbs-paused] .siri-orb::before,
-        html[data-scrolling] .siri-orb::before { animation-play-state: paused; }
+        .siri-orb[data-scrolling]::before { animation-play-state: paused; }
         /* Keep the orb gently alive even under reduced-motion (decorative,
            slow rotation) instead of freezing it — the owner wants it moving. */
         @media (prefers-reduced-motion: reduce) {

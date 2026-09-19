@@ -570,7 +570,7 @@ export default function ExpensesPage() {
                       onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEdit(expense); } },
                     }
                   : {})}
-                className={`grid grid-cols-2 gap-x-3 gap-y-1 bg-white px-4 py-3 text-[14px] transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 lg:grid-cols-[110px_130px_minmax(0,1fr)_140px_120px] lg:items-center ${canEdit && expense.ingredient_transaction_id == null ? "cursor-pointer" : ""}`}
+                className={`grid grid-cols-2 gap-x-3 gap-y-1 bg-white px-4 py-3 text-[14px] transition-colors [@media(hover:hover)]:hover:bg-gray-50 dark:bg-gray-900 dark:[@media(hover:hover)]:hover:bg-gray-800 lg:grid-cols-[110px_130px_minmax(0,1fr)_140px_120px] lg:items-center ${canEdit && expense.ingredient_transaction_id == null ? "cursor-pointer" : ""}`}
               >
                 <span className="font-mono text-[13px] tabular-nums text-gray-500 dark:text-gray-400">
                   {new Date(expense.spent_at).toLocaleDateString(locale, { day: "2-digit", month: "short" })}
