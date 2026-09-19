@@ -31,6 +31,14 @@ const (
 	PaymentStatusPaid   = "paid"
 )
 
+// TestOrderSuffix marks an order number written by the demo seeders:
+// "20260919-001 (Test)". The number itself follows the real YYYYMMDD-NNN
+// format and the same per-day count, so a bill someone opens by hand on a
+// seeded day carries on after the seeded ones; the suffix is what tells a
+// made-up bill from a real one at a glance (owner's call, 19 ก.ย. 2569).
+// Before this the seeders wrote "DA-2026-09-06-101294-022" and "SD-avnc-14362".
+const TestOrderSuffix = " (Test)"
+
 type Order struct {
 	gorm.Model
 	RestaurantID                 uint       `json:"restaurant_id" gorm:"not null;index:idx_orders_restaurant_status_opened,priority:1;index:idx_orders_restaurant_table,priority:1;index:idx_orders_restaurant_table_opened,priority:1;index:idx_orders_restaurant_number_date,priority:1;index:idx_orders_reporting,priority:1;uniqueIndex:idx_orders_restaurant_day_number_v2,priority:1,where:deleted_at IS NULL;uniqueIndex:idx_orders_one_active_table,priority:1,where:table_id IS NOT NULL AND deleted_at IS NULL AND status <> 'completed' AND status <> 'cancelled'"`

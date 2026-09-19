@@ -1462,7 +1462,10 @@ export default function Home() {
             valueClass: lane.color,
             chips: [...lane.items]
               .sort((a, b) => b.waited - a.waited)
-              .map((ticket) => ({ text: ticket.table, note: ticket.orderNumber.slice(-3) })),
+              // The day's number, "015" of "20260919-015" — also when a seeded
+              // bill carries " (Test)" after it, where the last three
+              // characters would read "st)".
+              .map((ticket) => ({ text: ticket.table, note: ticket.orderNumber.match(/-(\d+)/)?.[1] ?? ticket.orderNumber.slice(-3) })),
           }]
         : [emptyRow(lane.key)]),
     ]),
