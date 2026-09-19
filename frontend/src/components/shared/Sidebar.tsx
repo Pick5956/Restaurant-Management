@@ -408,8 +408,8 @@ export default function Sidebar() {
           if (event.key === 'Escape') setMobileOpen(false);
         }}
         className={`
-          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden
-          ${mobileOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}
+          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] transition-[transform,box-shadow] duration-300 ease-in-out will-change-transform lg:hidden
+          ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full pointer-events-none shadow-none'}
         `}
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
