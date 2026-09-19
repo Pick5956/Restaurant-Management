@@ -4,7 +4,8 @@
  *   <div ref={smoothScroll} className="overflow-y-auto">…</div>
  *
  * Each wheel notch moves a target, and the list eases toward it and slows to a
- * stop — the glide the time wheel has — instead of jumping 100px at a time.
+ * stop — the glide the time wheel has — instead of jumping 100px at a time. A
+ * quick run of notches goes further than the same notches spaced out.
  * At the top or bottom the wheel is left alone, so the page itself scrolls on
  * and a list never traps the wheel. Touch and trackpad momentum are the
  * browser's own and untouched; there is no mouse drag here, only the wheel.
@@ -15,10 +16,16 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
   if (!node) return;
 
   // Fraction of the remaining distance covered each frame: the ease-out.
-  const EASE = 0.2;
+  // 0.12 glides for about 0.6s after a notch; 0.2 was over in a quarter
+  // second and read as a jump.
+  const EASE = 0.12;
+  // Notches closer together than this count as one spin and build speed.
+  const SPIN_GAP_MS = 120;
 
   let target: number | null = null;
   let frame: number | null = null;
+  let lastWheel = 0;
+  let streak = 0;
 
   const maxTop = () => Math.max(0, node.scrollHeight - node.clientHeight);
   const clamp = (value: number) => Math.min(Math.max(value, 0), maxTop());
@@ -57,8 +64,13 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey || !event.deltaY) return; // pinch-zoom, sideways
     const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? node.clientHeight : 1;
+    // A fast spin carries further, the way a flick does: each notch in a quick
+    // run adds a quarter more than the one before, up to double.
+    streak = event.timeStamp - lastWheel < SPIN_GAP_MS ? streak + 1 : 0;
+    lastWheel = event.timeStamp;
+    const boost = Math.min(2, 1 + streak * 0.25);
     const base = target ?? node.scrollTop;
-    const next = clamp(base + event.deltaY * unit);
+    const next = clamp(base + event.deltaY * unit * boost);
     // Nothing left to scroll this way: let the page have the wheel.
     if (Math.abs(next - base) < 0.5) return;
     event.preventDefault();
