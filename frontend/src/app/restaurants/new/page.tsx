@@ -253,7 +253,6 @@ export default function NewRestaurantPage() {
         openTime: "เวลาเปิด",
         closeTime: "เวลาปิด",
         initialTables: "จำนวนโต๊ะเริ่มต้น",
-        zonesLabel: "โซนโต๊ะ",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
         splitZonesHelp: "ระบบจะแบ่งโต๊ะออกเป็นโซนตามประเภทร้าน (เช่น โซนหน้าร้าน โซนครอบครัว)",
         noSplitZonesHelp: "สร้างโต๊ะเรียงลำดับ T1–T{count} โดยไม่แบ่งโซน",
@@ -326,7 +325,6 @@ export default function NewRestaurantPage() {
         openTime: "Opening time",
         closeTime: "Closing time",
         initialTables: "Initial tables",
-        zonesLabel: "Table zones",
         splitZonesLabel: "Split into zones automatically",
         splitZonesHelp: "Tables are divided into zones based on the restaurant type (e.g. front, family).",
         noSplitZonesHelp: "Create tables numbered T1–T{count} in sequence, without zones.",
@@ -680,9 +678,11 @@ export default function NewRestaurantPage() {
                     help={copy.tableHelp}
                     required
                   />
-                  {/* Same shape as Field (block + inline label) so the rows match. */}
+                  {/* No heading of its own — the checkbox says what it is. An empty
+                      line keeps the card level with the number box beside it; on a
+                      phone the two stack, so the gap is not needed there. */}
                   <div className="block space-y-2">
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{copy.zonesLabel}</span>
+                    <span aria-hidden="true" className="hidden text-sm font-medium sm:inline">&nbsp;</span>
                     <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
                       <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
                       <input
