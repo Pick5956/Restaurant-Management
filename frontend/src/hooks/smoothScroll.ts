@@ -20,8 +20,9 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
   if (!node) return;
 
   // Speed a 100px notch adds, in px per ms. With FRICTION_MS below a single
-  // notch coasts about 165px and takes about a second to settle.
-  const PUSH_PER_PX = 0.0055;
+  // notch coasts about 100px — what one notch moves without this — and takes
+  // about a second to settle. It was 165px, which covered ground too fast.
+  const PUSH_PER_PX = 0.0034;
   // Time constant of the slow-down: speed falls to ~37% every this many ms.
   const FRICTION_MS = 300;
   // Below this speed (px/ms) the list has stopped.
