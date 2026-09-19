@@ -1674,3 +1674,29 @@ textarea {
 .inv-thead th:not(:first-child):not(:last-child) {
   box-shadow: 0 -1px 0 var(--inv-head-line);
 }
+
+/* Inventory: stock <-> history (19 ก.ย. 2569). The view that comes in rises a
+   few pixels as it fades up, and the switch's dark thumb slides across to it.
+   The animation leaves no transform behind once it ends, so the sticky column
+   titles keep sticking to the page. */
+@keyframes inv-view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.inv-view-enter {
+  animation: inv-view-enter 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inv-tab-thumb {
+  transition: none;
+}
+
+.inv-tab-thumb.is-moving {
+  transition: left 260ms cubic-bezier(0.32, 0.72, 0, 1), width 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv-view-enter { animation: none; }
+  .inv-tab-thumb.is-moving { transition: none; }
+}

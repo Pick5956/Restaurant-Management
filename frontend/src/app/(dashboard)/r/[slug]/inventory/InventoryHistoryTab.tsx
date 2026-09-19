@@ -9,6 +9,7 @@ import type { IngredientCategory, IngredientTransaction, TransactionQuery, Trans
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { inputCls } from "./inventoryPageUtils";
+import { InventoryHistoryRowsSkeleton } from "./InventorySkeletons";
 import {
   HISTORY_PAGE_SIZE,
   HISTORY_RANGE_PRESETS,
@@ -429,11 +430,7 @@ export default function InventoryHistoryTab({
             </thead>
             <tbody className="[&>tr:not(:last-child)>td]:border-b [&>tr>td]:border-slate-100 dark:[&>tr>td]:border-gray-800">
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
-                    {copy.loading}
-                  </td>
-                </tr>
+                <InventoryHistoryRowsSkeleton />
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
@@ -463,7 +460,7 @@ export default function InventoryHistoryTab({
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="font-semibold text-slate-900 dark:text-white">{tx.ingredient_name || "—"}</span>
+                        <span className="text-[13px] font-semibold text-slate-900 dark:text-white">{tx.ingredient_name || "—"}</span>
                         {tx.category_name && (
                           <span className="ml-2 text-[11px] text-slate-400">{tx.category_name}</span>
                         )}
@@ -479,7 +476,7 @@ export default function InventoryHistoryTab({
                       <td className={`whitespace-nowrap px-4 py-3 text-right text-[13px] font-semibold tabular-nums ${chip.value}`}>
                         {movement.setTo !== null ? (
                           <span className="text-slate-500 dark:text-slate-400">
-                            <span className="mr-1 text-[10px] font-medium uppercase tracking-wide">{copy.setTo}</span>
+                            <span className="mr-1 text-[11px] font-medium">{copy.setTo}</span>
                             {formatNumber(movement.setTo, lang)}
                           </span>
                         ) : (
@@ -488,7 +485,7 @@ export default function InventoryHistoryTab({
                             {formatNumber(movement.change ?? 0, lang)}
                           </>
                         )}
-                        <span className="ml-1 text-[10px] font-medium text-slate-400">{tx.ingredient_unit}</span>
+                        <span className="ml-1 text-[11px] font-medium text-slate-400">{tx.ingredient_unit}</span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right text-[13px] tabular-nums text-slate-700 dark:text-slate-200">
                         {tx.amount > 0 ? formatCurrency(tx.amount, lang, 2) : "—"}

@@ -52,7 +52,8 @@ import type {
   IngredientLot,
   IngredientTransaction,
 } from "@/src/types/ingredient";
-import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
+import { InventoryPageSkeleton } from "./InventorySkeletons";
+import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
@@ -456,7 +457,14 @@ export default function InventoryPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stock" | "history">("stock");
+  const [tab, setTab] = useState<InventoryView>("stock");
+  // Where the view switch's thumb slides from: the view that was showing.
+  const [previousTab, setPreviousTab] = useState<InventoryView>("stock");
+  const switchTab = (next: InventoryView) => {
+    if (next === tab) return;
+    setPreviousTab(tab);
+    setTab(next);
+  };
   const [stockExporting, setStockExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockStatus>("all");
@@ -1387,11 +1395,7 @@ export default function InventoryPage() {
   const txBackdrop = useBackdropClose(closeTxDrawer);
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <RestaurantCardSkeleton />
-      </div>
-    );
+    return <InventoryPageSkeleton label={lang === "th" ? "กำลังโหลดคลังวัตถุดิบ" : "Loading inventory"} />;
   }
 
   if (!canView) {
@@ -1404,30 +1408,7 @@ export default function InventoryPage() {
 
   // Stock / history switch. It sits in the toolbar row beside the filter
   // button, so the bar is one row tall and the table starts right under it.
-  const viewTabs = (
-    <div className="flex h-9 w-fit shrink-0 items-center gap-0.5 rounded-xl border border-slate-200 bg-white p-[3px] shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-      {(["stock", "history"] as const).map((key) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => setTab(key)}
-          className={`inline-flex h-7 items-center rounded-lg px-3 text-[12px] font-semibold transition ${
-            tab === key
-              ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
-          }`}
-        >
-          {key === "stock"
-            ? lang === "th"
-              ? "สต๊อกปัจจุบัน"
-              : "Stock"
-            : lang === "th"
-              ? "ประวัติทั้งคลัง"
-              : "History"}
-        </button>
-      ))}
-    </div>
-  );
+  const viewTabs = <InventoryViewTabs tab={tab} previous={previousTab} onChange={switchTab} lang={lang} />;
 
   return (
     <>
@@ -1737,7 +1718,7 @@ export default function InventoryPage() {
       <div className="min-h-dvh bg-slate-100 px-4 pb-4 pt-0 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:pb-6">
         <div className="space-y-5">
         {tab === "stock" && (
-        <>
+        <div key="stock" className="inv-view-enter">
 
           <div className="grid gap-4">
             {/* The radius and the clipping live on the same element, or the
@@ -1809,7 +1790,7 @@ export default function InventoryPage() {
                               </td>
                             )}
                             <td className="px-4 py-3">
-                              <span className="font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                              <span className="text-[13px] font-semibold text-slate-900 dark:text-white">{item.name}</span>
                             </td>
                             <td className="px-4 py-3">
                               <div className="w-44">
@@ -1972,10 +1953,11 @@ export default function InventoryPage() {
               )}
             </section>
           </div>
-        </>
+        </div>
         )}
 
         {tab === "history" && (
+          <div key="history" className="inv-view-enter">
           <InventoryHistoryTab
             categories={categories}
             lang={lang}
@@ -1983,6 +1965,7 @@ export default function InventoryPage() {
             viewTabs={viewTabs}
             stickyTop={stickyToolbarHeight}
           />
+          </div>
         )}
         </div>
 
