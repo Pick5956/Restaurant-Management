@@ -769,7 +769,7 @@ export default function PosTablesPage() {
                       data-table-id={table.ID}
                       disabled={isNavigating}
                       onClick={handleTableClick}
-                      className={`ui-press group relative flex min-h-[118px] overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] dark:border-gray-800 dark:bg-gray-800 ${disabled ? "cursor-default opacity-70" : "hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:hover:border-gray-700 dark:hover:bg-gray-800"}`}
+                      className={`ui-press group relative flex min-h-[118px] overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,translate,box-shadow,border-color] dark:border-gray-800 dark:bg-gray-800 ${disabled ? "cursor-default opacity-70" : "hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:hover:border-gray-700 dark:hover:bg-gray-800"}`}
                     >
                       <span className={`w-1.5 shrink-0 ${tableAccentClass(status)}`} />
                       <div className="flex min-w-0 flex-1 flex-col px-3 py-3">

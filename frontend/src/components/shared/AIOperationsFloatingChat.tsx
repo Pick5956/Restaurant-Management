@@ -1187,7 +1187,7 @@ export default function AIOperationsFloatingChat() {
         className={`fixed bottom-4 right-4 z-[var(--z-chat)] flex h-14 w-14 touch-none select-none items-center justify-center overflow-hidden rounded-full shadow-xl shadow-orange-500/30 transform-gpu ease-out sm:bottom-6 sm:right-6 ${
           orbDrag
             ? "cursor-grabbing scale-105 shadow-2xl shadow-orange-500/40 transition-none"
-            : "cursor-grab transition-[opacity,transform,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
+            : "cursor-grab transition-[opacity,transform,translate,scale,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
         } ${orbPalette.ring ? "ring-2 ring-white/80" : ""} ${
           isOpen
             ? "opacity-0 scale-95 pointer-events-none"
