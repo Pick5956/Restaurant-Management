@@ -74,6 +74,14 @@ function WheelColumn({
   const rows = size * copies;
   const selectedIndex = Math.max(0, values.indexOf(selected));
   const [live, setLive] = useState(middle + selectedIndex);
+  // Where a run of wheel notches is heading, so quick notches add up instead of
+  // each starting again from wherever the animation happens to be.
+  const wheelTarget = useRef<number | null>(null);
+  const wheelCarry = useRef(0);
+  // Mouse drag: the pointer's start, and whether it has moved far enough to be
+  // a drag rather than a click on a row.
+  const drag = useRef<{ y: number; top: number; moved: boolean; id: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   // Land on the saved value before the panel paints, without animating.
   useLayoutEffect(() => {
@@ -84,17 +92,61 @@ function WheelColumn({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Latest props for the unmount below, which only sees the first render's.
+  const latest = useRef({ onSelect, selected });
+  useEffect(() => {
+    latest.current = { onSelect, selected };
+  });
+
+  // Closing the panel while the wheel is still turning (a quick "เสร็จ" right
+  // after a flick) used to drop the turn, because the settle timer died with
+  // the column. Whatever row the wheel is on or heading to is kept instead.
   useEffect(
     () => () => {
+      if (!settleTimer.current && wheelTarget.current === null) return;
       if (settleTimer.current) window.clearTimeout(settleTimer.current);
+      const node = ref.current;
+      const index = wheelTarget.current ?? (node ? Math.round(node.scrollTop / ROW) : null);
+      if (index === null) return;
+      const value = values[((index % size) + size) % size];
+      if (value !== latest.current.selected) latest.current.onSelect(value);
     },
+    // Unmount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
   const rollTo = (index: number) => {
     const clamped = Math.min(Math.max(index, 0), rows - 1);
     ref.current?.scrollTo({ top: clamped * ROW, behavior: "smooth" });
+    return clamped;
   };
+
+  // A mouse wheel notch scrolls about 100px by default — three rows at once,
+  // which spun the wheel past the hour people were aiming for. Each notch now
+  // turns it exactly one row. A trackpad sends many small deltas, so they are
+  // added up and a row is taken per ROW of travel. Not a React onWheel: those
+  // are passive and cannot stop the page's own scroll.
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const delta = event.deltaMode === 1 ? event.deltaY * ROW : event.deltaY;
+      wheelCarry.current += delta;
+      const notch = Math.abs(delta) >= 50;
+      let steps = notch ? Math.sign(delta) : Math.trunc(wheelCarry.current / ROW);
+      if (!steps) return;
+      wheelCarry.current = notch ? 0 : wheelCarry.current - steps * ROW;
+      const from = wheelTarget.current ?? Math.round(node.scrollTop / ROW);
+      steps = Math.max(-3, Math.min(3, steps));
+      wheelTarget.current = rollTo(from + steps);
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+    // rollTo only reads `rows`, fixed for the life of the column.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onScroll = () => {
     const node = ref.current;
@@ -103,6 +155,10 @@ function WheelColumn({
     setLive(index);
     if (settleTimer.current) window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
+      if (drag.current) return;
+      settleTimer.current = null;
+      wheelTarget.current = null;
+      wheelCarry.current = 0;
       const value = values[index % size];
       if (value !== selected) onSelect(value);
       // Back to the middle copy, same value, same pixels on screen.
@@ -119,6 +175,43 @@ function WheelColumn({
       aria-activedescendant={`${label}-${live}`}
       tabIndex={0}
       onScroll={onScroll}
+      // Hold the mouse button and drag, the way a finger turns it on a phone.
+      // Touch already scrolls natively, so this is mouse only.
+      onPointerDown={(event) => {
+        if (event.pointerType !== "mouse" || event.button !== 0 || !ref.current) return;
+        drag.current = { y: event.clientY, top: ref.current.scrollTop, moved: false, id: event.pointerId };
+      }}
+      onPointerMove={(event) => {
+        const node = ref.current;
+        const current = drag.current;
+        if (!node || !current || current.id !== event.pointerId) return;
+        const dy = event.clientY - current.y;
+        if (!current.moved) {
+          if (Math.abs(dy) < 4) return;
+          // Captured only once it is a drag: capturing on press would send the
+          // release to the column instead of the row, and a plain click on a
+          // row would stop working.
+          current.moved = true;
+          node.setPointerCapture(event.pointerId);
+          setDragging(true);
+        }
+        node.scrollTop = current.top - dy;
+      }}
+      onPointerUp={(event) => {
+        const node = ref.current;
+        const current = drag.current;
+        if (!node || !current || current.id !== event.pointerId) return;
+        drag.current = null;
+        if (!current.moved) return;
+        if (node.hasPointerCapture(event.pointerId)) node.releasePointerCapture(event.pointerId);
+        setDragging(false);
+        wheelTarget.current = null;
+        rollTo(Math.round(node.scrollTop / ROW));
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+        setDragging(false);
+      }}
       onKeyDown={(event) => {
         const step = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
         if (!step) return;
@@ -136,7 +229,11 @@ function WheelColumn({
         maskImage: "linear-gradient(to bottom, transparent 0%, black 32%, black 68%, transparent 100%)",
         WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 32%, black 68%, transparent 100%)",
       }}
-      className="relative w-16 snap-y snap-mandatory overflow-y-auto overscroll-contain outline-none [&::-webkit-scrollbar]:hidden"
+      // Snapping is off while dragging, or it would yank the rows back to the
+      // nearest one under the pointer on every move.
+      className={`relative w-16 select-none overflow-y-auto overscroll-contain outline-none [&::-webkit-scrollbar]:hidden ${
+        dragging ? "cursor-grabbing" : "cursor-grab snap-y snap-mandatory"
+      }`}
     >
       {Array.from({ length: rows }, (_, index) => {
         const entry = values[index % size];
@@ -149,9 +246,12 @@ function WheelColumn({
             role="option"
             aria-selected={index === live}
             tabIndex={-1}
-            onClick={() => rollTo(index)}
+            onClick={() => {
+              wheelTarget.current = null;
+              rollTo(index);
+            }}
             style={{ height: ROW }}
-            className={`flex w-full snap-center items-center justify-center tabular-nums transition-[font-size,color] duration-100 ${
+            className={`flex w-full cursor-[inherit] snap-center items-center justify-center tabular-nums transition-[font-size,color] duration-100 ${
               distance === 0
                 ? "text-[22px] font-semibold text-gray-900 dark:text-white"
                 : distance === 1
@@ -326,6 +426,11 @@ export default function ThemedTimeInput({
           aria-label={copy.choose}
           className="motion-dialog-stationary fixed z-[var(--z-dropdown)] rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40"
           style={{ left: 0, top: 0, width: PANEL_WIDTH, padding: PANEL_PADDING, willChange: "transform" }}
+          // Forms put this field inside a <label>, and the panel sits inside it
+          // in the DOM. A click on anything in the panel that is not a button —
+          // the end of a mouse drag lands on the wheel itself — reached the
+          // label, which clicked the field and toggled the panel shut.
+          onClick={(event) => event.preventDefault()}
         >
           <div className="relative flex items-center justify-center gap-1" style={{ height: WHEEL_HEIGHT }}>
             {/* The band behind the middle row: whatever rests on it is the time. */}
