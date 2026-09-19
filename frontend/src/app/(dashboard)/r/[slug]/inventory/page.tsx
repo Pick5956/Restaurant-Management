@@ -104,7 +104,6 @@ import { useIsMobile } from "./mobile/primitives";
 import {
   emptyForm,
   buildAdjustStockPayload,
-  getInventoryValue,
   getStatus,
   getReorderPercent,
   getStockPercent,
@@ -686,7 +685,6 @@ export default function InventoryPage() {
   }, [ingredients]);
 
   const totalItems = ingredients.length;
-  const totalValue = ingredients.reduce((sum, item) => sum + getInventoryValue(item), 0);
   const categoryNameById = useMemo(
     () => new Map(categories.map((category) => [category.ID, category.name])),
     [categories],
@@ -1602,17 +1600,12 @@ export default function InventoryPage() {
           </div>
           {viewTabs}
           </div>
-          {/* Value and the action buttons wrap onto as few rows as fit, rather than
-              one row each. The flex-1 spacer only exists to push them right on a
-              wide row, so it is hidden where the header is a column. */}
+          {/* The action buttons wrap onto as few rows as fit, rather than one row
+              each. The flex-1 spacer only exists to push them right on a wide row,
+              so it is hidden where the header is a column. The stock value chip
+              that used to lead this group was removed on the owner's call. */}
           <div className="hidden flex-1 sm:block" />
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <div className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-orange-200/80 bg-orange-50/80 px-3 text-center dark:border-orange-900/40 dark:bg-orange-950/20">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">{lang === "th" ? "มูลค่า" : "Value"}</span>
-            <span className="text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">
-              {formatCurrency(totalValue, lang)}
-            </span>
-          </div>
           <div className="relative shrink-0">
             <button
               type="button"
