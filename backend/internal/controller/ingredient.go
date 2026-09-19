@@ -205,6 +205,84 @@ func (ctrl *IngredientController) AdjustStock(c *gin.Context) {
 	c.JSON(http.StatusOK, ingredient)
 }
 
+func (ctrl *IngredientController) ListLots(c *gin.Context) {
+	restaurantID, ok := requireRestaurantWithAnyPermission(c, "missing inventory permission", "view_inventory", "manage_inventory")
+	if !ok {
+		return
+	}
+	ingredientID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	lots, err := ctrl.svc.ListLots(restaurantID, ingredientID)
+	if err != nil {
+		respondAPIError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"lots": lots})
+}
+
+type lotExpiryRequest struct {
+	// Blank clears the date.
+	ExpiresAt string `json:"expires_at" binding:"max=10"`
+}
+
+func (ctrl *IngredientController) UpdateLotExpiry(c *gin.Context) {
+	restaurantID, ok := requireRestaurantWithPermission(c, "manage_inventory", "missing manage_inventory permission")
+	if !ok {
+		return
+	}
+	ingredientID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	lotID, ok := parseUintParam(c, "lotId")
+	if !ok {
+		return
+	}
+	var req lotExpiryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondInvalidRequest(c)
+		return
+	}
+	if err := ctrl.svc.UpdateLotExpiry(restaurantID, ingredientID, lotID, req.ExpiresAt); err != nil {
+		respondAPIError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+type lotDiscardRequest struct {
+	Reason string `json:"reason" binding:"max=200"`
+}
+
+func (ctrl *IngredientController) DiscardLot(c *gin.Context) {
+	restaurantID, ok := requireRestaurantWithPermission(c, "manage_inventory", "missing manage_inventory permission")
+	if !ok {
+		return
+	}
+	ingredientID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	lotID, ok := parseUintParam(c, "lotId")
+	if !ok {
+		return
+	}
+	var req lotDiscardRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		respondInvalidRequest(c)
+		return
+	}
+	userID, _ := contextUserID(c)
+	ingredient, err := ctrl.svc.DiscardLot(restaurantID, ingredientID, lotID, userID, req.Reason)
+	if err != nil {
+		respondAPIError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, ingredient)
+}
+
 func requireStockExpensePermission(c *gin.Context, amount float64) bool {
 	if amount <= 0 {
 		return true

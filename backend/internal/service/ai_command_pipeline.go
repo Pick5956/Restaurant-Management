@@ -639,7 +639,7 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 	// backwards is a thousand-fold error in every menu's cost, so an unclear unit
 	// is asked about rather than assumed.
 	if kind == "cost" {
-		perUnit, ok := ConvertPricePerUnit(draft.Quantity, draft.Unit, match.Exact.Unit)
+		perUnit, ok := IngredientPricePerStockUnit(draft.Quantity, draft.Unit, match.Exact)
 		if !ok {
 			return AICommandResolution{
 				Kind:  AICommandOutcomeAsk,
@@ -657,7 +657,7 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 		}
 	}
 
-	quantity, ok := ConvertToStockUnit(draft.Quantity, draft.Unit, match.Exact.Unit)
+	quantity, ok := IngredientQuantityInStockUnit(draft.Quantity, draft.Unit, match.Exact)
 	if !ok {
 		return AICommandResolution{
 			Kind:  AICommandOutcomeAsk,

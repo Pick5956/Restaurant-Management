@@ -20,6 +20,8 @@ import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import MenuImageCropper from "@/src/components/menu/MenuImageCropper";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
+import NumberInput from "@/src/components/shared/NumberInput";
+import { SEALED_UNITS } from "../inventory/inventoryPageUtils";
 import {
   AvailabilitySwitch,
   emptyItem,
@@ -1092,7 +1094,7 @@ export default function MenuPage() {
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.price}</span>
-                    <input value={itemForm.price || ""} onChange={(event) => setItemForm({ ...itemForm, price: Number(event.target.value) })} placeholder={copy.pricePlaceholder} type="number" min={0} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
+                    <NumberInput value={itemForm.price} blankWhenZero onValue={(value) => setItemForm({ ...itemForm, price: value })} placeholder={copy.pricePlaceholder} min={0} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
                   </label>
                 </div>
                 <label className="block">
@@ -1408,11 +1410,11 @@ export default function MenuPage() {
                                           placeholder={copy.optionNamePlaceholder}
                                           className={inputClass}
                                         />
-                                        <input
-                                          type="number"
+                                        <NumberInput
                                           min={0}
-                                          value={option.price_delta || ""}
-                                          onChange={(event) => updateOption(groupIndex, optionIndex, { price_delta: Number(event.target.value) || 0 })}
+                                          blankWhenZero
+                                          value={option.price_delta}
+                                          onValue={(value) => updateOption(groupIndex, optionIndex, { price_delta: value })}
                                           placeholder="0"
                                           className={`${inputClass} w-full px-2 tabular-nums`}
                                         />
@@ -1461,12 +1463,12 @@ export default function MenuPage() {
                                                       options={[{ value: "0", label: copy.ingredient }, ...recipeIngredients.map((entry) => ({ value: String(entry.ID), label: `${entry.name} (${entry.unit})` }))]}
                                                     />
                                                   </div>
-                                                  <input
-                                                    type="number"
+                                                  <NumberInput
                                                     min={0}
                                                     step="0.01"
-                                                    value={row.quantity || ""}
-                                                    onChange={(event) => patchRow({ quantity: Number(event.target.value) || 0 })}
+                                                    blankWhenZero
+                                                    value={row.quantity}
+                                                    onValue={(value) => patchRow({ quantity: value })}
                                                     placeholder={copy.quantity}
                                                     className="h-9 w-16 shrink-0 rounded-md border border-gray-200 bg-white px-2 text-[12px] tabular-nums outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 sm:w-20 sm:px-3"
                                                   />
@@ -1567,12 +1569,12 @@ export default function MenuPage() {
                             options={[{ value: "0", label: copy.ingredient }, ...recipeIngredients.map((ingredient) => ({ value: String(ingredient.ID), label: `${ingredient.name} (${ingredient.unit})` }))]}
                           />
                           <div className="flex items-center gap-2">
-                            <input
-                              type="number"
+                            <NumberInput
                               min={0}
                               step="0.01"
-                              value={component.quantity || ""}
-                              onChange={(event) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, quantity: Number(event.target.value) || 0 } : current))}
+                              blankWhenZero
+                              value={component.quantity}
+                              onValue={(value) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, quantity: value } : current))}
                               placeholder={copy.quantity}
                               className="h-9 w-24 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-[12px] tabular-nums outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800"
                             />
@@ -1604,6 +1606,23 @@ export default function MenuPage() {
                             return (
                               <p className="text-[11px] text-gray-500 dark:text-gray-400">
                                 = <span className="font-mono tabular-nums">{inStockUnit.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span> {selectedIngredient.unit}
+                              </p>
+                            );
+                          })()}
+                          {(() => {
+                            // A sealed container is used whole. "0.2 ขวด" means the
+                            // thing is really poured, and the ingredient should be
+                            // kept in millilitres with the bottle as its packaging.
+                            if (!selectedIngredient || !SEALED_UNITS.has(selectedIngredient.unit) || !component.quantity) return null;
+                            const chosen = component.unit || selectedIngredient.unit;
+                            const perUnit = selectedIngredient.unit_family?.find((entry) => entry.unit === chosen)?.stock_per_unit ?? 1;
+                            const whole = component.quantity * perUnit;
+                            if (Math.abs(whole - Math.round(whole)) < 1e-9) return null;
+                            return (
+                              <p className="text-[11px] font-medium text-red-600 dark:text-red-300">
+                                {language === "th"
+                                  ? `${selectedIngredient.name} ใช้ทั้ง${selectedIngredient.unit} ใส่เป็นจำนวนเต็ม ถ้าเทแบ่งใช้ ให้แก้วัตถุดิบเป็นมิลลิลิตรแล้วตั้ง "บรรจุใน" เป็น${selectedIngredient.unit}`
+                                  : `${selectedIngredient.name} is used a whole ${selectedIngredient.unit} at a time. If it is poured, keep it in millilitres with the ${selectedIngredient.unit} as its packaging.`}
                               </p>
                             );
                           })()}

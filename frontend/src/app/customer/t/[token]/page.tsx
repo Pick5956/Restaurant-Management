@@ -1,5 +1,6 @@
 "use client";
 
+import NumberInput from "@/src/components/shared/NumberInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -561,7 +562,7 @@ export default function CustomerTableOrderPage() {
                   <span className="mb-1.5 block text-[12px] font-medium">{copy.quantity}</span>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">-</button>
-                    <input type="number" min={1} value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] dark:border-gray-800 dark:bg-gray-900" />
+                    <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] dark:border-gray-800 dark:bg-gray-900" />
                     <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">+</button>
                   </div>
                 </label>

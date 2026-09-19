@@ -1,7 +1,76 @@
 import type { AdjustStockInput, Ingredient, IngredientInput } from "@/src/types/ingredient";
 import { localeForLanguage } from "@/src/lib/format";
 
-export const UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร", "ชิ้น", "ลูก", "ฟอง", "ใบ", "แผ่น", "ขวด", "แพ็ก", "ถุง", "กล่อง"];
+/**
+ * The unit stock is counted in — the unit a recipe consumes. ขวด and กระป๋อง stay
+ * for drinks sold whole; แพ็ก ถุง กล่อง are how things are bought, not how a
+ * recipe takes them, so they live only in the purchase units — see
+ * inventoryUnitUtils.ts. An existing ingredient on a unit not listed here keeps
+ * it: the pickers prepend the current value.
+ */
+export const UNITS = [
+  "กรัม",
+  "กิโลกรัม",
+  "มิลลิลิตร",
+  "ลิตร",
+  "ฟอง",
+  "ชิ้น",
+  "ลูก",
+  "ตัว",
+  "ขวด",
+  "กระป๋อง",
+  "กล่อง",
+  "ซอง",
+];
+
+/**
+ * The stock-unit picker in four headed groups, so the choice reads as "how is
+ * this used" before "which word": weighed, poured, counted, or used a whole
+ * sealed container at a time.
+ */
+export const UNIT_GROUPS: { th: string; en: string; units: string[] }[] = [
+  { th: "ชั่งน้ำหนัก", en: "Weighed", units: ["กรัม", "กิโลกรัม"] },
+  { th: "ตวงปริมาตร", en: "Poured", units: ["มิลลิลิตร", "ลิตร"] },
+  { th: "นับเป็นชิ้น", en: "Counted", units: ["ฟอง", "ชิ้น", "ลูก", "ตัว"] },
+  { th: "ใช้ทั้งภาชนะ", en: "Used whole", units: ["ขวด", "กระป๋อง", "กล่อง", "ซอง"] },
+];
+
+/**
+ * Stock units that are sealed containers: a recipe should take a whole one.
+ * "0.2 ขวด" of something means it is really poured, and belongs in millilitres.
+ */
+export const SEALED_UNITS = new Set(["ขวด", "กระป๋อง", "กล่อง", "ซอง"]);
+
+/**
+ * The stock-unit options with their group, for any picker. A unit stored on an
+ * older ingredient that is no longer offered stays selectable at the top.
+ */
+export function stockUnitOptions(
+  lang: "th" | "en",
+  current?: string,
+): { value: string; label: string; group?: string }[] {
+  const grouped = UNIT_GROUPS.flatMap((group) =>
+    group.units.map((unit) => ({ value: unit, label: unit, group: lang === "th" ? group.th : group.en })),
+  );
+  return current && !UNITS.includes(current) ? [{ value: current, label: current }, ...grouped] : grouped;
+}
+
+/** The same list for the web dropdown, which has no group headings: a disabled row stands in for each. */
+export function stockUnitRows(
+  lang: "th" | "en",
+  current?: string,
+): { value: string; label: string; disabled?: boolean }[] {
+  const rows: { value: string; label: string; disabled?: boolean }[] = [];
+  let lastGroup: string | undefined;
+  for (const option of stockUnitOptions(lang, current)) {
+    if (option.group && option.group !== lastGroup) {
+      rows.push({ value: `__group__${option.group}`, label: `── ${option.group} ──`, disabled: true });
+      lastGroup = option.group;
+    }
+    rows.push({ value: option.value, label: option.label });
+  }
+  return rows;
+}
 export const STORAGE_TYPES = ["room_temp", "chilled", "frozen", "dry"];
 
 export const emptyForm: IngredientInput = {
@@ -13,6 +82,10 @@ export const emptyForm: IngredientInput = {
   min_percent: 0,
   cost_per_unit: 0,
   storage_type: "room_temp",
+  pack_unit: "",
+  pack_size: 0,
+  case_unit: "",
+  case_size: 0,
 };
 
 /** The quantity a percentage of the shelf's maximum works out to. */
@@ -101,6 +174,7 @@ export function buildAdjustStockPayload({
   note,
   paidAmount,
   canManageExpenses,
+  expiresAt,
 }: {
   type: AdjustStockInput["type"];
   quantity: number;
@@ -108,6 +182,8 @@ export function buildAdjustStockPayload({
   note: string;
   paidAmount: string;
   canManageExpenses: boolean;
+  /** YYYY-MM-DD for the new lot; only a stock-in opens one, so it is dropped otherwise. */
+  expiresAt?: string;
 }): AdjustStockInput {
   const payload: AdjustStockInput = { type, quantity, note };
   // Only send a unit when it differs from what the ingredient stores; an empty
@@ -117,6 +193,7 @@ export function buildAdjustStockPayload({
   if (type === "in" && canManageExpenses && paidAmount.trim() !== "" && Number.isFinite(amount) && amount > 0) {
     payload.amount = amount;
   }
+  if (type === "in" && expiresAt) payload.expires_at = expiresAt;
   return payload;
 }
 

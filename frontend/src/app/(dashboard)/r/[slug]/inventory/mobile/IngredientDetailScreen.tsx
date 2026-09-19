@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, MoreHorizontal } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
-import { listTransactions } from "@/src/lib/ingredient";
-import type { Ingredient, IngredientTransaction } from "@/src/types/ingredient";
+import { discardLot, listLots, listTransactions, updateLotExpiry } from "@/src/lib/ingredient";
+import type { Ingredient, IngredientLot, IngredientTransaction } from "@/src/types/ingredient";
 import { formatDaysLeft, getStatus, getStockPercent } from "../inventoryPageUtils";
 import { historyMovement } from "../inventoryHistoryUtils";
-import { PrimaryButton, ScreenNav, SecondaryButton, TAP } from "./primitives";
+import {
+  daysUntil,
+  expiryCopy,
+  expiryDateFromDays,
+  expiryState,
+  formatExpiryDate,
+} from "../inventoryExpiryUtils";
+import { BottomSheet, PrimaryButton, ScreenNav, SecondaryButton, TAP } from "./primitives";
 import { statusTone, thaiShortDate } from "./inventoryMobileUtils";
+import ExpiryPicker from "./ExpiryPicker";
+import { formatPackCount, packSummary, unitCopy } from "../inventoryUnitUtils";
 
 export default function IngredientDetailScreen({
   item,
@@ -19,6 +28,8 @@ export default function IngredientDetailScreen({
   onCount,
   onEdit,
   onDelete,
+  onChanged,
+  onNotice,
   sheet,
 }: {
   item: Ingredient;
@@ -29,6 +40,9 @@ export default function IngredientDetailScreen({
   onCount: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** A lot changed hands — the list's stock and "หมดอายุ" line need refetching. */
+  onChanged: () => Promise<void> | void;
+  onNotice: (message: string) => void;
   sheet?: ReactNode;
 }) {
   const copy = useMemo(
@@ -69,7 +83,16 @@ export default function IngredientDetailScreen({
     [lang],
   );
 
+  const xcopy = useMemo(() => expiryCopy(lang), [lang]);
   const [rows, setRows] = useState<IngredientTransaction[]>([]);
+  const [lots, setLots] = useState<IngredientLot[]>([]);
+  // Bumped after a lot is re-dated or discarded so both lists refetch: a discard
+  // is a stock-out, so it shows up in the history as well as in the lots.
+  const [lotVersion, setLotVersion] = useState(0);
+  const [lotSheet, setLotSheet] = useState<IngredientLot | null>(null);
+  const [lotStep, setLotStep] = useState<"edit" | "discard">("edit");
+  const [lotDays, setLotDays] = useState<number | null>(null);
+  const [lotBusy, setLotBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -80,10 +103,56 @@ export default function IngredientDetailScreen({
       .catch(() => {
         if (active) setRows([]);
       });
+    listLots(item.ID)
+      .then((response) => {
+        if (active) setLots(response.data.lots ?? []);
+      })
+      .catch(() => {
+        if (active) setLots([]);
+      });
     return () => {
       active = false;
     };
-  }, [item.ID]);
+  }, [item.ID, lotVersion]);
+
+  function openLot(lot: IngredientLot) {
+    setLotSheet(lot);
+    setLotDays(lot.expires_at ? daysUntil(lot.expires_at) : null);
+    setLotStep("edit");
+  }
+
+  async function saveLotExpiry() {
+    if (!lotSheet) return;
+    setLotBusy(true);
+    try {
+      await updateLotExpiry(item.ID, lotSheet.ID, lotDays === null ? "" : expiryDateFromDays(lotDays));
+      setLotSheet(null);
+      onNotice(xcopy.expirySaved);
+      await onChanged();
+      setLotVersion((version) => version + 1);
+    } catch {
+      onNotice(xcopy.failed);
+    } finally {
+      setLotBusy(false);
+    }
+  }
+
+  async function discardCurrentLot() {
+    if (!lotSheet) return;
+    const lot = lotSheet;
+    setLotBusy(true);
+    try {
+      await discardLot(item.ID, lot.ID);
+      setLotSheet(null);
+      onNotice(xcopy.discarded(formatNumber(lot.remaining, lang), item.unit));
+      await onChanged();
+      setLotVersion((version) => version + 1);
+    } catch {
+      onNotice(xcopy.failed);
+    } finally {
+      setLotBusy(false);
+    }
+  }
 
   const tone = statusTone(getStatus(item), lang);
   const percent = getStockPercent(item);
@@ -106,7 +175,7 @@ export default function IngredientDetailScreen({
               onClick={onEdit}
               className={`ui-press flex h-11 w-11 items-center justify-center rounded-full text-(--inv-muted) ${TAP}`}
             >
-              <MoreHorizontal className="h-5 w-5" strokeWidth={2} />
+              <Pencil className="h-5 w-5" strokeWidth={2} />
             </button>
           ) : null
         }
@@ -119,6 +188,9 @@ export default function IngredientDetailScreen({
               {formatNumber(item.stock, lang)}
             </span>
             <span className="text-[15px] text-(--inv-muted)">{item.unit}</span>
+            {formatPackCount(item, lang) ? (
+              <span className="text-[13px] text-(--inv-faint)">{formatPackCount(item, lang)}</span>
+            ) : null}
             <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
               {tone.label}
             </span>
@@ -154,6 +226,67 @@ export default function IngredientDetailScreen({
             }
           />
         </div>
+
+        {packSummary(item, lang) ? (
+          <p className="px-1 text-[12px] text-(--inv-muted)">
+            {unitCopy(lang).buyAs} {packSummary(item, lang)}
+          </p>
+        ) : null}
+
+        {lots.length > 0 && (
+          <div>
+            <p className="mb-2 pt-2 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">
+              {xcopy.lots} · {lots.length}
+            </p>
+            <div className="overflow-hidden rounded-(--inv-radius-lg) border border-(--inv-hairline) bg-(--inv-surface)">
+              {lots.map((lot, index) => {
+                const state = expiryState(lot.expires_at);
+                const tone =
+                  state === "expired"
+                    ? "text-(--inv-out)"
+                    : state === "soon"
+                      ? "text-(--inv-low)"
+                      : "text-(--inv-heading)";
+                return (
+                  <button
+                    key={lot.ID}
+                    type="button"
+                    disabled={!canManage}
+                    onClick={() => openLot(lot)}
+                    className={`ui-press flex w-full items-center gap-3 px-3 py-3 text-left ${
+                      index > 0 ? "border-t border-(--inv-hairline)" : ""
+                    } ${TAP}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-[14px] font-semibold ${tone}`}>
+                        {lot.expires_at
+                          ? state === "expired"
+                            ? xcopy.expiredOn(formatExpiryDate(lot.expires_at, lang))
+                            : xcopy.expiresOn(formatExpiryDate(lot.expires_at, lang))
+                          : xcopy.noExpiry}
+                        {lot.expires_at && state !== "expired" ? (
+                          <span className="ml-1.5 text-[11px] font-normal text-(--inv-faint)">
+                            {xcopy.inDays(daysUntil(lot.expires_at))}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="text-[11px] text-(--inv-faint)">
+                        {xcopy.lotReceived(formatExpiryDate(lot.received_at, lang))}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-[14px] font-semibold tabular-nums text-(--inv-heading)">
+                      {formatNumber(lot.remaining, lang)}
+                      <span className="ml-1 text-[11px] font-normal text-(--inv-faint)">{item.unit}</span>
+                    </p>
+                    {canManage && (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {canManage && (
           <div className="flex gap-2">
@@ -231,11 +364,73 @@ export default function IngredientDetailScreen({
         <button
           type="button"
           onClick={onDelete}
-          className={`ui-press mt-6 w-full px-4 text-center text-[13px] font-semibold text-(--inv-out) ${TAP}`}
+          className={`ui-press mx-4 mt-6 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-(--inv-radius) border border-(--inv-out) bg-(--inv-surface) px-4 text-[15px] font-semibold text-(--inv-out) ${TAP}`}
         >
+          <Trash2 className="h-4 w-4" strokeWidth={2} />
           {lang === "th" ? "ลบวัตถุดิบ" : "Delete ingredient"}
         </button>
       )}
+
+      <BottomSheet
+        open={lotSheet !== null && lotStep === "edit"}
+        title={xcopy.setExpiry}
+        onClose={() => setLotSheet(null)}
+        footer={
+          <PrimaryButton onClick={saveLotExpiry} disabled={lotBusy}>
+            {xcopy.saveExpiry}
+          </PrimaryButton>
+        }
+      >
+        {lotSheet && (
+          <>
+            <p className="mb-3 text-[13px] text-(--inv-muted)">
+              {formatNumber(lotSheet.remaining, lang)} {item.unit} ·{" "}
+              {xcopy.lotReceived(formatExpiryDate(lotSheet.received_at, lang))}
+            </p>
+            <ExpiryPicker
+              key={lotSheet.ID}
+              value={lotDays}
+              onChange={setLotDays}
+              storageType={item.storage_type}
+              lang={lang}
+            />
+            <button
+              type="button"
+              onClick={() => setLotStep("discard")}
+              className={`ui-press mt-4 w-full rounded-(--inv-radius) border border-(--inv-out) px-4 text-[14px] font-semibold text-(--inv-out) ${TAP}`}
+            >
+              {xcopy.discardLot(formatNumber(lotSheet.remaining, lang), item.unit)}
+            </button>
+          </>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        open={lotSheet !== null && lotStep === "discard"}
+        title={xcopy.discardTitle}
+        onClose={() => setLotStep("edit")}
+        footer={
+          <div className="flex gap-2">
+            <SecondaryButton onClick={() => setLotStep("edit")}>
+              {lang === "th" ? "ยกเลิก" : "Cancel"}
+            </SecondaryButton>
+            <button
+              type="button"
+              onClick={discardCurrentLot}
+              disabled={lotBusy}
+              className="ui-press flex min-h-[52px] w-full items-center justify-center rounded-(--inv-radius) bg-(--inv-out) px-4 text-[15px] font-semibold text-white disabled:opacity-50"
+            >
+              {xcopy.discard}
+            </button>
+          </div>
+        }
+      >
+        {lotSheet && (
+          <p className="text-[14px] leading-relaxed text-(--inv-body)">
+            {xcopy.discardBody(item.name, formatNumber(lotSheet.remaining, lang), item.unit)}
+          </p>
+        )}
+      </BottomSheet>
 
       {sheet}
     </div>

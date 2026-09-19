@@ -156,6 +156,13 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// the fingerprint advances with the column. The BeforeCreate hook that
 		// fills a blank slug is a method, not a field, and does not move it.
 		29: "ad9e66dc6e5c92c1c4791536f4b8fe5512a9064cbbc0e4144dcf12b6040e0cbc",
+		// Version 30 adds ingredient_lots — one row per delivery, the only place an
+		// expiry date lives — so the model registry gains a table here.
+		30: "263ac19bea1d072a807e83cbdbc58c56907ecf3428146e0311692c36b7576097",
+		// Version 31 adds pack_unit/pack_size/case_unit/case_size to Ingredient —
+		// the purchase units a delivery is entered in — inside the frozen
+		// registry, so the fingerprint advances with the columns.
+		31: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -174,11 +181,23 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 	}
 }
 
-func TestRestaurantSlugMigrationIsVersionTwentyNine(t *testing.T) {
-	plan := schemaMigrationPlan()
-	migration := plan[len(plan)-1]
-	if migration.Version != 29 || migration.Name != "restaurant_slug" {
-		t.Fatalf("latest migration = %d %q, want 29 restaurant_slug", migration.Version, migration.Name)
+// Each numbered migration keeps its identity forever: a later version may be
+// appended, but 29 must always be restaurant_slug and 30 always ingredient_lots,
+// or a database migrated under one meaning would be re-read under another.
+func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
+	want := map[int64]string{
+		29: "restaurant_slug",
+		30: "ingredient_lots",
+		31: "ingredient_pack_units",
+	}
+	seen := map[int64]string{}
+	for _, migration := range schemaMigrationPlan() {
+		seen[migration.Version] = migration.Name
+	}
+	for version, name := range want {
+		if got := seen[version]; got != name {
+			t.Fatalf("migration %d = %q, want %q", version, got, name)
+		}
 	}
 }
 

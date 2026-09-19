@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 29
+	CurrentSchemaVersion int64 = 31
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -636,6 +636,59 @@ func schemaMigrationPlan() []SchemaMigration {
 				} {
 					if err := ctx.DB.Exec(statement).Error; err != nil {
 						return fmt.Errorf("constrain restaurant slug: %w", err)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 30,
+			Name:    "ingredient_lots",
+			Up: func(ctx *MigrationContext) error {
+				// One lot per delivery is the only shape that can hold two expiry
+				// dates for one ingredient at once, which is the normal state of a
+				// shelf. Stock that predates lots gets exactly one "opening" lot
+				// with no date, so SUM(remaining) equals stock from the first
+				// minute and nothing has to special-case a lot-less ingredient.
+				if err := ctx.DB.AutoMigrate(&entity.IngredientLot{}); err != nil {
+					return fmt.Errorf("create ingredient_lots: %w", err)
+				}
+				statement := `INSERT INTO ingredient_lots
+				        (created_at, updated_at, restaurant_id, ingredient_id,
+				         quantity, remaining, expires_at, received_at, transaction_id, cost_per_unit)
+				    SELECT NOW(), NOW(), i.restaurant_id, i.id,
+				           i.stock, i.stock, NULL, COALESCE(i.created_at, NOW()), NULL, i.cost_per_unit
+				      FROM ingredients AS i
+				     WHERE i.deleted_at IS NULL
+				       AND i.stock > 0
+				       AND NOT EXISTS (SELECT 1 FROM ingredient_lots AS l
+				                        WHERE l.ingredient_id = i.id AND l.deleted_at IS NULL)`
+				if err := ctx.DB.Exec(statement).Error; err != nil {
+					return fmt.Errorf("backfill opening lots: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 31,
+			Name:    "ingredient_pack_units",
+			Up: func(ctx *MigrationContext) error {
+				// Purchase units per ingredient: how many stock units one pack
+				// holds, and how many packs one case holds. Every existing row is
+				// "bought in its own unit", which is what empty/zero means, so
+				// there is nothing to backfill.
+				for _, statement := range []string{
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS pack_unit VARCHAR(40) NOT NULL DEFAULT ''`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS pack_size NUMERIC(18,4) NOT NULL DEFAULT 0`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS case_unit VARCHAR(40) NOT NULL DEFAULT ''`,
+					`ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS case_size NUMERIC(18,4) NOT NULL DEFAULT 0`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_pack_size_nonnegative`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_pack_size_nonnegative CHECK (pack_size >= 0)`,
+					`ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS chk_ingredients_case_size_nonnegative`,
+					`ALTER TABLE ingredients ADD CONSTRAINT chk_ingredients_case_size_nonnegative CHECK (case_size >= 0)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add ingredient pack units: %w", err)
 					}
 				}
 				return nil

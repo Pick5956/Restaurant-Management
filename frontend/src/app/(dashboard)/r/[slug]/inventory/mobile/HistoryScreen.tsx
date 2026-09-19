@@ -10,9 +10,8 @@ import type {
   TransactionType,
 } from "@/src/types/ingredient";
 import { historyMovement, toDateInput } from "../inventoryHistoryUtils";
-import { BottomSheet, ChipRow, ScreenNav, Segmented, TAP, inputBase } from "./primitives";
+import { ChipRow, NativeSelect, ScreenNav, Segmented, TAP, inputBase } from "./primitives";
 import { dayHeading } from "./inventoryMobileUtils";
-import { PickerList } from "./AddIngredientScreen";
 
 type Range = "7" | "30" | "all";
 
@@ -88,7 +87,6 @@ export default function HistoryScreen({
   const [rows, setRows] = useState<IngredientTransaction[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [picker, setPicker] = useState(false);
   const [note, setNote] = useState("");
 
   useEffect(() => {
@@ -236,17 +234,26 @@ export default function HistoryScreen({
               ]}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => setPicker(true)}
-            className={`ui-press shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-[13px] font-semibold ${
-              categoryId
-                ? "border-(--inv-action) bg-(--inv-action-soft) text-(--inv-action)"
-                : "border-(--inv-hairline) bg-(--inv-surface) text-(--inv-muted)"
-            }`}
+          <NativeSelect
+            label={copy.pickCategory}
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: 0, label: copy.allCategories },
+              ...categories.map((c) => ({ value: c.ID, label: c.name })),
+            ]}
+            className="shrink-0"
           >
-            {categories.find((c) => c.ID === categoryId)?.name ?? copy.category}
-          </button>
+            <span
+              className={`block whitespace-nowrap rounded-full border px-3 py-2 text-[13px] font-semibold ${
+                categoryId
+                  ? "border-(--inv-action) bg-(--inv-action-soft) text-(--inv-action)"
+                  : "border-(--inv-hairline) bg-(--inv-surface) text-(--inv-muted)"
+              }`}
+            >
+              {categories.find((c) => c.ID === categoryId)?.name ?? copy.category}
+            </span>
+          </NativeSelect>
         </div>
 
         <div className="flex items-center justify-between gap-2 rounded-(--inv-radius) border border-(--inv-hairline) bg-(--inv-surface) px-3 py-2 text-[12px]">
@@ -365,19 +372,6 @@ export default function HistoryScreen({
         )}
       </div>
 
-      <BottomSheet open={picker} title={copy.pickCategory} onClose={() => setPicker(false)}>
-        <PickerList
-          options={[
-            { value: 0, label: copy.allCategories },
-            ...categories.map((c) => ({ value: c.ID, label: c.name })),
-          ]}
-          value={categoryId}
-          onPick={(value) => {
-            setCategoryId(value);
-            setPicker(false);
-          }}
-        />
-      </BottomSheet>
     </div>
   );
 }

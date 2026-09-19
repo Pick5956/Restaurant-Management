@@ -1,15 +1,37 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { formatCurrency, formatAdaptiveNumber as formatNumber } from "@/src/lib/format";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
-import { UNITS, reorderQuantityFor } from "../inventoryPageUtils";
+import { STORAGE_TYPES, UNITS, reorderQuantityFor, stockUnitOptions } from "../inventoryPageUtils";
+import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
+import ExpiryPicker from "./ExpiryPicker";
+import {
+  TOTAL_PRICE,
+  emptyTypedAmounts,
+  entryChain,
+  packExample,
+  packUnitChoices,
+  priceBreakdown,
+  purchaseFactor,
+  purchaseUnitChoices,
+  resolveTypedAmounts,
+  retargetTypedUnits,
+  typedText,
+  unitCopy,
+  type TypedAmounts,
+} from "../inventoryUnitUtils";
 import type { useInventoryData } from "./useInventoryData";
 import {
-  BottomSheet,
+  hasFieldErrors,
+  inventoryErrorMessage,
+  validateIngredientForm,
+} from "../inventoryFormValidation";
+import {
   FormGroup,
   FormRow,
+  NativeSelect,
   PrimaryButton,
   ScreenNav,
   SecondaryButton,
@@ -25,9 +47,12 @@ export default function AddIngredientScreen({
   onCancel,
   onSaved,
   actions,
+  existingNames,
 }: {
   lang: "th" | "en";
   categories: IngredientCategory[];
+  /** Every ingredient name already in the restaurant, for the duplicate check. */
+  existingNames: string[];
   editing: Ingredient | null;
   onCancel: () => void;
   onSaved: (name: string) => void;
@@ -47,6 +72,8 @@ export default function AddIngredientScreen({
             namePlaceholder: "เช่น หมูสับ",
             category: "หมวดหมู่",
             unit: "หน่วยนับ",
+            storage: "ประเภทการเก็บ",
+            pickStorage: "เลือกประเภทการเก็บ",
             openingStock: "จำนวนเริ่มต้น",
             price: "ราคาต่อหน่วย",
             minStock: "แจ้งเตือนเมื่อต่ำกว่า",
@@ -73,6 +100,8 @@ export default function AddIngredientScreen({
             namePlaceholder: "e.g. Minced pork",
             category: "Category",
             unit: "Unit",
+            storage: "Storage",
+            pickStorage: "Pick a storage type",
             openingStock: "Opening quantity",
             price: "Unit price",
             minStock: "Warn below",
@@ -94,28 +123,164 @@ export default function AddIngredientScreen({
   const [name, setName] = useState(editing?.name ?? "");
   const [categoryId, setCategoryId] = useState(editing?.category_id ?? 0);
   const [unit, setUnit] = useState(editing?.unit ?? UNITS[1]);
-  const [stock, setStock] = useState(editing ? String(editing.stock) : "");
-  const [price, setPrice] = useState(editing ? String(editing.cost_per_unit) : "");
-  const [minStock, setMinStock] = useState(editing ? String(editing.min_stock) : "");
+  // The web form has always sent this; the phone did not, so the server filled
+  // in room_temp behind its back. Now it is on the form because the expiry
+  // default hangs off it.
+  const [storageType, setStorageType] = useState(editing?.storage_type ?? "room_temp");
+  const [expiryDays, setExpiryDays] = useState<number | null>(
+    defaultShelfLifeDays(editing?.storage_type ?? "room_temp"),
+  );
   // A percentage is only on offer once this shelf has a maximum to be a
   // percentage of; a brand new ingredient has none, so it types a quantity.
   const shelfMax = editing?.max_stock ?? 0;
   const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
-  const [picker, setPicker] = useState<"none" | "category" | "unit">("none");
+  const ucopy = unitCopy(lang);
+  const [packUnit, setPackUnit] = useState(editing?.pack_unit ?? "");
+  const [packSize, setPackSize] = useState(editing?.pack_size ? String(editing.pack_size) : "");
+  const [caseUnit, setCaseUnit] = useState(editing?.case_unit ?? "");
+  const [caseSize, setCaseSize] = useState(editing?.case_size ? String(editing.case_size) : "");
+  const shape = {
+    unit,
+    pack_unit: packUnit,
+    pack_size: Number(packSize) || 0,
+    case_unit: caseUnit,
+    case_size: Number(caseSize) || 0,
+  };
+  // Opening stock, price and reorder level exactly as typed, each with the unit
+  // it was typed in — the same model as the web form, so both sides turn "2 ลัง"
+  // and "จ่าย 5,000" into the same stock-unit numbers. An ingredient with a pack
+  // opens with its reorder level and price in that pack.
+  const [typed, setTyped] = useState<TypedAmounts>(() => {
+    if (!editing) return emptyTypedAmounts;
+    const pack = editing.pack_unit && (editing.pack_size ?? 0) > 0 ? editing.pack_unit : "";
+    const size = pack ? (editing.pack_size as number) : 1;
+    return {
+      stock: "",
+      stockIn: "",
+      min: typedText(editing.min_stock / size),
+      minIn: pack,
+      cost: typedText(editing.cost_per_unit * size, pack ? 2 : 4),
+      costIn: pack,
+    };
+  });
+  const resolved = resolveTypedAmounts(shape, typed);
+  const packShape = { ...shape, cost_per_unit: resolved.cost_per_unit };
+  const unitChoices = purchaseUnitChoices(shape);
+  const pricingTotal = typed.costIn === TOTAL_PRICE;
+  const stockUnit = typed.stockIn || unit;
+  const minUnit = typed.minIn || unit;
+  const costUnit = pricingTotal ? unit : typed.costIn || unit;
+  const minFactor = purchaseFactor(shape, typed.minIn) ?? 1;
+  // The reorder percentage is a share of the full level: the most this shelf
+  // has held when editing, the opening stock when creating.
+  const warnBase = editing ? shelfMax : resolveTypedAmounts(shape, typed).stock;
+  const warnPercent =
+    minPercent > 0
+      ? minPercent
+      : warnBase > 0
+        ? Math.max(0, Math.min(100, Math.round((resolveTypedAmounts(shape, typed).min_stock / warnBase) * 100)))
+        : 0;
+
+  // Anything that changes what a unit means — the stock unit, a pack or case,
+  // their sizes — goes through here, so each field's unit stays valid and an
+  // empty field moves to a newly set pack.
+  function reshape(
+    next: Partial<{ unit: string; packUnit: string; packSize: string; caseUnit: string; caseSize: string }>,
+  ) {
+    const v = { unit, packUnit, packSize, caseUnit, caseSize, ...next };
+    const after = {
+      unit: v.unit,
+      pack_unit: v.packUnit,
+      pack_size: Number(v.packSize) || 0,
+      case_unit: v.caseUnit,
+      case_size: Number(v.caseSize) || 0,
+    };
+    setUnit(v.unit);
+    setPackUnit(v.packUnit);
+    setPackSize(v.packSize);
+    setCaseUnit(v.caseUnit);
+    setCaseSize(v.caseSize);
+    setTyped(retargetTypedUnits(shape, after, typed));
+  }
+
+  // With opening stock, the only price anyone knows is what that stock cost:
+  // the price row becomes "จ่ายไปทั้งหมด" and the price per unit is worked out.
+  function changeOpeningStock(raw: string) {
+    const next = { ...typed, stock: raw };
+    if (!editing) {
+      if ((parseFloat(raw) || 0) > 0) next.costIn = TOTAL_PRICE;
+      else if (next.costIn === TOTAL_PRICE) next.costIn = packUnit && (Number(packSize) || 0) > 0 ? packUnit : "";
+      // The full level just moved, so a reorder level held as a share of it
+      // moves with it.
+      if (minPercent > 0) {
+        const stock = resolveTypedAmounts(shape, next).stock;
+        next.min = typedText(reorderQuantityFor(stock, minPercent) / minFactor);
+      }
+    }
+    setTyped(next);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showErrors, setShowErrors] = useState(false);
 
-  const openingValue = (Number(stock) || 0) * (Number(price) || 0);
+  const openingValue = resolved.stock * resolved.cost_per_unit;
+  // One quiet line under a row whenever the number was typed in a unit other
+  // than the stock unit, saying what it comes to — the phone has no room for
+  // the conversion inside the 50px row itself.
+  const stockNote =
+    !editing && typed.stockIn && resolved.stock > 0
+      ? (entryChain(shape, parseFloat(typed.stock) || 0, typed.stockIn, lang) ??
+        ucopy.inStockUnit(formatNumber(resolved.stock, lang), unit))
+      : null;
+  const priceNote =
+    resolved.cost_per_unit > 0 && (pricingTotal || typed.costIn)
+      ? pricingTotal
+        ? `${ucopy.totalFor(formatNumber(parseFloat(typed.stock) || 0, lang), stockUnit)} · ${priceBreakdown(shape, resolved.cost_per_unit, "", lang)}`
+        : `= ${priceBreakdown(shape, resolved.cost_per_unit, costUnit, lang)}`
+      : null;
+
   const categoryName = categories.find((c) => c.ID === categoryId)?.name ?? copy.noCategory;
 
+  const fieldErrors = validateIngredientForm(
+    {
+      name,
+      existingNames,
+      ownName: editing?.name,
+      packUnit,
+      packSize,
+      caseUnit,
+      caseSize,
+      stockText: typed.stock,
+      costText: typed.cost,
+      creating: !editing,
+    },
+    lang,
+  );
+  const shown = showErrors ? fieldErrors : {};
+
+  // The system picker groups the containers that usually hold this kind of
+  // stock above the rest, so ลัง is not the first thing offered to a shelf
+  // counted in millilitres — it still can be picked, under "อื่น ๆ".
+  function containerOptions(level: "pack" | "case", exclude: string[]) {
+    const { likely, other } = packUnitChoices(unit, level, exclude);
+    const likelyLabel = level === "pack" ? ucopy.likelyFor(unit) : ucopy.likelyFor(packUnit || unit);
+    return [
+      { value: "", label: ucopy.none },
+      ...likely.map((u) => ({ value: u, label: u, group: likelyLabel })),
+      ...other.map((u) => ({ value: u, label: u, group: likely.length ? ucopy.otherUnits : undefined })),
+    ];
+  }
+
   async function save() {
-    if (!name.trim()) {
-      setError(copy.nameRequired);
+    if (hasFieldErrors(fieldErrors)) {
+      setShowErrors(true);
+      setError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
     setBusy(true);
     setError("");
     try {
+      const stockTypedIn = typed.stockIn && typed.stockIn !== unit ? typed.stockIn : "";
       const payload = {
         name: name.trim(),
         category_id: categoryId || undefined,
@@ -123,19 +288,36 @@ export default function AddIngredientScreen({
         // The API validates stock on PUT but the repository never writes the
         // column, so an edit would silently discard it. Send the existing value
         // on edit and the typed one only on create.
-        stock: editing ? editing.stock : Number(stock) || 0,
-        min_stock: Number(minStock) || 0,
+        // Opening stock typed in a pack goes up as typed so the history row reads
+        // "ยอดเริ่มต้น · กรอก 2 ลัง"; the server converts it.
+        stock: editing
+          ? editing.stock
+          : stockTypedIn && resolved.stock > 0
+            ? parseFloat(typed.stock) || 0
+            : resolved.stock,
+        ...(!editing && stockTypedIn && resolved.stock > 0 ? { stock_unit: stockTypedIn } : {}),
+        min_stock: resolved.min_stock,
         min_percent: minPercent,
-        cost_per_unit: Number(price) || 0,
+        cost_per_unit: resolved.cost_per_unit,
+        storage_type: storageType,
+        pack_unit: packUnit,
+        pack_size: packUnit ? Number(packSize) || 0 : 0,
+        case_unit: packUnit ? caseUnit : "",
+        case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
+        // Only a create with stock opens a lot, so only that case carries a date.
+        ...(!editing && resolved.stock > 0 && expiryDays !== null
+          ? { expires_at: expiryDateFromDays(expiryDays) }
+          : {}),
       };
       if (editing) await actions.update(editing.ID, payload);
       else await actions.create(payload);
       onSaved(payload.name);
     } catch (err) {
       setError(
-        String(
-          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-            (lang === "th" ? "บันทึกไม่สำเร็จ" : "Could not save"),
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          lang === "th" ? "บันทึกไม่สำเร็จ" : "Could not save",
         ),
       );
     } finally {
@@ -161,107 +343,203 @@ export default function AddIngredientScreen({
               className="w-full bg-transparent text-right text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
             />
           </FormRow>
-          <FormRow label={copy.category} onPress={() => setPicker("category")}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{categoryName}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
-          <FormRow label={copy.unit} onPress={() => setPicker("unit")} divider={false}>
-            <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-          </FormRow>
+          {shown.name ? <FieldError>{shown.name}</FieldError> : null}
+          <NativeSelect
+            label={copy.category}
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: 0, label: copy.noCategory },
+              ...categories.map((c) => ({ value: c.ID, label: c.name })),
+            ]}
+          >
+            <FormRow label={copy.category}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{categoryName}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
+          <NativeSelect
+            label={ucopy.stockUnitLabel}
+            value={unit}
+            onChange={(value) => reshape({ unit: value })}
+            options={stockUnitOptions(lang, unit)}
+          >
+            <FormRow label={ucopy.stockUnitLabel}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{unit}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
+          <NativeSelect
+            label={copy.storage}
+            value={storageType}
+            onChange={(value) => {
+              setStorageType(value);
+              // A new storage type means a new shelf life; the expiry picker
+              // remounts on it so a custom number typed for the old one goes.
+              setExpiryDays(defaultShelfLifeDays(value));
+            }}
+            options={STORAGE_TYPES.map((type) => ({ value: type, label: storageLabel(type, lang) }))}
+          >
+            <FormRow label={copy.storage} divider={false}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{storageLabel(storageType, lang)}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
         </FormGroup>
 
+        <FormGroup label={ucopy.groupBuy}>
+          <NativeSelect
+            label={ucopy.buyAs}
+            value={packUnit}
+            onChange={(value) =>
+              reshape(value ? { packUnit: value } : { packUnit: "", packSize: "", caseUnit: "", caseSize: "" })
+            }
+            options={containerOptions("pack", [])}
+          >
+            <FormRow label={ucopy.buyAs} divider={packUnit !== ""}>
+              <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+            </FormRow>
+          </NativeSelect>
+          {packUnit ? (
+            <>
+              <FormRow label={ucopy.perPack(packUnit)} suffix={unit}>
+                <input
+                type="number"
+                inputMode="decimal"
+                value={packSize}
+                onChange={(event) => reshape({ packSize: event.target.value })}
+                placeholder="0"
+                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+              />
+              </FormRow>
+              <NativeSelect
+                label={ucopy.caseAs}
+                value={caseUnit}
+                onChange={(value) => reshape(value ? { caseUnit: value } : { caseUnit: "", caseSize: "" })}
+                options={containerOptions("case", [packUnit])}
+              >
+                <FormRow label={ucopy.caseAs} divider={caseUnit !== ""}>
+                  <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
+                </FormRow>
+              </NativeSelect>
+              {caseUnit ? (
+                <FormRow label={ucopy.perCase(caseUnit)} suffix={packUnit} divider={false}>
+                  <input
+                type="number"
+                inputMode="decimal"
+                value={caseSize}
+                onChange={(event) => reshape({ caseSize: event.target.value })}
+                placeholder="0"
+                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+              />
+                </FormRow>
+              ) : null}
+            </>
+          ) : null}
+        </FormGroup>
+        {shown.packSize || shown.caseSize ? (
+          <p className="-mt-4 mb-2 px-1 text-[12px] leading-snug text-(--inv-out)">
+            {[shown.packSize, shown.caseSize].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
+        {packExample(packShape, lang) ? (
+          <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
+            {packExample(packShape, lang)}
+          </p>
+        ) : null}
+
         <FormGroup label={copy.groupStock}>
-          <FormRow label={copy.openingStock} suffix={unit}>
+          <FormRow label={copy.openingStock} divider={!stockNote}>
             {editing ? (
-              <span className="text-[15px] tabular-nums text-(--inv-faint)">{editing.stock}</span>
+              <span className="text-[15px] tabular-nums text-(--inv-faint)">{formatNumber(editing.stock, lang)}</span>
             ) : (
               <input
                 type="number"
                 inputMode="decimal"
-                value={stock}
-                onChange={(event) => setStock(event.target.value)}
+                value={typed.stock}
+                onChange={(event) => changeOpeningStock(event.target.value)}
                 placeholder="0"
                 className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
               />
             )}
+            <UnitButton
+              label={editing ? unit : stockUnit}
+              value={stockUnit}
+              choices={!editing && unitChoices.length > 1 ? unitChoices : undefined}
+              onPick={(value) => setTyped({ ...typed, stockIn: value === unit ? "" : value })}
+            />
           </FormRow>
-          <FormRow label={copy.price} suffix={`฿/${unit}`}>
+          {stockNote ? <RowNote>{stockNote}</RowNote> : null}
+          {shown.stock ? <FieldError>{shown.stock}</FieldError> : null}
+          {/* px-4 rather than the row's px-3: the chip row bleeds 16px to scroll
+              edge to edge, and the card clips anything past its own padding. */}
+          {!editing && resolved.stock > 0 ? (
+            <div className="border-b border-(--inv-hairline) px-4 py-3">
+              <ExpiryPicker
+                key={storageType}
+                value={expiryDays}
+                onChange={setExpiryDays}
+                storageType={storageType}
+                lang={lang}
+              />
+            </div>
+          ) : null}
+          <FormRow label={pricingTotal ? ucopy.totalPaid : copy.price} divider={!priceNote}>
             <input
               type="number"
               inputMode="decimal"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
+              value={typed.cost}
+              onChange={(event) => setTyped({ ...typed, cost: event.target.value })}
               placeholder="0"
               className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
             />
+            <UnitButton
+              label={pricingTotal ? ucopy.baht : `฿/${costUnit}`}
+              value={costUnit}
+              choices={!pricingTotal && unitChoices.length > 1 ? unitChoices : undefined}
+              optionLabel={(u) => `฿/${u}`}
+              onPick={(value) => setTyped({ ...typed, costIn: value === unit ? "" : value })}
+            />
           </FormRow>
-          {minPercent > 0 && shelfMax > 0 ? (
-            <FormRow label={copy.minStock} suffix="%" divider={false}>
-              <div className="flex w-full items-center gap-3">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={minPercent}
-                  onChange={(event) => {
-                    const percent = Number(event.target.value);
-                    setMinPercent(percent);
-                    setMinStock(String(reorderQuantityFor(shelfMax, percent)));
-                  }}
-                  className="h-9 flex-1 accent-(--inv-action)"
-                />
-                <span className="w-9 shrink-0 text-right text-[16px] tabular-nums text-(--inv-heading)">
-                  {minPercent}
-                </span>
-              </div>
-            </FormRow>
-          ) : (
-            <FormRow label={copy.minStock} suffix={unit} divider={false}>
+          {priceNote ? <RowNote>{priceNote}</RowNote> : null}
+          {shown.cost ? <FieldError>{shown.cost}</FieldError> : null}
+          {/* Set by the slider alone, in whole tens of the full level — the same
+              control as the web form. The note under it says what it comes to. */}
+          <FormRow label={copy.minStock} suffix="%" divider={false}>
+            <div className="flex w-full items-center gap-3">
               <input
-                type="number"
-                inputMode="decimal"
-                value={minStock}
+                type="range"
+                min={0}
+                max={100}
+                step={10}
+                aria-label={copy.minStock}
+                disabled={!(warnBase > 0)}
+                value={Math.round(warnPercent / 10) * 10}
                 onChange={(event) => {
-                  setMinStock(event.target.value);
-                  setMinPercent(0);
+                  const percent = Number(event.target.value);
+                  setMinPercent(percent);
+                  setTyped({ ...typed, min: typedText(reorderQuantityFor(warnBase, percent) / minFactor) });
                 }}
-                placeholder="0"
-                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
+                className="h-9 flex-1 accent-(--inv-action) disabled:opacity-40"
               />
-            </FormRow>
-          )}
+              <span className="w-9 shrink-0 text-right text-[16px] tabular-nums text-(--inv-heading)">
+                {Math.round(warnPercent)}
+              </span>
+            </div>
+          </FormRow>
+          {warnBase > 0 ? (
+            <RowNote>
+              {ucopy.warnLine(
+                formatNumber(resolved.min_stock / minFactor, lang),
+                minUnit,
+                minFactor === 1 ? null : `${formatNumber(resolved.min_stock, lang)} ${unit}`,
+                formatNumber(warnBase / minFactor, lang),
+              )}
+            </RowNote>
+          ) : null}
         </FormGroup>
-        {shelfMax > 0 ? (
-          <div className="-mt-4 mb-[22px] flex items-baseline justify-between gap-3 px-1">
-            <span className="text-[11px] leading-snug text-(--inv-faint)">
-              {minPercent > 0
-                ? copy.warnsAt(formatNumber(Number(minStock) || 0, lang), unit, formatNumber(shelfMax, lang))
-                : ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                const next = minPercent > 0 ? 0 : 20;
-                setMinPercent(next);
-                if (next > 0) setMinStock(String(reorderQuantityFor(shelfMax, next)));
-              }}
-              className="shrink-0 text-[11px] font-semibold text-(--inv-action)"
-            >
-              {minPercent > 0 ? copy.minAsAmount : copy.minAsPercent}
-            </button>
-          </div>
-        ) : null}
-        <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-          {copy.minNote}
-        </p>
-
-        {editing && (
-          <p className="-mt-3 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-            {copy.stockLocked}
-          </p>
-        )}
 
         {!editing && (
           <FormGroup label={copy.groupSummary}>
@@ -286,34 +564,6 @@ export default function AddIngredientScreen({
         </PrimaryButton>
       </div>
 
-      <BottomSheet
-        open={picker === "category"}
-        title={copy.pickCategory}
-        onClose={() => setPicker("none")}
-      >
-        <PickerList
-          options={[
-            { value: 0, label: copy.noCategory },
-            ...categories.map((c) => ({ value: c.ID, label: c.name })),
-          ]}
-          value={categoryId}
-          onPick={(value) => {
-            setCategoryId(value);
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker === "unit"} title={copy.pickUnit} onClose={() => setPicker("none")}>
-        <PickerList
-          options={UNITS.map((u) => ({ value: u, label: u }))}
-          value={unit}
-          onPick={(value) => {
-            setUnit(value);
-            setPicker("none");
-          }}
-        />
-      </BottomSheet>
     </div>
   );
 }
@@ -344,6 +594,60 @@ export function PickerList<T extends string | number>({
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The unit at the end of a row. When the number may be typed in another unit
+ * it turns orange and opens the phone's own picker.
+ */
+function UnitButton({
+  label,
+  value,
+  choices,
+  optionLabel = (unit) => unit,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  choices?: string[];
+  optionLabel?: (unit: string) => string;
+  onPick: (unit: string) => void;
+}) {
+  if (!choices) {
+    return <span className="w-[68px] shrink-0 text-right text-[13px] text-(--inv-muted)">{label}</span>;
+  }
+  return (
+    <NativeSelect
+      label={label}
+      value={value}
+      onChange={onPick}
+      options={choices.map((unit) => ({ value: unit, label: optionLabel(unit) }))}
+      className="w-[68px] shrink-0"
+    >
+      <span className="flex items-center justify-end gap-0.5 text-[13px] font-semibold text-(--inv-action)">
+        <span className="truncate">{label}</span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+      </span>
+    </NativeSelect>
+  );
+}
+
+/** What the row above comes to, right-aligned under its number. */
+function RowNote({ children }: { children: ReactNode }) {
+  return (
+    <div className="-mt-2 border-b border-(--inv-hairline) px-3 pb-2 text-right text-[11px] tabular-nums text-(--inv-faint)">
+      {children}
+    </div>
+  );
+}
+
+/** A field's problem, in red, right under the row that has it. */
+function FieldError({ children }: { children: ReactNode }) {
+  return (
+    <div className="border-b border-(--inv-hairline) px-3 pb-2 pt-1 text-right text-[12px] text-(--inv-out)">
+      {children}
     </div>
   );
 }

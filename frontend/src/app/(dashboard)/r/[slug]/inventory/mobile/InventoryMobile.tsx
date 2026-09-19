@@ -19,11 +19,30 @@ import {
   X,
 } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
+import { inventoryErrorMessage } from "../inventoryFormValidation";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportStockCSV } from "@/src/lib/ingredient";
 import type { Ingredient } from "@/src/types/ingredient";
 import { getStatus, type ItemStatus } from "../inventoryPageUtils";
 import { getReorderPercent, getStockPercent } from "../inventoryPageUtils";
+import {
+  defaultShelfLifeDays,
+  expiryCopy,
+  expiryDateFromDays,
+  formatExpiryDate,
+  ingredientExpiryState,
+  matchesExpiryFilter,
+  type ExpiryFilter,
+} from "../inventoryExpiryUtils";
+import ExpiryPicker from "./ExpiryPicker";
+import {
+  convertEntryAmount,
+  defaultEntryUnit,
+  entryChain,
+  entryUnitOptions,
+  formatPackCount,
+  stockPerEntryUnit,
+} from "../inventoryUnitUtils";
 import { useInventoryData } from "./useInventoryData";
 import {
   BottomSheet,
@@ -36,6 +55,7 @@ import {
   TAP,
   inputBase,
   useIOSActiveStates,
+  useWarmConfirm,
   useToastStack,
 } from "./primitives";
 import {
@@ -90,7 +110,7 @@ function buildCopy(lang: "th" | "en") {
         sortName: "ชื่อ ก-ฮ",
         sortValue: "มูลค่าสูงสุด",
         afterRestock: "คงเหลือหลังเติม",
-        save: (n: string) => `บันทึก +${n} หน่วย`,
+        save: (n: string, unit: string) => `บันทึก +${n} ${unit}`,
         counted: "จำนวนที่นับได้",
         difference: "ส่วนต่าง",
         saveCount: "บันทึกยอดที่นับได้",
@@ -113,9 +133,14 @@ function buildCopy(lang: "th" | "en") {
         restocked: (name: string, n: string, unit: string) => `เติม ${name} แล้ว ${n} ${unit}`,
         countSaved: (name: string) => `บันทึกยอด ${name} แล้ว`,
         deleted: (name: string) => `ลบ ${name} แล้ว`,
+        removeTitle: (name: string) => `ลบ "${name}"?`,
+        removeBody: "วัตถุดิบนี้จะหายจากคลังและรายการทั้งหมด ถ้าอยู่ในสูตรเมนู ระบบจะไม่ให้ลบ",
+        removeConfirm: "ลบวัตถุดิบ",
+        cancel: "ยกเลิก",
         exported: (n: number) => `ดาวน์โหลดแล้ว ${n} รายการ`,
         failed: "ทำรายการไม่สำเร็จ",
         countZeroNote: "นับได้ 0 จะบันทึกเป็นการตัดออกทั้งหมด",
+        countSame: "ยอดเท่าเดิม ไม่มีอะไรให้บันทึก",
       }
     : {
         search: "Search ingredient",
@@ -151,7 +176,7 @@ function buildCopy(lang: "th" | "en") {
         sortName: "Name A-Z",
         sortValue: "Highest value",
         afterRestock: "Stock after",
-        save: (n: string) => `Save +${n}`,
+        save: (n: string, unit: string) => `Save +${n} ${unit}`,
         counted: "Counted quantity",
         difference: "Difference",
         saveCount: "Save counted quantity",
@@ -174,9 +199,14 @@ function buildCopy(lang: "th" | "en") {
         restocked: (name: string, n: string, unit: string) => `Added ${n} ${unit} to ${name}`,
         countSaved: (name: string) => `Saved the count for ${name}`,
         deleted: (name: string) => `Deleted ${name}`,
+        removeTitle: (name: string) => `Delete "${name}"?`,
+        removeBody: "It disappears from the inventory. An ingredient used in a menu recipe cannot be deleted.",
+        removeConfirm: "Delete ingredient",
+        cancel: "Cancel",
         exported: (n: number) => `Downloaded ${n} rows`,
         failed: "That did not go through",
         countZeroNote: "A count of 0 is saved as removing everything",
+        countSame: "Same as the shelf — nothing to save",
       };
 }
 
@@ -190,8 +220,10 @@ export default function InventoryMobile({
   const { language } = useLanguage();
   const lang = language === "en" ? "en" : "th";
   const copy = useMemo(() => buildCopy(lang), [lang]);
-  const { ingredients, categories, loading, actions } = useInventoryData(canView);
+  const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const { ingredients, categories, loading, reload, actions } = useInventoryData(canView);
   const { toast, show } = useToastStack();
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
   useIOSActiveStates();
 
   const [screen, setScreen] = useState<Screen>("list");
@@ -202,12 +234,21 @@ export default function InventoryMobile({
   const [status, setStatus] = useState<"all" | ItemStatus>("all");
   const [categoryId, setCategoryId] = useState(0);
   const [sort, setSort] = useState<SortKey>("recent");
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>("all");
 
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const [amount, setAmount] = useState(0);
+  // Days from today for the lot a restock opens; null is "ไม่ระบุ".
+  const [expiryDays, setExpiryDays] = useState<number | null>(null);
+  // The unit `amount` is typed in on the restock and count sheets. Stock is
+  // always stored in the ingredient's own unit; the server converts.
+  const [entryUnit, setEntryUnit] = useState("");
   const [batchMode, setBatchMode] = useState<"in" | "adjust">("in");
+  // A batch restock cannot ask per row, so it either dates every lot by the
+  // item's own storage default or leaves them all undated.
+  const [batchExpiry, setBatchExpiry] = useState<"default" | "none">("default");
   const [batchDraft, setBatchDraft] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -236,25 +277,49 @@ export default function InventoryMobile({
     const filtered = ingredients.filter((item) => {
       if (status !== "all" && getStatus(item) !== status) return false;
       if (categoryId !== 0 && (item.category_id ?? 0) !== categoryId) return false;
+      if (!matchesExpiryFilter(item, expiryFilter)) return false;
       if (term && !item.name.toLowerCase().includes(term)) return false;
       return true;
     });
     return sortIngredients(filtered, sort);
-  }, [ingredients, search, status, categoryId, sort]);
+  }, [ingredients, search, status, categoryId, expiryFilter, sort]);
 
   function openSheet(item: Ingredient, kind: SheetKind) {
     setActive(item);
-    if (kind === "restock") setAmount(restockStep(item));
-    if (kind === "count") setAmount(item.stock);
+    if (kind === "restock" || kind === "count") {
+      const unit = defaultEntryUnit(item, kind);
+      const factor = stockPerEntryUnit(item, unit) ?? 1;
+      setEntryUnit(unit);
+      if (kind === "restock") {
+        setAmount(unit === item.unit ? restockStep(item) : 1);
+        setExpiryDays(defaultShelfLifeDays(item.storage_type));
+      } else {
+        setAmount(convertEntryAmount(item.stock, 1, factor));
+      }
+    }
     setSheet(kind);
+  }
+
+  function changeEntryUnit(next: string) {
+    if (!active) return;
+    const from = stockPerEntryUnit(active, entryUnit) ?? 1;
+    const to = stockPerEntryUnit(active, next) ?? 1;
+    setAmount((current) => convertEntryAmount(current, from, to));
+    setEntryUnit(next);
   }
 
   async function guard(action: () => Promise<void>) {
     setBusy(true);
     try {
       await action();
-    } catch {
-      show(copy.failed);
+    } catch (err) {
+      show(
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          copy.failed,
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -264,8 +329,13 @@ export default function InventoryMobile({
     if (!active || amount <= 0) return;
     const item = active;
     await guard(async () => {
-      await actions.restock(item.ID, { type: "in", quantity: amount });
-      show(copy.restocked(item.name, formatNumber(amount, lang), item.unit));
+      await actions.restock(item.ID, {
+        type: "in",
+        quantity: amount,
+        ...(entryUnit && entryUnit !== item.unit ? { unit: entryUnit } : {}),
+        ...(expiryDays === null ? {} : { expires_at: expiryDateFromDays(expiryDays) }),
+      });
+      show(copy.restocked(item.name, formatNumber(amount, lang), entryUnit || item.unit));
       setSheet("none");
     });
   }
@@ -279,7 +349,11 @@ export default function InventoryMobile({
       const payload =
         amount === 0
           ? { type: "out" as const, quantity: item.stock }
-          : { type: "adjust" as const, quantity: amount };
+          : {
+              type: "adjust" as const,
+              quantity: amount,
+              ...(entryUnit && entryUnit !== item.unit ? { unit: entryUnit } : {}),
+            };
       if (payload.quantity <= 0) {
         setSheet("none");
         return;
@@ -293,6 +367,16 @@ export default function InventoryMobile({
   async function removeActive() {
     if (!active) return;
     const item = active;
+    // A delete cannot be undone from here, so it always asks first — the row
+    // sheet's "ลบ" sits one tap from "แก้ไข" and is easy to hit by mistake.
+    setSheet("none");
+    const confirmed = await ask({
+      title: copy.removeTitle(item.name),
+      description: copy.removeBody,
+      confirmLabel: copy.removeConfirm,
+      cancelLabel: copy.cancel,
+    });
+    if (!confirmed) return;
     await guard(async () => {
       await actions.remove(item.ID);
       show(copy.deleted(item.name));
@@ -345,7 +429,13 @@ export default function InventoryMobile({
         if (quantity <= 0) continue;
         if (batchMode === "adjust" && quantity === item.stock) continue;
         try {
-          await actions.restock(item.ID, { type: batchMode, quantity });
+          await actions.restock(item.ID, {
+            type: batchMode,
+            quantity,
+            ...(batchMode === "in" && batchExpiry === "default"
+              ? { expires_at: expiryDateFromDays(defaultShelfLifeDays(item.storage_type)) }
+              : {}),
+          });
           done += 1;
         } catch {
           failed.add(item.ID);
@@ -374,20 +464,29 @@ export default function InventoryMobile({
         onRestock={() => openSheet(fresh, "restock")}
         onCount={() => openSheet(fresh, "count")}
         onEdit={() => setScreen("edit")}
-        onDelete={() => openSheet(fresh, "row")}
+        onDelete={removeActive}
+        onChanged={reload}
+        onNotice={show}
         sheet={
+          <>
+          {confirmDialog}
           <RestockAndCountSheets
             active={active}
             sheet={sheet}
             copy={copy}
             lang={lang}
             amount={amount}
+            expiryDays={expiryDays}
+            entryUnit={entryUnit}
             busy={busy}
             setAmount={setAmount}
+            setExpiryDays={setExpiryDays}
+            setEntryUnit={changeEntryUnit}
             close={() => setSheet("none")}
             submitRestock={submitRestock}
             submitCount={submitCount}
           />
+          </>
         }
       />
     );
@@ -398,6 +497,7 @@ export default function InventoryMobile({
       <AddIngredientScreen
         lang={lang}
         categories={categories}
+        existingNames={ingredients.map((item) => item.name)}
         editing={screen === "edit" ? active : null}
         onCancel={() => setScreen(screen === "edit" ? "detail" : "list")}
         onSaved={(name) => {
@@ -414,6 +514,7 @@ export default function InventoryMobile({
       <BulkAddScreen
         lang={lang}
         categories={categories}
+        existingNames={ingredients.map((item) => item.name)}
         onCancel={() => setScreen("list")}
         onSaved={(count) => {
           show(lang === "th" ? `บันทึก ${count} รายการแล้ว` : `Saved ${count} items`);
@@ -487,7 +588,7 @@ export default function InventoryMobile({
               aria-label={copy.filter}
               onClick={() => setSheet("filter")}
               className={`ui-press flex h-[52px] items-center justify-center rounded-(--inv-radius) border bg-(--inv-surface) ${
-                categoryId !== 0 || sort !== "recent"
+                categoryId !== 0 || sort !== "recent" || expiryFilter !== "all"
                   ? "border-(--inv-action) text-(--inv-action)"
                   : "border-(--inv-hairline) text-(--inv-muted)"
               }`}
@@ -544,6 +645,7 @@ export default function InventoryMobile({
               const tone = statusTone(getStatus(item), lang);
               const percent = getStockPercent(item);
               const reorderAt = getReorderPercent(item);
+              const expiry = ingredientExpiryState(item);
               const checked = selected.has(item.ID);
               return (
                 <div
@@ -598,6 +700,9 @@ export default function InventoryMobile({
                         {formatNumber(item.stock, lang)}
                       </span>
                       <span className="text-[12px] text-(--inv-muted)">{item.unit}</span>
+                      {formatPackCount(item, lang) ? (
+                        <span className="truncate text-[11px] text-(--inv-faint)">{formatPackCount(item, lang)}</span>
+                      ) : null}
                       <span className="ml-auto shrink-0 text-[12px] tabular-nums text-(--inv-muted)">
                         {formatCurrency(item.cost_per_unit, lang, 2)} / {item.unit}
                       </span>
@@ -620,6 +725,23 @@ export default function InventoryMobile({
                         )}
                       </div>
                     )}
+
+                    {/* Only the lots that need a decision get a line here: a date
+                        weeks away is noise on a list, and the detail screen has
+                        every lot anyway. */}
+                    {(expiry === "soon" || expiry === "expired") && item.expiring_lot ? (
+                      <p
+                        className={`mt-1.5 text-[11px] font-semibold ${
+                          expiry === "expired" ? "text-(--inv-out)" : "text-(--inv-low)"
+                        }`}
+                      >
+                        {expiry === "expired"
+                          ? xcopy.expiredOn(formatExpiryDate(item.expiring_lot.expires_at, lang))
+                          : xcopy.expiresOn(formatExpiryDate(item.expiring_lot.expires_at, lang))}
+                        {" · "}
+                        {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                      </p>
+                    ) : null}
 
                     <div className="mt-2 flex items-center gap-2">
                       <span className="max-w-[45%] shrink-0 truncate rounded-full bg-(--inv-surface-strong) px-2 py-0.5 text-[11px] text-(--inv-muted)">
@@ -732,8 +854,12 @@ export default function InventoryMobile({
         copy={copy}
         lang={lang}
         amount={amount}
+        expiryDays={expiryDays}
+        entryUnit={entryUnit}
         busy={busy}
         setAmount={setAmount}
+        setExpiryDays={setExpiryDays}
+        setEntryUnit={changeEntryUnit}
         close={() => setSheet("none")}
         submitRestock={submitRestock}
         submitCount={submitCount}
@@ -749,6 +875,7 @@ export default function InventoryMobile({
               onClick={() => {
                 setCategoryId(0);
                 setSort("recent");
+                setExpiryFilter("all");
               }}
             >
               {copy.clearFilter}
@@ -781,6 +908,18 @@ export default function InventoryMobile({
             { value: "value", label: copy.sortValue },
           ]}
         />
+        <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">
+          {xcopy.filterLabel}
+        </p>
+        <ChipRow
+          value={expiryFilter}
+          onChange={setExpiryFilter}
+          options={[
+            { value: "all", label: xcopy.filterAll },
+            { value: "soon", label: xcopy.filterSoon },
+            { value: "expired", label: xcopy.filterExpired },
+          ]}
+        />
       </BottomSheet>
 
       <BottomSheet
@@ -796,6 +935,18 @@ export default function InventoryMobile({
         <p className="mb-3 text-[12px] leading-snug text-(--inv-muted)">
           {batchMode === "in" ? copy.batchInHint : copy.batchSetHint}
         </p>
+        {batchMode === "in" && (
+          <div className="mb-3">
+            <ChipRow
+              value={batchExpiry}
+              onChange={setBatchExpiry}
+              options={[
+                { value: "default", label: xcopy.batchExpiryDefault },
+                { value: "none", label: xcopy.batchExpiryNone },
+              ]}
+            />
+          </div>
+        )}
         <div className="space-y-2">
           {selectedItems.map((item) => (
             <div key={item.ID} className="flex items-center gap-2">
@@ -826,6 +977,8 @@ export default function InventoryMobile({
           <p className="mt-3 text-[11px] leading-snug text-(--inv-faint)">{copy.batchExpenseNote}</p>
         )}
       </BottomSheet>
+
+      {confirmDialog}
 
       <BottomSheet open={sheet === "manage"} title={copy.manage} onClose={() => setSheet("none")}>
         <div className="space-y-1">
@@ -884,8 +1037,12 @@ function RestockAndCountSheets({
   copy,
   lang,
   amount,
+  expiryDays,
+  entryUnit,
   busy,
   setAmount,
+  setExpiryDays,
+  setEntryUnit,
   close,
   submitRestock,
   submitCount,
@@ -895,14 +1052,40 @@ function RestockAndCountSheets({
   copy: ReturnType<typeof buildCopy>;
   lang: "th" | "en";
   amount: number;
+  expiryDays: number | null;
+  entryUnit: string;
   busy: boolean;
   setAmount: (value: number) => void;
+  setExpiryDays: (days: number | null) => void;
+  setEntryUnit: (unit: string) => void;
   close: () => void;
   submitRestock: () => void;
   submitCount: () => void;
 }) {
   if (!active) return null;
-  const difference = amount - active.stock;
+  const unit = entryUnit || active.unit;
+  const factor = stockPerEntryUnit(active, unit) ?? 1;
+  const unitChoices = entryUnitOptions(active);
+  const difference = amount * factor - active.stock;
+  const unitPicker =
+    unitChoices.length > 1 ? (
+      <div className="mb-3">
+        <ChipRow
+          value={unit}
+          onChange={setEntryUnit}
+          options={unitChoices.map((option) => ({ value: option.unit, label: option.unit }))}
+        />
+      </div>
+    ) : null;
+  // Every level down, not just the stock unit: "= 24 ขวด = 18,000 มิลลิลิตร"
+  // for 2 ลัง, so a wrong case size shows up as a wrong bottle count.
+  const chain = entryChain(active, amount, unit, lang);
+  const inStockUnit =
+    factor !== 1 ? (
+      <p className="mt-1.5 text-center text-[12px] tabular-nums text-(--inv-muted)">
+        {chain ?? `= ${formatNumber(amount * factor, lang)} ${active.unit}`}
+      </p>
+    ) : null;
 
   return (
     <>
@@ -912,16 +1095,32 @@ function RestockAndCountSheets({
         onClose={close}
         footer={
           <PrimaryButton onClick={submitRestock} disabled={amount <= 0 || busy}>
-            {copy.save(formatNumber(amount, lang))}
+            {copy.save(formatNumber(amount, lang), unit)}
           </PrimaryButton>
         }
       >
-        <Stepper value={amount} step={restockStep(active)} unit={active.unit} onChange={setAmount} />
+        {unitPicker}
+        <Stepper
+          value={amount}
+          step={unit === active.unit ? restockStep(active) : 1}
+          unit={unit}
+          onChange={setAmount}
+        />
+        {inStockUnit}
         <div className="mt-3 flex items-center justify-between rounded-(--inv-radius) bg-(--inv-surface-strong) px-3 py-2">
           <span className="text-[13px] text-(--inv-muted)">{copy.afterRestock}</span>
           <span className="text-[15px] font-semibold tabular-nums text-(--inv-heading)">
-            {formatNumber(active.stock + amount, lang)} {active.unit}
+            {formatNumber(active.stock + amount * factor, lang)} {active.unit}
           </span>
+        </div>
+        <div className="mt-4">
+          <ExpiryPicker
+            key={active.ID}
+            value={expiryDays}
+            onChange={setExpiryDays}
+            storageType={active.storage_type}
+            lang={lang}
+          />
         </div>
       </BottomSheet>
 
@@ -930,7 +1129,7 @@ function RestockAndCountSheets({
         title={`${copy.count} · ${active.name}`}
         onClose={close}
         footer={
-          <PrimaryButton onClick={submitCount} disabled={busy}>
+          <PrimaryButton onClick={submitCount} disabled={busy || Math.abs(difference) < 1e-9}>
             {copy.saveCount}
           </PrimaryButton>
         }
@@ -938,7 +1137,14 @@ function RestockAndCountSheets({
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">
           {copy.counted}
         </p>
-        <Stepper value={amount} step={restockStep(active)} unit={active.unit} onChange={setAmount} />
+        {unitPicker}
+        <Stepper
+          value={amount}
+          step={unit === active.unit ? restockStep(active) : 1}
+          unit={unit}
+          onChange={setAmount}
+        />
+        {inStockUnit}
         <div className="mt-3 flex items-center justify-between rounded-(--inv-radius) bg-(--inv-surface-strong) px-3 py-2">
           <span className="text-[13px] text-(--inv-muted)">{copy.difference}</span>
           <span
@@ -954,8 +1160,11 @@ function RestockAndCountSheets({
             {formatNumber(difference, lang)} {active.unit}
           </span>
         </div>
-        {amount === 0 && (
+        {amount === 0 && active.stock > 0 && (
           <p className="mt-2 text-[11px] text-(--inv-faint)">{copy.countZeroNote}</p>
+        )}
+        {Math.abs(difference) < 1e-9 && (
+          <p className="mt-2 text-[11px] text-(--inv-faint)">{copy.countSame}</p>
         )}
       </BottomSheet>
     </>

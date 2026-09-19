@@ -4,10 +4,10 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/format";
 import type { IngredientCategory } from "@/src/types/ingredient";
-import { UNITS } from "../inventoryPageUtils";
+import { UNITS, stockUnitOptions } from "../inventoryPageUtils";
 import type { useInventoryData } from "./useInventoryData";
-import { BottomSheet, ChipRow, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
-import { PickerList } from "./AddIngredientScreen";
+import { ChipRow, NativeSelect, PrimaryButton, ScreenNav, TAP, inputBase } from "./primitives";
+import { inventoryErrorMessage, validateBulkRows } from "../inventoryFormValidation";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
@@ -35,9 +35,12 @@ export default function BulkAddScreen({
   onCancel,
   onSaved,
   actions,
+  existingNames,
 }: {
   lang: "th" | "en";
   categories: IngredientCategory[];
+  /** Every ingredient name already in the restaurant, for the duplicate check. */
+  existingNames: string[];
   onCancel: () => void;
   onSaved: (count: number) => void;
   actions: Actions;
@@ -97,7 +100,6 @@ export default function BulkAddScreen({
   // Lazy initialiser: without it emptyRow ran on every render, burning a key
   // each time for a value React throws away after mount.
   const [rows, setRows] = useState<Row[]>(() => [emptyRow(1, 0, UNITS[1])]);
-  const [picker, setPicker] = useState<{ kind: "category" | "unit"; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -124,7 +126,19 @@ export default function BulkAddScreen({
     setRows((current) => [...current, emptyRow(key, defaultCategory, UNITS[1])]);
   }
 
+  // Worked out every render but shown only after a save was tried.
+  const rowProblems = validateBulkRows(rows, existingNames, lang);
+  const [showRowErrors, setShowRowErrors] = useState(false);
+
   async function save() {
+    const bad = rowProblems.filter(Boolean).length;
+    if (bad > 0) {
+      setShowRowErrors(true);
+      setError(
+        lang === "th" ? `ยังบันทึกไม่ได้ มี ${bad} แถวต้องแก้ (ขึ้นสีแดง)` : `${bad} rows need fixing (marked in red)`,
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -144,7 +158,7 @@ export default function BulkAddScreen({
         // row, and a generic message sends people looking for the wrong cause.
         setError(
           `${copy.partial(results.length - failed.length, failed.length)}: ${failed
-            .map((f) => `${f.name}${f.error ? ` (${f.error})` : ""}`)
+            .map((f) => `${f.name}${f.error ? ` (${inventoryErrorMessage(f.error, lang)})` : ""}`)
             .join(", ")}`,
         );
         setBusy(false);
@@ -197,7 +211,8 @@ export default function BulkAddScreen({
           </button>
         </div>
 
-        {rows.map((row) => {
+        {rows.map((row, rowIndex) => {
+          const problem = showRowErrors ? rowProblems[rowIndex] : null;
           const subtotal = (Number(row.quantity) || 0) * (Number(row.price) || 0);
           const categoryName =
             categories.find((c) => c.ID === row.categoryId)?.name ?? copy.noCategory;
@@ -211,8 +226,9 @@ export default function BulkAddScreen({
                 value={row.name}
                 onChange={(event) => patch(row.key, { name: event.target.value })}
                 placeholder={copy.name}
-                className={`${inputBase} h-[52px] border-(--inv-hairline)`}
+                className={`${inputBase} h-[52px] ${problem ? "border-(--inv-out)" : "border-(--inv-hairline)"}`}
               />
+              {problem ? <p className="mt-1 px-1 text-[12px] text-(--inv-out)">{problem}</p> : null}
 
               <div className="mt-2 grid grid-cols-3 overflow-hidden rounded-(--inv-radius) border border-(--inv-hairline)">
                 <input
@@ -223,13 +239,19 @@ export default function BulkAddScreen({
                   placeholder={copy.quantity}
                   className="min-h-[52px] w-full bg-transparent px-2 text-center text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
                 />
-                <button
-                  type="button"
-                  onClick={() => setPicker({ kind: "unit", key: row.key })}
-                  className={`ui-press border-x border-(--inv-hairline) px-2 text-[15px] text-(--inv-body) ${TAP}`}
+                <NativeSelect
+                  label={copy.pickUnit}
+                  value={row.unit}
+                  onChange={(value) => patch(row.key, { unit: value })}
+                  options={stockUnitOptions(lang, row.unit)}
+                  className="flex"
                 >
-                  {row.unit}
-                </button>
+                  <span
+                    className={`flex items-center border-x border-(--inv-hairline) px-2 text-[15px] text-(--inv-body) ${TAP}`}
+                  >
+                    {row.unit}
+                  </span>
+                </NativeSelect>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -241,13 +263,22 @@ export default function BulkAddScreen({
               </div>
 
               <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPicker({ kind: "category", key: row.key })}
-                  className={`ui-press max-w-[55%] shrink-0 truncate rounded-full bg-(--inv-surface-strong) px-3 py-1 text-[12px] text-(--inv-muted) ${TAP}`}
+                <NativeSelect
+                  label={copy.pickCategory}
+                  value={row.categoryId}
+                  onChange={(value) => patch(row.key, { categoryId: value })}
+                  options={[
+                    { value: 0, label: copy.noCategory },
+                    ...categories.map((c) => ({ value: c.ID, label: c.name })),
+                  ]}
+                  className="max-w-[55%] shrink-0"
                 >
-                  {categoryName}
-                </button>
+                  <span
+                    className={`flex items-center truncate rounded-full bg-(--inv-surface-strong) px-3 py-1 text-[12px] text-(--inv-muted) ${TAP}`}
+                  >
+                    {categoryName}
+                  </span>
+                </NativeSelect>
                 <span className="ml-auto text-[13px] font-semibold tabular-nums text-(--inv-heading)">
                   {formatCurrency(subtotal, lang)}
                 </span>
@@ -297,34 +328,6 @@ export default function BulkAddScreen({
         </PrimaryButton>
       </div>
 
-      <BottomSheet
-        open={picker?.kind === "category"}
-        title={copy.pickCategory}
-        onClose={() => setPicker(null)}
-      >
-        <PickerList
-          options={[
-            { value: 0, label: copy.noCategory },
-            ...categories.map((c) => ({ value: c.ID, label: c.name })),
-          ]}
-          value={rows.find((row) => row.key === picker?.key)?.categoryId ?? 0}
-          onPick={(value) => {
-            if (picker) patch(picker.key, { categoryId: value });
-            setPicker(null);
-          }}
-        />
-      </BottomSheet>
-
-      <BottomSheet open={picker?.kind === "unit"} title={copy.pickUnit} onClose={() => setPicker(null)}>
-        <PickerList
-          options={UNITS.map((u) => ({ value: u, label: u }))}
-          value={rows.find((row) => row.key === picker?.key)?.unit ?? UNITS[1]}
-          onPick={(value) => {
-            if (picker) patch(picker.key, { unit: value });
-            setPicker(null);
-          }}
-        />
-      </BottomSheet>
     </div>
   );
 }

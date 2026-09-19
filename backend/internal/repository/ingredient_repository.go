@@ -163,6 +163,10 @@ func (r *IngredientRepository) UpdateMetadata(ingredient *entity.Ingredient) err
 			"cost_per_unit": ingredient.CostPerUnit,
 			"yield_percent": ingredient.YieldPercent,
 			"storage_type":  ingredient.StorageType,
+			"pack_unit":     ingredient.PackUnit,
+			"pack_size":     ingredient.PackSize,
+			"case_unit":     ingredient.CaseUnit,
+			"case_size":     ingredient.CaseSize,
 		}).Error
 }
 
