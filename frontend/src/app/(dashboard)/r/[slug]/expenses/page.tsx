@@ -124,37 +124,6 @@ export default function ExpensesPage() {
     setFormOpen(true);
   };
 
-  // Hand-off from the AI receipt scanner: if it stashed a draft expense and sent
-  // the owner here, open the Add dialog pre-filled so they save it with the normal
-  // form. One-shot (the stash is cleared) and inert when no draft is present.
-  useEffect(() => {
-    if (restaurantId == null || !canEdit) return;
-    let raw: string | null = null;
-    try {
-      raw = sessionStorage.getItem("ai_expense_prefill");
-    } catch {
-      return;
-    }
-    if (!raw) return;
-    try {
-      sessionStorage.removeItem("ai_expense_prefill");
-    } catch {
-      /* ignore */
-    }
-    try {
-      const p = JSON.parse(raw) as { category?: string; amount?: number | string; spent_at?: string; note?: string };
-      const category = (expenseCategories as readonly string[]).includes(p.category ?? "")
-        ? (p.category as ExpenseCategory)
-        : "other";
-      const spent = p.spent_at && /^\d{4}-\d{2}-\d{2}$/.test(p.spent_at) ? p.spent_at : toDashboardDate(new Date());
-      setError("");
-      setForm({ restaurantId, id: null, category, amount: p.amount != null ? String(p.amount) : "", spent_at: spent, note: p.note ?? "" });
-      setFormOpen(true);
-    } catch {
-      /* malformed stash — ignore */
-    }
-  }, [restaurantId, canEdit]);
-
   const copy = useMemo(
     () =>
       language === "th"

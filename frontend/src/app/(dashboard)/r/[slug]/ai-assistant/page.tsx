@@ -1102,15 +1102,6 @@ export default function AIAssistantPage() {
                 />
               )}
               <div className="flex items-center gap-1">
-              {/* Scan / tools — far-left slot, only when not dictating */}
-              {!voiceListening && (
-                <AIInputTools
-                  tools={["scan"]}
-                  language={language}
-                  disabled={loading || actionConfirming || actionCancelling}
-                  onInsertText={handleVoiceText}
-                />
-              )}
               {/* Discard the take — left slot, like a voice memo's cancel */}
               {voiceListening && (
                 <HoverTip label={language === "th" ? "ยกเลิก ไม่เอาเสียงนี้" : "Cancel, discard this take"}>
