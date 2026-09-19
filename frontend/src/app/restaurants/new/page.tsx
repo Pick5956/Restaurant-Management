@@ -253,6 +253,7 @@ export default function NewRestaurantPage() {
         openTime: "เวลาเปิด",
         closeTime: "เวลาปิด",
         initialTables: "จำนวนโต๊ะเริ่มต้น",
+        zonesLabel: "โซนโต๊ะ",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
         splitZonesHelp: "ระบบจะแบ่งโต๊ะออกเป็นโซนตามประเภทร้าน (เช่น โซนหน้าร้าน โซนครอบครัว)",
         noSplitZonesHelp: "สร้างโต๊ะเรียงลำดับ T1–T{count} โดยไม่แบ่งโซน",
@@ -325,6 +326,7 @@ export default function NewRestaurantPage() {
         openTime: "Opening time",
         closeTime: "Closing time",
         initialTables: "Initial tables",
+        zonesLabel: "Table zones",
         splitZonesLabel: "Split into zones automatically",
         splitZonesHelp: "Tables are divided into zones based on the restaurant type (e.g. front, family).",
         noSplitZonesHelp: "Create tables numbered T1–T{count} in sequence, without zones.",
@@ -663,34 +665,40 @@ export default function NewRestaurantPage() {
                   />
                 </div>
 
-                <Field
-                  label={copy.initialTables}
-                  value={initialTables}
-                  onChange={setInitialTables}
-                  type="number"
-                  min={1}
-                  max={300}
-                  error={errors.initialTables}
-                  help={copy.tableHelp}
-                  required
-                />
-
-                <label className="flex cursor-pointer items-start justify-between gap-4 rounded-md border border-gray-300 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
-                    <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                {/* Side by side: the count and how those tables are laid out are one
+                    decision. The checkbox card is the input's height and its
+                    explanation sits under it, so the two columns line up row for row. */}
+                <div className="grid items-start gap-4 sm:grid-cols-2">
+                  <Field
+                    label={copy.initialTables}
+                    value={initialTables}
+                    onChange={setInitialTables}
+                    type="number"
+                    min={1}
+                    max={300}
+                    error={errors.initialTables}
+                    help={copy.tableHelp}
+                    required
+                  />
+                  {/* Same shape as Field (block + inline label) so the rows match. */}
+                  <div className="block space-y-2">
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{copy.zonesLabel}</span>
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
+                      <input
+                        type="checkbox"
+                        checked={splitZones}
+                        onChange={(event) => setSplitZones(event.target.checked)}
+                        className="h-4 w-4 shrink-0 accent-orange-600"
+                      />
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
                       {splitZones
                         ? copy.splitZonesHelp
                         : copy.noSplitZonesHelp.replace("{count}", Number.isInteger(tableCount) && tableCount > 0 ? String(tableCount) : "N")}
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={splitZones}
-                    onChange={(event) => setSplitZones(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
-                  />
-                </label>
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : null}
 
