@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
@@ -107,8 +107,7 @@ const EMPTY_EXPENSE_LEDGER: ExpenseLedgerState = {
 // one never reshuffles the rest, it only drops the open one below them.
 const defaultCardOrder = ["liveWork", "floorStatus", "sales", "monthReview"];
 const expandedCardStorageKey = "home:expandedCard";
-// Shared by both halves of the swipe: the page springing back under the
-// pointer, and the newly picked day sliding in.
+// The newly picked day sliding in.
 const swipeSettle: KeyframeAnimationOptions = { duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" };
 
 function minutesSince(value: string | null | undefined, now: Date) {
@@ -1285,110 +1284,14 @@ export default function Home() {
   // the page was left) is treated as closed on a date that doesn't show it.
   const openCard = expandedKey && visibleCards.includes(expandedKey) ? expandedKey : null;
 
-  // Swipe steps through the folder tabs first — left for the next one, right
-  // for the previous — and changes the day only once there's no tab left that
-  // way, or when no card is open at all. `selectDate` already refuses anything
-  // past today, so swiping forward on today does nothing.
-  // Pointer events rather than touch ones, so a mouse drag works the same as a
-  // finger; the content is moved by writing to its node directly, since a
-  // state update per pointermove would re-render the whole dashboard.
+  // The day-change animation moves this node. Swiping sideways and scrolling
+  // past the end used to step the open card or the day too; the owner had it
+  // taken out on 19 ก.ย. 2569 — it fired while just scrolling the page. The
+  // arrows, the date picker and the card tabs change them now.
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const swipeRef = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
-
-  // One step forward (+1) or back (-1), whatever gesture asked for it.
-  const swipeStep = (step: 1 | -1) => {
-    const nextCard = openCard ? visibleCards[visibleCards.indexOf(openCard) + step] : undefined;
-    if (nextCard) toggleCard(nextCard);
-    else selectDate(shiftDashboardDate(selectedDate, step));
-  };
-
-  // True when the pointer is over something that scrolls in its own right —
-  // an order sheet, a drill-down list. Those own the gesture: scrolling one
-  // shouldn't also step the day out from under it.
-  const overScroller = (target: EventTarget | null) => {
-    for (let node = target as HTMLElement | null; node && node !== document.body; node = node.parentElement) {
-      const style = getComputedStyle(node);
-      if (/auto|scroll/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return true;
-      if (/auto|scroll/.test(style.overflowX) && node.scrollWidth > node.clientWidth) return true;
-    }
-    return false;
-  };
-
-  const startSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    // Controls that own the horizontal drag themselves — the chart, native
-    // inputs — keep it. Buttons and links don't: a swipe may start on one,
-    // and a plain tap still clicks through.
-    if ((event.target as HTMLElement).closest(".recharts-wrapper, input, select, textarea")) return;
-    if (overScroller(event.target)) return;
-    swipeRef.current = { x: event.clientX, y: event.clientY, dragging: false };
-  };
-
-  const moveSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = swipeRef.current;
-    if (!start) return;
-    const dx = event.clientX - start.x;
-    if (!start.dragging) {
-      // Mostly-horizontal and past a small deadzone before this counts as a
-      // swipe at all — anything else is a scroll or a click that wobbled.
-      if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(event.clientY - start.y) * 2) return;
-      start.dragging = true;
-      // A mouse drag across the page would otherwise select every label it crosses.
-      document.body.style.userSelect = "none";
-    }
-    // Damped and capped: the page hints at the swipe, it doesn't ride away with it.
-    if (contentRef.current) contentRef.current.style.translate = `${Math.sign(dx) * Math.min(Math.abs(dx) * 0.35, 56)}px`;
-  };
-
-  const endSwipe = (event: ReactPointerEvent<HTMLDivElement>, commit: boolean) => {
-    const start = swipeRef.current;
-    swipeRef.current = null;
-    document.body.style.userSelect = "";
-    const node = contentRef.current;
-    if (!start || !node) return;
-    const held = node.style.translate;
-    node.style.translate = "";
-    if (start.dragging) node.animate([{ translate: held }, { translate: "0px" }], swipeSettle);
-    const dx = event.clientX - start.x;
-    if (!commit || !start.dragging || Math.abs(dx) < 60) return;
-    swipeStep(dx < 0 ? 1 : -1);
-  };
-
-  // Same step from the wheel. Sideways (a trackpad's two-finger swipe, or
-  // shift+wheel — Chrome reports that as deltaY, Firefox as deltaX) counts
-  // anywhere. A plain scroll still scrolls the page and only steps once
-  // there's nothing left to scroll that way, which on a page that doesn't
-  // scroll at all is every tick.
-  const wheelRef = useRef({ total: 0, locked: false, timer: 0 });
-  const wheelSwipe = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (overScroller(event.target)) return;
-    const sideways = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.shiftKey ? event.deltaY : 0;
-    const atEdge =
-      event.deltaY > 0
-        ? window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
-        : window.scrollY <= 0;
-    // Firefox reports ticks in lines (deltaMode 1) or pages (2) rather than
-    // pixels, so the threshold below has to compare like with like.
-    const delta = (sideways || (atEdge ? event.deltaY : 0)) * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
-    if (!delta) return;
-    const wheel = wheelRef.current;
-    // A trackpad flick keeps sending deltas as it coasts, and one gesture
-    // should move one step — so once it fires, stay locked until the wheel
-    // has been quiet for a moment.
-    window.clearTimeout(wheel.timer);
-    wheel.timer = window.setTimeout(() => {
-      wheel.total = 0;
-      wheel.locked = false;
-    }, 250);
-    if (wheel.locked) return;
-    wheel.total += delta;
-    if (Math.abs(wheel.total) < 90) return;
-    wheel.locked = true;
-    swipeStep(wheel.total > 0 ? 1 : -1);
-  };
 
   // The new day slides in from the side it came from, however the date was
-  // changed — swipe, arrows or the picker.
+  // changed — the arrows or the picker.
   const prevDateRef = useRef(selectedDate);
   useEffect(() => {
     const previous = prevDateRef.current;
@@ -1793,22 +1696,9 @@ export default function Home() {
 
   return (
     <div
-      // `touch-pan-y` is what makes the gesture usable on a phone: it hands
-      // vertical scrolling to the browser and keeps the horizontal axis for
-      // us, so a sideways drag isn't taken over as a scroll and cancelled
-      // halfway through. Anything inside that needs to pan sideways itself
-      // has to opt back out with `touch-none`.
       // Tall enough to carry the page background to the bottom. Phones have no
       // top bar since 19 ก.ย. 2569, so a full dvh; lg keeps its old height.
-      className="min-h-dvh lg:min-h-[calc(100dvh-3.5rem)] touch-pan-y bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
-      onWheel={wheelSwipe}
-      onPointerDown={startSwipe}
-      onPointerMove={moveSwipe}
-      onPointerUp={(event) => endSwipe(event, true)}
-      // Cancel fires when the browser takes the gesture over (a touch that
-      // turned into a scroll); leaving the page mid-drag is a miss too.
-      onPointerCancel={(event) => endSwipe(event, false)}
-      onPointerLeave={(event) => endSwipe(event, false)}
+      className="min-h-dvh lg:min-h-[calc(100dvh-3.5rem)] bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
     >
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-slate-100/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:px-6 lg:top-0 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl min-w-0 items-center gap-2">
@@ -1817,11 +1707,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* The swiped surface, the date control included: changing the day moves
-          the control and the cards it filters as one. */}
+      {/* The date control and the cards it filters: changing the day slides
+          them in as one. */}
       <div ref={contentRef} className="mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-        {/* The date sits in the same stack as the cards it filters, and rides
-            the same swipe: change the day and control and content move as one. */}
+        {/* The date sits in the same stack as the cards it filters. */}
         <div className="flex items-center gap-2">
           <div className="inline-flex min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white sm:flex-initial dark:border-gray-800 dark:bg-gray-900">
             <button type="button" onClick={() => selectDate(shiftDashboardDate(selectedDate, -1))} aria-label={copy.previousDay} title={copy.previousDay} className="ui-press inline-flex h-10 w-10 items-center justify-center border-r border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">
