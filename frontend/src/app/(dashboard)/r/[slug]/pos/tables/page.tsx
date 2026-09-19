@@ -667,7 +667,7 @@ export default function PosTablesPage() {
       {isNavigating ? (
         <div aria-hidden="true" className="fixed inset-0 z-[var(--z-modal)] cursor-wait bg-transparent" />
       ) : null}
-      <div data-shell-sticky="" className="fixed inset-x-0 top-14 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto">
+      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto">
         <h1 className="sr-only">{copy.eyebrow}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-5">
           <div className="grid w-full gap-1.5 lg:flex lg:items-center lg:gap-2">

@@ -364,42 +364,8 @@ function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function RestaurantHeader({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const { activeMembership } = useAuth();
-  const { language } = useLanguage();
-  const restaurantName = activeMembership?.restaurant?.name ?? (language === 'th' ? 'เลือกร้าน' : 'Select restaurant');
-  const switchLabel = language === 'th' ? 'เปลี่ยน' : 'Switch';
-
-  return (
-    <div className={`min-w-0 transition-all duration-300 ${collapsed ? 'w-full flex justify-center' : 'flex-1'}`}>
-      <Link
-        href="/restaurants"
-        onClick={onNavigate}
-        title={collapsed ? restaurantName : undefined}
-        className={`flex min-w-0 items-center rounded-md border border-transparent transition-[background-color,border-color,gap,padding] duration-300 ${
-          collapsed 
-            ? 'justify-center gap-0 p-1 hover:bg-transparent' 
-            : 'gap-2.5 px-1.5 py-1.5 hover:border-[var(--rail-border)] hover:bg-[var(--rail-hover-bg)]'
-        }`}
-      >
-        <AppLogo size={32} />
-        <div
-          className={`flex min-w-0 flex-1 items-center justify-between gap-2 transition-all duration-300 ${
-            collapsed ? 'w-0 opacity-0 pointer-events-none overflow-hidden' : 'w-auto opacity-100'
-          }`}
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-semibold leading-[1.6] text-[var(--rail-fg)]">{restaurantName}</span>
-          </span>
-          <span className="shrink-0 text-[11px] font-semibold text-[var(--rail-fg-muted)]">{switchLabel}</span>
-        </div>
-      </Link>
-    </div>
-  );
-}
-
 export default function Sidebar() {
-  const { href: restaurantPageHref } = useRestaurantNav();
+  const { href: restaurantPageHref, pagePath } = useRestaurantNav();
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
   const mobileDrawerRef = useRef<HTMLElement>(null);
@@ -407,6 +373,12 @@ export default function Sidebar() {
   const collapseTitle = collapsed
     ? language === 'th' ? 'ขยายแถบด้านข้าง' : 'Expand sidebar'
     : language === 'th' ? 'ย่อแถบด้านข้าง' : 'Collapse sidebar';
+
+  // Any page change closes the phone menu, including the account menu's own
+  // links, which do not go through NavLinks' onNavigate.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pagePath, setMobileOpen]);
 
   useEffect(() => {
     if (mobileOpen) return;
@@ -441,7 +413,15 @@ export default function Sidebar() {
         `}
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
-          <RestaurantHeader collapsed={false} onNavigate={() => setMobileOpen(false)} />
+          <Link
+            href={restaurantPageHref("/home")}
+            aria-label="Dishy"
+            onClick={() => setMobileOpen(false)}
+            className="flex min-w-0 items-center gap-2 px-1.5"
+          >
+            <AppLogo size={32} />
+            <AppWordmark height={22} className="shrink-0 text-[var(--rail-fg)]" />
+          </Link>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setMobileOpen(false)}
@@ -456,6 +436,13 @@ export default function Sidebar() {
         </div>
 
         <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
+
+        {/* The restaurant and the person at the foot, as on a computer. The
+            account menu used to be the avatar on the phone top bar. */}
+        <div className="flex shrink-0 flex-col gap-0.5 border-t border-[var(--rail-border)] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <RestaurantSwitcherCard collapsed={false} />
+          <DashboardAccountMenu variant="rail" />
+        </div>
       </aside>
 
       <aside

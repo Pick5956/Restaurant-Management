@@ -246,7 +246,7 @@ export default function DashboardAccountMenu({
         <div
           ref={menuRef}
           role="menu"
-          className={`fixed z-[var(--z-dropdown)] w-72 max-w-[calc(100dvw-1rem)] overflow-hidden rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white py-2 shadow-[0_2px_4px_rgba(15,23,42,0.06),0_16px_40px_rgba(15,23,42,0.14)] dark:bg-gray-950 dark:shadow-[0_2px_4px_rgba(0,0,0,0.35),0_16px_40px_rgba(0,0,0,0.55)] ${menuPosition ? "" : "opacity-0"}`}
+          className={`fixed z-[calc(var(--z-modal)+1)] w-72 max-w-[calc(100dvw-1rem)] overflow-hidden rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white py-2 shadow-[0_2px_4px_rgba(15,23,42,0.06),0_16px_40px_rgba(15,23,42,0.14)] dark:bg-gray-950 dark:shadow-[0_2px_4px_rgba(0,0,0,0.35),0_16px_40px_rgba(0,0,0,0.55)] ${menuPosition ? "" : "opacity-0"}`}
           style={{ top: menuPosition?.top ?? -9999, left: menuPosition?.left ?? -9999 }}
         >
           {panel === "main" ? (

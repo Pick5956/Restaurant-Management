@@ -1798,11 +1798,9 @@ export default function Home() {
       // us, so a sideways drag isn't taken over as a scroll and cancelled
       // halfway through. Anything inside that needs to pan sideways itself
       // has to opt back out with `touch-none`.
-      // Tall enough to carry the page background to the bottom on mobile, but no
-      // taller: MobileTopBar sits above <main> (pt-14), so a flat min-h-dvh would
-      // push an empty dashboard past the viewport. On lg the shell sheet owns the
-      // height, so no viewport min-height is set at all.
-      className="min-h-[calc(100dvh-3.5rem)] touch-pan-y bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
+      // Tall enough to carry the page background to the bottom. Phones have no
+      // top bar since 19 ก.ย. 2569, so a full dvh; lg keeps its old height.
+      className="min-h-dvh lg:min-h-[calc(100dvh-3.5rem)] touch-pan-y bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
       onWheel={wheelSwipe}
       onPointerDown={startSwipe}
       onPointerMove={moveSwipe}
@@ -1812,7 +1810,7 @@ export default function Home() {
       onPointerCancel={(event) => endSwipe(event, false)}
       onPointerLeave={(event) => endSwipe(event, false)}
     >
-      <header className="sticky top-14 z-20 border-b border-gray-200 bg-slate-100/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:px-6 lg:top-0 lg:px-8">
+      <header className="sticky top-0 z-20 border-b border-gray-200 bg-slate-100/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:px-6 lg:top-0 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl min-w-0 items-center gap-2">
           <h1 className="text-[28px] font-bold tracking-tight text-gray-950 dark:text-white sm:text-[34px]">{copy.title}</h1>
           {refreshing ? <Loader2 className="h-5 w-5 animate-spin text-gray-500" aria-label={copy.loading} /> : null}
