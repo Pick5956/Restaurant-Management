@@ -275,6 +275,7 @@ export default function NewRestaurantPage() {
         openTime: "เวลาเปิด",
         closeTime: "เวลาปิด",
         initialTables: "จำนวนโต๊ะเริ่มต้น",
+        zonesLabel: "โซนโต๊ะ",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
         zonedSummary: "แบ่งโซนอัตโนมัติ",
         flatSummary: "ไม่แบ่งโซน (เรียงลำดับ)",
@@ -345,6 +346,7 @@ export default function NewRestaurantPage() {
         openTime: "Opening time",
         closeTime: "Closing time",
         initialTables: "Initial tables",
+        zonesLabel: "Table zones",
         splitZonesLabel: "Split into zones automatically",
         zonedSummary: "Auto-split into zones",
         flatSummary: "No zones (sequential)",
@@ -696,11 +698,10 @@ export default function NewRestaurantPage() {
                     hint={copy.tableHelp}
                     required
                   />
-                  {/* Just the checkbox — its words say what it does. An empty line
-                      where a heading would be, and a row the input's height, keep
-                      it level with the number box; on a phone they stack. */}
+                  {/* A heading like the field beside it, then the checkbox in a row
+                      the input's height, so the two columns line up. */}
                   <div className="block space-y-2">
-                    <span aria-hidden="true" className="hidden text-sm font-medium sm:inline">&nbsp;</span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{copy.zonesLabel}</span>
                     <label className="flex h-[43.6px] cursor-pointer items-center gap-2.5">
                       <input
                         type="checkbox"
