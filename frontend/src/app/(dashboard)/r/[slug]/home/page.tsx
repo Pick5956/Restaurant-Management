@@ -554,6 +554,13 @@ function CollapsibleCard({
   const hasFaceTable = Boolean(rows?.length || summary?.length);
   // The topic whose heading was pointed at last; null until one is.
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  // Until someone picks, the most urgent topic that has anything in it is
+  // open: the rows come in priority order (late, cooking, stock), so it is
+  // the first heading with a count above zero. Nothing anywhere = none open.
+  const autoFocusKey = focusOnHover
+    ? rows?.find((row) => row.heading && Number(String(row.value).replace(/[^\d.]/g, "")) > 0)?.key ?? null
+    : null;
+  const activeKey = focusKey ?? autoFocusKey;
   const faceRowsRef = useRef<HTMLDivElement>(null);
 
   // Heights are set in pixels and animated with a CSS transition. Flex sizes
@@ -572,7 +579,7 @@ function CollapsibleCard({
       // to its bar, and the one tapped opens to its own rows, at most half
       // the screen, scrolling past that.
       const phone = !window.matchMedia("(min-width: 640px)").matches;
-      if (focusKey === null && !phone) {
+      if (activeKey === null && !phone) {
         for (const block of blocks) {
           block.style.flex = "";
           block.style.height = "";
@@ -589,9 +596,9 @@ function CollapsibleCard({
       // offsetHeight, not getBoundingClientRect: the card tilts and scales up
       // 5% while hovered, and a scaled reading would start every slide 5% big.
       const starts = blocks.map((block) => block.offsetHeight);
-      const rest = blocks.reduce((sum, block, i) => (block.dataset.key === focusKey ? sum : sum + bars[i]), 0) + gap * (blocks.length - 1);
+      const rest = blocks.reduce((sum, block, i) => (block.dataset.key === activeKey ? sum : sum + bars[i]), 0) + gap * (blocks.length - 1);
       const targets = blocks.map((block, i) => {
-        if (block.dataset.key !== focusKey) return bars[i];
+        if (block.dataset.key !== activeKey) return bars[i];
         if (phone) {
           const rows = (block.lastElementChild as HTMLElement | null)?.scrollHeight ?? 0;
           return bars[i] + Math.min(rows, window.innerHeight * 0.5);
@@ -613,11 +620,12 @@ function CollapsibleCard({
       });
     };
     // The first placement on a phone (all folded) is not a slide.
+    // Only a pick slides; the opening layout is simply there.
     place(focusKey !== null);
     const onResize = () => place(false);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [focusKey, focusOnHover]);
+  }, [activeKey, focusKey, focusOnHover]);
   // Opening, closing and switching cards all happen in one render — no fades,
   // no deferred unmount, no FLIP on the tabs that shuffle around them. Every
   // tab keeps its fixed slot via `collapsedRank`; only the open card's body
@@ -706,7 +714,7 @@ function CollapsibleCard({
                   onClick={
                     focusOnHover
                       ? (event) => {
-                          if (!window.matchMedia("(hover: none)").matches || focusKey === block.head.key) return;
+                          if (!window.matchMedia("(hover: none)").matches || activeKey === block.head.key) return;
                           event.preventDefault();
                           event.stopPropagation();
                           setFocusKey(block.head.key);
