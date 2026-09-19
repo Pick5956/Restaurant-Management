@@ -1016,6 +1016,11 @@ export default function Home() {
   // raises the same panel a cursor would and the second one goes to the order —
   // the two things a mouse does at once, split across two taps.
   const [openTicket, setOpenTicket] = useState<string | null>(null);
+  // The order list and the stock list in the open work card start folded to
+  // their heading; a click on the heading opens one to its rows. While both
+  // are folded the kitchen lanes have the card to themselves.
+  const [openLists, setOpenLists] = useState({ orders: false, stock: false });
+  const toggleList = (key: "orders" | "stock") => setOpenLists((current) => ({ ...current, [key]: !current[key] }));
   const [salesDaysLoading, setSalesDaysLoading] = useState(false);
   const salesDaysLoadedRef = useRef(false);
   const [salesHours, setSalesHours] = useState<ReportSalesHour[]>([]);
@@ -2463,7 +2468,7 @@ export default function Home() {
                 collapsedRank={collapsedRank("liveWork")}
                 onToggle={() => toggleCard("liveWork")}
               >
-                  <div className="border-b border-gray-200 dark:border-gray-800 xl:shrink-0">
+                  <div className="border-b border-gray-200 dark:border-gray-800 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
                     <div className="flex items-center justify-between px-4 py-3">
                       <div>
                         <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.kitchenQueue}</h3>
@@ -2476,25 +2481,25 @@ export default function Home() {
                         across a desktop card read as two lonely ends of a line.
                         Three across from `lg`, each in its own column. */}
                     {tickets.length ? (
-                      <div className="grid max-w-md gap-px bg-gray-200 dark:bg-gray-800 lg:max-w-none lg:grid-cols-3">
+                      <div className="grid max-w-md gap-px bg-gray-200 dark:bg-gray-800 lg:max-w-none lg:grid-cols-3 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)]">
                         {lanes.map((lane) => {
                           const Icon = lane.icon;
                           return (
-                            <div key={lane.key} className="bg-white dark:bg-gray-900">
+                            <div key={lane.key} className="bg-white dark:bg-gray-900 xl:flex xl:min-h-0 xl:flex-col">
                               {/* Each lane's header wears the lane's colour, so
                                   a glance down the open card tells overdue from
                                   cooking from done without reading a word. */}
-                              <div className={`flex items-center justify-between border-b px-4 py-2.5 ${lane.tint}`}>
+                              <div className={`flex items-center justify-between border-b px-4 py-3 ${lane.tint}`}>
                                 <div className={`flex items-center gap-2 ${lane.color}`}>
-                                  <Icon className="h-4 w-4" aria-hidden="true" />
-                                  <h4 className="text-[12px] font-semibold">{lane.title}</h4>
+                                  <Icon className="h-5 w-5" aria-hidden="true" />
+                                  <h4 className="text-[15px] font-bold">{lane.title}</h4>
                                 </div>
-                                <span className={`font-mono text-[11px] font-semibold ${lane.color}`}>{lane.items.length}</span>
+                                <span className={`font-mono text-[15px] font-bold ${lane.color}`}>{lane.items.length}</span>
                               </div>
                               {/* The whole lane, scrolled: a busy service is
                                   exactly when you need the tickets under the
                                   fifth one, and the three lanes stay level. */}
-                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-[24dvh]">
+                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-none xl:min-h-0 xl:flex-1">
                                 {lane.items.length ? lane.items.map((ticket) => (
                                   <button key={`${lane.key}-${ticket.id}`} type="button" onClick={(event) => {
                                       if (openTicket !== ticket.id && ticket.items.length && window.matchMedia("(hover: none)").matches) {
@@ -2541,16 +2546,24 @@ export default function Home() {
                     `xl`, not `lg`: on a tablet the orders pane would be about
                     530px and the order row needs every bit of that, so the two
                     stack instead of squeezing. */}
-                <div className="xl:flex xl:min-h-0 xl:flex-1 xl:items-stretch">
+                <div className={`xl:flex xl:items-stretch ${openLists.orders || openLists.stock ? "xl:min-h-0 xl:flex-1" : "xl:flex-none"}`}>
                 <div className="min-w-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:border-r xl:border-gray-200 xl:dark:border-gray-800">
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div>
-                      <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.dailyOrders}</h3>
-                      <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{validOrders.length} {copy.order}</p>
-                    </div>
+                    <button
+                      type="button"
+                      aria-expanded={openLists.orders}
+                      onClick={() => toggleList("orders")}
+                      className="ui-press -m-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-xl p-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${openLists.orders ? "" : "-rotate-90"}`} aria-hidden="true" />
+                      <span>
+                        <span className="block text-[13px] font-semibold text-gray-950 dark:text-white">{copy.dailyOrders}</span>
+                        <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">{validOrders.length} {copy.order}</span>
+                      </span>
+                    </button>
                     <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
-                  {orders.length ? (
+                  {!openLists.orders ? null : orders.length ? (
                     <div ref={smoothScroll} className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-none xl:min-h-0 xl:flex-1">
                       {/* Five columns need ~580px including gaps. That is more
                           than a phone-width card has at `sm`, so the row only
@@ -2578,13 +2591,21 @@ export default function Home() {
                     fix is one click from the warning. */}
                 <div className="border-t border-gray-200 dark:border-gray-800 xl:flex xl:min-h-0 xl:w-2/5 xl:flex-col xl:border-t-0">
                   <div className={`flex items-center justify-between gap-3 border-b px-4 py-3 ${rowTint.orange}`}>
-                    <div className="text-orange-700 dark:text-orange-300">
-                      <h3 className="text-[13px] font-semibold">{copy.stockRisks}</h3>
-                      <p className="mt-0.5 text-[11px] opacity-80">{stockRisks.length} {copy.ingredients}</p>
-                    </div>
+                    <button
+                      type="button"
+                      aria-expanded={openLists.stock}
+                      onClick={() => toggleList("stock")}
+                      className="ui-press -m-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-xl p-1.5 text-left text-orange-700 hover:bg-orange-100/60 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                    >
+                      <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 transition-transform duration-200 ${openLists.stock ? "" : "-rotate-90"}`} aria-hidden="true" />
+                      <span>
+                        <span className="block text-[13px] font-semibold">{copy.stockRisks}</span>
+                        <span className="mt-0.5 block text-[11px] opacity-80">{stockRisks.length} {copy.ingredients}</span>
+                      </span>
+                    </button>
                     <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
-                  {stockRisks.length ? (
+                  {!openLists.stock ? null : stockRisks.length ? (
                     <div ref={smoothScroll} className="grid max-h-56 content-start gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:max-h-none xl:min-h-0 xl:flex-1 xl:grid-cols-1">
                       {stockRisks.map((risk) => (
                         <button
