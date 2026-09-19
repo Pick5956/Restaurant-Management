@@ -21,7 +21,8 @@ import { useLanguage } from '@/src/providers/LanguageProvider';
 // owner's phone the same day). Mouse uses pointer events and click.
 
 const STORAGE_KEY = 'dishy.navHandleTop';
-const HOLD_MS = 350;
+// 350ms felt too long on the phone (19 ก.ย. 2569); 150ms still tells a tap from a hold.
+const HOLD_MS = 150;
 const MOVE_CANCEL_PX = 8;
 const EDGE_GAP = 8;
 const HANDLE_H = 40;
