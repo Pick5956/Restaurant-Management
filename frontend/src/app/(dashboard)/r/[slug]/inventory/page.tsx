@@ -1344,6 +1344,33 @@ export default function InventoryPage() {
     return <InventoryMobile canView={canView} canManage={canManage} />;
   }
 
+  // Stock / history switch. It sits in the toolbar row beside the filter
+  // button, so the bar is one row tall and the table starts right under it.
+  const viewTabs = (
+    <div className="flex h-9 w-fit shrink-0 items-center gap-0.5 rounded-xl border border-slate-200 bg-white p-[3px] shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
+      {(["stock", "history"] as const).map((key) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setTab(key)}
+          className={`inline-flex h-7 items-center rounded-lg px-3 text-[12px] font-semibold transition ${
+            tab === key
+              ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
+          }`}
+        >
+          {key === "stock"
+            ? lang === "th"
+              ? "สต๊อกปัจจุบัน"
+              : "Stock"
+            : lang === "th"
+              ? "ประวัติทั้งคลัง"
+              : "History"}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <>
       <div
@@ -1353,30 +1380,6 @@ export default function InventoryPage() {
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">
-          {/* The tabs live inside the sticky bar so switching views stays reachable
-              on a phone, where the bar is fixed and the list scrolls under it. */}
-          <div className="mb-2 flex w-fit items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-            {(["stock", "history"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setTab(key)}
-                className={`inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold transition ${
-                  tab === key
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                    : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
-                }`}
-              >
-                {key === "stock"
-                  ? lang === "th"
-                    ? "สต๊อกปัจจุบัน"
-                    : "Stock"
-                  : lang === "th"
-                    ? "ประวัติทั้งคลัง"
-                    : "History"}
-              </button>
-            ))}
-          </div>
           {/* The history tab brings its own search box and export button, so the
               stock toolbar would duplicate both — it belongs to the stock tab only. */}
           {/* Below sm the header is a column, so every direct child becomes its own
@@ -1384,6 +1387,7 @@ export default function InventoryPage() {
               slab covering most of a phone screen, so the children are grouped:
               search + filter share one row, and the actions wrap instead of
               stacking. Same shape the tables page uses. */}
+          {tab === "history" && viewTabs}
           {tab === "stock" && (
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
@@ -1527,6 +1531,7 @@ export default function InventoryPage() {
               </>
             )}
           </div>
+          {viewTabs}
           </div>
           {/* Value and the action buttons wrap onto as few rows as fit, rather than
               one row each. The flex-1 spacer only exists to push them right on a
@@ -1616,64 +1621,63 @@ export default function InventoryPage() {
           </div>
           </header>
           )}
+          {/* Active filters ride in the bar too: anything between the bar and the
+              table pushes the table down at the top of the page, and it then jumps
+              up to meet the bar once the column titles start sticking. */}
+          {tab === "stock" && (statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
+              {statusFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("all")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {lang === "th" ? "สถานะ" : "Status"} ·{" "}
+                  {statusFilter === "ok" ? copy.filterOk : statusFilter === "low" ? copy.filterLow : copy.filterOut}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {categoryFilter !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter(0)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {copy.category} · {categoryNameById.get(categoryFilter) ?? ""}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {expiryFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setExpiryFilter("all")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setCategoryFilter(0);
+                  setExpiryFilter("all");
+                }}
+                className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                {lang === "th" ? "ล้างทั้งหมด" : "Clear all"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div aria-hidden="true" className="lg:hidden" style={{ height: stickyToolbarHeight }} />
-      <div className="min-h-dvh bg-slate-100 px-4 py-4 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:py-6">
+      <div className="min-h-dvh bg-slate-100 px-4 pb-4 pt-0 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:pb-6">
         <div className="space-y-5">
         {tab === "stock" && (
         <>
-
-        {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
-            {statusFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setStatusFilter("all")}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {lang === "th" ? "สถานะ" : "Status"} ·{" "}
-                {statusFilter === "ok" ? copy.filterOk : statusFilter === "low" ? copy.filterLow : copy.filterOut}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            {categoryFilter !== 0 && (
-              <button
-                type="button"
-                onClick={() => setCategoryFilter(0)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {copy.category} · {categoryNameById.get(categoryFilter) ?? ""}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            {expiryFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setExpiryFilter("all")}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter("all");
-                setCategoryFilter(0);
-                setExpiryFilter("all");
-              }}
-              className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
-            >
-              {lang === "th" ? "ล้างทั้งหมด" : "Clear all"}
-            </button>
-          </div>
-        )}
-
-
-
 
           <div className="grid gap-4">
             {/* The radius and the clipping live on the same element, or the
