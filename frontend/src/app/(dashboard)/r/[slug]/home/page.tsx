@@ -1023,10 +1023,12 @@ export default function Home() {
   // the two things a mouse does at once, split across two taps.
   const [openTicket, setOpenTicket] = useState<string | null>(null);
   // The order list and the stock list in the open work card start folded to
-  // their heading; a click on the heading opens one to its rows. While both
-  // are folded the kitchen lanes have the card to themselves.
-  const [openLists, setOpenLists] = useState({ orders: false, stock: false });
-  const toggleList = (key: "orders" | "stock") => setOpenLists((current) => ({ ...current, [key]: !current[key] }));
+  // their heading. They sit side by side, so they open and close together: a
+  // click on either heading opens both — one open beside one folded left a
+  // tall blank column. While folded the kitchen lanes have the card.
+  const [listsOpen, setListsOpen] = useState(false);
+  const openLists = { orders: listsOpen, stock: listsOpen };
+  const toggleList = () => setListsOpen((open) => !open);
   const [salesDaysLoading, setSalesDaysLoading] = useState(false);
   const salesDaysLoadedRef = useRef(false);
   const [salesHours, setSalesHours] = useState<ReportSalesHour[]>([]);
@@ -2568,7 +2570,7 @@ export default function Home() {
                     <button
                       type="button"
                       aria-expanded={openLists.orders}
-                      onClick={() => toggleList("orders")}
+                      onClick={toggleList}
                       className="ui-press -m-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-xl p-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                       <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${openLists.orders ? "" : "-rotate-90"}`} aria-hidden="true" />
@@ -2610,7 +2612,7 @@ export default function Home() {
                     <button
                       type="button"
                       aria-expanded={openLists.stock}
-                      onClick={() => toggleList("stock")}
+                      onClick={toggleList}
                       className="ui-press -m-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-xl p-1.5 text-left text-orange-700 hover:bg-orange-100/60 dark:text-orange-300 dark:hover:bg-orange-950/40"
                     >
                       <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 transition-transform duration-200 ${openLists.stock ? "" : "-rotate-90"}`} aria-hidden="true" />
