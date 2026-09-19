@@ -555,10 +555,22 @@ function CollapsibleCard({
   // the room the others' heading bars leave, the others close to the bar.
   useLayoutEffect(() => {
     const box = faceRowsRef.current;
-    if (!focusOnHover || !box || focusKey === null) return;
+    if (!focusOnHover || !box) return;
     const place = (animate: boolean) => {
       const blocks = [...box.children] as HTMLElement[];
       if (!blocks.length) return;
+      // A phone face has no fixed height (the tile is only square from
+      // `sm`), so there is no "room" to share out: every topic starts folded
+      // to its bar, and the one tapped opens to its own rows, at most half
+      // the screen, scrolling past that.
+      const phone = !window.matchMedia("(min-width: 640px)").matches;
+      if (focusKey === null && !phone) {
+        for (const block of blocks) {
+          block.style.flex = "";
+          block.style.height = "";
+        }
+        return;
+      }
       // Every read before any write. Writing one block's size and then
       // reading the next made the browser lay the next one out at its full
       // natural height (855px for a 23-row stock list), and the slide started
@@ -570,7 +582,14 @@ function CollapsibleCard({
       // 5% while hovered, and a scaled reading would start every slide 5% big.
       const starts = blocks.map((block) => block.offsetHeight);
       const rest = blocks.reduce((sum, block, i) => (block.dataset.key === focusKey ? sum : sum + bars[i]), 0) + gap * (blocks.length - 1);
-      const targets = blocks.map((block, i) => (block.dataset.key === focusKey ? Math.max(bars[i], room - rest) : bars[i]));
+      const targets = blocks.map((block, i) => {
+        if (block.dataset.key !== focusKey) return bars[i];
+        if (phone) {
+          const rows = (block.lastElementChild as HTMLElement | null)?.scrollHeight ?? 0;
+          return bars[i] + Math.min(rows, window.innerHeight * 0.5);
+        }
+        return Math.max(bars[i], room - rest);
+      });
       if (animate) {
         blocks.forEach((block, i) => {
           block.style.flex = "none";
@@ -585,7 +604,8 @@ function CollapsibleCard({
         block.style.height = `${targets[i]}px`;
       });
     };
-    place(true);
+    // The first placement on a phone (all folded) is not a slide.
+    place(focusKey !== null);
     const onResize = () => place(false);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -662,7 +682,29 @@ function CollapsibleCard({
               >
                 {block.head.heading ? (
                 <div
-                  onMouseEnter={focusOnHover ? () => setFocusKey(block.head.key) : undefined}
+                  onMouseEnter={
+                    focusOnHover
+                      ? () => {
+                          // A tap sends a fake mouseenter first; on a touch
+                          // screen the tap itself decides, below.
+                          if (window.matchMedia("(hover: none)").matches) return;
+                          setFocusKey(block.head.key);
+                        }
+                      : undefined
+                  }
+                  // Touch: the first tap on a topic opens it instead of the
+                  // card. A tap inside the open topic falls through to the
+                  // card's own click and opens the card.
+                  onClick={
+                    focusOnHover
+                      ? (event) => {
+                          if (!window.matchMedia("(hover: none)").matches || focusKey === block.head.key) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setFocusKey(block.head.key);
+                        }
+                      : undefined
+                  }
                   style={{ fontSize: rowTopicText }}
                   className={`flex items-baseline gap-1.5 border-b border-gray-200 bg-gray-50 px-2 py-0.5 leading-tight dark:border-gray-800 dark:bg-gray-700 ${block.head.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
                 >
