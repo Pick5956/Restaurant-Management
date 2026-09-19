@@ -20,6 +20,10 @@ const PANEL_HEIGHT = WHEEL_HEIGHT + DONE_BLOCK + PANEL_PADDING * 2;
 const VIEWPORT_MARGIN = 8;
 // Rows laid out per wheel, so a hard flick still has somewhere to go.
 const LOOP_ROWS = 60;
+// A released drag keeps going as far as its speed would carry it in this
+// long, capped so a hard flick spins at most this many rows.
+const GLIDE_MS = 220;
+const GLIDE_MAX_ROWS = 12;
 // How long the column must sit still before the value under the band counts.
 const SETTLE_MS = 120;
 
@@ -78,6 +82,11 @@ function WheelColumn({
   // Mouse drag: the pointer's start, and whether it has moved far enough to be
   // a drag rather than a click on a row.
   const drag = useRef<{ y: number; top: number; moved: boolean; id: number } | null>(null);
+  // The last few pointer positions of a drag, to measure how fast it was let go.
+  const trail = useRef<{ t: number; y: number }[]>([]);
+  const glideFrame = useRef<number | null>(null);
+  // True while dragging or gliding: scroll-snap is off for both, or it would
+  // pull the rows back to the nearest one on every frame.
   const [dragging, setDragging] = useState(false);
 
   // Land on the saved value before the panel paints, without animating.
@@ -113,7 +122,48 @@ function WheelColumn({
     [],
   );
 
+  const stopGlide = () => {
+    if (glideFrame.current !== null) cancelAnimationFrame(glideFrame.current);
+    glideFrame.current = null;
+  };
+
+  useEffect(() => stopGlide, []);
+
+  /**
+   * Let go of a drag and the wheel carries on, the way it does on an iPhone:
+   * it travels as far as the release speed would take it in GLIDE_MS, slows
+   * down, and stops square on a row. A slow release barely moves; a flick
+   * spins several rows.
+   */
+  const glide = (velocity: number) => {
+    const node = ref.current;
+    if (!node) return;
+    stopGlide();
+    const from = node.scrollTop;
+    const travel = Math.max(-GLIDE_MAX_ROWS * ROW, Math.min(GLIDE_MAX_ROWS * ROW, -velocity * GLIDE_MS));
+    const target = Math.min(Math.max(Math.round((from + travel) / ROW), 0), rows - 1);
+    // Closing the panel mid-glide keeps where it was heading.
+    wheelTarget.current = target;
+    const distance = target * ROW - from;
+    const duration = Math.min(900, Math.max(260, Math.abs(distance) * 2.2));
+    const start = performance.now();
+    setDragging(true);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      node.scrollTop = from + distance * eased;
+      if (t < 1) {
+        glideFrame.current = requestAnimationFrame(step);
+      } else {
+        glideFrame.current = null;
+        setDragging(false);
+      }
+    };
+    glideFrame.current = requestAnimationFrame(step);
+  };
+
   const rollTo = (index: number) => {
+    stopGlide();
     const clamped = Math.min(Math.max(index, 0), rows - 1);
     ref.current?.scrollTo({ top: clamped * ROW, behavior: "smooth" });
     return clamped;
@@ -131,6 +181,11 @@ function WheelColumn({
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       if (!event.deltaY) return;
+      if (glideFrame.current !== null) {
+        stopGlide();
+        wheelTarget.current = null;
+        setDragging(false);
+      }
       const delta = event.deltaMode === 1 ? event.deltaY * ROW : event.deltaY;
       const now = event.timeStamp;
       // The first event after a pause always turns one row, whatever its size.
@@ -162,7 +217,7 @@ function WheelColumn({
     setLive(index);
     if (settleTimer.current) window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
-      if (drag.current) return;
+      if (drag.current || glideFrame.current !== null) return;
       settleTimer.current = null;
       wheelTarget.current = null;
       wheelCarry.current = 0;
@@ -186,7 +241,13 @@ function WheelColumn({
       // Touch already scrolls natively, so this is mouse only.
       onPointerDown={(event) => {
         if (event.pointerType !== "mouse" || event.button !== 0 || !ref.current) return;
+        // Grabbing a gliding wheel stops it where it is, like a finger would.
+        if (glideFrame.current !== null) {
+          stopGlide();
+          setDragging(false);
+        }
         drag.current = { y: event.clientY, top: ref.current.scrollTop, moved: false, id: event.pointerId };
+        trail.current = [{ t: event.timeStamp, y: event.clientY }];
       }}
       onPointerMove={(event) => {
         const node = ref.current;
@@ -199,10 +260,17 @@ function WheelColumn({
           // release to the column instead of the row, and a plain click on a
           // row would stop working.
           current.moved = true;
-          node.setPointerCapture(event.pointerId);
+          try {
+            node.setPointerCapture(event.pointerId);
+          } catch {
+            // The pointer is already gone (released between events); the drag
+            // still works for as long as it stays over the wheel.
+          }
           setDragging(true);
         }
         node.scrollTop = current.top - dy;
+        trail.current.push({ t: event.timeStamp, y: event.clientY });
+        if (trail.current.length > 8) trail.current.shift();
       }}
       onPointerUp={(event) => {
         const node = ref.current;
@@ -211,12 +279,17 @@ function WheelColumn({
         drag.current = null;
         if (!current.moved) return;
         if (node.hasPointerCapture(event.pointerId)) node.releasePointerCapture(event.pointerId);
-        setDragging(false);
-        wheelTarget.current = null;
-        rollTo(Math.round(node.scrollTop / ROW));
+        // Speed over the last ~80ms of the drag, in px per ms. A pause before
+        // letting go reads as zero, so a careful drag still lands where it is.
+        const recent = trail.current.filter((point) => event.timeStamp - point.t <= 80);
+        const first = recent[0];
+        const velocity =
+          first && event.timeStamp - first.t > 0 ? (event.clientY - first.y) / (event.timeStamp - first.t) : 0;
+        glide(velocity);
       }}
       onPointerCancel={() => {
         drag.current = null;
+        stopGlide();
         setDragging(false);
       }}
       onKeyDown={(event) => {
