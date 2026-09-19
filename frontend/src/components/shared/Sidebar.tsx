@@ -441,7 +441,10 @@ export default function Sidebar() {
             account menu used to be the avatar on the phone top bar. */}
         <div className="flex shrink-0 flex-col gap-0.5 border-t border-[var(--rail-border)] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RestaurantSwitcherCard collapsed={false} />
-          <DashboardAccountMenu variant="rail" />
+          {/* Keyed on the drawer: closing the drawer remounts it, which shuts an
+              open account menu too. The menu is portalled to body, so it stayed
+              on screen after the drawer slid away (19 ก.ย. 2569). */}
+          <DashboardAccountMenu key={mobileOpen ? 'drawer-open' : 'drawer-closed'} variant="rail" />
         </div>
       </aside>
 
