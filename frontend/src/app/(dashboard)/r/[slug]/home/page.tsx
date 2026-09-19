@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import Link from "next/link";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
@@ -546,6 +546,41 @@ function CollapsibleCard({
   const hasFaceTable = Boolean(rows?.length || summary?.length);
   // The topic whose heading was pointed at last; null until one is.
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const faceRowsRef = useRef<HTMLDivElement>(null);
+
+  // Heights are set in pixels and animated with a CSS transition. Flex sizes
+  // and hiding the rows cannot be animated — the topics snapped open and shut.
+  // Each block starts from the height it has now (measured, so the first
+  // switch away from the shared layout slides too): the focused one takes all
+  // the room the others' heading bars leave, the others close to the bar.
+  useLayoutEffect(() => {
+    const box = faceRowsRef.current;
+    if (!focusOnHover || !box || focusKey === null) return;
+    const place = (animate: boolean) => {
+      const blocks = [...box.children] as HTMLElement[];
+      if (!blocks.length) return;
+      const gap = parseFloat(getComputedStyle(box).rowGap) || 0;
+      const bar = (block: HTMLElement) => (block.firstElementChild as HTMLElement | null)?.offsetHeight ?? 0;
+      const others = blocks.filter((block) => block.dataset.key !== focusKey);
+      const rest = others.reduce((sum, block) => sum + bar(block), 0) + gap * (blocks.length - 1);
+      if (animate) {
+        for (const block of blocks) {
+          block.style.flex = "none";
+          block.style.height = `${block.getBoundingClientRect().height}px`;
+        }
+        void box.offsetHeight; // commit the start heights before the targets
+      }
+      for (const block of blocks) {
+        const target = block.dataset.key === focusKey ? Math.max(bar(block), box.clientHeight - rest) : bar(block);
+        block.style.flex = "none";
+        block.style.height = `${target}px`;
+      }
+    };
+    place(true);
+    const onResize = () => place(false);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [focusKey, focusOnHover]);
   // Opening, closing and switching cards all happen in one render — no fades,
   // no deferred unmount, no FLIP on the tabs that shuffle around them. Every
   // tab keeps its fixed slot via `collapsedRank`; only the open card's body
@@ -592,6 +627,7 @@ function CollapsibleCard({
           // gap. `min-h-0` + `overflow-hidden` stop a long list from stretching
           // the tile past its neighbours.
           <div
+            ref={faceRowsRef}
             style={{ containerType: "inline-size" }}
             className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"
           >
@@ -600,19 +636,17 @@ function CollapsibleCard({
               // which shows every table as one grid) renders its head as content
               // and skips the topic bar entirely.
               const contentRows = block.head.heading ? block.items : [block.head, ...block.items];
-              // With a topic in focus it takes all the spare room and the
-              // others shrink to their heading bar; before any, all share.
-              const focused = focusOnHover && focusKey !== null ? focusKey === block.head.key : null;
               return (
               <div
                 key={block.head.key}
+                data-key={block.head.key}
                 // `flex-auto`: the lane's own rows set its starting height and
                 // the tile's spare space is split from there — a lane with
                 // nothing in it is a strip, a full one takes the room. Past
                 // that it scrolls inside itself.
-                className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-white transition-[flex-grow] duration-300 ease-out motion-reduce:transition-none dark:bg-gray-800 ${
-                  focused === null ? "flex-auto" : focused ? "flex-[1_1_0%]" : "flex-none"
-                }`}
+                // Height is animated when a topic is focused (see the layout
+                // effect above); until then the blocks share the room.
+                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-lg bg-white transition-[height] duration-300 ease-out motion-reduce:transition-none dark:bg-gray-800"
               >
                 {block.head.heading ? (
                 <div
@@ -629,7 +663,7 @@ function CollapsibleCard({
                     neighbours instead of clipping the tail off. */}
                 <div
                   ref={smoothScroll}
-                  className={`scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 ${focused === false ? "hidden" : ""}`}
+                  className="scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800"
                 >
                   {contentRows.map((item) => item.chips ? (
                     // A lane whose tables carry no clock shows them as pips
