@@ -11,6 +11,41 @@ function cn(...classes: Array<string | undefined | null | false>) {
   return classes.filter(Boolean).join(" ");
 }
 
+// Every frame the orb repaints six conic gradients through a blur + contrast
+// filter, with a backdrop-filter layer over them. On an iPhone that competed
+// with scrolling: the expenses page stuttered with the floating orb in the
+// corner (19 ก.ย. 2569). While anything on the page scrolls, every orb carries
+// data-scrolling and holds still; it turns again 180ms after the scroll stops.
+// The flag goes on the orbs themselves, not on <html>: flipping an attribute on
+// the root restyles the whole document at the start and end of every scroll.
+// One listener for all orbs, added by the first one mounted.
+const SCROLL_IDLE_MS = 180;
+const liveOrbs = new Set<HTMLElement>();
+let scrolling = false;
+let scrollIdleTimer: number | undefined;
+function setScrolling(next: boolean) {
+  scrolling = next;
+  for (const orb of liveOrbs) orb.toggleAttribute("data-scrolling", next);
+}
+function onAnyScroll() {
+  if (!scrolling) setScrolling(true);
+  window.clearTimeout(scrollIdleTimer);
+  scrollIdleTimer = window.setTimeout(() => setScrolling(false), SCROLL_IDLE_MS);
+}
+function watchScrolling(orb: HTMLElement) {
+  liveOrbs.add(orb);
+  // capture: also hears scrolls of inner scrollers (lists, sheets), which do
+  // not bubble to window.
+  if (liveOrbs.size === 1) window.addEventListener("scroll", onAnyScroll, { passive: true, capture: true });
+  return () => {
+    liveOrbs.delete(orb);
+    if (liveOrbs.size > 0) return;
+    window.removeEventListener("scroll", onAnyScroll, { capture: true });
+    window.clearTimeout(scrollIdleTimer);
+    scrolling = false;
+  };
+}
+
 const SIZE_THRESHOLD_SMALL = 50;
 const SIZE_THRESHOLD_TINY = 30;
 const SIZE_THRESHOLD_MEDIUM = 100;
@@ -52,6 +87,9 @@ export interface SiriOrbProps {
   active?: boolean;
   /** Voice loudness 0..1. Scales and brightens the orb while `active`. */
   level?: number;
+  /** Hold still — for an orb that is mounted but off screen, e.g. inside a
+   *  closed panel, where the turning costs a repaint every frame for nothing. */
+  paused?: boolean;
 }
 
 export const SiriOrb: React.FC<SiriOrbProps> = ({
@@ -61,7 +99,15 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
   animationDuration = 20,
   active = false,
   level = 0,
+  paused = false,
 }) => {
+  const orbRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const orb = orbRef.current;
+    if (!orb) return;
+    return watchScrolling(orb);
+  }, []);
+
   // Warm palette tuned to the app's orange/amber theme.
   const defaultColors = {
     bg: "oklch(97% 0.02 70)",
@@ -125,7 +171,9 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
 
   return (
     <div
+      ref={orbRef}
       className={cn("siri-orb", className)}
+      data-paused={paused ? "" : undefined}
       style={
         {
           width: size,
@@ -202,6 +250,9 @@ export const SiriOrb: React.FC<SiriOrbProps> = ({
           mask-image: radial-gradient(black var(--mask-radius), transparent 75%);
         }
         @keyframes siri-orb-rotate { to { --angle: 360deg; } }
+        .siri-orb[data-paused]::before,
+        [data-orbs-paused] .siri-orb::before,
+        .siri-orb[data-scrolling]::before { animation-play-state: paused; }
         /* Keep the orb gently alive even under reduced-motion (decorative,
            slow rotation) instead of freezing it — the owner wants it moving. */
         @media (prefers-reduced-motion: reduce) {

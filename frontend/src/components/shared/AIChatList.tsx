@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { MessageSquareText, MoreHorizontal, Pencil, Plus, Search, SquarePen, Trash2, X } from "lucide-react";
 import { deleteAIConversation, listAIConversations, renameAIConversation } from "@/src/lib/ai";
@@ -469,9 +470,15 @@ export default function AIChatList({
     );
   }
 
-  return (
-    <div className={`absolute inset-0 z-30 flex flex-col bg-[#faf8f2] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
-      <div className="flex items-center justify-between px-3 pb-2 pt-3">
+  // Phones: the whole screen, above the menu tab (z-30) so the tab does not sit
+  // on the title. It was absolute inside the chat's padded box, which left
+  // bands of the page showing on three sides (19 ก.ย. 2569). Portalled to
+  // body: the AI page's .ai-aura-bg isolates its children, so a z-index set
+  // in there could never rise above the tab.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className={`fixed inset-0 z-40 flex flex-col bg-[#faf8f2] pb-[env(safe-area-inset-bottom)] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
+      <div className="flex items-center justify-between px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold text-gray-900 dark:text-white">
           <MessageSquareText className="h-4 w-4 text-orange-500" /> {t.title}
         </h2>
@@ -488,6 +495,7 @@ export default function AIChatList({
       {searchBox}
       {list}
       {dialogs}
-    </div>
+    </div>,
+    document.body,
   );
 }

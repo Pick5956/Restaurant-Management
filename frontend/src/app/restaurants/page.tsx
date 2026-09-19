@@ -55,7 +55,7 @@ function RestaurantCard({
     <button
       type="button"
       onClick={onEnter}
-      className="group relative flex min-h-[282px] flex-1 flex-col overflow-hidden rounded-md border border-gray-200 bg-white text-left transition-[border-color,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-orange-500 focus-visible:outline-none dark:border-gray-800 dark:bg-gray-950 dark:hover:border-orange-500"
+      className="group relative flex min-h-[282px] flex-1 flex-col overflow-hidden rounded-md border border-gray-200 bg-white text-left transition-[border-color,translate] duration-200 ease-out hover:-translate-y-0.5 hover:border-orange-500 focus-visible:outline-none dark:border-gray-800 dark:bg-gray-950 dark:hover:border-orange-500"
     >
       {/* Cover Image banner */}
       <div className="relative h-32 w-full overflow-hidden bg-gray-100 dark:bg-gray-900">

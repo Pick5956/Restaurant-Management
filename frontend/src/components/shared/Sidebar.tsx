@@ -364,42 +364,8 @@ function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function RestaurantHeader({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const { activeMembership } = useAuth();
-  const { language } = useLanguage();
-  const restaurantName = activeMembership?.restaurant?.name ?? (language === 'th' ? 'เลือกร้าน' : 'Select restaurant');
-  const switchLabel = language === 'th' ? 'เปลี่ยน' : 'Switch';
-
-  return (
-    <div className={`min-w-0 transition-all duration-300 ${collapsed ? 'w-full flex justify-center' : 'flex-1'}`}>
-      <Link
-        href="/restaurants"
-        onClick={onNavigate}
-        title={collapsed ? restaurantName : undefined}
-        className={`flex min-w-0 items-center rounded-md border border-transparent transition-[background-color,border-color,gap,padding] duration-300 ${
-          collapsed 
-            ? 'justify-center gap-0 p-1 hover:bg-transparent' 
-            : 'gap-2.5 px-1.5 py-1.5 hover:border-[var(--rail-border)] hover:bg-[var(--rail-hover-bg)]'
-        }`}
-      >
-        <AppLogo size={32} />
-        <div
-          className={`flex min-w-0 flex-1 items-center justify-between gap-2 transition-all duration-300 ${
-            collapsed ? 'w-0 opacity-0 pointer-events-none overflow-hidden' : 'w-auto opacity-100'
-          }`}
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-semibold leading-[1.6] text-[var(--rail-fg)]">{restaurantName}</span>
-          </span>
-          <span className="shrink-0 text-[11px] font-semibold text-[var(--rail-fg-muted)]">{switchLabel}</span>
-        </div>
-      </Link>
-    </div>
-  );
-}
-
 export default function Sidebar() {
-  const { href: restaurantPageHref } = useRestaurantNav();
+  const { href: restaurantPageHref, pagePath } = useRestaurantNav();
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
   const mobileDrawerRef = useRef<HTMLElement>(null);
@@ -407,6 +373,12 @@ export default function Sidebar() {
   const collapseTitle = collapsed
     ? language === 'th' ? 'ขยายแถบด้านข้าง' : 'Expand sidebar'
     : language === 'th' ? 'ย่อแถบด้านข้าง' : 'Collapse sidebar';
+
+  // Any page change closes the phone menu, including the account menu's own
+  // links, which do not go through NavLinks' onNavigate.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pagePath, setMobileOpen]);
 
   useEffect(() => {
     if (mobileOpen) return;
@@ -418,12 +390,16 @@ export default function Sidebar() {
 
   return (
     <>
-      {mobileOpen && (
-        <div
-          {...mobileBackdrop}
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-        />
-      )}
+      {/* Always mounted so it fades with the slide; it used to mount and
+          unmount, so the dark layer snapped on and off and the open/close read
+          as a pop rather than a slide (19 ก.ย. 2569). */}
+      <div
+        {...mobileBackdrop}
+        aria-hidden="true"
+        className={`fixed inset-0 z-40 bg-black/50 transition-[opacity,visibility] duration-300 ease-out lg:hidden ${
+          mobileOpen ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0'
+        }`}
+      />
 
       <aside
         data-nav-rail=""
@@ -435,13 +411,33 @@ export default function Sidebar() {
         onKeyDown={(event) => {
           if (event.key === 'Escape') setMobileOpen(false);
         }}
+        /* Hidden (visibility) once it has slid away, not only moved off
+           screen. iPhone Safari (iOS 26) colours its status bar and toolbar
+           from fixed boxes at the screen edges; the orange drawer, merely
+           translated away, kept both bars orange after it closed
+           (19 ก.ย. 2569). Opening shows it at once (visibility is not
+           transitioned then); closing keeps it visible until the slide out
+           ends, so the motion is unchanged.
+           The transition names `translate`, not `transform`: Tailwind v4's
+           translate-x-* set the translate property, so with `transform` listed
+           the drawer never slid at all — it jumped in and out. */
         className={`
-          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden
-          ${mobileOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}
+          fixed left-0 top-0 z-[var(--z-modal)] flex h-dvh w-64 flex-col border-r border-[var(--rail-border)] bg-[var(--rail-bg)] will-change-transform lg:hidden
+          ${mobileOpen
+            ? 'visible translate-x-0 shadow-2xl transition-[translate,box-shadow] duration-[340ms] ease-[cubic-bezier(0.32,0.72,0,1)]'
+            : 'invisible -translate-x-full pointer-events-none shadow-none transition-[translate,box-shadow,visibility] duration-[260ms] ease-[cubic-bezier(0.4,0,1,1)]'}
         `}
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
-          <RestaurantHeader collapsed={false} onNavigate={() => setMobileOpen(false)} />
+          <Link
+            href={restaurantPageHref("/home")}
+            aria-label="Dishy"
+            onClick={() => setMobileOpen(false)}
+            className="flex min-w-0 items-center gap-2 px-1.5"
+          >
+            <AppLogo size={32} />
+            <AppWordmark height={22} className="shrink-0 text-[var(--rail-fg)]" />
+          </Link>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setMobileOpen(false)}
@@ -456,6 +452,16 @@ export default function Sidebar() {
         </div>
 
         <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
+
+        {/* The restaurant and the person at the foot, as on a computer. The
+            account menu used to be the avatar on the phone top bar. */}
+        <div className="flex shrink-0 flex-col gap-0.5 border-t border-[var(--rail-border)] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <RestaurantSwitcherCard collapsed={false} />
+          {/* Keyed on the drawer: closing the drawer remounts it, which shuts an
+              open account menu too. The menu is portalled to body, so it stayed
+              on screen after the drawer slid away (19 ก.ย. 2569). */}
+          <DashboardAccountMenu key={mobileOpen ? 'drawer-open' : 'drawer-closed'} variant="rail" />
+        </div>
       </aside>
 
       <aside

@@ -28,7 +28,7 @@ export default function AIAssistantErrorState({
       };
 
   return (
-    <main className="flex min-h-[calc(100dvh-3.5rem)] w-full items-center justify-center px-4 py-8 sm:px-6 lg:min-h-[calc(100dvh-var(--dashboard-shell-row))] lg:px-8">
+    <main className="flex min-h-dvh w-full items-center justify-center px-4 py-8 sm:px-6 lg:min-h-[calc(100dvh-var(--dashboard-shell-row))] lg:px-8">
       <section
         role="alert"
         aria-labelledby="ai-assistant-error-title"

@@ -873,6 +873,9 @@ export default function AIOperationsFloatingChat() {
           sm+: the docked bottom-right card, unchanged — sm:translate-y-0 cancels the
           sheet transform and it fades with opacity as before. */}
       <div
+        // Closed, the panel stays mounted off screen; its orbs hold still
+        // rather than repaint every frame unseen (see siri-orb.tsx).
+        data-orbs-paused={isOpen ? undefined : ""}
         className={`fixed inset-x-0 bottom-0 z-[var(--z-chat)] flex h-[88dvh] items-stretch transition-transform duration-300 ease-out ${
           isOpen ? "translate-y-0" : "translate-y-full"
         } ${isOpen ? "pointer-events-auto" : "pointer-events-none"} sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[min(680px,calc(100dvh-3rem))] sm:w-[380px] sm:translate-y-0 sm:transition-opacity md:w-[400px] ${
@@ -1187,7 +1190,7 @@ export default function AIOperationsFloatingChat() {
         className={`fixed bottom-4 right-4 z-[var(--z-chat)] flex h-14 w-14 touch-none select-none items-center justify-center overflow-hidden rounded-full shadow-xl shadow-orange-500/30 transform-gpu ease-out sm:bottom-6 sm:right-6 ${
           orbDrag
             ? "cursor-grabbing scale-105 shadow-2xl shadow-orange-500/40 transition-none"
-            : "cursor-grab transition-[opacity,transform,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
+            : "cursor-grab transition-[opacity,transform,translate,scale,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
         } ${orbPalette.ring ? "ring-2 ring-white/80" : ""} ${
           isOpen
             ? "opacity-0 scale-95 pointer-events-none"
