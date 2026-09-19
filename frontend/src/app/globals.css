@@ -1369,12 +1369,14 @@ textarea {
     transform: scale(0.94);
   }
 }
+/* Reduce Motion (on many iPads) had cut these to 0.01ms, so every confirm
+   dialog snapped in and out. It keeps the fade now and drops only the scale. */
 @media (prefers-reduced-motion: reduce) {
-  .warm-dialog-backdrop,
-  .warm-dialog,
-  .warm-dialog-backdrop.is-closing,
+  .warm-dialog {
+    animation: warm-dialog-fade 0.18s ease-out both;
+  }
   .warm-dialog-backdrop.is-closing .warm-dialog {
-    animation-duration: 0.01ms;
+    animation: warm-dialog-fade-out 0.16s ease-in both;
   }
 }
 
