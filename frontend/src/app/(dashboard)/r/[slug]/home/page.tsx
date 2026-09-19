@@ -2578,7 +2578,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {!openLists.orders ? null : orders.length ? (
-                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    <div ref={smoothScroll} className="max-h-[50dvh] divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
                       {/* Five columns need ~580px including gaps. That is more
                           than a phone-width card has at `sm`, so the row only
                           becomes a table from `md` and stacks below it. */}
@@ -2620,7 +2620,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {!openLists.stock ? null : stockRisks.length ? (
-                    <div className="grid content-start gap-2 px-4 pb-4 pt-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <div ref={smoothScroll} className="grid max-h-[50dvh] content-start gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:grid-cols-1">
                       {stockRisks.map((risk) => (
                         <button
                           key={risk.id}
