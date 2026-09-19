@@ -765,7 +765,12 @@ function CollapsibleCard({
                           // the position is what tells them apart.
                           key={`${chip.text}-${chip.note ?? ""}-${index}`}
                           style={{ minWidth: item.key.endsWith("-none") ? `calc(2ch + 0.75rem)` : chipWidth(item.chips) }}
-                          className={`inline-flex max-w-full flex-col items-center justify-center gap-0.5 rounded-md border-2 border-current/30 bg-current/10 px-1.5 py-1 font-mono ${item.key.endsWith("-none") ? "aspect-square" : ""} ${chip.tone ?? item.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
+                          className={`inline-flex max-w-full flex-col items-center justify-center gap-0.5 rounded-md border-2 border-current/30 bg-current/10 px-1.5 font-mono ${
+                            // A one-line die of Thai text (the stock names) needs
+                            // a taller line: at leading-none the vowels and tone
+                            // marks above and below were clipped by the truncate.
+                            !chip.note && !item.key.endsWith("-none") ? "py-1.5 leading-[1.5]" : "py-1"
+                          } ${item.key.endsWith("-none") ? "aspect-square" : ""} ${chip.tone ?? item.valueClass ?? "text-gray-500 dark:text-gray-400"}`}
                         >
                           <span className="max-w-full truncate">{chip.text}</span>
                           {chip.note ? <span className="max-w-full truncate text-[0.68em] opacity-70">{chip.note}</span> : null}
