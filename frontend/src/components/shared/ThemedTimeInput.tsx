@@ -138,10 +138,17 @@ function WheelColumn({
   const glide = (velocity: number) => {
     const node = ref.current;
     if (!node) return;
+    const travel = Math.max(-GLIDE_MAX_ROWS * ROW, Math.min(GLIDE_MAX_ROWS * ROW, -velocity * GLIDE_MS));
+    glideTo(Math.round((node.scrollTop + travel) / ROW));
+  };
+
+  /** Ease out from wherever the wheel is now to row `index`, and stop there. */
+  const glideTo = (index: number) => {
+    const node = ref.current;
+    if (!node) return null;
     stopGlide();
     const from = node.scrollTop;
-    const travel = Math.max(-GLIDE_MAX_ROWS * ROW, Math.min(GLIDE_MAX_ROWS * ROW, -velocity * GLIDE_MS));
-    const target = Math.min(Math.max(Math.round((from + travel) / ROW), 0), rows - 1);
+    const target = Math.min(Math.max(index, 0), rows - 1);
     // Closing the panel mid-glide keeps where it was heading.
     wheelTarget.current = target;
     const distance = target * ROW - from;
@@ -160,6 +167,7 @@ function WheelColumn({
       }
     };
     glideFrame.current = requestAnimationFrame(step);
+    return target;
   };
 
   const rollTo = (index: number) => {
@@ -178,21 +186,21 @@ function WheelColumn({
     const node = ref.current;
     if (!node) return;
     let lastWheel = 0;
+    // Notches in quick succession, counted, so a spin speeds up the way a
+    // flick does.
+    let streak = 0;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       if (!event.deltaY) return;
-      if (glideFrame.current !== null) {
-        stopGlide();
-        wheelTarget.current = null;
-        setDragging(false);
-      }
       const delta = event.deltaMode === 1 ? event.deltaY * ROW : event.deltaY;
       const now = event.timeStamp;
       // The first event after a pause always turns one row, whatever its size.
       // Mice differ a lot per notch — 100px on a Windows wheel, a few px on a
       // Mac or a high-resolution Logitech wheel — and waiting for small ones
       // to add up to a whole row left the wheel not moving at all.
-      const fresh = now - lastWheel > 150;
+      const gap = now - lastWheel;
+      const fresh = gap > 150;
+      streak = gap < 180 ? streak + 1 : 0;
       lastWheel = now;
       const notch = fresh || Math.abs(delta) >= 50;
       if (notch) wheelCarry.current = 0;
@@ -201,8 +209,12 @@ function WheelColumn({
       if (!steps) return;
       if (!notch) wheelCarry.current -= steps * ROW;
       const from = wheelTarget.current ?? Math.round(node.scrollTop / ROW);
-      steps = Math.max(-3, Math.min(3, steps));
-      wheelTarget.current = rollTo(from + steps);
+      // Wheel turns glide like a released drag: each one eases the wheel on to
+      // its new row, and a fast spin carries further — a single notch is still
+      // one row, the third quick one in a row is two, and so on up to four.
+      if (notch) steps = Math.sign(steps) * Math.min(4, 1 + Math.floor(streak / 2));
+      steps = Math.max(-4, Math.min(4, steps));
+      wheelTarget.current = glideTo(from + steps);
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
