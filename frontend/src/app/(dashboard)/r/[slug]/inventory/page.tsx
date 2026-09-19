@@ -1641,8 +1641,8 @@ export default function InventoryPage() {
                         ? "กำลังสร้างไฟล์…"
                         : "Preparing…"
                       : lang === "th"
-                        ? "ส่งออก CSV"
-                        : "Export CSV"}
+                        ? "ส่งออกเป็นตาราง"
+                        : "Export as sheet"}
                   </button>
                   {canManage && (
                     <button

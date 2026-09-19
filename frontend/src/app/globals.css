@@ -1625,6 +1625,11 @@ textarea {
   position: sticky;
   top: calc(3.5rem + var(--inv-th-top, 0px));
   z-index: 10;
+  /* One height for both tables. The stock header's checkbox and sort buttons
+     made it 42px against the history header's 38px, so switching tabs the
+     titles jumped. */
+  height: 42px;
+  vertical-align: middle;
   background-color: var(--inv-head-bg);
   border-bottom: 1px solid var(--inv-head-line);
 }
