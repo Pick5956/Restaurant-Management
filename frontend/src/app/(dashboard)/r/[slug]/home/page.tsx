@@ -69,6 +69,7 @@ import RealtimeConnectionNotice from "@/src/components/shared/RealtimeConnection
 import { useOrderEvents } from "@/src/hooks/useOrderEvents";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
 import type { Bill, Order, OrderItem, OrderStatus } from "@/src/types/order";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 
 type LaneStatus = "delayed" | "cooking" | "ready";
 type KitchenTicket = {
@@ -613,7 +614,7 @@ function CollapsibleCard({
                 {/* The lane's own scroller: a state with a dozen free tables
                     lists them all, and the block stays the height of its
                     neighbours instead of clipping the tail off. */}
-                <div className="scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                <div ref={smoothScroll} className="scroll-minimal min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
                   {contentRows.map((item) => item.chips ? (
                     // A lane whose tables carry no clock shows them as pips
                     // rather than one line each: the whole set fits the block,
@@ -721,6 +722,7 @@ function CollapsibleCard({
           own scroll for the strip above, and everything the card holds is
           reached inside the card — the lists below have their own scrollers. */}
       <section
+        ref={smoothScroll}
         style={{ order: 100 }}
         className="scroll-minimal col-span-full max-h-[70dvh] w-full overflow-y-auto overflow-x-hidden rounded-b-xl border sm:rounded-tr-xl border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
       >
@@ -2346,7 +2348,7 @@ export default function Home() {
                               {/* The whole lane, scrolled: a busy service is
                                   exactly when you need the tickets under the
                                   fifth one, and the three lanes stay level. */}
-                              <div className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
                                 {lane.items.length ? lane.items.map((ticket) => (
                                   <button key={`${lane.key}-${ticket.id}`} type="button" onClick={(event) => {
                                       if (openTicket !== ticket.id && ticket.items.length && window.matchMedia("(hover: none)").matches) {
@@ -2386,6 +2388,8 @@ export default function Home() {
                     ) : <p className="px-4 py-10 text-center text-[12px] text-gray-500">{copy.noKitchen}</p>}
                   </div>
 
+                {/* The lists in this card glide like the time wheel: the mouse
+                    wheel eases to a stop instead of jumping (smoothScroll). */}
                 {/* Orders and stock risks sit side by side on a wide screen —
                     two things to work through, not one list after another.
                     `xl`, not `lg`: on a tablet the orders pane would be about
@@ -2401,7 +2405,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {orders.length ? (
-                    <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                    <div ref={smoothScroll} className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
                       {/* Five columns need ~580px including gaps. That is more
                           than a phone-width card has at `sm`, so the row only
                           becomes a table from `md` and stacks below it. */}
@@ -2435,7 +2439,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {stockRisks.length ? (
-                    <div className="grid max-h-56 gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <div ref={smoothScroll} className="grid max-h-56 gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:grid-cols-1">
                       {stockRisks.map((risk) => (
                         <button
                           key={risk.id}
