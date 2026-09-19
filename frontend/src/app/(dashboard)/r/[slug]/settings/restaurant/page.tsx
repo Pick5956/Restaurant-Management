@@ -98,6 +98,8 @@ export default function RestaurantSettingsPage() {
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [form, setForm] = useState<FormState>(() => toForm(null, language));
   const [errors, setErrors] = useState<FormErrors>({});
+  // Bumped when the opening time is done, which opens the closing-time wheel.
+  const [closeTimeSignal, setCloseTimeSignal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -617,8 +619,26 @@ export default function RestaurantSettingsPage() {
 
             <SettingsPanel title={copy.operations} hint={copy.operationsHint}>
               <div className="grid gap-3 sm:grid-cols-3">
-                <Field label={copy.openTime} type="time" value={form.open_time} onChange={(value) => setField("open_time", value)} error={errors.open_time} />
-                <Field label={copy.closeTime} type="time" value={form.close_time} onChange={(value) => setField("close_time", value)} error={errors.close_time} />
+                {/* Picking the opening time leads straight into the closing time. */}
+                <Field
+                  label={copy.openTime}
+                  type="time"
+                  value={form.open_time}
+                  onChange={(value) => setField("open_time", value)}
+                  error={errors.open_time}
+                  timeOptions={{
+                    doneLabel: language === "th" ? "ถัดไป: เวลาปิด" : "Next: close time",
+                    onDone: () => setCloseTimeSignal((n) => n + 1),
+                  }}
+                />
+                <Field
+                  label={copy.closeTime}
+                  type="time"
+                  value={form.close_time}
+                  onChange={(value) => setField("close_time", value)}
+                  error={errors.close_time}
+                  timeOptions={{ openSignal: closeTimeSignal }}
+                />
                 <Field label={copy.tableCount} value={form.table_count} onChange={(value) => setField("table_count", value)} error={errors.table_count} inputMode="numeric" />
               </div>
             </SettingsPanel>

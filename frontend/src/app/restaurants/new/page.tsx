@@ -133,11 +133,17 @@ function TimeField({
   value,
   onChange,
   error,
+  doneLabel,
+  onDone,
+  openSignal,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  doneLabel?: string;
+  onDone?: () => void;
+  openSignal?: number;
 }) {
   return (
     <div className="block space-y-2">
@@ -145,7 +151,14 @@ function TimeField({
         {label}
         <span className="ml-1 text-orange-600 dark:text-orange-400">*</span>
       </span>
-      <ThemedTimeInput value={value} onChange={onChange} error={error} />
+      <ThemedTimeInput
+        value={value}
+        onChange={onChange}
+        error={error}
+        doneLabel={doneLabel}
+        onDone={onDone}
+        openSignal={openSignal}
+      />
     </div>
   );
 }
@@ -215,6 +228,8 @@ export default function NewRestaurantPage() {
   const defaults = useMemo(() => setupDefaultsFor(initialType), [initialType]);
   const [openTime, setOpenTime] = useState(defaults.openTime);
   const [closeTime, setCloseTime] = useState(defaults.closeTime);
+  // Bumped when the opening time is done, which opens the closing-time wheel.
+  const [closeTimeSignal, setCloseTimeSignal] = useState(0);
   const [initialTables, setInitialTables] = useState(defaults.tables);
   const [splitZones, setSplitZones] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -649,17 +664,21 @@ export default function NewRestaurantPage() {
             {activeStep === "service" ? (
               <div className="grid gap-5">
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Picking the opening time leads straight into the closing time. */}
                   <TimeField
                     label={copy.openTime}
                     value={openTime}
                     onChange={setOpenTime}
                     error={errors.openTime}
+                    doneLabel={language === "th" ? "ถัดไป: เวลาปิด" : "Next: close time"}
+                    onDone={() => setCloseTimeSignal((n) => n + 1)}
                   />
                   <TimeField
                     label={copy.closeTime}
                     value={closeTime}
                     onChange={setCloseTime}
                     error={errors.closeTime}
+                    openSignal={closeTimeSignal}
                   />
                 </div>
 

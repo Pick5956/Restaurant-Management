@@ -83,8 +83,11 @@ export function Field({
   type = "text",
   disabled,
   inputMode,
+  timeOptions,
 }: {
   label: string;
+  /** Extra settings for type="time" — see ThemedTimeInput. */
+  timeOptions?: { doneLabel?: string; onDone?: () => void; openSignal?: number };
   value: string;
   onChange?: (value: string) => void;
   placeholder?: string;
@@ -98,7 +101,7 @@ export function Field({
     <label className="block min-w-0">
       <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{label}</span>
       {type === "time" ? (
-        <ThemedTimeInput value={value} onChange={(nextValue) => onChange?.(nextValue)} disabled={disabled} error={error} help={help} />
+        <ThemedTimeInput value={value} onChange={(nextValue) => onChange?.(nextValue)} disabled={disabled} error={error} help={help} {...timeOptions} />
       ) : (
         <>
           <input
