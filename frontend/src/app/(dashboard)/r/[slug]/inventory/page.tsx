@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
+  ArrowDownLeft,
   ArrowRight,
   ArrowUp,
+  ArrowUpRight,
   Boxes,
   Check,
+  ClipboardCheck,
   Download,
   ChevronLeft,
   ChevronRight,
@@ -55,6 +58,7 @@ import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { SEALED_UNITS } from "./inventoryPageUtils";
 import NumberInput from "@/src/components/shared/NumberInput";
 import {
   hasFieldErrors,
@@ -63,9 +67,11 @@ import {
   validateIngredientForm,
 } from "./inventoryFormValidation";
 import {
+  defaultEntryUnit,
   emptyTypedAmounts,
   entryChain,
   formatPackCount,
+  hasPack,
   largestPurchaseUnit,
   packExample,
   packUnitChoices,
@@ -87,8 +93,10 @@ import {
   formatExpiryDate,
   ingredientExpiryState,
   matchesExpiryFilter,
+  restockShelfLifePresets,
   type ExpiryFilter,
 } from "./inventoryExpiryUtils";
+import RestockExpiryChips from "./RestockExpiryChips";
 import InventoryMobile from "./mobile/InventoryMobile";
 import { useIsMobile } from "./mobile/primitives";
 import {
@@ -398,6 +406,24 @@ function groupTxByDate(txs: IngredientTransaction[], copy: Copy) {
   }));
 }
 
+// Weights and volumes a delivery or a count can be typed in, beside the
+// shelf's own unit and its containers.
+const ADJUST_MEASURE_UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร"];
+
+type AdjustReason = "kitchen" | "waste" | "expired" | "other";
+const ADJUST_REASONS: Record<AdjustReason, [string, string]> = {
+  kitchen: ["ใช้ในครัว", "Kitchen use"],
+  waste: ["เสีย/ทิ้ง", "Spoiled"],
+  expired: ["หมดอายุ", "Expired"],
+  other: ["อื่นๆ", "Other"],
+};
+
+/** Expiry chips for a restock of this item: sealed bottles and cans last. */
+function adjustShelfLifePresets(item: Ingredient): number[] {
+  const sealed = SEALED_UNITS.has(item.unit) || SEALED_UNITS.has(item.pack_unit ?? "");
+  return restockShelfLifePresets(item.storage_type, sealed);
+}
+
 export default function InventoryPage() {
   const { activeMembership } = useAuth();
   // One tree renders at a time rather than two hidden by CSS: both mounted would
@@ -498,10 +524,14 @@ export default function InventoryPage() {
   const [adjustUnit, setAdjustUnit] = useState("");
   // The server decides which units this ingredient accepts and what each one is
   // worth, so the picker and the preview below never carry their own factors.
-  const adjustUnitOptions = useMemo(
-    () => (adjustTarget?.unit_family ?? []).map((option) => ({ value: option.unit, label: option.unit })),
-    [adjustTarget],
-  );
+  // unit_family also carries ช้อนชา/ช้อนโต๊ะ for recipes. Nobody receives or
+  // counts stock by the spoon, so only the shelf's own unit, its containers and
+  // plain weights/volumes are offered here.
+  const adjustUnitOptions = useMemo(() => {
+    if (!adjustTarget) return [];
+    const keep = new Set([adjustTarget.unit, adjustTarget.pack_unit, adjustTarget.case_unit, ...ADJUST_MEASURE_UNITS]);
+    return (adjustTarget.unit_family ?? []).filter((option) => keep.has(option.unit)).map((option) => option.unit);
+  }, [adjustTarget]);
   const convertedAdjustQty = useMemo(() => {
     if (!adjustTarget || !adjustUnit || adjustUnit === adjustTarget.unit) return null;
     const quantity = Number(adjustQty);
@@ -512,6 +542,11 @@ export default function InventoryPage() {
   }, [adjustQty, adjustTarget, adjustUnit]);
   const [adjustPaidAmount, setAdjustPaidAmount] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  // The note field stays folded away until asked for; most adjustments have none.
+  const [adjustNoteOpen, setAdjustNoteOpen] = useState(false);
+  // Why stock went out. There is no column for it yet, so it is written at the
+  // front of the note ("เสีย/ทิ้ง · …"), which the history already shows.
+  const [adjustReason, setAdjustReason] = useState<AdjustReason | null>(null);
   // Days from today for the lot a stock-in opens; null is "ไม่ระบุ".
   const [adjustExpiryDays, setAdjustExpiryDays] = useState<number | null>(null);
   const [formExpiryDays, setFormExpiryDays] = useState<number | null>(null);
@@ -1078,8 +1113,21 @@ export default function InventoryPage() {
     setAdjustUnit(largestPurchaseUnit(item));
     setAdjustPaidAmount("");
     setAdjustNote("");
-    setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
+    setAdjustNoteOpen(false);
+    setAdjustReason(null);
+    setAdjustExpiryDays(adjustShelfLifePresets(item)[0]);
     setAdjustError("");
+  }
+
+  function switchAdjustType(type: "in" | "out" | "adjust") {
+    if (!adjustTarget) return;
+    setAdjustType(type);
+    setAdjustError("");
+    if (type !== "in") setAdjustPaidAmount("");
+    if (type !== "out") setAdjustReason(null);
+    // A delivery is counted in cases, a shelf a bottle at a time. Only while the
+    // box is empty, so a number already typed never changes meaning underneath.
+    if (adjustQty.trim() === "") setAdjustUnit(type === "in" ? largestPurchaseUnit(adjustTarget) : defaultEntryUnit(adjustTarget, "count"));
   }
 
   async function handleAdjust() {
@@ -1131,7 +1179,10 @@ export default function InventoryPage() {
           type: adjustType,
           quantity: qty,
           unit: adjustUnit,
-          note: adjustNote,
+          note:
+            adjustType === "out" && adjustReason
+              ? [ADJUST_REASONS[adjustReason][lang === "th" ? 0 : 1], adjustNote.trim()].filter(Boolean).join(" · ")
+              : adjustNote,
           paidAmount: adjustPaidAmount,
           canManageExpenses,
           expiresAt:
@@ -2593,157 +2644,272 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {adjustTarget && (
+      {adjustTarget && (() => {
+        const t = adjustTarget;
+        const factor = t.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+        const typed = parseFloat(adjustQty);
+        const stockQty = Number.isFinite(typed) && typed > 0 ? typed * (adjustUnit && adjustUnit !== t.unit ? factor : 1) : 0;
+        // Money reads per bottle when there is a bottle, per shelf unit otherwise.
+        const priceUnit = hasPack(t) ? (t.pack_unit as string) : t.unit;
+        const perPriceUnit = hasPack(t) ? (t.pack_size as number) : 1;
+        const paidTyped = Number(adjustPaidAmount);
+        const paid = adjustPaidAmount.trim() !== "" && Number.isFinite(paidTyped) ? paidTyped : referenceAdjustAmount;
+        const paidPer = stockQty > 0 && paid > 0 ? (paid / stockQty) * perPriceUnit : 0;
+        const lostValue =
+          adjustType === "out" && (adjustReason === "waste" || adjustReason === "expired") && stockQty > 0
+            ? stockQty * (t.cost_per_unit ?? 0)
+            : 0;
+        const typeMeta = {
+          in: { label: copy.adjustIn, Icon: ArrowDownLeft, on: "text-emerald-700 dark:text-emerald-300", verb: lang === "th" ? "รับเข้า" : "Receive" },
+          out: { label: lang === "th" ? "ใช้ / ทิ้ง" : "Use / discard", Icon: ArrowUpRight, on: "text-red-600 dark:text-red-300", verb: lang === "th" ? "ตัดออก" : "Take out" },
+          adjust: { label: lang === "th" ? "นับจริง" : "Count", Icon: ClipboardCheck, on: "text-orange-700 dark:text-orange-300", verb: lang === "th" ? "บันทึกยอด" : "Set to" },
+        } as const;
+        const saveLabel =
+          stockQty > 0 ? `${typeMeta[adjustType].verb} ${formatNumber(typed, lang)} ${adjustUnit || t.unit}` : typeMeta[adjustType].verb;
+        const label = "mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400";
+        const field =
+          "flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 transition focus-within:border-orange-400 dark:border-gray-700 dark:bg-gray-900";
+        const bare = "h-full min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white";
+
+        return (
         <div {...adjustBackdrop} className={`${adjustClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${adjustClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="border-b border-slate-200 px-6 py-4 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{copy.adjustTitle}</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {adjustTarget.name} • {copy.current} {formatNumber(adjustTarget.stock, lang)} {adjustTarget.unit}
-              </p>
-            </div>
-            <div className="space-y-4 px-6 py-5">
-              <div className="grid grid-cols-3 gap-2">
-                {(["in", "out", "adjust"] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => {
-                      setAdjustType(type);
-                      if (type !== "in") setAdjustPaidAmount("");
-                    }}
-                    className={`rounded-md border py-2 text-xs font-semibold transition ${
-                      adjustType === type
-                        ? type === "in"
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                          : type === "out"
-                            ? "border-red-300 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300"
-                            : "border-orange-300 bg-orange-50 text-orange-600 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
-                        : "border-slate-200 text-slate-500 hover:border-slate-300 dark:border-gray-700 dark:text-slate-300"
-                    }`}
-                  >
-                    {type === "in" ? copy.adjustIn : type === "out" ? copy.adjustOut : copy.adjustSet}
-                  </button>
-                ))}
+          <div className={`${adjustClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
+            <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{t.name}</h2>
+                <p className="mt-0.5 text-[13px] tabular-nums text-slate-500 dark:text-slate-400">
+                  {copy.current} {formatNumber(t.stock, lang)} {t.unit}
+                  {(t.cost_per_unit ?? 0) > 0
+                    ? ` · ${lang === "th" ? "ทุน" : "cost"} ${formatCurrency(t.cost_per_unit * perPriceUnit, lang, 2)}/${priceUnit}`
+                    : ""}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={closeAdjustModal}
+                aria-label={copy.cancel}
+                className="-mr-1.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-800 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 pb-5">
+              <div role="tablist" className="grid grid-cols-3 gap-0.5 rounded-xl bg-slate-100 p-[3px] dark:bg-gray-800">
+                {(["in", "out", "adjust"] as const).map((type) => {
+                  const meta = typeMeta[type];
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="tab"
+                      aria-selected={adjustType === type}
+                      onClick={() => switchAdjustType(type)}
+                      className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[12px] font-semibold transition ${
+                        adjustType === type
+                          ? `bg-white shadow-sm dark:bg-gray-900 ${meta.on}`
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      <meta.Icon className="h-3.5 w-3.5" />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {copy.quantity}
+                <label htmlFor="adjust-qty" className={label}>
+                  {adjustType === "adjust" ? (lang === "th" ? "นับได้" : "Counted") : copy.quantity}
                 </label>
-                <div className={adjustUnitOptions.length > 1 ? "grid grid-cols-[minmax(0,1fr)_9rem] gap-2" : ""}>
-                  <input
-                    type="number"
-                    min={0}
-                    value={adjustQty}
-                    onChange={(event) => setAdjustQty(event.target.value)}
-                    className={inputCls}
-                    autoFocus
-                  />
-                  {adjustUnitOptions.length > 1 ? (
-                    <ThemedSelect
-                      value={adjustUnit || adjustTarget.unit}
-                      onChange={setAdjustUnit}
-                      options={adjustUnitOptions}
-                      aria-label={copy.quantity}
+                {/* Wraps under the box when the unit list is long (มล. · ลิตร ·
+                    ขวด · ลัง), sits beside it when it is short. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={`${field} min-w-[9rem] flex-1`}>
+                    <input
+                      id="adjust-qty"
+                      type="number"
+                      min={0}
+                      inputMode="decimal"
+                      value={adjustQty}
+                      onChange={(event) => setAdjustQty(event.target.value)}
+                      className={`${bare} text-base font-semibold tabular-nums`}
+                      autoFocus
                     />
+                    {adjustUnitOptions.length <= 1 ? (
+                      <span className="shrink-0 text-sm text-slate-400">{t.unit}</span>
+                    ) : null}
+                  </div>
+                  {adjustUnitOptions.length > 1 ? (
+                    <div role="group" aria-label={lang === "th" ? "หน่วย" : "Unit"} className="flex h-11 items-center gap-0.5 rounded-xl bg-slate-100 p-[3px] dark:bg-gray-800">
+                      {adjustUnitOptions.map((unit) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          aria-pressed={(adjustUnit || t.unit) === unit}
+                          onClick={() => setAdjustUnit(unit)}
+                          className={`h-full rounded-lg px-3 text-[13px] font-semibold transition ${
+                            (adjustUnit || t.unit) === unit
+                              ? "bg-white text-slate-900 shadow-sm dark:bg-gray-900 dark:text-white"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          {unit}
+                        </button>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
-                {/* Entering in another unit is only useful if the result is
-                    visible before saving - the shelf still counts in its own. */}
                 {convertedAdjustQty !== null ? (
-                  <p className="mt-1.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-                    {entryChain(adjustTarget, parseFloat(adjustQty), adjustUnit, lang) ??
-                      `= ${convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${adjustTarget.unit}`}
+                  <p className="mt-1.5 text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
+                    {formatNumber(typed, lang)} {adjustUnit}{" "}
+                    {entryChain(t, typed, adjustUnit, lang) ??
+                      `= ${formatNumber(convertedAdjustQty, lang)} ${t.unit}`}
                   </p>
                 ) : null}
               </div>
+
               {adjustType === "in" && canManageExpenses && (
                 <div>
-                  <label htmlFor="adjust-paid-amount" className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {copy.spentAmount}
+                  <label htmlFor="adjust-paid-amount" className={label}>
+                    {lang === "th" ? "ยอดที่จ่าย" : "Amount paid"}
                   </label>
-                  <input
-                    id="adjust-paid-amount"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    inputMode="decimal"
-                    value={adjustPaidAmount}
-                    onChange={(event) => setAdjustPaidAmount(event.target.value)}
-                    className={inputCls}
-                  />
-                  {/* What the server will book if this field stays empty, so the
-                      fallback is visible before it happens rather than after. */}
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    {adjustPaidAmount.trim() === "" && referenceAdjustAmount > 0
-                      ? copy.spentAmountFallback(formatCurrency(referenceAdjustAmount, lang))
-                      : copy.spentAmountHint}
-                  </p>
+                  {/* Left blank, the server books the cost per unit, so that
+                      figure is the placeholder rather than a sentence under it. */}
+                  <div className={field}>
+                    <span className="text-sm text-slate-400">฿</span>
+                    <input
+                      id="adjust-paid-amount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={adjustPaidAmount}
+                      placeholder={referenceAdjustAmount > 0 ? String(referenceAdjustAmount) : "0"}
+                      onChange={(event) => setAdjustPaidAmount(event.target.value)}
+                      className={`${bare} tabular-nums`}
+                    />
+                    {paidPer > 0 ? (
+                      <span className="shrink-0 text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
+                        = {formatCurrency(paidPer, lang, 2)}/{priceUnit}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               )}
+
               {adjustType === "in" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {xcopy.label}
-                  </label>
-                  <ExpiryChips
-                    key={adjustTarget.ID}
+                  <p className={label}>{lang === "th" ? "หมดอายุ" : "Expires"}</p>
+                  <RestockExpiryChips
+                    key={t.ID}
                     value={adjustExpiryDays}
                     onChange={setAdjustExpiryDays}
-                    storageType={adjustTarget.storage_type}
+                    presets={adjustShelfLifePresets(t)}
                     lang={lang}
                   />
                 </div>
               )}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.note}</label>
-                <input
-                  type="text"
-                  value={adjustNote}
-                  onChange={(event) => setAdjustNote(event.target.value)}
-                  className={inputCls}
-                />
-              </div>
-              {adjustPreview !== null && (
-                <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 dark:bg-gray-800">
-                  <span className="text-xs text-slate-400">{copy.previewAfter}</span>
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <span className="tabular-nums text-slate-400">{formatNumber(adjustTarget.stock, lang)}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-300" />
-                    <span
-                      className={`tabular-nums ${
-                        adjustPreview > adjustTarget.stock
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : adjustPreview < adjustTarget.stock
-                            ? "text-red-500 dark:text-red-400"
-                            : "text-slate-900 dark:text-white"
-                      }`}
-                    >
-                      {formatNumber(adjustPreview, lang)}
-                    </span>
-                    <span className="text-xs font-normal text-slate-400">{adjustTarget.unit}</span>
+
+              {adjustType === "out" && (
+                <div>
+                  <p className={label}>{lang === "th" ? "เหตุผล" : "Reason"}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(ADJUST_REASONS) as AdjustReason[]).map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        aria-pressed={adjustReason === reason}
+                        onClick={() => setAdjustReason((current) => (current === reason ? null : reason))}
+                        className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-semibold transition ${
+                          adjustReason === reason
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {ADJUST_REASONS[reason][lang === "th" ? 0 : 1]}
+                      </button>
+                    ))}
                   </div>
+                  {lostValue > 0 ? (
+                    <p className="mt-2 text-[12px] font-semibold tabular-nums text-red-600 dark:text-red-400">
+                      {lang === "th" ? "มูลค่าที่เสีย" : "Value lost"} {formatCurrency(lostValue, lang, 2)}
+                    </p>
+                  ) : null}
                 </div>
               )}
+
+              {adjustNoteOpen ? (
+                <div>
+                  <label htmlFor="adjust-note" className={label}>{copy.note}</label>
+                  <div className={field}>
+                    <input
+                      id="adjust-note"
+                      type="text"
+                      value={adjustNote}
+                      onChange={(event) => setAdjustNote(event.target.value)}
+                      className={bare}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAdjustNoteOpen(true)}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-orange-700 transition hover:text-orange-800 dark:text-orange-400"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {lang === "th" ? "เพิ่มหมายเหตุ" : "Add a note"}
+                </button>
+              )}
+
+              {/* Always there, so the effect of the numbers is read before saving. */}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-gray-800">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{copy.previewAfter}</span>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="tabular-nums text-slate-400">{formatNumber(t.stock, lang)}</span>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300" />
+                  <span
+                    className={`tabular-nums ${
+                      adjustPreview === null
+                        ? "text-slate-300 dark:text-slate-600"
+                        : adjustPreview > t.stock
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : adjustPreview < t.stock
+                            ? "text-red-500 dark:text-red-400"
+                            : "text-slate-900 dark:text-white"
+                    }`}
+                  >
+                    {adjustPreview === null ? "—" : formatNumber(adjustPreview, lang)}
+                  </span>
+                  <span className="text-xs font-normal text-slate-400">{t.unit}</span>
+                </div>
+              </div>
               {adjustError && <p className="text-xs text-red-500">{adjustError}</p>}
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-gray-800">
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-gray-800">
               <button
+                type="button"
                 onClick={closeAdjustModal}
-                className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
               >
                 {copy.cancel}
               </button>
               <button
+                type="button"
                 onClick={handleAdjust}
                 disabled={adjusting}
-                className="rounded-md bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
+                className="rounded-xl bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
               >
-                {adjusting ? "..." : copy.save}
+                {adjusting ? "..." : saveLabel}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {txTarget && (
         <div {...txBackdrop} className={`${txClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex justify-end bg-gray-950/45 backdrop-blur-sm`}>
