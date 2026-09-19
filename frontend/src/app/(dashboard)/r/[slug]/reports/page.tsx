@@ -8,6 +8,7 @@ import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { formatCurrency, formatNumber } from "@/src/lib/format";
 import { getOrderBill } from "@/src/lib/order";
 import { can } from "@/src/lib/rbac";
@@ -30,6 +31,10 @@ import type { Bill } from "@/src/types/order";
 import type { ManagerReport, SalesDetailReport } from "@/src/types/report";
 
 export default function ReportsPage() {
+  // The page glides on the mouse wheel and coasts on after it, like the
+  // overview page. The scroller belongs to the shell layout, so it is wired up
+  // here and let go when the page is left.
+  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
@@ -456,7 +461,7 @@ export default function ReportsPage() {
               <button type="button" onClick={() => setOpenDay(null)} className="ui-press h-9 shrink-0 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{copy.close}</button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
               {receiptError ? <p className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{receiptError}</p> : null}
               {dayDetailLoading ? (
                 <p className="py-8 text-center text-xs text-gray-500">{copy.loadingDay}</p>
