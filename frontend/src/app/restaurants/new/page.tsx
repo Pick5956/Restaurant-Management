@@ -254,8 +254,6 @@ export default function NewRestaurantPage() {
         closeTime: "เวลาปิด",
         initialTables: "จำนวนโต๊ะเริ่มต้น",
         splitZonesLabel: "แบ่งโซนอัตโนมัติ",
-        splitZonesHelp: "ระบบจะแบ่งโต๊ะออกเป็นโซนตามประเภทร้าน (เช่น โซนหน้าร้าน โซนครอบครัว)",
-        noSplitZonesHelp: "สร้างโต๊ะเรียงลำดับ T1–T{count} โดยไม่แบ่งโซน",
         zonedSummary: "แบ่งโซนอัตโนมัติ",
         flatSummary: "ไม่แบ่งโซน (เรียงลำดับ)",
         optional: "ไม่บังคับ",
@@ -326,8 +324,6 @@ export default function NewRestaurantPage() {
         closeTime: "Closing time",
         initialTables: "Initial tables",
         splitZonesLabel: "Split into zones automatically",
-        splitZonesHelp: "Tables are divided into zones based on the restaurant type (e.g. front, family).",
-        noSplitZonesHelp: "Create tables numbered T1–T{count} in sequence, without zones.",
         zonedSummary: "Auto-split into zones",
         flatSummary: "No zones (sequential)",
         optional: "Optional",
@@ -678,25 +674,20 @@ export default function NewRestaurantPage() {
                     help={copy.tableHelp}
                     required
                   />
-                  {/* No heading of its own — the checkbox says what it is. An empty
-                      line keeps the card level with the number box beside it; on a
-                      phone the two stack, so the gap is not needed there. */}
+                  {/* Just the checkbox — its words say what it does. An empty line
+                      where a heading would be, and a row the input's height, keep
+                      it level with the number box; on a phone they stack. */}
                   <div className="block space-y-2">
                     <span aria-hidden="true" className="hidden text-sm font-medium sm:inline">&nbsp;</span>
-                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
-                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
+                    <label className="flex h-[43.6px] cursor-pointer items-center gap-2.5">
                       <input
                         type="checkbox"
                         checked={splitZones}
                         onChange={(event) => setSplitZones(event.target.checked)}
                         className="h-4 w-4 shrink-0 accent-orange-600"
                       />
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{copy.splitZonesLabel}</span>
                     </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {splitZones
-                        ? copy.splitZonesHelp
-                        : copy.noSplitZonesHelp.replace("{count}", Number.isInteger(tableCount) && tableCount > 0 ? String(tableCount) : "N")}
-                    </p>
                   </div>
                 </div>
               </div>
