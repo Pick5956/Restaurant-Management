@@ -109,6 +109,9 @@ body {
 }
 
 html {
+  /* Painted here too, not only on body: phone Safari reads the root's colour
+     for the bands around the page. */
+  background: var(--background);
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
@@ -988,9 +991,13 @@ textarea {
 
    The 2px is given to the clip box and taken straight back from the layout, so
    nothing moves; the glyph simply has room to exist inside the clip. Applies to
-   the two Tailwind utilities that clip text. */
-.truncate,
-[class*="line-clamp-"] {
+   the two Tailwind utilities that clip text.
+   Only where the box has no side padding of its own: this rule sits outside
+   Tailwind's layers, so it beat px-2 and left pills with 2px on the left and
+   8px on the right — the category chips on the phone stock cards read as
+   off-centre (19 ก.ย. 2569). A padded box already has room for the vowel. */
+.truncate:not([class*="px-"]):not([class*="pl-"]):not([class*="ps-"]),
+[class*="line-clamp-"]:not([class*="px-"]):not([class*="pl-"]):not([class*="ps-"]) {
   padding-left: 2px;
   margin-left: -2px;
 }
@@ -1625,7 +1632,7 @@ textarea {
 }
 .inv-thead th {
   position: sticky;
-  top: calc(3.5rem + var(--inv-th-top, 0px));
+  top: var(--inv-th-top, 0px);
   z-index: 10;
   /* One height for both tables. The stock header's checkbox and sort buttons
      made it 42px against the history header's 38px, so switching tabs the

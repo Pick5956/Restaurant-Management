@@ -616,18 +616,9 @@ export default function InventoryMobile({
           ]}
         />
 
-        {/* Only what needs ordering: the stock value that sat on the left was
-            removed on the owner's call. */}
-        <div className="flex items-end justify-between gap-3 rounded-(--inv-radius) border border-(--inv-hairline) bg-(--inv-surface) px-4 py-3 shadow-(--inv-shadow)">
-          <div className="min-w-0">
-            <p className="text-[11px] text-(--inv-muted)">{copy.needsOrder}</p>
-            <p className="text-[20px] font-semibold tabular-nums text-(--inv-action)">
-              {totals.needsOrder}
-              <span className="ml-1 text-[11px] font-medium text-(--inv-muted)">{copy.items}</span>
-            </p>
-          </div>
-        </div>
-
+        {/* No summary box here any more: the stock value and then the
+            "ต้องสั่งของ N รายการ" count were both removed on the owner's call.
+            The ใกล้หมด / หมด tabs above already count what needs ordering. */}
         {loading ? (
           <p className="py-10 text-center text-[13px] text-(--inv-faint)">{copy.loading}</p>
         ) : visible.length === 0 ? (

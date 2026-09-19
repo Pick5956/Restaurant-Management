@@ -69,11 +69,25 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
     frame = requestAnimationFrame(step);
   };
 
+  // A plain scrolling box inside this one (no smoothScroll of its own) that can
+  // still move the way the wheel turns. The wheel is its to take: this list
+  // used to cancel the event first, so on the overview the day's order list
+  // inside the sales card never scrolled — the card did instead (19 ก.ย. 2569).
+  const innerCanTake = (target: EventTarget | null, delta: number) => {
+    for (let el = target instanceof Element ? target : null; el && el !== node; el = el.parentElement) {
+      if (!(el instanceof HTMLElement) || el.scrollHeight <= el.clientHeight + 1) continue;
+      if (!/auto|scroll/.test(getComputedStyle(el).overflowY)) continue;
+      if (delta < 0 ? el.scrollTop > 1 : el.scrollTop < el.scrollHeight - el.clientHeight - 1) return true;
+    }
+    return false;
+  };
+
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey || !event.deltaY) return; // pinch-zoom, sideways
     if (event.defaultPrevented) return;
     const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? node.clientHeight : 1;
     const delta = event.deltaY * unit;
+    if (frame === null && innerCanTake(event.target, delta)) return;
     const max = maxTop();
     // Resting against the edge it is being pushed into: the page scrolls.
     // 1px slack: scrollTop is rounded and can sit a pixel short of the end.

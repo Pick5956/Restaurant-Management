@@ -777,7 +777,7 @@ export default function AIAssistantPage() {
     : null;
 
   return (
-    <main className="ai-aura-bg relative flex h-[calc(100dvh-3.5rem)] min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
+    <main className="ai-aura-bg relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
       {/* Sunset Boulevard aura — full-bleed behind the whole page (light theme only) */}
       <div className="ai-aura-layer ai-aura-layer-1 dark:hidden" aria-hidden="true" />
       <div className="ai-aura-layer ai-aura-layer-2 dark:hidden" aria-hidden="true" />
@@ -1214,12 +1214,9 @@ export default function AIAssistantPage() {
             The right/top offsets match the bell's own (main's padding + its
             right-3/top-3) so the card's edge lines up with the control. */}
         <aside
-          /* Phone: the sheet stops at the app bar rather than running under it.
-             inset-0 covered the bar geometrically but the bar paints from a
-             higher stacking context, so it sat on top of the panel's own title
-             row and hid the close button. Starting below it also keeps the bell
-             and the menu reachable while the panel is open. */
-          className={`fixed inset-x-0 bottom-0 top-14 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
+          /* Phone: a full-height sheet. The app bar it used to stop under was
+             taken out on 19 ก.ย. 2569; the side handle opens the menu now. */
+          className={`fixed inset-x-0 bottom-0 top-0 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
             drawerOpen
               ? "translate-y-0 opacity-100 sm:scale-100"
               : "pointer-events-none translate-y-full opacity-0 sm:translate-y-0 sm:scale-95"

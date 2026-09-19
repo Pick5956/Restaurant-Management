@@ -225,7 +225,7 @@ export default function ThemedSelect({
         aria-haspopup="listbox"
         aria-controls={renderMenu ? listboxId : undefined}
         aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
-        className={`${compact ? "h-9 text-[12px]" : "h-10 text-[13px]"} w-full rounded-md border px-3 pr-9 text-left text-gray-900 outline-none transition-[background-color,border-color,box-shadow,transform,opacity] focus-visible:border-orange-500 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 dark:text-white ${buttonState} ${triggerClassName}`}
+        className={`${compact ? "h-9 text-[12px]" : "h-10 text-[13px]"} w-full rounded-md border px-3 pr-9 text-left text-gray-900 outline-none transition-[background-color,border-color,box-shadow,transform,translate,opacity] focus-visible:border-orange-500 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 dark:text-white ${buttonState} ${triggerClassName}`}
       >
         <span className={`${selected ? "" : "text-gray-500 dark:text-gray-400"} block truncate`}>
           {selected?.label ?? (placeholder || fallbackPlaceholder)}

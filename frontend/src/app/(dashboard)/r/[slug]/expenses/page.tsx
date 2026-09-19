@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Printer } from "lucide-react";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
@@ -77,6 +78,10 @@ export default function ExpensesPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
+  // The page glides on the mouse wheel and coasts on after it, like the
+  // overview, inventory and revenue pages. The scroller belongs to the shell
+  // layout, so it is wired up here and let go when the page is left.
+  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const restaurantId = activeMembership?.restaurant_id ?? null;
   const canEdit = can(activeMembership, "manage_expenses");
   const canView = canEdit || can(activeMembership, "view_reports");
@@ -570,7 +575,7 @@ export default function ExpensesPage() {
                       onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEdit(expense); } },
                     }
                   : {})}
-                className={`grid grid-cols-2 gap-x-3 gap-y-1 bg-white px-4 py-3 text-[14px] transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 lg:grid-cols-[110px_130px_minmax(0,1fr)_140px_120px] lg:items-center ${canEdit && expense.ingredient_transaction_id == null ? "cursor-pointer" : ""}`}
+                className={`grid grid-cols-2 gap-x-3 gap-y-1 bg-white px-4 py-3 text-[14px] transition-colors [@media(hover:hover)]:hover:bg-gray-50 dark:bg-gray-900 dark:[@media(hover:hover)]:hover:bg-gray-800 lg:grid-cols-[110px_130px_minmax(0,1fr)_140px_120px] lg:items-center ${canEdit && expense.ingredient_transaction_id == null ? "cursor-pointer" : ""}`}
               >
                 <span className="font-mono text-[13px] tabular-nums text-gray-500 dark:text-gray-400">
                   {new Date(expense.spent_at).toLocaleDateString(locale, { day: "2-digit", month: "short" })}
@@ -653,7 +658,7 @@ export default function ExpensesPage() {
               <button type="button" onClick={() => setFormOpen(false)} className="ui-press h-9 shrink-0 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.cancel}</button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            <div ref={smoothScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
               {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-gray-500 dark:text-gray-400">{copy.category}</span>

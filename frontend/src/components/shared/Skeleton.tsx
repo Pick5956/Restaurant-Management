@@ -201,11 +201,6 @@ export function DashboardPageSkeleton() {
       </div>
 
       <div className="lg:ml-60">
-        <div className="lg:hidden flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
-          <Skeleton className="h-8 w-8" />
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="ml-auto h-8 w-16" />
-        </div>
         <main className="px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>

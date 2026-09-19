@@ -43,13 +43,17 @@ export default function OperationalPageShell({
 }) {
   return (
     <div
-      className={`w-full max-w-full overflow-x-hidden bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${
+      // overflow-x-clip, not -hidden: hidden on one axis turns the other into
+      // `auto`, so the whole page sat inside a box the browser treats as its own
+      // scroller. On an iPhone every drag had to be handed from that box to the
+      // page, and the expenses page scrolled rough (19 ก.ย. 2569). clip cuts the
+      // same sideways overflow without making a scroller.
+      className={`w-full max-w-full overflow-x-clip bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${
         edgeToEdge
-          ? "flex h-[calc(100dvh-3.5rem)] min-h-0 overflow-y-hidden lg:h-[calc(100dvh-var(--shell-pad)*2)]"
-          // Mobile still has MobileTopBar above <main> (pt-14), so subtract it
-          // there. On lg the shell sheet already inset itself by --shell-pad, and
-          // there is no top bar left to subtract.
-          : "min-h-[calc(100dvh-3.5rem)] px-4 py-4 sm:px-6 lg:px-8 lg:py-6"
+          ? "flex h-dvh min-h-0 overflow-y-hidden lg:h-[calc(100dvh-var(--shell-pad)*2)]"
+          // Phones have had no top bar since 19 ก.ย. 2569, so the full height.
+          // On lg the shell sheet already inset itself by --shell-pad.
+          : "min-h-dvh px-4 py-4 sm:px-6 lg:min-h-[calc(100dvh-3.5rem)] lg:px-8 lg:py-6"
       }`}
     >
       <div className={edgeToEdge ? "flex min-h-0 w-full flex-1 flex-col" : "w-full space-y-5"}>
