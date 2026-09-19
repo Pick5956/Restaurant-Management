@@ -559,22 +559,31 @@ function CollapsibleCard({
     const place = (animate: boolean) => {
       const blocks = [...box.children] as HTMLElement[];
       if (!blocks.length) return;
+      // Every read before any write. Writing one block's size and then
+      // reading the next made the browser lay the next one out at its full
+      // natural height (855px for a 23-row stock list), and the slide started
+      // from that instead of from what was on screen.
       const gap = parseFloat(getComputedStyle(box).rowGap) || 0;
-      const bar = (block: HTMLElement) => (block.firstElementChild as HTMLElement | null)?.offsetHeight ?? 0;
-      const others = blocks.filter((block) => block.dataset.key !== focusKey);
-      const rest = others.reduce((sum, block) => sum + bar(block), 0) + gap * (blocks.length - 1);
+      const room = box.clientHeight;
+      const bars = blocks.map((block) => (block.firstElementChild as HTMLElement | null)?.offsetHeight ?? 0);
+      // offsetHeight, not getBoundingClientRect: the card tilts and scales up
+      // 5% while hovered, and a scaled reading would start every slide 5% big.
+      const starts = blocks.map((block) => block.offsetHeight);
+      const rest = blocks.reduce((sum, block, i) => (block.dataset.key === focusKey ? sum : sum + bars[i]), 0) + gap * (blocks.length - 1);
+      const targets = blocks.map((block, i) => (block.dataset.key === focusKey ? Math.max(bars[i], room - rest) : bars[i]));
       if (animate) {
-        for (const block of blocks) {
+        blocks.forEach((block, i) => {
           block.style.flex = "none";
-          block.style.height = `${block.getBoundingClientRect().height}px`;
-        }
+          block.style.height = `${starts[i]}px`;
+        });
         void box.offsetHeight; // commit the start heights before the targets
       }
-      for (const block of blocks) {
-        const target = block.dataset.key === focusKey ? Math.max(bar(block), box.clientHeight - rest) : bar(block);
+      // All targets in the same frame, one duration and easing: the growing
+      // block and the shrinking ones move in step and always add up.
+      blocks.forEach((block, i) => {
         block.style.flex = "none";
-        block.style.height = `${target}px`;
-      }
+        block.style.height = `${targets[i]}px`;
+      });
     };
     place(true);
     const onResize = () => place(false);
@@ -645,8 +654,11 @@ function CollapsibleCard({
                 // nothing in it is a strip, a full one takes the room. Past
                 // that it scrolls inside itself.
                 // Height is animated when a topic is focused (see the layout
-                // effect above); until then the blocks share the room.
-                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-lg bg-white transition-[height] duration-300 ease-out motion-reduce:transition-none dark:bg-gray-800"
+                // effect above); until then the blocks share the room. Kept
+                // even under "reduce motion": it is a short resize the owner
+                // asked for, not a decorative flourish, and without it the
+                // switch read as a jump.
+                className="flex min-h-0 min-w-0 flex-auto flex-col overflow-hidden rounded-lg bg-white transition-[height] duration-300 ease-out dark:bg-gray-800"
               >
                 {block.head.heading ? (
                 <div
