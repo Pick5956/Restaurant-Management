@@ -353,21 +353,12 @@ export default function ThemedTimeInput({
   disabled,
   error,
   help,
-  doneLabel,
-  onDone,
-  openSignal = 0,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   error?: string;
   help?: string;
-  /** Replaces "เสร็จ" — "ถัดไป: เวลาปิด" when another time is picked next. */
-  doneLabel?: string;
-  /** Runs after the done button closes the panel (not on a click outside). */
-  onDone?: () => void;
-  /** Bump this number to open the panel from outside, e.g. from the field before. */
-  openSignal?: number;
 }) {
   const { language } = useLanguage();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -377,13 +368,6 @@ export default function ThemedTimeInput({
   const pickerId = useId();
   const descriptionId = useId();
   const [open, setOpen] = useState(false);
-  // Opening on a new signal, done during render rather than in an effect so
-  // the panel is there on the same paint as the previous one closing.
-  const [seenSignal, setSeenSignal] = useState(openSignal);
-  if (openSignal !== seenSignal) {
-    setSeenSignal(openSignal);
-    if (openSignal && !disabled) setOpen(true);
-  }
 
   const current = normalizeTime(value);
   const [currentHour, currentMinute] = current.split(":");
@@ -552,13 +536,10 @@ export default function ThemedTimeInput({
           </div>
           <button
             type="button"
-            onClick={() => {
-              closePicker();
-              onDone?.();
-            }}
+            onClick={closePicker}
             className="mt-2.5 h-9 w-full rounded-xl bg-orange-700 text-[13px] font-semibold text-white transition hover:bg-orange-800"
           >
-            {doneLabel ?? copy.done}
+            {copy.done}
           </button>
         </div>
       )}
