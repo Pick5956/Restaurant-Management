@@ -1775,7 +1775,7 @@ export default function InventoryPage() {
                                 if (el) el.indeterminate = selectedIds.size > 0 && !allSelected;
                               }}
                               onChange={toggleSelectAll}
-                              className="h-4 w-4 cursor-pointer accent-orange-500"
+                              className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                             />
                           </th>
                         )}
@@ -1809,7 +1809,7 @@ export default function InventoryPage() {
                                   aria-label={`select ${item.name}`}
                                   checked={selectedIds.has(item.ID)}
                                   onChange={() => toggleSelect(item.ID)}
-                                  className="h-4 w-4 cursor-pointer accent-orange-500"
+                                  className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                                 />
                               </td>
                             )}
