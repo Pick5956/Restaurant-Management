@@ -6,12 +6,15 @@ import { listCategories, listMenuItems } from '@/src/api/menu';
 import { closeEmptyTable, deleteOrderItem, getOrder, updateOrderItem } from '@/src/api/order';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
-import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
+import { AppRefreshControl, AppScreen, ScreenHeading } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
+import { OrderItemPanel } from '@/src/components/order-item-editor';
 import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
+import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
 import { Button, Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
 import { itemStatusLabel, money, orderStatusLabel } from '@/src/lib/format';
-import { filterMenuCatalog, groupMenuByCategory } from '@/src/lib/menu-catalog';
+import { filterMenuCatalog, groupMenuByCategory, isMenuSoldOut } from '@/src/lib/menu-catalog';
+import { stockFailure, stockFailureMessage } from '@/src/lib/order-item-error';
 import {
   createOrderDetailRequestGuard,
   currentRoundPresentation,
@@ -83,15 +86,18 @@ function CurrentRoundBasket({
   accessibilityLabel,
   disabled,
   onPress,
+  inline = false,
 }: {
   label: string;
   value: string;
   accessibilityLabel: string;
   disabled: boolean;
   onPress: () => void;
+  /** At the foot of the grid's column on a tablet, which already keeps clear
+   *  of the home indicator, rather than as the screen's footer. */
+  inline?: boolean;
 }) {
-  return (
-    <View style={{ backgroundColor: palette.surface, paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xxl }}>
+  const button = (
       <Pressable
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
@@ -138,6 +144,11 @@ function CurrentRoundBasket({
         </Text>
         </GlassLayer>
       </Pressable>
+  );
+  if (inline) return button;
+  return (
+    <View style={{ backgroundColor: palette.surface, paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xxl }}>
+      {button}
     </View>
   );
 }
@@ -192,6 +203,8 @@ export default function OrderDetailScreen() {
   const [categoryId, setCategoryId] = useState('all');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  // The dish open in the tablet's side panel. Phones push the item screen.
+  const [selectedMenuId, setSelectedMenuId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // `error` is the order failing to load; a tap's outcome is a toast (14 ก.ย.).
@@ -248,11 +261,13 @@ export default function OrderDetailScreen() {
       }
     }
   }, [canAccessOrder, canTakeOrder, copy, orderId, validOrderId]);
+  // Loaded when the screen opens or comes back into view, and then left alone:
+  // no timer. The owner, 2026-09-19: an order screen is not the kitchen board,
+  // and a dish that sells out while it sits open is caught by the add itself,
+  // which answers with a toast.
   useFocusEffect(useCallback(() => {
     load();
-    const timer = setInterval(() => load(true), 10000);
     return () => {
-      clearInterval(timer);
       requestGuardRef.current.invalidateLoads();
       foregroundLoadRef.current = null;
     };
@@ -266,6 +281,12 @@ export default function OrderDetailScreen() {
     () => new Map(menuItems.map((item) => [item.ID, item.image_url])),
     [menuItems],
   );
+  // Dishes that cannot take one more portion, so a line's + stops there the
+  // same way the grid greys the tile out.
+  const soldOutMenuIds = useMemo(
+    () => new Set(menuItems.filter((item) => isMenuSoldOut(item)).map((item) => item.ID)),
+    [menuItems],
+  );
   const currentRoundSummary = useMemo(() => summarizeCurrentRound(order?.items), [order?.items]);
   const pendingByMenu = useMemo(() => pendingQuantityByMenu(order?.items), [order?.items]);
   const currentRoundCopy = useMemo(() => currentRoundPresentation(currentRoundSummary, language), [currentRoundSummary, language]);
@@ -277,6 +298,47 @@ export default function OrderDetailScreen() {
   ), [categories, categoryId, copy, menuItems, search]);
   const locked = order?.status === 'completed' || order?.status === 'cancelled';
   const canCloseEmpty = canTakeOrder && canCloseEmptyOrder(order);
+  // On a tablet a dish opens in a panel beside the grid instead of taking the
+  // whole screen. Only while there is a grid to pick from: a closed order, or
+  // someone who cannot take orders, gets the summary alone at every width.
+  const sidePanel = width >= breakpoints.tablet && canTakeOrder && !locked;
+  const selectedMenu = useMemo(
+    () => (selectedMenuId === null ? null : menuItems.find((item) => item.ID === selectedMenuId) ?? null),
+    [menuItems, selectedMenuId],
+  );
+
+  // The keyboard goes - a search may have it up - but the keyword stays: the
+  // field is still on screen over the grid it filters, and the next dish is
+  // often picked from the same search.
+  const pickDish = useCallback((item: MenuItem) => {
+    Keyboard.dismiss();
+    setSelectedMenuId(item.ID);
+  }, []);
+
+  // The panel's add is a write to this same order, and beside the grid it is on
+  // screen together with the screen's own writes (closing an empty table)
+  // rather than behind a pushed screen, so it takes the same lock they do. The
+  // lock also drops any load in flight, so none can land after the add and
+  // paint the order as it stood before it.
+  const panelMutationGuard = useMemo(() => ({
+    begin: () => requestGuardRef.current.beginMutation(),
+    finish: () => requestGuardRef.current.finishMutation(),
+  }), []);
+
+  // The line is on the order: the badge and the basket take it straight from
+  // the answer. The panel empties only if it still shows the dish that was
+  // added - a waiter who tapped the next dish while this one saved keeps that one.
+  const handleDishAdded = useCallback((next: Order, menuId: number) => {
+    setOrder(next);
+    setSelectedMenuId((current) => (current === menuId ? null : current));
+  }, []);
+
+  // No billing bar across the bottom. It sat over the menu grid permanently for
+  // an action taken once per order, and it belongs with the order it settles:
+  // the item count in the header opens the summary, and the bill button is there.
+  const openOrderSummary = useCallback(() => {
+    router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never);
+  }, [orderId]);
 
   async function mutate(action: () => Promise<Order>, success?: string): Promise<boolean> {
     if (!requestGuardRef.current.beginMutation()) return false;
@@ -290,10 +352,13 @@ export default function OrderDetailScreen() {
       if (success) showToast({ title: success });
       return true;
     } catch (err) {
+      // Only the stock refusal gets a line of its own, in the app's words; any
+      // other failure keeps the title and nothing vague after it.
+      const failure = stockFailure(err instanceof Error ? err.message : '');
       showToast({
         tone: 'error',
         title: copy('ทำรายการไม่สำเร็จ', 'Could not complete this action'),
-        message: err instanceof Error ? err.message : undefined,
+        ...(failure ? { message: stockFailureMessage(failure, language) } : {}),
       });
       return false;
     }
@@ -355,7 +420,7 @@ export default function OrderDetailScreen() {
                       {copy(`จำนวน ${item.quantity.toLocaleString('th-TH')}`, `Quantity ${item.quantity.toLocaleString('en-US')}`)}
                     </Text>
                   ) : null}
-                  {item.selected_options?.length ? <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{item.selected_options.map((option) => `${option.group_name}: ${option.option_name}`).join(' · ')}</Text> : null}
+                  {item.selected_options?.length ? <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{item.selected_options.map((option) => `${option.group_name}: ${option.option_name}`).join(', ')}</Text> : null}
                   {item.note ? <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('หมายเหตุ', 'Note')}: {item.note}</Text> : null}
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
@@ -376,7 +441,7 @@ export default function OrderDetailScreen() {
                     label={copy(`เพิ่มจำนวน ${item.menu_name}`, `Increase ${item.menu_name} quantity`)}
                     icon="add"
                     onPress={() => changeQuantity(item, 1)}
-                    disabled={submitting}
+                    disabled={submitting || soldOutMenuIds.has(item.menu_id)}
                   />
                 </View>
               ) : null}
@@ -418,6 +483,7 @@ export default function OrderDetailScreen() {
       onSearchChange={setSearch}
       searchOpen={searchOpen}
       onOpenSearch={() => setSearchOpen(true)}
+      onCloseSearch={sidePanel ? closeSearch : undefined}
     />
   ) : null;
 
@@ -426,8 +492,10 @@ export default function OrderDetailScreen() {
     <OrderMenuGrid
       groups={menuGroups}
       countByMenu={pendingByMenu}
-      tabletWorkspace={tabletWorkspace}
-      onPressItem={(item) => router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never)}
+      tabletWorkspace={sidePanel}
+      onPressItem={(item) => (sidePanel
+        ? pickDish(item)
+        : router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never))}
       accessibilityLabelFor={(item, inRound) => (inRound > 0
         ? copy(`เพิ่มเมนู ${item.name} ในตะกร้า ${inRound}`, `Add ${item.name}, ${inRound} in cart`)
         : copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`))}
@@ -457,13 +525,6 @@ export default function OrderDetailScreen() {
     return <AppScreen title={copy('รายละเอียดออเดอร์', 'Order details')} topLevel={false}><EmptyState title={copy('ไม่พบออเดอร์นี้', 'Order not found')} detail={copy('รหัสออเดอร์ไม่ถูกต้อง กรุณากลับไปเลือกรายการใหม่', 'The order ID is invalid. Go back and choose an order again.')} /></AppScreen>;
   }
 
-  // No billing bar across the bottom. It sat over the menu grid permanently for
-  // an action taken once per order, and it belongs with the order it settles:
-  // the item count in the header opens the summary, and the bill button is there.
-  const openOrderSummary = useCallback(() => {
-    router.push({ pathname: '/order/bill' as never, params: { id: String(orderId) } } as never);
-  }, [orderId]);
-
   // The basket and the `รายการ` chip in the header lead to the SAME screen -
   // the order summary. They used to fork: the chip opened the summary and the
   // basket opened a separate current-round screen that listed the same unsent
@@ -474,16 +535,73 @@ export default function OrderDetailScreen() {
     <CurrentRoundBasket
       accessibilityLabel={currentRoundCopy.openLabel}
       disabled={submitting}
+      inline={sidePanel}
       label={currentRoundCopy.basketLabel}
       value={money(currentRoundSummary.subtotal, language)}
       onPress={openOrderSummary}
     />
   ) : null;
 
+  const title = order?.table?.display_label || (order?.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : copy(`ออเดอร์ #${orderId}`, `Order #${orderId}`));
+  const subtitle = order ? `${order.order_number}, ${orderStatusLabel(order.status, language)}` : copy('กำลังโหลดออเดอร์', 'Loading order');
+  const summaryAction = order ? (
+    <OrderSummaryAction
+      accessibilityLabel={orderSummaryCopy.title}
+      count={activeQuantity}
+      label={copy('รายการ', 'Items')}
+      onPress={openOrderSummary}
+    />
+  ) : undefined;
+
+  if (sidePanel) {
+    // Keyed by the dish, so a new tap starts the editor over instead of
+    // carrying the last dish's options and note into this one.
+    const dishPanel = order && selectedMenu ? (
+      <OrderItemPanel
+        key={selectedMenu.ID}
+        initial={{ order, menu: selectedMenu }}
+        menuId={selectedMenu.ID}
+        mutationGuard={panelMutationGuard}
+        onClose={() => setSelectedMenuId(null)}
+        onDone={(next) => handleDishAdded(next, selectedMenu.ID)}
+        orderId={orderId}
+      />
+    ) : <OrderItemPanelPlaceholder />;
+
+    return (
+      <AppScreen
+        title={title}
+        topLevel={false}
+        // Nothing on this screen scrolls as a whole: the grid and the panel
+        // each scroll by themselves, and the heading stays where it is.
+        scroll={false}
+        // Drawn over the grid's column instead, so the dish panel can run to
+        // the top of the screen and the item count sits over the grid.
+        hideTitle
+      >
+        <OrderMenuSplit
+          header={<ScreenHeading action={summaryAction} showBack subtitle={subtitle} title={title} />}
+          filterBar={menuFilterBar}
+          footer={currentRoundBasket}
+          panel={dishPanel}
+          refreshControl={refreshControl}
+        >
+          {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
+          {order ? (
+            <>
+              {renderDestructiveActions()}
+              {menuWorkspace}
+            </>
+          ) : null}
+        </OrderMenuSplit>
+      </AppScreen>
+    );
+  }
+
   return (
     <AppScreen
-      title={order?.table?.display_label || (order?.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : copy(`ออเดอร์ #${orderId}`, `Order #${orderId}`))}
-      subtitle={order ? `${order.order_number} · ${orderStatusLabel(order.status, language)}` : copy('กำลังโหลดออเดอร์', 'Loading order')}
+      title={title}
+      subtitle={subtitle}
       topLevel={false}
       refreshControl={refreshControl}
       // The menu grid runs long; without pinning, which table you are ordering
@@ -501,14 +619,7 @@ export default function OrderDetailScreen() {
       // a search box that is no longer on screen.
       onTouchOutsideStickyContent={searchOpen ? closeSearch : undefined}
       footer={currentRoundBasket}
-      action={order ? (
-        <OrderSummaryAction
-          accessibilityLabel={orderSummaryCopy.title}
-          count={activeQuantity}
-          label={copy('รายการ', 'Items')}
-          onPress={openOrderSummary}
-        />
-      ) : undefined}
+      action={summaryAction}
     >
       {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
 

@@ -561,7 +561,8 @@ test('every mobile menu and order surface consumes the shared image policy', () 
     '../../app/menu.tsx',
     // The order screen's and the served-item page's dish grid.
     '../components/order-menu-grid.tsx',
-    '../../app/order/item.tsx',
+    // The item editor, full screen on a phone and a side panel on a tablet.
+    '../components/order-item-editor.tsx',
   ];
   for (const relativePath of cardFiles) {
     const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');

@@ -17,6 +17,8 @@ export interface OrderItem {
   options_total: number;
   quantity: number;
   subtotal: number;
+  /** What dish-level promotions took off this line; subtotal is before them. */
+  discount_amount?: number;
   fulfillment_type?: OrderItemFulfillmentType;
   note: string;
   status: OrderItemStatus;
@@ -86,8 +88,23 @@ export interface Order {
   items?: OrderItem[];
   payments?: OrderPayment[];
   status_logs?: OrderStatusLog[];
+  /** Promotions the server applied; their amounts add up to discount_amount. */
+  promotions?: OrderPromotion[];
   CreatedAt?: string;
   UpdatedAt?: string;
+}
+
+/** One promotion as it applied to one order. Name and amount are copied at
+ *  the time, so a paid bill keeps them after the promotion is edited. */
+export interface OrderPromotion {
+  ID: number;
+  order_id: number;
+  promotion_id: number;
+  name: string;
+  type: string;
+  /** How often it applied: two pairs of "1 แถม 1" is 2. */
+  times: number;
+  amount: number;
 }
 
 export interface OrderPayment {
@@ -108,6 +125,8 @@ export interface Bill {
   items: OrderItem[];
   subtotal: number;
   discount_amount: number;
+  /** Itemises discount_amount. Older servers omit it. */
+  promotions?: OrderPromotion[];
   service_charge_enabled: boolean;
   service_charge_rate: number;
   service_charge_amount: number;

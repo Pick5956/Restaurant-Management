@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 31
+	CurrentSchemaVersion int64 = 32
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -694,7 +694,72 @@ func schemaMigrationPlan() []SchemaMigration {
 				return nil
 			},
 		},
+		{
+			Version: 32,
+			Name:    "promotions",
+			Up: func(ctx *MigrationContext) error {
+				// Promotions the owner sets up once and the order service applies
+				// by itself: the rules, the dishes each one counts, and what every
+				// order earned from them.
+				if err := migratePromotions(ctx.DB); err != nil {
+					return fmt.Errorf("migrate promotions: %w", err)
+				}
+				// A line's share of dish-level promotions, so sales per dish can be
+				// read net of them. No existing line had any, so zero is right.
+				for _, statement := range []string{
+					`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14,2) NOT NULL DEFAULT 0`,
+					`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS chk_order_items_discount_nonnegative`,
+					`ALTER TABLE order_items ADD CONSTRAINT chk_order_items_discount_nonnegative CHECK (discount_amount >= 0)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add order item discount: %w", err)
+					}
+				}
+				// Re-seed so manage_promotions reaches the manager system role.
+				if err := seed.SeedRoles(ctx.DB); err != nil {
+					return fmt.Errorf("reseed roles for promotions: %w", err)
+				}
+				return nil
+			},
+		},
 	}
+}
+
+// promotionForeignKeys are the links migration 32 adds by hand, named by the
+// model and association that own each one.
+var promotionForeignKeys = []struct {
+	model       any
+	association string
+}{
+	{&entity.Promotion{}, "Restaurant"},
+	{&entity.Promotion{}, "Targets"},
+	{&entity.PromotionTarget{}, "MenuItem"},
+	{&entity.PromotionTarget{}, "Category"},
+	{&entity.Order{}, "Promotions"},
+	{&entity.OrderPromotion{}, "Promotion"},
+}
+
+// migratePromotions creates only the three promotion tables, then adds their
+// links to the tables that already exist one by one. Plain AutoMigrate would
+// also walk into restaurants, menu_items and orders on the way; this keeps the
+// migration additive, the same way migration 11 does.
+func migratePromotions(database *gorm.DB) error {
+	migrationDB := database.Session(&gorm.Session{NewDB: true})
+	configCopy := *migrationDB.Config
+	configCopy.IgnoreRelationshipsWhenMigrating = true
+	migrationDB.Config = &configCopy
+	if err := migrationDB.AutoMigrate(&entity.Promotion{}, &entity.PromotionTarget{}, &entity.OrderPromotion{}); err != nil {
+		return err
+	}
+	for _, link := range promotionForeignKeys {
+		if database.Migrator().HasConstraint(link.model, link.association) {
+			continue
+		}
+		if err := database.Migrator().CreateConstraint(link.model, link.association); err != nil {
+			return fmt.Errorf("create %T %s constraint: %w", link.model, link.association, err)
+		}
+	}
+	return nil
 }
 
 type restaurantSlugRow struct {

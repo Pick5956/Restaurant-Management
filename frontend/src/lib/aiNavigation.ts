@@ -56,6 +56,12 @@ const navigationEntries: NavigationEntry[] = [
     aliases: ["menu", "food menu", "dish", "dishes", "เมนู", "เมนูอาหาร", "รายการอาหาร"],
   },
   {
+    href: "/promotions",
+    label: { th: "โปรโมชัน", en: "Promotions" },
+    permission: "manage_promotions",
+    aliases: ["promotions", "promotion", "promo", "discounts", "deals", "โปรโมชัน", "โปรโมชั่น", "โปร", "ส่วนลด", "แถม"],
+  },
+  {
     href: "/tables",
     label: { th: "ผังโต๊ะ", en: "Tables" },
     permission: ["manage_table", "view_tables"],

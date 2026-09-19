@@ -47,7 +47,7 @@ export default function NotFoundUI() {
   ];
 
   return (
-    <div className="min-h-dvh bg-slate-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+    <div className="min-h-dvh bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <header className="border-b border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-950/95 backdrop-blur">
         <div className="h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-2.5">

@@ -145,7 +145,7 @@ function TimeField({
         {label}
         <span className="ml-1 text-orange-600 dark:text-orange-400">*</span>
       </span>
-      <ThemedTimeInput value={value} onChange={onChange} error={error} />
+      <ThemedTimeInput value={value} onChange={onChange} error={error} aria-label={label} />
     </div>
   );
 }

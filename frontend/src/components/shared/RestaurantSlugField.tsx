@@ -66,19 +66,32 @@ function useSiteHost() {
 }
 
 const variants = {
+  // The settings pages draw every field as a flat tinted box with no edge; the
+  // setting row's own title names the field, so the caption is for screen
+  // readers only.
   settings: {
     label: "block min-w-0",
-    caption: "mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300",
-    height: "h-11 sm:h-10",
-    border: "border-gray-200 dark:border-gray-700",
-    text: "text-[14px] sm:text-[13px]",
-    message: "mt-1 text-[11px] leading-5 text-red-600 dark:text-red-300",
+    caption: "sr-only",
+    height: "h-12",
+    radius: "rounded",
+    surface: "bg-(--settings-field)",
+    border: "border-transparent",
+    errorBorder: "border-transparent shadow-[inset_0_0_0_2px_var(--color-red-700)] dark:shadow-[inset_0_0_0_2px_var(--color-red-400)]",
+    focus: "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-orange-700 dark:focus-within:outline-orange-400",
+    disabled: "opacity-50",
+    text: "text-[16px]",
+    message: "mt-1.5 text-[12px] leading-5 text-red-700 dark:text-red-400",
   },
   onboarding: {
     label: "block space-y-2",
     caption: "text-sm font-medium text-gray-800 dark:text-gray-200",
     height: "h-[42px]",
+    radius: "rounded-md",
+    surface: "bg-white dark:bg-gray-900",
     border: "border-gray-300 dark:border-gray-700",
+    errorBorder: "border-red-300 dark:border-red-900/60",
+    focus: "focus-within:border-orange-500",
+    disabled: "opacity-60",
     text: "text-sm",
     message: "text-xs font-medium text-red-600 dark:text-red-300",
   },
@@ -121,9 +134,11 @@ export default function RestaurantSlugField({
     <label className={styles.label}>
       <span className={styles.caption}>{label}</span>
       <span
-        className={`flex w-full min-w-0 items-center rounded-md border bg-white transition-colors dark:bg-gray-900 ${styles.height} ${
-          message ? "border-red-300 focus-within:border-red-500 dark:border-red-900/60" : `${styles.border} focus-within:border-orange-500`
-        } ${disabled ? "opacity-60" : ""}`}
+        className={`flex w-full min-w-0 items-center ${styles.radius} border transition-colors ${styles.surface} ${styles.height} ${
+          message
+            ? `${styles.errorBorder} ${variant === "onboarding" ? "focus-within:border-red-500" : styles.focus}`
+            : `${styles.border} ${styles.focus}`
+        } ${disabled ? styles.disabled : ""}`}
       >
         <span className={`shrink-0 select-none pl-3 text-gray-500 dark:text-gray-400 ${styles.text}`}>
           {host}

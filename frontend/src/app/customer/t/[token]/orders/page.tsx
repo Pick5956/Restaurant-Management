@@ -96,12 +96,12 @@ export default function CustomerTableOrdersPage() {
   const tableLabel = payload?.table.display_label || payload?.table.table_number || "-";
 
   if (loading) {
-    return <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">{copy.loading}</div>;
+    return <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">{copy.loading}</div>;
   }
 
   if (!payload) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center dark:bg-gray-950">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-white px-4 text-center dark:bg-gray-950">
         <p className="text-sm font-medium text-red-600 dark:text-red-300">{error || copy.loadError}</p>
         <Link href={customerTableMenuHref(token)} className="ui-press inline-flex h-11 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -112,7 +112,7 @@ export default function CustomerTableOrdersPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-slate-50 pb-8 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="min-h-dvh bg-white pb-8 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <Link href={customerTableMenuHref(token)} aria-label={copy.back} title={copy.back} className="ui-press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">

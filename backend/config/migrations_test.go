@@ -163,6 +163,10 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// the purchase units a delivery is entered in — inside the frozen
 		// registry, so the fingerprint advances with the columns.
 		31: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
+		// Version 32 adds promotions, promotion_targets and order_promotions to
+		// the registry, Order.Promotions (a has-many, no column) and
+		// OrderItem.DiscountAmount (a column), so the fingerprint advances.
+		32: "8be2fca141b0172cf8468e6b91761d3853ea4f0461596844ca23e43d5ee0a5e5",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -189,6 +193,7 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		29: "restaurant_slug",
 		30: "ingredient_lots",
 		31: "ingredient_pack_units",
+		32: "promotions",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

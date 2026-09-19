@@ -646,10 +646,11 @@ test('warm primary scenes clear busy state when focus cleanup invalidates a fore
 });
 
 test('every text field gets a Done bar, on an id that cannot be shared', async () => {
-  const [inputSource, barSource, itemSource] = await Promise.all([
+  const [inputSource, barSource, itemSource, editorSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'src', 'components', 'app-text-input.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'src', 'components', 'keyboard-done-bar.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'src', 'components', 'order-item-editor.tsx'), 'utf8'),
   ]);
 
   // Fabric recycles component views. RCTViewComponentView.prepareForRecycle resets
@@ -677,6 +678,7 @@ test('every text field gets a Done bar, on an id that cannot be shared', async (
   // One bar, wired at the single chokepoint every field in the app goes through.
   // No screen may keep a private copy - that is what left it on one screen only.
   assert.doesNotMatch(itemSource, /InputAccessoryView/);
+  assert.doesNotMatch(editorSource, /InputAccessoryView/);
 
   // Two kinds of field opt out, and both have to stay opted out.
   //
@@ -734,6 +736,9 @@ test('every text field gets a Done bar, on an id that cannot be shared', async (
 test('the shell leaves the keyboard inset to iOS and reveals a covered field by measuring it', async () => {
   const source = await readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8');
   const itemSource = await readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8');
+  // The note's keyboard handling lives with the editor, which the phone's item
+  // screen and the tablet's dish panel share.
+  const editorSource = await readFile(path.join(mobileRoot, 'src', 'components', 'order-item-editor.tsx'), 'utf8');
 
   // RCTScrollViewComponentView._keyboardWillChangeFrame already adds the keyboard
   // as contentInset.bottom. Adding it a second time as content padding gave the
@@ -747,8 +752,13 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
   // measures its own overlap instead.
   assert.match(source, /getOffset: \(\) => contentOffsetRef\.current/);
   assert.match(itemSource, /scrollControlRef=\{scrollControl\}/);
-  assert.match(itemSource, /measureInWindow\(/);
-  assert.match(itemSource, /scrollControl\.current\?\.scrollTo\(target\)/);
+  assert.match(itemSource, /useNoteKeyboardAlignment\(scrollControl\)/);
+  assert.match(editorSource, /measureInWindow\(/);
+  assert.match(editorSource, /scrollControl\.current\?\.scrollTo\(target\)/);
+  // The tablet panel scrolls itself, so it hands the same hook a control over
+  // its own scroll view, with the same contract as AppScreen's.
+  assert.match(editorSource, /getOffset: \(\) => offsetRef\.current/);
+  assert.match(editorSource, /const noteKeyboard = useNoteKeyboardAlignment\(scrollControl\);/);
 
   // One movement, not two. On `didShow` this ran only after the keyboard had
   // finished animating, so iOS's own partial scroll played out first and this
@@ -756,9 +766,10 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
   // absolute, taken from an anchor measured at focus: a measurement taken while
   // the keyboard is animating races iOS's scroll, and pairing it with the current
   // offset double-counts however far iOS has already moved.
-  assert.match(itemSource, /'keyboardWillChangeFrame' : 'keyboardDidShow'/);
+  assert.match(editorSource, /'keyboardWillChangeFrame' : 'keyboardDidShow'/);
+  assert.doesNotMatch(editorSource, /addListener\('keyboardDidShow'/);
   assert.doesNotMatch(itemSource, /addListener\('keyboardDidShow'/);
-  assert.match(itemSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - top;/);
+  assert.match(editorSource, /const target = anchor\.offset \+ anchor\.bottom \+ spacing\.lg - top;/);
 
   // Neither half may be set up by the focus render. The listener used to be
   // added by an effect that runs AFTER the render focus triggers, while the
@@ -767,10 +778,10 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
   // scroll, a dismiss and a second tap, which is what the owner reported on
   // 16 ก.ย. 2569. The listener is mounted for the screen, and whichever of the
   // two lands last does the scrolling.
-  assert.match(itemSource, /const show = Keyboard\.addListener\(showEvent[\s\S]{0,320}alignNoteAboveKeyboard\(\);/);
-  assert.match(itemSource, /\}, \[alignNoteAboveKeyboard\]\);/);
-  assert.doesNotMatch(itemSource, /if \(!noteFocused\) return undefined;/);
-  assert.match(itemSource, /measureInWindow\(\([\s\S]{0,260}alignNoteAboveKeyboard\(\);/);
+  assert.match(editorSource, /const show = Keyboard\.addListener\(showEvent[\s\S]{0,320}alignNoteAboveKeyboard\(\);/);
+  assert.match(editorSource, /\}, \[alignNoteAboveKeyboard\]\);/);
+  assert.doesNotMatch(editorSource, /if \(!noteFocused\) return undefined;/);
+  assert.match(editorSource, /measureInWindow\(\([\s\S]{0,260}alignNoteAboveKeyboard\(\);/);
 });
 
 test('the overview keeps its fourteen-day report when an earlier day is picked', async () => {

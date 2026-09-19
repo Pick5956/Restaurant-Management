@@ -1,18 +1,25 @@
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText as Text } from '@/src/components/app-text';
 import { MenuImage } from '@/src/components/menu-image';
-import { EmptyState, IconButton, SearchField, SectionHeader, Select, StatusBadge } from '@/src/components/ui';
+import { EmptyState, IconButton, SearchField, SectionHeader, Select } from '@/src/components/ui';
 import { money } from '@/src/lib/format';
-import type { MenuCatalogGroup } from '@/src/lib/menu-catalog';
+import { isMenuSoldOut, menuGridColumns, type MenuCatalogGroup } from '@/src/lib/menu-catalog';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette, radius, spacing, typeScale } from '@/src/theme';
 import type { Category, MenuItem } from '@/src/types/menu';
+
+// The narrowest a tile gets before the row drops a column.
+const TABLET_TILE_MIN_WIDTH = 150;
 
 type OrderMenuGridProps = {
   groups: MenuCatalogGroup<MenuItem>[];
   /** Per-dish count for the badge; a dish absent or at 0 shows none. */
   countByMenu: ReadonlyMap<number, number>;
+  /** Size the tiles from the grid's own measured width instead of the phone's
+   *  fixed two columns. On a tablet the grid shares the screen with the dish
+   *  panel, so the window says nothing about how wide it is. */
   tabletWorkspace: boolean;
   onPressItem: (item: MenuItem) => void;
   accessibilityLabelFor: (item: MenuItem, count: number) => string;
@@ -26,6 +33,10 @@ type OrderMenuFilterBarProps = {
   onSearchChange: (value: string) => void;
   searchOpen: boolean;
   onOpenSearch: () => void;
+  /** Given on a tablet, where the grid under an open search stays live - its
+   *  results are what gets tapped - so the search closes from a button in the
+   *  magnifier's place instead of from a tap anywhere else. */
+  onCloseSearch?: () => void;
 };
 
 /**
@@ -42,12 +53,11 @@ export function OrderMenuFilterBar({
   onSearchChange,
   searchOpen,
   onOpenSearch,
+  onCloseSearch,
 }: OrderMenuFilterBarProps) {
   const { copy } = useDisplayPreferences();
   if (searchOpen) {
-    // No close button: while this is up the whole screen is a dismiss target,
-    // so a dedicated one would only be in the way of the field it sits beside.
-    return (
+    const field = (
       <SearchField
         accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
         autoFocus
@@ -56,6 +66,21 @@ export function OrderMenuFilterBar({
         onChangeText={onSearchChange}
         placeholder={copy('ค้นหาเมนู', 'Search menu')}
       />
+    );
+    // No close button on a phone: while this is up the whole screen is a
+    // dismiss target, so a dedicated one would only be in the way of the field
+    // it sits beside.
+    if (!onCloseSearch) return field;
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <View style={{ minWidth: 0, flex: 1 }}>{field}</View>
+        <IconButton
+          accessibilityLabel={copy('ปิดการค้นหา', 'Close search')}
+          icon="close"
+          onPress={onCloseSearch}
+          variant="glass"
+        />
+      </View>
     );
   }
   return (
@@ -89,41 +114,49 @@ export function OrderMenuGrid({
   accessibilityLabelFor,
 }: OrderMenuGridProps) {
   const { copy, language } = useDisplayPreferences();
+  const [gridWidth, setGridWidth] = useState(0);
+  const { tileWidth } = menuGridColumns(gridWidth, TABLET_TILE_MIN_WIDTH, spacing.md);
 
   if (!groups.length) {
     return <EmptyState title={copy('ไม่พบเมนู', 'No menu items found')} detail={copy('ลองเปลี่ยนหมวดหรือคำค้น', 'Try another category or search.')} />;
   }
 
   return (
-    <View style={{ gap: spacing.md }}>
-      {groups.map((group) => (
+    <View
+      onLayout={tabletWorkspace ? (event) => setGridWidth(Math.floor(event.nativeEvent.layout.width)) : undefined}
+      style={{ gap: spacing.md }}
+    >
+      {/* Nothing until the tablet grid knows its width: one frame of empty
+          column beats a frame of tiles at a guessed size snapping to the real one. */}
+      {tabletWorkspace && !tileWidth ? null : groups.map((group) => (
         <View key={group.key} style={{ gap: spacing.md }}>
           <SectionHeader title={group.label} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
             {group.items.map((item) => {
               const count = countByMenu.get(item.ID) ?? 0;
-              const disabled = !item.is_available;
+              // Switched off OR out of stock: either way the tile greys out and
+              // takes no tap, instead of opening a dish that cannot be added.
+              const soldOut = isMenuSoldOut(item);
               return (
                 <Pressable
-                  accessibilityLabel={accessibilityLabelFor(item, count)}
+                  accessibilityLabel={soldOut ? copy(`${item.name} หมด`, `${item.name}, sold out`) : accessibilityLabelFor(item, count)}
                   accessibilityRole="button"
-                  accessibilityState={{ disabled }}
+                  accessibilityState={{ disabled: soldOut }}
                   key={item.ID}
-                  disabled={disabled}
+                  disabled={soldOut}
                   onPress={() => onPressItem(item)}
                   style={({ pressed }) => ({
-                    // Phones get an exact two-column grid. A grow factor here fights
-                    // the column width and stretches a lone tile on the last row
-                    // across the screen, which reads as a different, more important
-                    // dish than the rest.
-                    minWidth: tabletWorkspace ? 148 : 0,
-                    width: tabletWorkspace ? undefined : '48%',
+                    // An exact width on both: two columns on a phone, and on a
+                    // tablet as many as the measured column holds, filling it edge
+                    // to edge. A grow factor here fights the column width and
+                    // stretches a lone tile on the last row across the screen,
+                    // which reads as a different, more important dish than the rest.
+                    width: tabletWorkspace ? tileWidth : '48%',
                     flexGrow: 0,
-                    flexBasis: tabletWorkspace ? 164 : 'auto',
                     gap: spacing.sm,
                     borderRadius: radius.md,
                     backgroundColor: 'transparent',
-                    opacity: disabled ? 0.48 : pressed ? 0.72 : 1,
+                    opacity: soldOut ? 0.48 : pressed ? 0.72 : 1,
                     transform: [{ translateY: pressed ? 1 : 0 }],
                   })}
                 >
@@ -179,7 +212,14 @@ export function OrderMenuGrid({
                     <Text selectable numberOfLines={2} style={[typeScale.cardTitle, { fontWeight: '600' }]}>{item.name}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                       <Text selectable style={[typeScale.number, { flex: 1, fontSize: 15, fontWeight: '600' }]}>{money(item.price, language)}</Text>
-                      {!item.is_available ? <StatusBadge label={copy('หมด', 'Sold out')} tone="danger" /> : null}
+                      {/* A plain grey word, no chip: no dot, no red frame. The tile
+                          is already greyed out, and a red badge made "sold out" the
+                          loudest thing on a tile nobody can use. Owner, 2026-09-19. */}
+                      {soldOut ? (
+                        <Text selectable style={[typeScale.caption, { flexShrink: 0, color: palette.neutral, fontWeight: '600' }]}>
+                          {copy('หมด', 'Sold out')}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                 </Pressable>

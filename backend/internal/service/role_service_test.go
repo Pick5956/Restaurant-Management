@@ -19,6 +19,16 @@ func TestNormalizePermissionsAcceptsExpenseManagement(t *testing.T) {
 	}
 }
 
+func TestNormalizePermissionsAcceptsPromotionManagement(t *testing.T) {
+	permissions, err := normalizePermissions([]string{"manage_promotions"})
+	if err != nil {
+		t.Fatalf("normalizePermissions() error = %v", err)
+	}
+	if want := []string{"manage_promotions"}; !reflect.DeepEqual(permissions, want) {
+		t.Fatalf("normalizePermissions() = %#v, want %#v", permissions, want)
+	}
+}
+
 func TestNormalizePermissionsAcceptsGranularAdministrationAndAddsDependencies(t *testing.T) {
 	permissions, err := normalizePermissions([]string{
 		PermissionManageInvites,

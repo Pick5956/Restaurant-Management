@@ -342,11 +342,11 @@ func (r *ReportRepository) MenuMarginsBetween(restaurantID uint, since, until ti
 			order_items.menu_id,
 			order_items.menu_name,
 			COALESCE(SUM(order_items.quantity), 0) AS quantity,
-			COALESCE(SUM(order_items.subtotal), 0) AS revenue,
+			COALESCE(SUM(`+orderItemNetRevenue+`), 0) AS revenue,
 			COALESCE(SUM(deductions.cost), 0) AS cost,
-			COALESCE(SUM(order_items.subtotal), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
-			CASE WHEN COALESCE(SUM(order_items.subtotal), 0) > 0
-				THEN ((COALESCE(SUM(order_items.subtotal), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(order_items.subtotal), 0)) * 100
+			COALESCE(SUM(`+orderItemNetRevenue+`), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
+			CASE WHEN COALESCE(SUM(`+orderItemNetRevenue+`), 0) > 0
+				THEN ((COALESCE(SUM(`+orderItemNetRevenue+`), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(`+orderItemNetRevenue+`), 0)) * 100
 				ELSE 0
 			END AS margin`).
 		Joins("JOIN orders ON orders.id = order_items.order_id").

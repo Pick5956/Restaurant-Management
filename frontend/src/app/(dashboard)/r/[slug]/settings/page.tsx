@@ -1,6 +1,37 @@
-import { redirect } from "next/navigation";
+"use client";
 
-export default async function SettingsHubPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  redirect(`/r/${encodeURIComponent(slug)}/settings/account`);
+import { useAuth } from "@/src/providers/AuthProvider";
+import { can, canAccessTeam } from "@/src/lib/rbac";
+import AccountSettingsPage from "./account/page";
+import DisplaySettingsPage from "./display/page";
+import RestaurantSettingsPage from "./restaurant/page";
+import TeamSettingsPage from "./team/page";
+
+/**
+ * "View all": every category's rows one after another, in the order of the
+ * category list. Each block is tagged so the list can mark the one on screen.
+ * A category the account may not open is left out rather than shown refused.
+ */
+export default function SettingsViewAllPage() {
+  const { activeMembership } = useAuth();
+  return (
+    <>
+      <div data-settings-category="account" className="scroll-mt-24">
+        <AccountSettingsPage />
+      </div>
+      <div data-settings-category="display" className="scroll-mt-24">
+        <DisplaySettingsPage />
+      </div>
+      {can(activeMembership, "manage_restaurant_settings") ? (
+        <div data-settings-category="restaurant" className="scroll-mt-24">
+          <RestaurantSettingsPage />
+        </div>
+      ) : null}
+      {canAccessTeam(activeMembership) ? (
+        <div data-settings-category="team" className="scroll-mt-24">
+          <TeamSettingsPage />
+        </div>
+      ) : null}
+    </>
+  );
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import ThemedSelect, { isThemedSelectInteractionTarget } from "./ThemedSelect";
+import ThemedSelect, { ThemedSelectNative, isThemedSelectInteractionTarget } from "./ThemedSelect";
 
 function containingNode(expectedTarget: Node): Pick<Node, "contains"> {
   return {
@@ -60,5 +60,64 @@ describe("ThemedSelect", () => {
         containingNode(otherTarget),
       ),
     ).toBe(false);
+  });
+});
+
+describe("ThemedSelectNative", () => {
+  // On touch devices the list belongs to the OS picker, so everything the menu
+  // would have shown has to reach the real <select> instead.
+  const options = [
+    { value: "manager", label: "Manager" },
+    { value: "waiter", label: "Waiter" },
+    { value: "chef", label: "Chef", disabled: true },
+  ];
+
+  it("hands every option to a real select lying over the drawn field", () => {
+    const markup = renderToStaticMarkup(
+      <ThemedSelectNative aria-label="Role" value="waiter" onChange={() => {}} options={options} />,
+    );
+
+    expect(markup).toContain("<select");
+    expect(markup).toContain('aria-label="Role"');
+    expect(markup).toContain(">Manager</option>");
+    expect(markup).toMatch(/<option[^>]*value="chef"[^>]*disabled=""[^>]*>Chef<\/option>/);
+    // The field still shows the choice, and screen readers hear the select, not both.
+    expect(markup).toMatch(/aria-hidden="true"[^>]*>\s*<span[^>]*>Waiter<\/span>/);
+    expect(markup).not.toContain('aria-haspopup="listbox"');
+  });
+
+  it("keeps the select at 16px so iOS does not zoom the page when the list opens", () => {
+    const markup = renderToStaticMarkup(
+      <ThemedSelectNative value="waiter" onChange={() => {}} options={options} />,
+    );
+
+    expect(markup).toMatch(/<select[^>]*class="[^"]*text-\[16px\]/);
+  });
+
+  it("adds a disabled placeholder when the value matches no option", () => {
+    // Without it the browser pre-selects the first real option, and picking that
+    // one fires no change event: the first choice could never be made.
+    const markup = renderToStaticMarkup(
+      <ThemedSelectNative value="" placeholder="เลือกบทบาท" onChange={() => {}} options={options} />,
+    );
+
+    expect(markup).toMatch(/<option[^>]*value=""[^>]*disabled=""[^>]*>เลือกบทบาท<\/option>/);
+    expect(markup).toMatch(/<span[^>]*>เลือกบทบาท<\/span>/);
+  });
+
+  it("adds no placeholder when the value is one of the options", () => {
+    const markup = renderToStaticMarkup(
+      <ThemedSelectNative value="manager" onChange={() => {}} options={options} />,
+    );
+
+    expect(markup.match(/<option/g)).toHaveLength(options.length);
+  });
+
+  it("disables the select with the field", () => {
+    const markup = renderToStaticMarkup(
+      <ThemedSelectNative value="manager" disabled onChange={() => {}} options={options} />,
+    );
+
+    expect(markup).toMatch(/<select[^>]*disabled=""/);
   });
 });

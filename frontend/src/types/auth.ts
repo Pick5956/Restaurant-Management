@@ -2,6 +2,7 @@ export type Permission =
   | "*"
   | "view_dashboard"
   | "manage_menu"
+  | "manage_promotions"
   | "view_tables"
   | "manage_table"
   | "take_order"

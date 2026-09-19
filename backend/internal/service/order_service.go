@@ -120,23 +120,26 @@ type PayOrderRequest struct {
 	Note           string  `json:"note" binding:"max=500"`
 }
 
+// BillResponse is an order priced for payment. Promotions itemises
+// DiscountAmount, one row per promotion applied.
 type BillResponse struct {
-	Order                *entity.Order         `json:"order"`
-	Items                []entity.OrderItem    `json:"items"`
-	Subtotal             float64               `json:"subtotal"`
-	DiscountAmount       float64               `json:"discount_amount"`
-	ServiceChargeEnabled bool                  `json:"service_charge_enabled"`
-	ServiceChargeRate    float64               `json:"service_charge_rate"`
-	ServiceChargeAmount  float64               `json:"service_charge_amount"`
-	VATEnabled           bool                  `json:"vat_enabled"`
-	VATRate              float64               `json:"vat_rate"`
-	VATAmount            float64               `json:"vat_amount"`
-	TotalAmount          float64               `json:"total_amount"`
-	GrandTotal           float64               `json:"grand_total"`
-	PaymentStatus        string                `json:"payment_status"`
-	PromptPayName        string                `json:"promptpay_name"`
-	PromptPayQRImage     string                `json:"promptpay_qr_image"`
-	Payments             []entity.OrderPayment `json:"payments"`
+	Order                *entity.Order           `json:"order"`
+	Items                []entity.OrderItem      `json:"items"`
+	Subtotal             float64                 `json:"subtotal"`
+	DiscountAmount       float64                 `json:"discount_amount"`
+	Promotions           []entity.OrderPromotion `json:"promotions"`
+	ServiceChargeEnabled bool                    `json:"service_charge_enabled"`
+	ServiceChargeRate    float64                 `json:"service_charge_rate"`
+	ServiceChargeAmount  float64                 `json:"service_charge_amount"`
+	VATEnabled           bool                    `json:"vat_enabled"`
+	VATRate              float64                 `json:"vat_rate"`
+	VATAmount            float64                 `json:"vat_amount"`
+	TotalAmount          float64                 `json:"total_amount"`
+	GrandTotal           float64                 `json:"grand_total"`
+	PaymentStatus        string                  `json:"payment_status"`
+	PromptPayName        string                  `json:"promptpay_name"`
+	PromptPayQRImage     string                  `json:"promptpay_qr_image"`
+	Payments             []entity.OrderPayment   `json:"payments"`
 }
 
 type selectedMenuOption struct {
@@ -1002,6 +1005,11 @@ func (s *OrderService) PayOrder(restaurantID, userID, orderID uint, req *PayOrde
 		if method != "cash" && method != "promptpay_qr" {
 			return errors.New("invalid payment method")
 		}
+		// Price once more under the payment's own lock, so what is paid is what
+		// the promotions give at this moment.
+		if err := recalcOrderTotals(tx, order); err != nil {
+			return err
+		}
 		restaurant, err := tx.FindRestaurant(restaurantID)
 		if err != nil {
 			return err
@@ -1373,24 +1381,13 @@ func validateSelectedMenuOptions(menu *entity.MenuItem, selectedIDs []uint) ([]s
 	return selected, total, nil
 }
 
+// recalcOrderTotals prices the order from its lines, promotions included, and
+// saves it. Every path that changes an order's dishes ends here, so web POS,
+// the mobile app and the customer QR page always see the same price.
 func recalcOrderTotals(tx *repository.OrderRepository, order *entity.Order) error {
-	items, err := tx.ListItems(order.ID)
-	if err != nil {
+	if _, err := priceOrder(tx, order); err != nil {
 		return err
 	}
-	subtotal := orderSubtotalFromItems(items)
-	order.Subtotal = subtotal
-	if order.DiscountAmount < 0 {
-		order.DiscountAmount = 0
-	}
-	if order.DiscountAmount > subtotal {
-		order.DiscountAmount = subtotal
-	}
-	order.TotalAmount = subtotal - order.DiscountAmount
-	if order.TotalAmount < 0 {
-		order.TotalAmount = 0
-	}
-	order.GrandTotal = order.TotalAmount + order.ServiceChargeAmount + order.VATAmount
 	return tx.SaveOrder(order)
 }
 
@@ -1446,11 +1443,16 @@ func billFromOrder(order *entity.Order, restaurant *entity.Restaurant) *BillResp
 	if grandTotal <= 0 {
 		grandTotal = roundMoney(total + serviceAmount + vatAmount)
 	}
+	promotions := order.Promotions
+	if promotions == nil {
+		promotions = []entity.OrderPromotion{}
+	}
 	return &BillResponse{
 		Order:                order,
 		Items:                order.Items,
 		Subtotal:             subtotal,
 		DiscountAmount:       discount,
+		Promotions:           promotions,
 		ServiceChargeEnabled: serviceEnabled,
 		ServiceChargeRate:    serviceRate,
 		ServiceChargeAmount:  roundMoney(serviceAmount),

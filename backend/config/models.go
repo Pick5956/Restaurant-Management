@@ -43,5 +43,8 @@ func SchemaModels() []any {
 		&entity.IngredientLot{},
 		&entity.Reservation{},
 		&entity.Expense{},
+		&entity.Promotion{},
+		&entity.PromotionTarget{},
+		&entity.OrderPromotion{},
 	}
 }

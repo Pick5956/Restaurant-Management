@@ -85,6 +85,9 @@ func memberCan(c *gin.Context, permission string) bool {
 	if permission == "manage_menu" {
 		return role == "owner" || role == "manager"
 	}
+	if permission == "manage_promotions" {
+		return role == "owner" || role == "manager"
+	}
 	if permission == "view_tables" {
 		return role == "owner" || role == "manager" || role == "cashier" || role == "waiter"
 	}
@@ -149,12 +152,15 @@ func parseUintParam(c *gin.Context, key string) (uint, bool) {
 	return uint(id), true
 }
 
+// A promotion names dishes and categories, so whoever sets promotions reads
+// the whole menu - sold-out dishes and hidden categories included - the same
+// way whoever manages the menu does.
 func (ctrl *MenuController) ListCategories(c *gin.Context) {
-	restaurantID, ok := requireRestaurantWithAnyPermission(c, "missing menu permission", "view_menu", "manage_menu", "take_order")
+	restaurantID, ok := requireRestaurantWithAnyPermission(c, "missing menu permission", "view_menu", "manage_menu", "take_order", "manage_promotions")
 	if !ok {
 		return
 	}
-	categories, err := ctrl.menuSvc.ListCategories(restaurantID, memberCan(c, "manage_menu"))
+	categories, err := ctrl.menuSvc.ListCategories(restaurantID, memberCanAny(c, "manage_menu", "manage_promotions"))
 	if err != nil {
 		respondAPIError(c, http.StatusInternalServerError, err)
 		return
@@ -229,7 +235,7 @@ func (ctrl *MenuController) DeleteCategory(c *gin.Context) {
 }
 
 func (ctrl *MenuController) ListMenuItems(c *gin.Context) {
-	restaurantID, ok := requireRestaurantWithAnyPermission(c, "missing menu permission", "view_menu", "manage_menu", "take_order")
+	restaurantID, ok := requireRestaurantWithAnyPermission(c, "missing menu permission", "view_menu", "manage_menu", "take_order", "manage_promotions")
 	if !ok {
 		return
 	}
@@ -237,7 +243,7 @@ func (ctrl *MenuController) ListMenuItems(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := ctrl.menuSvc.ListMenuItems(restaurantID, memberCan(c, "manage_menu"), categoryID)
+	items, err := ctrl.menuSvc.ListMenuItems(restaurantID, memberCanAny(c, "manage_menu", "manage_promotions"), categoryID)
 	if err != nil {
 		respondAPIError(c, http.StatusInternalServerError, err)
 		return

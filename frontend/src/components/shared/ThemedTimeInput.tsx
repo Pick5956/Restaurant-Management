@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, Clock } from "lucide-react";
+import { useCoarsePointer } from "@/src/hooks/useCoarsePointer";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index.toString().padStart(2, "0"));
@@ -24,6 +25,18 @@ function normalizeTime(value: string) {
   const match = value.match(TIME_PATTERN);
   if (!match) return "00:00";
   return `${match[1]}:${match[2]}`;
+}
+
+/**
+ * What the phone's own time picker handed back, as HH:MM, or null to keep the
+ * saved time. iOS sends an empty value when the time is cleared, and a picker
+ * with seconds enabled sends HH:MM:SS.
+ */
+export function acceptNativeTime(value: string): string | null {
+  const minutes = value.slice(0, 5);
+  return TIME_PATTERN.test(minutes) && (value.length === 5 || /^:\d{2}(\.\d+)?$/.test(value.slice(5)))
+    ? minutes
+    : null;
 }
 
 function formatPreview(value: string) {
@@ -122,14 +135,25 @@ export default function ThemedTimeInput({
   disabled,
   error,
   help,
+  boundary = "subtle",
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   error?: string;
   help?: string;
+  // "filled" is the settings pages' field - a flat tinted box with no edge,
+  // 48px tall - matching ThemedSelect's option of the same name.
+  boundary?: "subtle" | "filled";
+  // Names the OS time input on touch devices. Pass the visible label when the
+  // field is not inside a <label>; inside one, the label already names it.
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
 }) {
   const { language } = useLanguage();
+  const nativePicker = useCoarsePointer();
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -224,47 +248,107 @@ export default function ThemedTimeInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // A disabled field stays the disabled button everywhere: screen readers still
+  // find it and announce it unavailable.
+  const nativeControl = nativePicker && !disabled;
+  const filled = boundary === "filled";
+  // An error on the filled face is an inset red edge; keyboard focus draws the
+  // orange ring outside it, so both read at once.
+  const fieldClassName = filled
+    ? `flex h-12 w-full items-center gap-2.5 rounded bg-(--settings-field) px-4 text-left transition-colors hover:bg-(--settings-field-hover) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:outline-orange-400 ${
+      error ? "shadow-[inset_0_0_0_2px_var(--color-red-700)] dark:shadow-[inset_0_0_0_2px_var(--color-red-400)]" : ""
+    }`
+    : `flex h-11 w-full items-center gap-2.5 rounded-md border bg-white px-3 text-left outline-none transition-[border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 sm:h-10 ${
+      error
+        ? "border-red-300 focus:border-red-500 dark:border-red-900/60"
+        : "border-gray-200 focus:border-orange-500 dark:border-gray-700"
+    }`;
+  const nativeFaceFocus = filled
+    ? "group-has-[input:focus-visible]:outline-2 group-has-[input:focus-visible]:outline-offset-2 group-has-[input:focus-visible]:outline-orange-700 dark:group-has-[input:focus-visible]:outline-orange-400"
+    : error ? "group-has-[input:focus]:border-red-500" : "group-has-[input:focus]:border-orange-500";
+  const descriptionClassName = filled
+    ? `mt-1.5 text-[12px] leading-5 ${error ? "text-red-700 dark:text-red-400" : "text-gray-500 dark:text-gray-400"}`
+    : `mt-1 text-[11px] ${error ? "text-red-600 dark:text-red-300" : "text-gray-500 dark:text-gray-500"}`;
+  const fieldFace = (
+    <>
+      <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
+      <span className="font-mono text-[14px] font-semibold tabular-nums text-gray-900 dark:text-white">
+        {current}
+      </span>
+      <span className="truncate text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+        {formatPreview(current)}
+      </span>
+      <ChevronDown
+        className={`ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+        aria-hidden="true"
+      />
+    </>
+  );
+
   return (
     <div ref={rootRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        id={buttonId}
-        disabled={disabled}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls={open ? pickerId : undefined}
-        aria-describedby={error || help ? descriptionId : undefined}
-        onClick={() => (open ? setOpen(false) : openPicker())}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            openPicker();
-          }
-        }}
-        className={`flex h-11 w-full items-center gap-2.5 rounded-md border bg-white px-3 text-left outline-none transition-[border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 sm:h-10 ${
-          error
-            ? "border-red-300 focus:border-red-500 dark:border-red-900/60"
-            : "border-gray-200 focus:border-orange-500 dark:border-gray-700"
-        }`}
-      >
-        <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
-        <span className="font-mono text-[14px] font-semibold tabular-nums text-gray-900 dark:text-white">
-          {current}
-        </span>
-        <span className="truncate text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
-          {formatPreview(current)}
-        </span>
-        <ChevronDown
-          className={`ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
-          aria-hidden="true"
-        />
-      </button>
+      {nativeControl ? (
+        // On a touch device the drawn field is only a face: a plain div, so the
+        // native input is the first form control inside any wrapping <label>.
+        // That label then names the input and a tap on its text focuses the
+        // input - with a button here it would click the button and open the
+        // drawn panel under the OS picker.
+        <div className="group relative">
+          <div
+            aria-hidden="true"
+            className={`${fieldClassName} ${nativeFaceFocus}`}
+          >
+            {fieldFace}
+          </div>
+          <input
+            type="time"
+            value={current}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
+            aria-describedby={error || help ? descriptionId : undefined}
+            aria-invalid={error ? true : undefined}
+            onChange={(event) => {
+              const next = acceptNativeTime(event.target.value);
+              if (next) onChange(next);
+            }}
+            // 16px or iOS zooms the page in when the wheel opens.
+            className="absolute inset-0 block h-full w-full min-w-0 cursor-pointer appearance-none text-[16px] opacity-0"
+          />
+        </div>
+      ) : (
+        <button
+          ref={triggerRef}
+          type="button"
+          id={buttonId}
+          disabled={disabled}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-controls={open ? pickerId : undefined}
+          // Named by the caller's label, then by its own text, so the time it
+          // holds is still read out after the label.
+          aria-labelledby={ariaLabelledBy ? `${ariaLabelledBy} ${buttonId}` : undefined}
+          aria-describedby={error || help ? descriptionId : undefined}
+          // aria-invalid is not allowed on a button; the error is already read
+          // through aria-describedby. This marks it for code that has to find
+          // the first invalid field after a failed save.
+          data-invalid={error ? "true" : undefined}
+          onClick={() => (open ? setOpen(false) : openPicker())}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openPicker();
+            }
+          }}
+          className={fieldClassName}
+        >
+          {fieldFace}
+        </button>
+      )}
 
       {(error || help) && (
         <p
           id={descriptionId}
-          className={`mt-1 text-[11px] ${error ? "text-red-600 dark:text-red-300" : "text-gray-500 dark:text-gray-500"}`}
+          className={descriptionClassName}
         >
           {error || help}
         </p>

@@ -132,6 +132,58 @@ export function findPendingOrderItem<T extends { ID: number; status?: string }>(
   return (items ?? []).find((item) => item.ID === itemId && item.status === 'pending') ?? null;
 }
 
+type EditorDefaultsLine = {
+  ID: number;
+  status?: string;
+  quantity: number;
+  note?: string | null;
+  fulfillment_type?: 'dine_in' | 'takeaway' | null;
+  selected_options?: readonly { menu_option_id: number }[] | null;
+};
+
+type EditorDefaultsMenu = {
+  option_groups?: readonly {
+    options?: readonly { ID: number; is_active: boolean; is_default: boolean }[] | null;
+  }[] | null;
+};
+
+export type OrderItemEditorDefaults = {
+  fulfillment: 'dine_in' | 'takeaway';
+  quantity: number;
+  note: string;
+  selectedOptionIds: number[];
+};
+
+/**
+ * What the item editor opens on. Editing a line the kitchen has not seen yet
+ * brings it back as it was chosen; anything else starts at one portion, no
+ * note, the dish's active default options and the order's own dine-in or
+ * takeaway.
+ */
+export function orderItemEditorDefaults(
+  order: { order_type?: 'dine_in' | 'takeaway' | null; items?: readonly EditorDefaultsLine[] | null },
+  menu: EditorDefaultsMenu | null | undefined,
+  itemId = 0,
+): OrderItemEditorDefaults {
+  const existing = findPendingOrderItem(order.items, itemId);
+  if (existing) {
+    return {
+      fulfillment: existing.fulfillment_type || order.order_type || 'dine_in',
+      quantity: Math.max(1, existing.quantity),
+      note: existing.note || '',
+      selectedOptionIds: (existing.selected_options || []).map((option) => option.menu_option_id),
+    };
+  }
+  return {
+    fulfillment: order.order_type || 'dine_in',
+    quantity: 1,
+    note: '',
+    selectedOptionIds: (menu?.option_groups || []).flatMap((group) => (group.options || [])
+      .filter((option) => option.is_active && option.is_default)
+      .map((option) => option.ID)),
+  };
+}
+
 export function summarizeCurrentRound(items: readonly CurrentRoundItem[] | null | undefined): CurrentRoundSummary {
   return (items ?? []).reduce<CurrentRoundSummary>((summary, item) => {
     if (item.status !== 'pending') return summary;

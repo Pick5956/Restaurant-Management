@@ -112,7 +112,7 @@ export default function GoogleCallbackPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6 py-16 dark:bg-gray-950">
+    <main className="flex min-h-screen items-center justify-center bg-white px-6 py-16 dark:bg-gray-950">
       <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-center gap-2">
           <AppLogo decorative size={28} />

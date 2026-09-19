@@ -11,6 +11,40 @@ type CatalogCategory = {
   name: string;
 };
 
+type StockItem = {
+  is_available: boolean;
+  /** Portions the stock can still make after what queued orders have claimed;
+   *  null or absent means the dish has no recipe and is never stock-limited. */
+  remaining_servings?: number | null;
+};
+
+/**
+ * A dish that cannot go on an order right now: switched off by hand, or the
+ * last portion its ingredients can make is already claimed. The grid used to
+ * check only the switch, so a dish that ran out of stock still looked
+ * orderable. Same rule as the web POS tile. It is read from the data the
+ * order screen loaded when it opened; the screen does not poll, so a dish that
+ * sells out while it sits open is refused by the add itself, as a toast.
+ */
+export function isMenuSoldOut(item: StockItem): boolean {
+  return !item.is_available || (typeof item.remaining_servings === 'number' && item.remaining_servings <= 0);
+}
+
+/**
+ * How many dish tiles fit across a grid `width` wide, and how wide each one is
+ * so the row runs edge to edge. On a tablet the grid shares the screen with the
+ * dish panel, so it is sized from the column it was given rather than from the
+ * window. Never fewer than two across: one photo per row reads as a list.
+ */
+export function menuGridColumns(width: number, minTile: number, gap: number): { columns: number; tileWidth: number } {
+  if (!Number.isFinite(width) || width <= 0) return { columns: 2, tileWidth: 0 };
+  const columns = Math.max(2, Math.floor((width + gap) / (minTile + gap)));
+  // Rounded down: a tile a fraction of a point too wide pushes the last one in
+  // the row onto a row of its own.
+  const tileWidth = Math.floor((width - gap * (columns - 1)) / columns);
+  return { columns, tileWidth };
+}
+
 export type MenuCatalogGroup<T> = {
   key: string;
   label: string;

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Download, Printer } from "lucide-react";
+import { billDiscountLines } from "@/src/lib/billPromotions";
 import { groupOrderItems } from "@/src/lib/orderItemGroups";
 import type { Bill, OrderItem } from "@/src/types/order";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
@@ -250,7 +251,9 @@ export default function PaidReceiptDialog({
 
           <div data-screen-receipt className="shrink-0 space-y-1.5 border-t border-gray-200 bg-white px-4 py-3 text-[12px] text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 sm:px-5">
             <div className="flex justify-between gap-4"><span>{copy.subtotal}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">{money(bill.subtotal)}</span></div>
-            {bill.discount_amount > 0 ? <div className="flex justify-between gap-4"><span>{copy.discount}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">-{money(bill.discount_amount)}</span></div> : null}
+            {billDiscountLines(bill, copy.discount).map((line) => (
+              <div key={line.key} className="flex justify-between gap-4"><span className="min-w-0 truncate">{line.label}</span><span className="shrink-0 font-mono tabular-nums text-gray-900 dark:text-white">-{money(line.amount)}</span></div>
+            ))}
             {bill.service_charge_enabled || bill.service_charge_amount > 0 ? (
               <div className="flex justify-between gap-4"><span>{copy.service} {bill.service_charge_enabled ? `${bill.service_charge_rate}%` : ""}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">{money(bill.service_charge_amount)}</span></div>
             ) : null}

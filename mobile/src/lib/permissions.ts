@@ -23,6 +23,7 @@ const permissionDefinitions = [
       { key: 'view_tables', label: { th: 'ดูโต๊ะ', en: 'View tables' } },
       { key: 'manage_table', label: { th: 'จัดการโต๊ะ', en: 'Manage tables' } },
       { key: 'manage_menu', label: { th: 'จัดการเมนู', en: 'Manage menu' } },
+      { key: 'manage_promotions', label: { th: 'จัดการโปรโมชัน', en: 'Manage promotions' } },
       { key: 'view_inventory', label: { th: 'ดูคลังวัตถุดิบ', en: 'View inventory' } },
       { key: 'manage_inventory', label: { th: 'จัดการคลังวัตถุดิบ', en: 'Manage inventory' } },
       { key: 'manage_expenses', label: { th: 'จัดการค่าใช้จ่าย', en: 'Manage expenses' } },

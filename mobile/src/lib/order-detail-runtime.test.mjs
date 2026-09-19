@@ -13,6 +13,7 @@ import {
   findPendingOrderItem,
   lockCurrentRoundRowSwipeAxis,
   nextOpenCurrentRoundItemId,
+  orderItemEditorDefaults,
   orderSummaryPresentation,
   pendingQuantityByMenu,
   resolveCurrentRoundRowDragOffset,
@@ -251,6 +252,48 @@ test('only the requested pending line can open the quantity editor', () => {
   assert.equal(findPendingOrderItem([pending, cooking], Number.NaN), null);
 });
 
+test('the item editor opens on the line it edits, or on the dish defaults for a new one', () => {
+  const menu = {
+    option_groups: [
+      {
+        options: [
+          { ID: 1, is_active: true, is_default: true },
+          { ID: 2, is_active: true, is_default: false },
+          { ID: 3, is_active: false, is_default: true },
+        ],
+      },
+      { options: [{ ID: 4, is_active: true, is_default: true }] },
+      {},
+    ],
+  };
+  const order = {
+    order_type: 'dine_in',
+    items: [
+      { ID: 21, status: 'pending', quantity: 3, note: 'ไม่เผ็ด', fulfillment_type: 'takeaway', selected_options: [{ menu_option_id: 2 }] },
+      { ID: 22, status: 'cooking', quantity: 2, note: '', selected_options: [] },
+    ],
+  };
+  const fresh = { fulfillment: 'dine_in', quantity: 1, note: '', selectedOptionIds: [1, 4] };
+
+  // A new line: one portion, the order's own fulfillment, the active defaults.
+  assert.deepEqual(orderItemEditorDefaults(order, menu), fresh);
+  // Editing brings the line back as it was chosen.
+  assert.deepEqual(orderItemEditorDefaults(order, menu, 21), {
+    fulfillment: 'takeaway',
+    quantity: 3,
+    note: 'ไม่เผ็ด',
+    selectedOptionIds: [2],
+  });
+  // The kitchen already has this one, so there is nothing of it to bring back.
+  assert.deepEqual(orderItemEditorDefaults(order, menu, 22), fresh);
+  assert.deepEqual(orderItemEditorDefaults({ order_type: 'takeaway', items: [] }, null), {
+    fulfillment: 'takeaway',
+    quantity: 1,
+    note: '',
+    selectedOptionIds: [],
+  });
+});
+
 test('the basket and the header chip open the same summary, and the summary can send the round', async () => {
   const [detailSource, billSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'app', 'order', '[id].tsx'), 'utf8'),
@@ -280,7 +323,8 @@ test('the swipe-to-delete row keeps its gesture contract, and the summary uses i
   const [rowSource, billSource, editorSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'src', 'components', 'swipe-to-delete-row.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'app', 'order', 'item.tsx'), 'utf8'),
+    // The item screen's editor, shared with the tablet's dish panel.
+    readFile(path.join(mobileRoot, 'src', 'components', 'order-item-editor.tsx'), 'utf8'),
   ]);
 
   // The four lines that make the gesture survive a scrolling parent. Lifted

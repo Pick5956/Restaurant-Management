@@ -24,6 +24,9 @@ export interface MenuItem {
   description: string;
   is_available: boolean;
   display_order: number;
+  /** Computed by the server when read: portions the stock can still make after
+   *  queued orders' claims. Absent or null for a dish without a recipe. */
+  remaining_servings?: number | null;
   category?: Category;
   categories?: MenuItemCategory[];
   option_groups?: MenuOptionGroup[];

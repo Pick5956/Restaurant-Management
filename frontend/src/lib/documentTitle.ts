@@ -7,6 +7,7 @@ const routeTitles: Array<{ match: (pathname: string) => boolean; th: string; en:
   { match: (path) => path === "/kitchen", th: "จอครัว", en: "Kitchen" },
   { match: (path) => path === "/orders", th: "คลังออเดอร์", en: "Order archive" },
   { match: (path) => path === "/menu", th: "จัดการเมนู", en: "Menu management" },
+  { match: (path) => path === "/promotions", th: "โปรโมชัน", en: "Promotions" },
   { match: (path) => path === "/tables", th: "จัดการโต๊ะ", en: "Table management" },
   { match: (path) => path === "/inventory", th: "คลังวัตถุดิบ", en: "Inventory" },
   { match: (path) => path === "/expenses", th: "บันทึกรายจ่าย", en: "Expenses" },
