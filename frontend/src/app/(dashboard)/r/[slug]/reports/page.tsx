@@ -249,7 +249,7 @@ export default function ReportsPage() {
                 id="report-period-preset"
                 value={preset ?? "custom"}
                 onChange={(event) => choosePreset(event.target.value)}
-                className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
               >
                 {REPORT_PRESETS.map((key) => <option key={key} value={key}>{copy.presets[key]}</option>)}
                 <option value="custom">{copy.custom}</option>
@@ -257,16 +257,16 @@ export default function ReportsPage() {
             </label>
             <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
               {copy.from}
-              <input id="report-period-from" type="date" value={draft.from} max={today} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
+              <input id="report-period-from" type="date" value={draft.from} max={today} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
             </label>
             <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
               {copy.to}
-              <input id="report-period-to" type="date" value={draft.to} max={today} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
+              <input id="report-period-to" type="date" value={draft.to} max={today} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
             </label>
             <button
               type="submit"
               disabled={Boolean(draftProblem) || (draft.from === range.from && draft.to === range.to)}
-              className="ui-press h-10 rounded-md bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+              className="ui-press h-10 rounded-xl bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
             >
               {copy.apply}
             </button>
@@ -275,13 +275,13 @@ export default function ReportsPage() {
             </span>
           </form>
         </div>
-        <Link href={restaurantPageHref("/home")} className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
+        <Link href={restaurantPageHref("/home")} className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {copy.back}
         </Link>
       </div>
 
-      {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-3">
@@ -333,7 +333,7 @@ export default function ReportsPage() {
                 ),
               },
             ].map((card: { label: string; value: string; note?: string; icon: React.ReactNode }) => (
-              <div key={card.label} className="rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <div key={card.label} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between gap-3 text-gray-500">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</span>
                   {card.icon}
@@ -344,7 +344,7 @@ export default function ReportsPage() {
             ))}
           </div>
           {marginInfoOpen ? (
-            <div role="note" className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
+            <div role="note" className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
               <p className="font-semibold">{copy.marginInfo}</p>
               <p>
                 {copy.marginExplain(
@@ -359,7 +359,7 @@ export default function ReportsPage() {
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
-            <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.salesDays}</h2>
               </div>
@@ -411,7 +411,7 @@ export default function ReportsPage() {
               )}
             </section>
 
-            <section className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.menuMargins}</h2>
               </div>
@@ -447,17 +447,17 @@ export default function ReportsPage() {
 
       {openDay ? (
         <div {...dayBackdrop} className="motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-3 backdrop-blur-sm sm:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="sales-day-title" className="motion-dialog flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100vh-2rem)]">
+          <div role="dialog" aria-modal="true" aria-labelledby="sales-day-title" className="motion-dialog flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100vh-2rem)]">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{copy.salesDays}</p>
                 <h2 id="sales-day-title" className="mt-0.5 text-[16px] font-semibold text-gray-950 dark:text-white">{openDay}</h2>
               </div>
-              <button type="button" onClick={() => setOpenDay(null)} className="ui-press h-9 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{copy.close}</button>
+              <button type="button" onClick={() => setOpenDay(null)} className="ui-press h-9 shrink-0 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{copy.close}</button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
-              {receiptError ? <p className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{receiptError}</p> : null}
+              {receiptError ? <p className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{receiptError}</p> : null}
               {dayDetailLoading ? (
                 <p className="py-8 text-center text-xs text-gray-500">{copy.loadingDay}</p>
               ) : dayDetail?.orders.length ? (
