@@ -528,6 +528,10 @@ function CollapsibleCard({
   // the rest down to their headings; it stays until another heading is
   // pointed at. For a face with more rows than it can show at once.
   focusOnHover = false,
+  // The open body is a fixed height and never scrolls as a whole; its own
+  // lists do. From `xl`, where the lists sit side by side; narrower, they
+  // stack and would be squeezed to nothing, so the body scrolls as before.
+  fixedBody = false,
   expanded,
   dimmed,
   collapsedRank,
@@ -542,6 +546,7 @@ function CollapsibleCard({
   rows?: CardRow[];
   showSummaryWhenExpanded?: boolean;
   focusOnHover?: boolean;
+  fixedBody?: boolean;
   expanded: boolean;
   dimmed?: boolean;
   collapsedRank: number;
@@ -861,7 +866,9 @@ function CollapsibleCard({
       <section
         ref={smoothScroll}
         style={{ order: 100 }}
-        className="scroll-minimal col-span-full max-h-[70dvh] w-full overflow-y-auto overflow-x-hidden rounded-b-xl border sm:rounded-tr-xl border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+        className={`scroll-minimal col-span-full max-h-[70dvh] w-full overflow-y-auto overflow-x-hidden rounded-b-xl border sm:rounded-tr-xl border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${
+          fixedBody ? "xl:flex xl:h-[70dvh] xl:flex-col xl:overflow-hidden" : ""
+        }`}
       >
         {summary?.length && showSummaryWhenExpanded ? (
           // Sits flush in the body's top corners, so it has to match them.
@@ -2450,12 +2457,13 @@ export default function Home() {
                 icon={AlertTriangle}
                 rows={attentionRows}
                 focusOnHover
+                fixedBody
                 expanded={openCard === "liveWork"}
                 dimmed={isCardDimmed("liveWork")}
                 collapsedRank={collapsedRank("liveWork")}
                 onToggle={() => toggleCard("liveWork")}
               >
-                  <div className="border-b border-gray-200 dark:border-gray-800">
+                  <div className="border-b border-gray-200 dark:border-gray-800 xl:shrink-0">
                     <div className="flex items-center justify-between px-4 py-3">
                       <div>
                         <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.kitchenQueue}</h3>
@@ -2486,7 +2494,7 @@ export default function Home() {
                               {/* The whole lane, scrolled: a busy service is
                                   exactly when you need the tickets under the
                                   fifth one, and the three lanes stay level. */}
-                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                              <div ref={smoothScroll} className="max-h-64 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-[24dvh]">
                                 {lane.items.length ? lane.items.map((ticket) => (
                                   <button key={`${lane.key}-${ticket.id}`} type="button" onClick={(event) => {
                                       if (openTicket !== ticket.id && ticket.items.length && window.matchMedia("(hover: none)").matches) {
@@ -2533,8 +2541,8 @@ export default function Home() {
                     `xl`, not `lg`: on a tablet the orders pane would be about
                     530px and the order row needs every bit of that, so the two
                     stack instead of squeezing. */}
-                <div className="xl:flex xl:items-stretch">
-                <div className="min-w-0 xl:flex-1 xl:border-r xl:border-gray-200 xl:dark:border-gray-800">
+                <div className="xl:flex xl:min-h-0 xl:flex-1 xl:items-stretch">
+                <div className="min-w-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:border-r xl:border-gray-200 xl:dark:border-gray-800">
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <div>
                       <h3 className="text-[13px] font-semibold text-gray-950 dark:text-white">{copy.dailyOrders}</h3>
@@ -2543,7 +2551,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/orders")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewAllOrders}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {orders.length ? (
-                    <div ref={smoothScroll} className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800">
+                    <div ref={smoothScroll} className="max-h-56 divide-y divide-gray-100 overflow-y-auto overflow-x-hidden dark:divide-gray-800 xl:max-h-none xl:min-h-0 xl:flex-1">
                       {/* Five columns need ~580px including gaps. That is more
                           than a phone-width card has at `sm`, so the row only
                           becomes a table from `md` and stacks below it. */}
@@ -2568,7 +2576,7 @@ export default function Home() {
                     a monthly report. Same figures, same restock estimate — and
                     each card now opens that ingredient's adjust dialog, so the
                     fix is one click from the warning. */}
-                <div className="border-t border-gray-200 dark:border-gray-800 xl:w-2/5 xl:border-t-0">
+                <div className="border-t border-gray-200 dark:border-gray-800 xl:flex xl:min-h-0 xl:w-2/5 xl:flex-col xl:border-t-0">
                   <div className={`flex items-center justify-between gap-3 border-b px-4 py-3 ${rowTint.orange}`}>
                     <div className="text-orange-700 dark:text-orange-300">
                       <h3 className="text-[13px] font-semibold">{copy.stockRisks}</h3>
@@ -2577,7 +2585,7 @@ export default function Home() {
                     <button type="button" onClick={() => router.push("/inventory")} className="ui-press inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.viewInventory}<ArrowRight className="h-3.5 w-3.5" /></button>
                   </div>
                   {stockRisks.length ? (
-                    <div ref={smoothScroll} className="grid max-h-56 gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <div ref={smoothScroll} className="grid max-h-56 content-start gap-2 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 sm:grid-cols-2 xl:max-h-none xl:min-h-0 xl:flex-1 xl:grid-cols-1">
                       {stockRisks.map((risk) => (
                         <button
                           key={risk.id}
