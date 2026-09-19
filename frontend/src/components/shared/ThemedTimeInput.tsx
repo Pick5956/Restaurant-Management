@@ -127,14 +127,24 @@ function WheelColumn({
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    let lastWheel = 0;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      if (!event.deltaY) return;
       const delta = event.deltaMode === 1 ? event.deltaY * ROW : event.deltaY;
-      wheelCarry.current += delta;
-      const notch = Math.abs(delta) >= 50;
+      const now = event.timeStamp;
+      // The first event after a pause always turns one row, whatever its size.
+      // Mice differ a lot per notch — 100px on a Windows wheel, a few px on a
+      // Mac or a high-resolution Logitech wheel — and waiting for small ones
+      // to add up to a whole row left the wheel not moving at all.
+      const fresh = now - lastWheel > 150;
+      lastWheel = now;
+      const notch = fresh || Math.abs(delta) >= 50;
+      if (notch) wheelCarry.current = 0;
+      else wheelCarry.current += delta;
       let steps = notch ? Math.sign(delta) : Math.trunc(wheelCarry.current / ROW);
       if (!steps) return;
-      wheelCarry.current = notch ? 0 : wheelCarry.current - steps * ROW;
+      if (!notch) wheelCarry.current -= steps * ROW;
       const from = wheelTarget.current ?? Math.round(node.scrollTop / ROW);
       steps = Math.max(-3, Math.min(3, steps));
       wheelTarget.current = rollTo(from + steps);
