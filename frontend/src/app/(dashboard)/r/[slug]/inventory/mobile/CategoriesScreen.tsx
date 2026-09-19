@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/format";
+import { inventoryErrorMessage } from "../inventoryFormValidation";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
 import { categoryUsage, type useInventoryData } from "./useInventoryData";
 import {
@@ -11,6 +12,7 @@ import {
   ScreenNav,
   TAP,
   inputBase,
+  useWarmConfirm,
 } from "./primitives";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
@@ -28,6 +30,7 @@ export default function CategoriesScreen({
   onBack: () => void;
   actions: Actions;
 }) {
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
   const copy = useMemo(
     () =>
       lang === "th"
@@ -114,11 +117,27 @@ export default function CategoriesScreen({
   }
 
   async function remove(category: IngredientCategory) {
+    const confirmed = await ask({
+      title: lang === "th" ? `ลบหมวด "${category.name}"?` : `Delete category "${category.name}"?`,
+      description:
+        lang === "th"
+          ? "หมวดนี้จะหายไป วัตถุดิบไม่ได้หายไปด้วย (ลบได้เฉพาะหมวดที่ไม่มีวัตถุดิบแล้ว)"
+          : "Only the category goes; it can only be deleted once no ingredient uses it.",
+      confirmLabel: lang === "th" ? "ลบหมวด" : "Delete category",
+      cancelLabel: lang === "th" ? "ยกเลิก" : "Cancel",
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await actions.removeCategory(category.ID);
-    } catch {
-      setError(copy.failed);
+    } catch (err) {
+      setError(
+        inventoryErrorMessage(
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error,
+          lang,
+          copy.failed,
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -194,6 +213,8 @@ export default function CategoriesScreen({
 
         {error && <p className="mt-3 px-1 text-[13px] text-(--inv-out)">{error}</p>}
       </div>
+
+      {confirmDialog}
 
       <BottomSheet
         open={renaming !== null}

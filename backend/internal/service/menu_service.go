@@ -503,7 +503,7 @@ func (s *MenuService) normalizeMenuIngredients(restaurantID, menuItemID uint, re
 		if err != nil {
 			return nil, errors.New("recipe ingredient not found")
 		}
-		quantity, unit, err := normalizeRecipeQuantity(req.Quantity, req.Unit, ingredient.Unit)
+		quantity, unit, err := normalizeRecipeQuantityFor(req.Quantity, req.Unit, ingredient)
 		if err != nil {
 			return nil, err
 		}
@@ -564,7 +564,7 @@ func (s *MenuService) normalizeMenuOptionIngredients(restaurantID, menuItemID ui
 		if err != nil {
 			return nil, errors.New("option ingredient not found")
 		}
-		quantity, unit, err := normalizeRecipeQuantity(req.Quantity, req.Unit, ingredient.Unit)
+		quantity, unit, err := normalizeRecipeQuantityFor(req.Quantity, req.Unit, ingredient)
 		if err != nil {
 			return nil, err
 		}
@@ -588,12 +588,18 @@ func (s *MenuService) normalizeMenuOptionIngredients(restaurantID, menuItemID ui
 // downstream should have to guess. Crossing families is still refused: no factor
 // turns ฟอง into กรัม, and inventing one would drain the wrong amount forever.
 func normalizeRecipeQuantity(quantity float64, requested, ingredientUnit string) (float64, string, error) {
-	stockUnit := strings.TrimSpace(ingredientUnit)
+	return normalizeRecipeQuantityFor(quantity, requested, &entity.Ingredient{Unit: ingredientUnit})
+}
+
+// normalizeRecipeQuantityFor also accepts the ingredient's own pack and case,
+// so a drink recipe can say "1 ขวด" against a shelf counted in มิลลิลิตร.
+func normalizeRecipeQuantityFor(quantity float64, requested string, ingredient *entity.Ingredient) (float64, string, error) {
+	stockUnit := strings.TrimSpace(ingredient.Unit)
 	unit := strings.TrimSpace(requested)
 	if unit == "" || strings.EqualFold(unit, stockUnit) {
 		return quantity, stockUnit, nil
 	}
-	converted, ok := ConvertToStockUnit(quantity, unit, stockUnit)
+	converted, ok := IngredientQuantityInStockUnit(quantity, unit, ingredient)
 	if !ok {
 		return 0, "", errors.New("recipe unit cannot be converted to the ingredient stock unit")
 	}

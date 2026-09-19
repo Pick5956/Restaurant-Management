@@ -1,5 +1,6 @@
 "use client";
 
+import NumberInput from "@/src/components/shared/NumberInput";
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { CalendarClock, MapPin, ReceiptText, Search, ShoppingBag, Users } from "lucide-react";
@@ -643,7 +644,7 @@ export default function PosTablesPage() {
         <button type="button" onClick={() => setCustomerCount((current) => Math.max(1, current - 1))} disabled={customerCount <= 1} className="ui-press h-14 border-r border-gray-200 text-xl font-semibold text-gray-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">
           −
         </button>
-        <input type="number" min={1} value={customerCount} onChange={(event) => setCustomerCount(Math.max(1, Number(event.target.value) || 1))} className="h-14 min-w-0 border-0 bg-transparent px-2 text-center text-[22px] font-semibold tabular-nums text-gray-900 outline-none dark:text-white" />
+        <NumberInput min={1} inputMode="numeric" value={customerCount} onValue={setCustomerCount} className="h-14 min-w-0 border-0 bg-transparent px-2 text-center text-[22px] font-semibold tabular-nums text-gray-900 outline-none dark:text-white" />
         <button type="button" onClick={() => setCustomerCount((current) => current + 1)} className="ui-press h-14 border-l border-gray-200 text-xl font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
           +
         </button>

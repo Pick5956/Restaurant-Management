@@ -31,20 +31,64 @@ import {
   createIngredientCategory,
   deleteIngredient,
   deleteIngredientCategory,
+  discardLot,
   exportStockCSV,
   listIngredientCategories,
   listIngredients,
+  listLots,
   listTransactions,
   updateIngredient,
   updateIngredientCategory,
+  updateLotExpiry,
 } from "@/src/lib/ingredient";
 import { createSingleFlight } from "@/src/lib/singleFlight";
-import type { Ingredient, IngredientCategory, IngredientInput, IngredientTransaction } from "@/src/types/ingredient";
+import type {
+  Ingredient,
+  IngredientCategory,
+  IngredientInput,
+  IngredientLot,
+  IngredientTransaction,
+} from "@/src/types/ingredient";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
+import ExpiryChips from "./ExpiryChips";
+import NumberInput from "@/src/components/shared/NumberInput";
+import {
+  hasFieldErrors,
+  inventoryErrorMessage,
+  validateBulkRows,
+  validateIngredientForm,
+} from "./inventoryFormValidation";
+import {
+  emptyTypedAmounts,
+  entryChain,
+  formatPackCount,
+  largestPurchaseUnit,
+  packExample,
+  packUnitChoices,
+  purchaseFactor,
+  purchaseUnitChoices,
+  resolveTypedAmounts,
+  retargetTypedUnits,
+  typedText,
+  unitCopy,
+  TOTAL_PRICE,
+  type TypedAmounts,
+} from "./inventoryUnitUtils";
+import {
+  daysUntil,
+  defaultShelfLifeDays,
+  expiryCopy,
+  expiryDateFromDays,
+  expiryState,
+  formatExpiryDate,
+  ingredientExpiryState,
+  matchesExpiryFilter,
+  type ExpiryFilter,
+} from "./inventoryExpiryUtils";
 import InventoryMobile from "./mobile/InventoryMobile";
 import { useIsMobile } from "./mobile/primitives";
 import {
@@ -57,7 +101,7 @@ import {
   reorderQuantityFor,
   inputCls,
   STORAGE_TYPES,
-  UNITS,
+  stockUnitRows,
   type ItemStatus,
   type StockStatus,
 } from "./inventoryPageUtils";
@@ -367,7 +411,9 @@ export default function InventoryPage() {
   const canManageExpenses = can(activeMembership, "manage_expenses");
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
-  const unitOptions = useMemo(() => UNITS.map((unit) => ({ value: unit, label: unit })), []);
+  const unitOptions = useMemo(() => stockUnitRows(lang), [lang]);
+  const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const ucopy = useMemo(() => unitCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
@@ -384,6 +430,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockStatus>("all");
   const [categoryFilter, setCategoryFilter] = useState<number>(0);
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersClosing, setFiltersClosing] = useState(false);
   // Export, categories and bulk add: three things an owner reaches for now and
@@ -409,7 +456,12 @@ export default function InventoryPage() {
   const [bulkError, setBulkError] = useState("");
 
   const [form, setForm] = useState<IngredientInput>(emptyForm);
-  const [costText, setCostText] = useState("");
+  // Stock, reorder level and price exactly as typed, each with the unit it was
+  // typed in. `form` always holds the stock-unit values the server stores.
+  const [typed, setTyped] = useState<TypedAmounts>(emptyTypedAmounts);
+  // Field errors are worked out on every render but only shown once a save has
+  // been tried, so an empty new form does not open covered in red.
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
   // Where the reorder slider's handle sits. A percent set by dragging is kept as
   // it is; a quantity typed by hand is shown at the place it falls on this
@@ -460,12 +512,19 @@ export default function InventoryPage() {
   }, [adjustQty, adjustTarget, adjustUnit]);
   const [adjustPaidAmount, setAdjustPaidAmount] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  // Days from today for the lot a stock-in opens; null is "ไม่ระบุ".
+  const [adjustExpiryDays, setAdjustExpiryDays] = useState<number | null>(null);
+  const [formExpiryDays, setFormExpiryDays] = useState<number | null>(null);
   const [adjustError, setAdjustError] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   // Mirrors the server's fallback: an unpriced stock-in is booked at the
   // ingredient's own cost per unit.
   const referenceAdjustAmount = (() => {
-    const quantity = Number(adjustQty);
+    const factor =
+      !adjustTarget || !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    const quantity = Number(adjustQty) * factor;
     const rate = adjustTarget?.cost_per_unit ?? 0;
     if (!Number.isFinite(quantity) || quantity <= 0 || rate <= 0) return 0;
     return Math.round(rate * quantity * 100) / 100;
@@ -474,6 +533,10 @@ export default function InventoryPage() {
   const [txTarget, setTxTarget] = useState<Ingredient | null>(null);
   const [txClosing, setTxClosing] = useState(false);
   const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
+  const [lots, setLots] = useState<IngredientLot[]>([]);
+  const [editingLotId, setEditingLotId] = useState<number | null>(null);
+  const [lotDraftDays, setLotDraftDays] = useState<number | null>(null);
+  const [lotSaving, setLotSaving] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
 
   const saveOnce = useRef(createSingleFlight());
@@ -562,6 +625,7 @@ export default function InventoryPage() {
       .filter((item) => {
         if (search && !item.name.toLowerCase().includes(search.toLowerCase())) return false;
         if (statusFilter !== "all" && getStatus(item) !== statusFilter) return false;
+        if (!matchesExpiryFilter(item, expiryFilter)) return false;
         if (categoryFilter !== 0 && (item.category_id ?? 0) !== categoryFilter) return false;
         return true;
       })
@@ -588,7 +652,7 @@ export default function InventoryPage() {
         else if (sortKey === "price") cmp = a.cost_per_unit - b.cost_per_unit;
         return sortDir === "asc" ? cmp : -cmp;
       });
-  }, [ingredients, search, statusFilter, categoryFilter, sortKey, sortMode, sortDir, categoryNameById, copy]);
+  }, [ingredients, search, statusFilter, categoryFilter, expiryFilter, sortKey, sortMode, sortDir, categoryNameById, copy]);
 
   // Client-side paging of the already-loaded list — instant, no server round-trips.
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -600,13 +664,13 @@ export default function InventoryPage() {
   // Back to the first page whenever the result set or page size changes.
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, categoryFilter, pageSize]);
+  }, [search, statusFilter, categoryFilter, expiryFilter, pageSize]);
 
   // A new filter is a new context — drop any selection so a stale selection
   // never refers to rows you can no longer see.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [search, statusFilter, categoryFilter]);
+  }, [search, statusFilter, categoryFilter, expiryFilter]);
 
   // If deletions shrink the list past the current page, clamp back into range.
   useEffect(() => {
@@ -658,18 +722,26 @@ export default function InventoryPage() {
 
   const adjustPreview = useMemo(() => {
     if (!adjustTarget || !adjustQty) return null;
-    const qty = parseFloat(adjustQty);
+    // The preview is in the shelf's unit, so a quantity typed in ลัง or กิโลกรัม
+    // is scaled first — it used to add 2 to a ml shelf for "2 ลัง".
+    const factor =
+      !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    const qty = parseFloat(adjustQty) * factor;
     if (Number.isNaN(qty) || qty <= 0) return null;
     if (adjustType === "in") return adjustTarget.stock + qty;
     if (adjustType === "out") return Math.max(0, adjustTarget.stock - qty);
     return qty;
-  }, [adjustTarget, adjustQty, adjustType]);
+  }, [adjustTarget, adjustQty, adjustType, adjustUnit]);
 
   function openCreate() {
     setModalClosing(false);
     setEditingItem(null);
     setForm(emptyForm);
-    setCostText("");
+    setFormExpiryDays(defaultShelfLifeDays(emptyForm.storage_type));
+    setTyped(emptyTypedAmounts);
+    setShowFieldErrors(false);
     setFormError("");
     setModalOpen(true);
   }
@@ -686,18 +758,36 @@ export default function InventoryPage() {
       min_percent: item.min_percent ?? 0,
       cost_per_unit: item.cost_per_unit,
       storage_type: item.storage_type ?? "room_temp",
+      pack_unit: item.pack_unit ?? "",
+      pack_size: item.pack_size ?? 0,
+      case_unit: item.case_unit ?? "",
+      case_size: item.case_size ?? 0,
     });
-    setCostText(item.cost_per_unit ? String(item.cost_per_unit) : "");
+    // An ingredient with a pack opens with its reorder level and price in that
+    // pack — "3 แผง", "แผงละ ฿100" — which is how they were meant.
+    const pack = item.pack_unit && (item.pack_size ?? 0) > 0 ? item.pack_unit : "";
+    const packSize = pack ? (item.pack_size as number) : 1;
+    setShowFieldErrors(false);
+    setTyped({
+      stock: "",
+      stockIn: "",
+      min: typedText(item.min_stock / packSize),
+      minIn: pack,
+      cost: typedText(item.cost_per_unit * packSize, pack ? 2 : 4),
+      costIn: pack,
+    });
     setFormError("");
     setModalOpen(true);
   }
 
   async function handleSave() {
     setFormError("");
-    if (!form.name.trim()) {
-      setFormError(lang === "th" ? "กรุณาระบุชื่อวัตถุดิบ" : "Name is required");
+    if (hasFieldErrors(fieldErrors)) {
+      setShowFieldErrors(true);
+      setFormError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
+    const stockTypedIn = typed.stockIn && typed.stockIn !== form.unit ? typed.stockIn : "";
 
     await saveOnce.current(async () => {
       setSubmitting(true);
@@ -707,14 +797,22 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const response = await createIngredient(form);
+          const payload: IngredientInput = { ...form };
+          // Opening stock typed in a pack goes up as typed, so the history row
+          // reads "ยอดเริ่มต้น · กรอก 2 ลัง" — the server does the conversion.
+          if (stockTypedIn && form.stock > 0) {
+            payload.stock = parseFloat(typed.stock) || 0;
+            payload.stock_unit = stockTypedIn;
+          }
+          if (form.stock > 0 && formExpiryDays !== null) payload.expires_at = expiryDateFromDays(formExpiryDays);
+          const response = await createIngredient(payload);
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
         closeModal();
       } catch (error: unknown) {
         const err = error as { response?: { data?: { error?: string } } };
-        setFormError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+        setFormError(inventoryErrorMessage(err?.response?.data?.error, lang));
       } finally {
         setSubmitting(false);
       }
@@ -738,7 +836,7 @@ export default function InventoryPage() {
       showToast({ title: copy.categoryCreated });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      setCategoryError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+      setCategoryError(inventoryErrorMessage(err?.response?.data?.error, lang));
     } finally {
       setCategorySubmitting(false);
     }
@@ -764,7 +862,7 @@ export default function InventoryPage() {
       showToast({ title: copy.categoryUpdated });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
-      setCategoryError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+      setCategoryError(inventoryErrorMessage(err?.response?.data?.error, lang));
     } finally {
       setCategorySubmitting(false);
     }
@@ -834,6 +932,83 @@ export default function InventoryPage() {
     }, 260);
   }
 
+  // A price is typed per a unit of the ingredient only when there is no stock
+  // to divide a total by — an edit, or a new ingredient with no opening stock.
+  const priceUnitOptions = purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }));
+  const pricingTotal = typed.costIn === TOTAL_PRICE;
+  const fieldErrors = validateIngredientForm(
+    {
+      name: form.name,
+      existingNames: ingredients.map((item) => item.name),
+      ownName: editingItem?.name,
+      packUnit: form.pack_unit ?? "",
+      packSize: form.pack_size ? String(form.pack_size) : "",
+      caseUnit: form.case_unit ?? "",
+      caseSize: form.case_size ? String(form.case_size) : "",
+      stockText: typed.stock,
+      costText: typed.cost,
+      creating: !editingItem,
+    },
+    lang,
+  );
+  const shownErrors = showFieldErrors ? fieldErrors : {};
+
+  // The dropdown lists the containers that usually hold this kind of stock
+  // first, then a disabled divider, then the rest — the web select has no
+  // group headings, so the divider row stands in for one. Nothing is refused.
+  function containerOptions(level: "pack" | "case", exclude: string[]) {
+    const { likely, other } = packUnitChoices(form.unit, level, exclude);
+    const rows: { value: string; label: string; disabled?: boolean }[] = [
+      { value: "", label: level === "pack" ? ucopy.none : `${ucopy.caseAs}: ${ucopy.none}` },
+      ...likely.map((unit) => ({ value: unit, label: unit })),
+    ];
+    if (likely.length && other.length) rows.push({ value: "__divider__", label: `── ${ucopy.otherUnits} ──`, disabled: true });
+    return [...rows, ...other.map((unit) => ({ value: unit, label: unit }))];
+  }
+
+  // Everything that changes what a typed number means goes through here: the
+  // typed text, the unit beside it, and the pack fields that size those units.
+  function applyTyped(nextForm: IngredientInput, nextTyped: TypedAmounts, minFromTyped = true) {
+    const resolved = resolveTypedAmounts(nextForm, nextTyped);
+    setTyped(nextTyped);
+    setForm({
+      ...nextForm,
+      stock: resolved.stock,
+      cost_per_unit: resolved.cost_per_unit,
+      min_stock: minFromTyped ? resolved.min_stock : nextForm.min_stock,
+    });
+  }
+
+  function changePackFields(patch: Partial<IngredientInput>) {
+    const nextForm = { ...form, ...patch };
+    applyTyped(nextForm, retargetTypedUnits(form, nextForm, typed));
+  }
+
+  function changeTypedStock(patch: Partial<TypedAmounts>) {
+    const nextTyped = { ...typed, ...patch };
+    // With opening stock on the form, the only price anyone knows is what that
+    // stock cost, so the price box always means "total paid" and the price per
+    // unit is worked out from it — there is no mode to pick. With no stock
+    // there is nothing to divide by, and it goes back to a price per unit.
+    if (!editingItem) {
+      const hasStock = (parseFloat(nextTyped.stock) || 0) > 0;
+      if (hasStock) nextTyped.costIn = TOTAL_PRICE;
+      else if (nextTyped.costIn === TOTAL_PRICE) {
+        nextTyped.costIn = form.pack_unit && (form.pack_size ?? 0) > 0 ? form.pack_unit : "";
+      }
+    }
+    const stock = resolveTypedAmounts(form, nextTyped).stock;
+    // The shelf just changed size, so a reorder level held as a share of it is
+    // recomputed rather than left as a quantity from the old shelf.
+    if ((form.min_percent ?? 0) > 0) {
+      const min = reorderQuantityFor(stock, form.min_percent ?? 0);
+      const factor = purchaseFactor(form, nextTyped.minIn) ?? 1;
+      applyTyped({ ...form, min_stock: min }, { ...nextTyped, min: typedText(min / factor) }, false);
+      return;
+    }
+    applyTyped(form, nextTyped);
+  }
+
   function updateBulkRow(index: number, patch: Partial<BulkRow>) {
     setBulkRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -842,6 +1017,16 @@ export default function InventoryPage() {
     const rows = bulkRows.filter((row) => row.name.trim() !== "");
     if (rows.length === 0) {
       setBulkError(lang === "th" ? "กรอกชื่อวัตถุดิบอย่างน้อย 1 รายการ" : "Enter at least one ingredient name");
+      return;
+    }
+    const rowProblems = validateBulkRows(
+      rows.map((row) => ({ name: row.name, quantity: row.stock, price: row.cost_per_unit })),
+      ingredients.map((item) => item.name),
+      lang,
+    );
+    const firstBad = rowProblems.findIndex(Boolean);
+    if (firstBad >= 0) {
+      setBulkError(`${rows[firstBad].name.trim()}: ${rowProblems[firstBad]}`);
       return;
     }
     setBulkError("");
@@ -887,9 +1072,11 @@ export default function InventoryPage() {
     setAdjustQty("");
     // Default to the shelf's own unit every time, so a unit chosen for one
     // ingredient never carries into the next one.
-    setAdjustUnit(item.unit);
+    // Deliveries arrive in packs, so open on the pack when the ingredient has one.
+    setAdjustUnit(largestPurchaseUnit(item));
     setAdjustPaidAmount("");
     setAdjustNote("");
+    setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
     setAdjustError("");
   }
 
@@ -898,6 +1085,20 @@ export default function InventoryPage() {
     const qty = parseFloat(adjustQty);
     if (!adjustQty || Number.isNaN(qty) || qty <= 0) {
       setAdjustError(lang === "th" ? "กรุณาระบุจำนวนที่ถูกต้อง" : "Enter a valid quantity");
+      return;
+    }
+    // Checked here, in the shelf's own unit, so the message can say how much is
+    // actually there instead of the server's bare "not enough stock".
+    const adjustFactor =
+      !adjustUnit || adjustUnit === adjustTarget.unit
+        ? 1
+        : adjustTarget.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+    if (adjustType === "out" && qty * adjustFactor > adjustTarget.stock + 1e-9) {
+      setAdjustError(
+        lang === "th"
+          ? `จ่ายออกเกินที่มี (เหลือ ${formatNumber(adjustTarget.stock, lang)} ${adjustTarget.unit})`
+          : `More than is on the shelf (${formatNumber(adjustTarget.stock, lang)} ${adjustTarget.unit} left)`,
+      );
       return;
     }
     const paidAmount = Number(adjustPaidAmount);
@@ -931,29 +1132,97 @@ export default function InventoryPage() {
           note: adjustNote,
           paidAmount: adjustPaidAmount,
           canManageExpenses,
+          expiresAt:
+            adjustType === "in" && adjustExpiryDays !== null ? expiryDateFromDays(adjustExpiryDays) : "",
         }));
         setIngredients((prev) => prev.map((item) => (item.ID === adjustTarget.ID ? response.data : item)));
         closeAdjustModal();
         showToast({ title: copy.stockAdjusted });
       } catch (error: unknown) {
         const err = error as { response?: { data?: { error?: string } } };
-        setAdjustError(err?.response?.data?.error ?? (lang === "th" ? "เกิดข้อผิดพลาด" : "An error occurred"));
+        setAdjustError(inventoryErrorMessage(err?.response?.data?.error, lang));
       } finally {
         setAdjusting(false);
       }
     });
   }
 
+  async function loadLots(id: number) {
+    try {
+      const response = await listLots(id);
+      setLots(response.data.lots ?? []);
+    } catch {
+      setLots([]);
+    }
+  }
+
   async function openTransactions(item: Ingredient) {
     setTxClosing(false);
     setTxTarget(item);
     setTransactions([]);
+    setLots([]);
+    setEditingLotId(null);
     setTxLoading(true);
+    void loadLots(item.ID);
     try {
       const response = await listTransactions(item.ID);
       setTransactions(response.data.transactions ?? []);
     } finally {
       setTxLoading(false);
+    }
+  }
+
+  async function refreshIngredientRow(id: number) {
+    // The list carries expiring_lot per row, and a re-dated or discarded lot
+    // changes which lot that is — refetch rather than guess.
+    try {
+      const response = await listIngredients();
+      const fresh = (response.data.ingredients ?? []).find((entry) => entry.ID === id);
+      if (fresh) setIngredients((prev) => prev.map((entry) => (entry.ID === id ? fresh : entry)));
+    } catch {
+      // The row keeps its last known lot until the next full load.
+    }
+  }
+
+  async function saveLotExpiry(lot: IngredientLot) {
+    if (!txTarget) return;
+    setLotSaving(true);
+    try {
+      await updateLotExpiry(txTarget.ID, lot.ID, lotDraftDays === null ? "" : expiryDateFromDays(lotDraftDays));
+      setEditingLotId(null);
+      showToast({ title: xcopy.expirySaved });
+      await Promise.all([loadLots(txTarget.ID), refreshIngredientRow(txTarget.ID)]);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang, xcopy.failed), tone: "error" });
+    } finally {
+      setLotSaving(false);
+    }
+  }
+
+  async function handleDiscardLot(lot: IngredientLot) {
+    if (!txTarget) return;
+    const target = txTarget;
+    const confirmed = await confirm({
+      title: xcopy.discardTitle,
+      message: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
+      confirmLabel: xcopy.discard,
+      cancelLabel: copy.cancel,
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setLotSaving(true);
+    try {
+      const response = await discardLot(target.ID, lot.ID);
+      setIngredients((prev) => prev.map((entry) => (entry.ID === target.ID ? response.data : entry)));
+      showToast({ title: xcopy.discarded(formatNumber(lot.remaining, lang), target.unit) });
+      const [, history] = await Promise.all([loadLots(target.ID), listTransactions(target.ID)]);
+      setTransactions(history.data.transactions ?? []);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang, xcopy.failed), tone: "error" });
+    } finally {
+      setLotSaving(false);
     }
   }
 
@@ -1133,16 +1402,16 @@ export default function InventoryPage() {
               type="button"
               onClick={() => (filtersOpen ? closeFilters() : setFiltersOpen(true))}
               className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
-                statusFilter !== "all" || categoryFilter !== 0
+                statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all"
                   ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
               }`}
             >
               <Filter className="h-4 w-4" />
               {copy.filter}
-              {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) > 0 && (
+              {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) + (expiryFilter !== "all" ? 1 : 0) > 0 && (
                 <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">
-                  {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0)}
+                  {(statusFilter !== "all" ? 1 : 0) + (categoryFilter !== 0 ? 1 : 0) + (expiryFilter !== "all" ? 1 : 0)}
                 </span>
               )}
             </button>
@@ -1174,6 +1443,22 @@ export default function InventoryPage() {
                         }`}
                       >
                         {status === "all" ? copy.filterAll : status === "ok" ? copy.filterOk : status === "low" ? copy.filterLow : copy.filterOut}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.filterLabel}</p>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {(["all", "soon", "expired"] as ExpiryFilter[]).map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setExpiryFilter(filter)}
+                        className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
+                          expiryFilter === filter
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {filter === "all" ? xcopy.filterAll : filter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
                       </button>
                     ))}
                   </div>
@@ -1222,12 +1507,13 @@ export default function InventoryPage() {
                       </button>
                     ))}
                   </div>
-                  {(statusFilter !== "all" || categoryFilter !== 0 || sortKey !== "" || sortMode !== "recent") && (
+                  {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all" || sortKey !== "" || sortMode !== "recent") && (
                     <button
                       type="button"
                       onClick={() => {
                         setStatusFilter("all");
                         setCategoryFilter(0);
+                        setExpiryFilter("all");
                         setSortKey("");
                         setSortMode("recent");
                       }}
@@ -1338,7 +1624,7 @@ export default function InventoryPage() {
         {tab === "stock" && (
         <>
 
-        {(statusFilter !== "all" || categoryFilter !== 0) && (
+        {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
             {statusFilter !== "all" && (
@@ -1362,11 +1648,22 @@ export default function InventoryPage() {
                 <X className="h-3 w-3" />
               </button>
             )}
+            {expiryFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setExpiryFilter("all")}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+              >
+                {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
+                <X className="h-3 w-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 setStatusFilter("all");
                 setCategoryFilter(0);
+                setExpiryFilter("all");
               }}
               className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
             >
@@ -1458,6 +1755,9 @@ export default function InventoryPage() {
                                 <div className="flex items-center gap-2 text-[13px]">
                                   <span className={`font-semibold tabular-nums ${meta.value}`}>
                                     {formatNumber(item.stock, lang)} <span className="text-[11px] font-medium text-slate-400">{item.unit}</span>
+                                    {formatPackCount(item, lang) ? (
+                                      <span className="ml-1.5 text-[11px] font-medium text-slate-400">{formatPackCount(item, lang)}</span>
+                                    ) : null}
                                   </span>
                                 </div>
                                 {/* percent is null when this shelf has no observed
@@ -1480,6 +1780,23 @@ export default function InventoryPage() {
                                     )}
                                   </div>
                                 )}
+                                {(() => {
+                                  const expiry = ingredientExpiryState(item);
+                                  if ((expiry !== "soon" && expiry !== "expired") || !item.expiring_lot) return null;
+                                  const when = formatExpiryDate(item.expiring_lot.expires_at, lang);
+                                  return (
+                                    <p
+                                      className={`mt-1.5 text-[11px] font-semibold ${
+                                        expiry === "expired"
+                                          ? "text-red-500 dark:text-red-400"
+                                          : "text-amber-600 dark:text-amber-400"
+                                      }`}
+                                    >
+                                      {expiry === "expired" ? xcopy.expiredOn(when) : xcopy.expiresOn(when)} ·{" "}
+                                      {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                                    </p>
+                                  );
+                                })()}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -1600,7 +1917,11 @@ export default function InventoryPage() {
             {...modalBackdrop}
             className={`${modalClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-40 cursor-default bg-gray-950/45 backdrop-blur-sm`}
           />
+          {/* noValidate: the browser's own check stops a negative number with an
+              English tooltip before handleSave runs, so the Thai messages under
+              each field — and the duplicate-name check — never got a chance. */}
           <form
+            noValidate
             onSubmit={(event) => {
               event.preventDefault();
               void handleSave();
@@ -1636,6 +1957,7 @@ export default function InventoryPage() {
                       className={inputCls}
                       autoFocus
                     />
+                    {shownErrors.name ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.name}</p> : null}
                   </div>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -1663,130 +1985,254 @@ export default function InventoryPage() {
                     />
                   </div>
                 </div>
+                {/* Order follows what each field depends on: the stock unit, then
+                    the packs sized in it, then the price, stock and reorder level
+                    that may be typed in those packs. */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.stockUnit}</label>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.stockUnitLabel}</label>
                     <ThemedSelect
-                      aria-label={copy.stockUnit}
+                      aria-label={ucopy.stockUnitLabel}
                       value={form.unit}
-                      onChange={(value) => setForm((current) => ({ ...current, unit: value }))}
-                      options={!form.unit || UNITS.includes(form.unit) ? unitOptions : [{ value: form.unit, label: form.unit }, ...unitOptions]}
+                      onChange={(value) => changePackFields({ unit: value })}
+                      options={stockUnitRows(lang, form.unit)}
                     />
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {copy.costPerUnit} (THB)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      inputMode="decimal"
-                      value={costText}
-                      onChange={(event) => {
-                        const raw = event.target.value;
-                        setCostText(raw);
-                        setForm((current) => ({ ...current, cost_per_unit: parseFloat(raw) || 0 }));
-                      }}
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
-                {/* Storage pairs with the opening stock when there is one; on an
-                    existing item it takes the whole row rather than leaving half
-                    of one empty. */}
-                <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
                     <ThemedSelect
                       aria-label={copy.storageType}
                       value={form.storage_type ?? "room_temp"}
-                      onChange={(value) => setForm((current) => ({ ...current, storage_type: value }))}
+                      onChange={(value) => {
+                        setForm((current) => ({ ...current, storage_type: value }));
+                        // A new storage type means a new shelf life for the opening lot.
+                        setFormExpiryDays(defaultShelfLifeDays(value));
+                      }}
                       options={storageOptions}
                     />
                   </div>
-                  {!editingItem ? (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.stock}
-                        onChange={(event) => {
-                          const stock = parseFloat(event.target.value) || 0;
-                          setForm((current) => ({
-                            ...current,
-                            stock,
-                            // The shelf just changed size, so a reorder level held
-                            // as a share of it is recomputed rather than left as a
-                            // quantity from the old shelf.
-                            min_stock:
-                              (current.min_percent ?? 0) > 0
-                                ? reorderQuantityFor(stock, current.min_percent ?? 0)
-                                : current.min_stock,
-                          }));
-                        }}
-                        className={inputCls}
-                      />
-                    </div>
-                  ) : null}
                 </div>
-                {/* The number, the slider and the readout sit on one line of the
-                    same width, so the reorder level reads as a single control
-                    instead of three stacked measures. */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
-                  <div className="flex items-center gap-3">
-                    {/* The width lives on the wrapper, not on the input: inputCls
-                        already carries w-full, and two width utilities on one
-                        element are settled by stylesheet order, not by the order
-                        they are written in. */}
-                    <div className="w-32 shrink-0">
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.min_stock}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            min_stock: parseFloat(event.target.value) || 0,
-                            // Typed by hand: a quantity the owner means, not a
-                            // share of the shelf, so it stops tracking the maximum.
-                            min_percent: 0,
-                          }))
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.groupBuy}</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-36">
+                      <ThemedSelect
+                        aria-label={ucopy.buyAs}
+                        value={form.pack_unit ?? ""}
+                        onChange={(value) =>
+                          changePackFields({
+                            pack_unit: value,
+                            pack_size: value ? form.pack_size : 0,
+                            case_unit: value ? form.case_unit : "",
+                            case_size: value ? form.case_size : 0,
+                          })
                         }
-                        className={inputCls}
+                        options={containerOptions("pack", [])}
                       />
                     </div>
-                    {editingMaxStock > 0 ? (
+                    {form.pack_unit ? (
                       <>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={5}
-                          value={warnPercent}
-                          onChange={(event) => {
-                            const percent = Number(event.target.value);
-                            setForm((current) => ({
-                              ...current,
-                              min_percent: percent,
-                              min_stock: reorderQuantityFor(editingMaxStock, percent),
-                            }));
-                          }}
-                          className="h-9 min-w-0 flex-1 accent-orange-500"
-                        />
-                        <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
-                          {warnPercent}%
-                        </span>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perPack(form.pack_unit)}</span>
+                        <div className="w-28">
+                          <NumberInput
+                            min={0}
+                            blankWhenZero
+                            aria-label={ucopy.perPack(form.pack_unit)}
+                            value={form.pack_size ?? 0}
+                            onValue={(value) => changePackFields({ pack_size: value })}
+                            className={inputCls}
+                          />
+                        </div>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">{form.unit}</span>
                       </>
                     ) : null}
                   </div>
+                  {form.pack_unit ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="w-36">
+                        <ThemedSelect
+                          aria-label={ucopy.caseAs}
+                          value={form.case_unit ?? ""}
+                          onChange={(value) => changePackFields({ case_unit: value, case_size: value ? form.case_size : 0 })}
+                          options={containerOptions("case", [form.pack_unit ?? ""])}
+                        />
+                      </div>
+                      {form.case_unit ? (
+                        <>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perCase(form.case_unit)}</span>
+                          <div className="w-28">
+                            <NumberInput
+                              min={0}
+                              blankWhenZero
+                              aria-label={ucopy.perCase(form.case_unit)}
+                              value={form.case_size ?? 0}
+                              onValue={(value) => changePackFields({ case_size: value })}
+                              className={inputCls}
+                            />
+                          </div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">{form.pack_unit}</span>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {shownErrors.packSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.packSize}</p> : null}
+                  {shownErrors.caseSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.caseSize}</p> : null}
+                  {packExample(form, lang) ? (
+                    <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">{packExample(form, lang)}</p>
+                  ) : null}
+                </div>
+                {/* Opening stock comes first because the price can be read off
+                    it: type what was paid for that stock and the price per unit
+                    follows. On an existing item the price takes the whole row. */}
+                <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
+                  {!editingItem ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="decimal"
+                          aria-label={copy.initialStock}
+                          placeholder="0"
+                          value={typed.stock}
+                          onChange={(event) => changeTypedStock({ stock: event.target.value })}
+                          className={inputCls}
+                        />
+                        {purchaseUnitChoices(form).length > 1 ? (
+                          <div className="w-28 shrink-0">
+                            <ThemedSelect
+                              aria-label={copy.initialStock}
+                              value={typed.stockIn || form.unit}
+                              onChange={(value) => changeTypedStock({ stockIn: value === form.unit ? "" : value })}
+                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                      {typed.stockIn && form.stock > 0 ? (
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                          {entryChain(form, parseFloat(typed.stock) || 0, typed.stockIn, lang) ??
+                            ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
+                        </p>
+                      ) : null}
+                      {shownErrors.stock ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.stock}</p> : null}
+                    </div>
+                  ) : null}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {pricingTotal
+                        ? ucopy.totalPaidFor(
+                            formatNumber(parseFloat(typed.stock) || 0, lang),
+                            typed.stockIn || form.unit,
+                          )
+                        : priceUnitOptions.length > 1
+                          ? ucopy.price
+                          : `${copy.costPerUnit} (THB)`}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        aria-label={ucopy.price}
+                        value={typed.cost}
+                        onChange={(event) => applyTyped(form, { ...typed, cost: event.target.value })}
+                        className={inputCls}
+                      />
+                      {!pricingTotal && priceUnitOptions.length > 1 ? (
+                        <>
+                          <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
+                          <div className="w-28 shrink-0">
+                            <ThemedSelect
+                              aria-label={ucopy.price}
+                              value={typed.costIn || form.unit}
+                              onChange={(value) => applyTyped(form, { ...typed, costIn: value === form.unit ? "" : value })}
+                              options={priceUnitOptions}
+                            />
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                    {typed.costIn && form.cost_per_unit > 0 ? (
+                      <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                        {/* Every price the typed one implies, so the owner can check
+                            it against the shelf tag: แพ็กละ ฿60 · ขวดละ ฿5. */}
+                        {"= "}
+                        {purchaseUnitChoices(form)
+                          .slice()
+                          .reverse()
+                          .filter((unit) => unit !== typed.costIn)
+                          .map((unit) =>
+                            ucopy.pricePerUnit(
+                              unit,
+                              formatCurrency(form.cost_per_unit * (purchaseFactor(form, unit) ?? 1), lang, 2),
+                            ),
+                          )
+                          .join(" · ")}
+                      </p>
+                    ) : null}
+                    {shownErrors.cost ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.cost}</p> : null}
+                  </div>
+                </div>
+                {!editingItem && form.stock > 0 ? (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.label}</label>
+                    <ExpiryChips
+                      key={form.storage_type ?? "room_temp"}
+                      value={formExpiryDays}
+                      onChange={setFormExpiryDays}
+                      storageType={form.storage_type}
+                      lang={lang}
+                    />
+                  </div>
+                ) : null}
+                {/* The reorder level is set by the slider alone, in whole tens of
+                    the shelf's full level — 10%, 20% … 100% — so it is always a
+                    share people can say out loud, and it keeps tracking the shelf
+                    as the full level grows. The line under it says what that
+                    comes to in the pack and in the stock unit. */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={10}
+                      aria-label={copy.minStock}
+                      disabled={!(editingMaxStock > 0)}
+                      value={Math.round(warnPercent / 10) * 10}
+                      onChange={(event) => {
+                        const percent = Number(event.target.value);
+                        const min = reorderQuantityFor(editingMaxStock, percent);
+                        const factor = purchaseFactor(form, typed.minIn) ?? 1;
+                        applyTyped(
+                          { ...form, min_percent: percent, min_stock: min },
+                          { ...typed, min: typedText(min / factor) },
+                          false,
+                        );
+                      }}
+                      className="h-9 min-w-0 flex-1 accent-orange-500 disabled:opacity-40"
+                    />
+                    <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                      {Math.round(warnPercent)}%
+                    </span>
+                  </div>
                   {editingMaxStock > 0 ? (
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {copy.warnsAt(formatNumber(form.min_stock, lang), form.unit)} ·{" "}
-                      {copy.ofFull(formatNumber(editingMaxStock, lang), form.unit)}
-                    </p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    {(() => {
+                          const unit = typed.minIn || form.unit;
+                          const factor = purchaseFactor(form, unit) ?? 1;
+                          return ucopy.warnLine(
+                            formatNumber(form.min_stock / factor, lang),
+                            unit,
+                            factor === 1 ? null : `${formatNumber(form.min_stock, lang)} ${form.unit}`,
+                            formatNumber(editingMaxStock / factor, lang),
+                          );
+                        })()}
+                  </p>
                   ) : null}
                 </div>
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
@@ -1901,20 +2347,22 @@ export default function InventoryPage() {
                         />
                       </td>
                       <td className="w-24">
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          blankWhenZero
+                          placeholder="0"
                           value={row.stock}
-                          onChange={(event) => updateBulkRow(index, { stock: parseFloat(event.target.value) || 0 })}
+                          onValue={(value) => updateBulkRow(index, { stock: value })}
                           className={`${inputCls} h-9 text-right`}
                         />
                       </td>
                       <td className="w-24">
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
+                          blankWhenZero
+                          placeholder="0"
                           value={row.min_stock}
-                          onChange={(event) => updateBulkRow(index, { min_stock: parseFloat(event.target.value) || 0 })}
+                          onValue={(value) => updateBulkRow(index, { min_stock: value })}
                           className={`${inputCls} h-9 text-right`}
                         />
                       </td>
@@ -2181,8 +2629,9 @@ export default function InventoryPage() {
                 {/* Entering in another unit is only useful if the result is
                     visible before saving - the shelf still counts in its own. */}
                 {convertedAdjustQty !== null ? (
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    = <span className="font-mono tabular-nums">{convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span> {adjustTarget.unit}
+                  <p className="mt-1.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                    {entryChain(adjustTarget, parseFloat(adjustQty), adjustUnit, lang) ??
+                      `= ${convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${adjustTarget.unit}`}
                   </p>
                 ) : null}
               </div>
@@ -2208,6 +2657,20 @@ export default function InventoryPage() {
                       ? copy.spentAmountFallback(formatCurrency(referenceAdjustAmount, lang))
                       : copy.spentAmountHint}
                   </p>
+                </div>
+              )}
+              {adjustType === "in" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {xcopy.label}
+                  </label>
+                  <ExpiryChips
+                    key={adjustTarget.ID}
+                    value={adjustExpiryDays}
+                    onChange={setAdjustExpiryDays}
+                    storageType={adjustTarget.storage_type}
+                    lang={lang}
+                  />
                 </div>
               )}
               <div>
@@ -2279,6 +2742,108 @@ export default function InventoryPage() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
+              {lots.length > 0 && (
+                <div className="mb-6">
+                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {xcopy.lots} · {lots.length}
+                  </p>
+                  <div className="space-y-2">
+                    {lots.map((lot) => {
+                      const state = expiryState(lot.expires_at);
+                      const editing = editingLotId === lot.ID;
+                      return (
+                        <div
+                          key={lot.ID}
+                          className="rounded-md border border-slate-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`text-sm font-semibold ${
+                                  state === "expired"
+                                    ? "text-red-500 dark:text-red-400"
+                                    : state === "soon"
+                                      ? "text-amber-600 dark:text-amber-400"
+                                      : "text-slate-900 dark:text-white"
+                                }`}
+                              >
+                                {lot.expires_at
+                                  ? state === "expired"
+                                    ? xcopy.expiredOn(formatExpiryDate(lot.expires_at, lang))
+                                    : xcopy.expiresOn(formatExpiryDate(lot.expires_at, lang))
+                                  : xcopy.noExpiry}
+                                {lot.expires_at && state !== "expired" ? (
+                                  <span className="ml-1.5 text-xs font-normal text-slate-400">
+                                    {xcopy.inDays(daysUntil(lot.expires_at))}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="text-xs text-slate-400">{xcopy.lotReceived(formatExpiryDate(lot.received_at, lang))}</p>
+                            </div>
+                            <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                              {formatNumber(lot.remaining, lang)}{" "}
+                              <span className="text-[10px] font-normal text-slate-400">{txTarget.unit}</span>
+                            </p>
+                          </div>
+                          {canManage && (
+                            <div className="mt-2">
+                              {editing ? (
+                                <>
+                                  <ExpiryChips
+                                    key={lot.ID}
+                                    value={lotDraftDays}
+                                    onChange={setLotDraftDays}
+                                    storageType={txTarget.storage_type}
+                                    lang={lang}
+                                  />
+                                  <div className="mt-2 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingLotId(null)}
+                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
+                                    >
+                                      {copy.cancel}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={lotSaving}
+                                      onClick={() => saveLotExpiry(lot)}
+                                      className="rounded-md bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50"
+                                    >
+                                      {xcopy.saveExpiry}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingLotId(lot.ID);
+                                      setLotDraftDays(lot.expires_at ? daysUntil(lot.expires_at) : null);
+                                    }}
+                                    className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800"
+                                  >
+                                    {xcopy.setExpiry}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={lotSaving}
+                                    onClick={() => handleDiscardLot(lot)}
+                                    className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
+                                  >
+                                    {xcopy.discard}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {txLoading ? (
                 <div className="flex h-32 items-center justify-center text-sm text-slate-400">{copy.loading}</div>
               ) : transactions.length === 0 ? (

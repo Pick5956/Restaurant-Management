@@ -9,15 +9,16 @@ import (
 	"gorm.io/gorm"
 
 	"Project-M/internal/entity"
+	"Project-M/internal/repository"
 )
 
 // Closing yesterday before opening today.
 //
-// Each seeded day leaves three to five orders live on the floor so the
-// assistant's "what is the kitchen doing" has something to show. Nothing ever
-// closed them, so after four days the floor carried twenty-two open bills, the
-// oldest "waiting" for 5,101 minutes, and every dine-in table stayed occupied
-// for good. A real shop closes its bills at the end of the night; so does this.
+// Seeded days used to leave three to five orders live on the floor. Since
+// 18 ก.ย. 2569 no seeded order is left open, but this still closes whatever an
+// older run left behind — including the same day's — and then frees any table
+// still marked occupied with nothing live on it. A real shop closes its bills
+// at the end of the night; so does this.
 //
 // Only orders this command seeded are touched (the day marker in the note), so
 // a bill the owner opened by hand is never closed behind their back.
@@ -32,12 +33,15 @@ func settleLeftovers(db *gorm.DB, restaurantID uint, today string, loc *time.Loc
 	ingredients []entity.Ingredient, staffID uint) (int, error) {
 
 	var leftovers []entity.Order
-	err := db.Where("restaurant_id = ? AND note LIKE ? AND order_date < ? AND status NOT IN ?",
+	err := db.Where("restaurant_id = ? AND note LIKE ? AND order_date <= ? AND status NOT IN ?",
 		restaurantID, "[daily_activity %", today,
 		[]string{entity.OrderStatusCompleted, entity.OrderStatusCancelled}).
 		Order("opened_at asc").Find(&leftovers).Error
-	if err != nil || len(leftovers) == 0 {
+	if err != nil {
 		return 0, err
+	}
+	if len(leftovers) == 0 {
+		return 0, releaseEmptyTables(db, restaurantID)
 	}
 
 	settled := 0
@@ -58,9 +62,22 @@ func settleLeftovers(db *gorm.DB, restaurantID uint, today string, loc *time.Loc
 			}
 			for idx := range items {
 				item := &items[idx]
-				served := closedAt
+				if item.Status == entity.OrderItemStatusCancelled {
+					continue
+				}
+				// The kitchen finished before the plate went out: keep a ready time
+				// already recorded, otherwise say it was ready a few minutes before
+				// it was carried to the table.
+				served := closedAt.Add(-time.Duration(3+rng.Intn(6)) * time.Minute)
+				if served.Before(order.OpenedAt) {
+					served = closedAt
+				}
+				ready := served.Add(-time.Duration(1+rng.Intn(4)) * time.Minute)
+				if item.ReadyAt != nil && !item.ReadyAt.After(served) && item.Status == entity.OrderItemStatusReady {
+					ready = *item.ReadyAt
+				}
 				if err := tx.Model(item).Updates(map[string]interface{}{
-					"status": entity.OrderItemStatusServed, "ready_at": served, "served_at": served, "updated_at": served,
+					"status": entity.OrderItemStatusServed, "ready_at": ready, "served_at": served, "updated_at": served,
 				}).Error; err != nil {
 					return err
 				}
@@ -96,6 +113,9 @@ func settleLeftovers(db *gorm.DB, restaurantID uint, today string, loc *time.Loc
 			}
 			settled++
 		}
+		if err := releaseEmptyTables(tx, restaurantID); err != nil {
+			return err
+		}
 		for ingredientID, qty := range consumed {
 			if qty <= 0 {
 				continue
@@ -103,6 +123,9 @@ func settleLeftovers(db *gorm.DB, restaurantID uint, today string, loc *time.Loc
 			if err := tx.Model(&entity.Ingredient{}).
 				Where("id = ? AND restaurant_id = ?", ingredientID, restaurantID).
 				Update("stock", gorm.Expr("GREATEST(stock - ?, 0)", round2(qty))).Error; err != nil {
+				return err
+			}
+			if err := repository.ReconcileLotsToStock(tx, restaurantID, ingredientID, time.Now()); err != nil {
 				return err
 			}
 		}
@@ -195,6 +218,19 @@ func releaseSeededTable(tx *gorm.DB, restaurantID, tableID uint) error {
 		return nil
 	}
 	return tx.Model(&entity.RestaurantTable{}).Where("id = ?", tableID).
+		Update("status", entity.TableStatusFree).Error
+}
+
+// releaseEmptyTables frees every table still marked occupied with no live order
+// on it. The seeded live orders marked their tables occupied, and a table
+// freed only when its own order closed stayed occupied if anything went
+// sideways in between.
+func releaseEmptyTables(tx *gorm.DB, restaurantID uint) error {
+	return tx.Model(&entity.RestaurantTable{}).
+		Where("restaurant_id = ? AND status = ? AND id NOT IN (?)", restaurantID, entity.TableStatusOccupied,
+			tx.Model(&entity.Order{}).Select("table_id").
+				Where("restaurant_id = ? AND table_id IS NOT NULL AND status NOT IN ?", restaurantID,
+					[]string{entity.OrderStatusCompleted, entity.OrderStatusCancelled})).
 		Update("status", entity.TableStatusFree).Error
 }
 

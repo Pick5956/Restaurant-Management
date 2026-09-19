@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Minus, Plus, X } from "lucide-react";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
+import NumberInput from "@/src/components/shared/NumberInput";
 
 /** 44px is the smallest target a finger hits reliably; 52 is for primary actions. */
 export const TAP = "min-h-[44px]";
@@ -253,11 +255,10 @@ export function Stepper({
         <Minus className="h-5 w-5" strokeWidth={2} />
       </button>
       <div className="relative min-w-0 flex-1">
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberInput
+          min={0}
           value={Number.isFinite(value) ? value : 0}
-          onChange={(event) => onChange(Math.max(0, Number(event.target.value)))}
+          onValue={onChange}
           className={`${inputBase} h-[52px] border-(--inv-hairline) pr-14 text-center font-semibold tabular-nums`}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-(--inv-muted)">
@@ -384,7 +385,9 @@ export function ChipRow<T extends string | number>({
 }) {
   const { ref, scrollable, ratio, progress } = useScrollAffordance();
   // One value feeds both the width and the travel, so they can never disagree.
-  const thumb = Math.max(ratio * 100, 18);
+  // The floor is higher than a full-width bar needs: the track is short, and a
+  // thumb much under a third of it stops reading as a thumb.
+  const thumb = Math.max(ratio * 100, 35);
 
   return (
     <div className="relative">
@@ -429,8 +432,10 @@ export function ChipRow<T extends string | number>({
             }`}
           />
           {/* 10px of air between the chips and the bar; the pale grey iOS
-              indicator used to touch them. */}
-          <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-(--inv-surface-strong)">
+              indicator used to touch them. A short centred track, not the full
+              width: it only has to say "there is more to the right", and a bar
+              spanning the whole card read as a divider line. */}
+          <div className="mx-auto mt-2.5 h-[3px] w-12 overflow-hidden rounded-full bg-(--inv-surface-strong)">
             {/* No transition: the thumb must track the finger frame for frame.
                 With one it lagged behind the chips and read as stutter. */}
             <div
@@ -543,4 +548,111 @@ export function FormRow({
       {body}
     </button>
   );
+}
+
+/**
+ * The phone's own picker behind whatever this wraps. The row keeps its look —
+ * label, value, chevron — and an invisible <select> lies over it, so a tap
+ * opens the system list: the iOS menu or wheel, the Android dialog. It trades
+ * our styling inside the list for the control people already know, dark mode,
+ * the system text size and VoiceOver/TalkBack for free. Only for short
+ * single-line choices; anything with extra controls stays a BottomSheet.
+ */
+export function NativeSelect<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  children,
+  className = "",
+}: {
+  label: string;
+  value: T;
+  /** Options with the same `group` sit under that heading, in first-seen order. */
+  options: { value: T; label: string; group?: string }[];
+  onChange: (value: T) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  const sections: { group: string | undefined; items: typeof options }[] = [];
+  for (const option of options) {
+    const last = sections[sections.length - 1];
+    if (last && last.group === option.group) last.items.push(option);
+    else sections.push({ group: option.group, items: [option] });
+  }
+  const render = (option: (typeof options)[number]) => (
+    <option key={String(option.value)} value={String(option.value)}>
+      {option.label}
+    </option>
+  );
+  return (
+    <div className={`relative ${className}`}>
+      {children}
+      <select
+        aria-label={label}
+        value={String(value)}
+        onChange={(event) => {
+          const picked = options.find((option) => String(option.value) === event.target.value);
+          if (picked) onChange(picked.value);
+        }}
+        // 16px or iOS zooms the page in when the list opens.
+        className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 text-[16px]"
+      >
+        {sections.map((section, index) =>
+          section.group ? (
+            <optgroup key={`${section.group}-${index}`} label={section.group}>
+              {section.items.map(render)}
+            </optgroup>
+          ) : (
+            section.items.map(render)
+          ),
+        )}
+      </select>
+    </div>
+  );
+}
+
+/**
+ * Ask before destroying something, with the same dialog the AI chat uses to
+ * delete a chat (WarmConfirmDialog): the big warning icon, the red button on
+ * top and the safe one under it, focus on the safe one. Promise-shaped so a
+ * caller reads `if (!(await ask(...))) return;` — render `dialog` once.
+ */
+export function useWarmConfirm() {
+  // The request stays after it is answered and only `open` goes false, so the
+  // dialog keeps its words while it animates out instead of emptying first.
+  const [request, setRequest] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    resolve: (answer: boolean) => void;
+  } | null>(null);
+
+  const ask = useCallback(
+    (options: { title: string; description: string; confirmLabel: string; cancelLabel: string }) =>
+      new Promise<boolean>((resolve) => setRequest({ ...options, open: true, resolve })),
+    [],
+  );
+
+  const answer = (value: boolean) => {
+    if (!request?.open) return;
+    request.resolve(value);
+    setRequest({ ...request, open: false });
+  };
+
+  const dialog = (
+    <WarmConfirmDialog
+      open={request?.open ?? false}
+      title={request?.title ?? ""}
+      description={request?.description ?? ""}
+      confirmLabel={request?.confirmLabel ?? ""}
+      cancelLabel={request?.cancelLabel ?? ""}
+      onConfirm={() => answer(true)}
+      onCancel={() => answer(false)}
+    />
+  );
+
+  return { ask, dialog };
 }

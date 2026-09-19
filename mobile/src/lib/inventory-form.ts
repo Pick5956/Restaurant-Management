@@ -5,15 +5,14 @@ export const INGREDIENT_UNITS = [
   'กิโลกรัม',
   'มิลลิลิตร',
   'ลิตร',
+  'ฟอง',
   'ชิ้น',
   'ลูก',
-  'ฟอง',
-  'ใบ',
-  'แผ่น',
+  'ตัว',
   'ขวด',
-  'แพ็ก',
-  'ถุง',
+  'กระป๋อง',
   'กล่อง',
+  'ซอง',
 ] as const;
 
 export interface IngredientFormValues {
