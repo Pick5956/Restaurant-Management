@@ -36,7 +36,7 @@ function buildCopy(lang: "th" | "en") {
         close: "ปิด",
         clearTypeCategory: "ล้างตัวกรอง",
         clear: "ล้างตัวกรอง",
-        export: "ส่งออก CSV",
+        export: "ส่งออกเป็นตาราง",
         exportFiltered: "เฉพาะที่กรองอยู่",
         exportAll: "ทั้งหมด",
         exporting: "กำลังสร้างไฟล์…",
@@ -70,7 +70,7 @@ function buildCopy(lang: "th" | "en") {
         close: "Close",
         clearTypeCategory: "Clear filters",
         clear: "Clear filters",
-        export: "Export CSV",
+        export: "Export as sheet",
         exportFiltered: "Current filters only",
         exportAll: "Everything",
         exporting: "Preparing file…",
@@ -524,7 +524,7 @@ export default function InventoryHistoryTab({
         <div>
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
             <thead
-              className="inv-thead text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500"
+              className="inv-thead text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500"
               style={{ "--inv-th-top": `${stickyTop}px` } as CSSProperties}
             >
               <tr>

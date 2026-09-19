@@ -93,8 +93,9 @@ export default function AIChatList({
 }: {
   language: "th" | "en";
   activeId: string | null;
-  onOpen: (conversationId: string) => void;
-  onNew: () => void;
+  /** May return false (or resolve to false) to refuse; the list then stays open. */
+  onOpen: (conversationId: string) => unknown;
+  onNew: () => unknown;
   variant: Variant;
   /** The close control (backdrop click and Escape use it too). */
   onClose?: () => void;
@@ -118,6 +119,17 @@ export default function AIChatList({
     if (closing) return;
     setClosing(true);
     window.setTimeout(() => onClose?.(), 220);
+  };
+  // Picking a chat (or a new one) leaves the same way as closing. The parent
+  // may still refuse — a pending action preview it could not settle — and
+  // then the list comes back instead of staying invisible.
+  const leaveThen = (go: () => unknown) => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(async () => {
+      const result = await go();
+      if (result === false) setClosing(false);
+    }, 200);
   };
   // The panel opens with the cursor in the search box and leaves on Escape,
   // unless a rename or the delete dialog is up — that one owns Escape then.
@@ -285,7 +297,7 @@ export default function AIChatList({
                   <div key={conversation.id} className="relative">
                     <button
                       type="button"
-                      onClick={() => onOpen(conversation.id)}
+                      onClick={() => leaveThen(() => onOpen(conversation.id))}
                       aria-current={active ? "true" : undefined}
                       className={`${rowButton} ${
                         active
@@ -386,7 +398,7 @@ export default function AIChatList({
   const newChatButton = (
     <button
       type="button"
-      onClick={onNew}
+      onClick={() => leaveThen(onNew)}
       className="mx-2 mb-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-white/80 text-[13px] font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-50 dark:border-orange-900/50 dark:bg-gray-900 dark:text-orange-300 dark:hover:bg-orange-950/30"
     >
       <Plus className="h-4 w-4" /> {t.newChat}
@@ -441,7 +453,7 @@ export default function AIChatList({
           <div className="px-2 pt-2">
             <button
               type="button"
-              onClick={onNew}
+              onClick={() => leaveThen(onNew)}
               className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-[13px] font-medium text-gray-800 transition-colors hover:bg-orange-50/70 dark:text-gray-100 dark:hover:bg-gray-800/70"
             >
               <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">

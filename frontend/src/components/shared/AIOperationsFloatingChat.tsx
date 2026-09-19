@@ -1136,12 +1136,6 @@ export default function AIOperationsFloatingChat() {
                 className="min-h-9 w-full resize-none bg-transparent px-2 py-1.5 text-sm font-medium !text-gray-950 placeholder-gray-400 outline-none dark:!text-gray-50 dark:placeholder-gray-500"
               />
               <div className="flex items-center gap-1">
-              <AIInputTools
-                tools={["scan"]}
-                language={language}
-                disabled={loading || actionConfirming || actionCancelling}
-                onInsertText={(text) => setInput((v) => (v.trim() ? `${v.trim()} ${text}` : text))}
-              />
               <div className="flex-1" />
               {composer.canExpand && (
                 <button
