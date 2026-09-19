@@ -1,64 +1,61 @@
 /**
- * Smooth mouse-wheel scrolling for a vertical list, as a React ref callback:
+ * Mouse-wheel scrolling with momentum, as a React ref callback:
  *
  *   <div ref={smoothScroll} className="overflow-y-auto">…</div>
  *
- * Each wheel notch moves a target, and the list eases toward it and slows to a
- * stop — the glide the time wheel has — instead of jumping 100px at a time.
- * A notch coasts one and a half notches' worth, and a quick run of notches goes
- * further than the same notches spaced out.
+ * Each wheel notch gives the list a push instead of moving it a fixed step.
+ * The list runs on that speed and friction bleeds it away, so it keeps moving
+ * for a moment after the wheel stops and comes to rest on its own — the coast
+ * the time wheel has. Notches in quick succession add up, so a fast spin goes
+ * further; turning the wheel the other way cancels the coast at once.
+ *
  * At the top or bottom the wheel is left alone, so the page itself scrolls on
- * and a list never traps the wheel. Touch and trackpad momentum are the
- * browser's own and untouched; there is no mouse drag here, only the wheel.
+ * and a list never traps the wheel. A wheel event a nested list has already
+ * taken is ignored, so a list and the page never scroll on the same notch.
+ * Touch and trackpad momentum are the browser's own and untouched.
  *
  * Returns a cleanup, which React 19 calls when the element goes away.
  */
 export function smoothScroll(node: HTMLElement | null): (() => void) | undefined {
   if (!node) return;
 
-  // Fraction of the remaining distance covered each frame: the ease-out.
-  // 0.07 glides for about a second after a notch. 0.2 was over in a quarter
-  // second and read as a jump; 0.12 still stopped right on the notch and did
-  // not read as a slide.
-  const EASE = 0.07;
-  // Each notch carries past its own 100px, the way a flicked wheel coasts.
-  const CARRY = 1.5;
-  // Notches closer together than this count as one spin and build speed.
-  const SPIN_GAP_MS = 120;
+  // Speed a 100px notch adds, in px per ms. With FRICTION_MS below a single
+  // notch coasts about 165px and takes about a second to settle.
+  const PUSH_PER_PX = 0.0055;
+  // Time constant of the slow-down: speed falls to ~37% every this many ms.
+  const FRICTION_MS = 300;
+  // Below this speed (px/ms) the list has stopped.
+  const REST = 0.02;
+  // A hard spin can build speed, but not without end.
+  const MAX_SPEED = 6;
 
-  let target: number | null = null;
+  let velocity = 0;
+  let position = node.scrollTop;
   let frame: number | null = null;
-  let lastWheel = 0;
-  let streak = 0;
+  let last = 0;
 
   const maxTop = () => Math.max(0, node.scrollHeight - node.clientHeight);
-  const clamp = (value: number) => Math.min(Math.max(value, 0), maxTop());
 
   const stop = () => {
     if (frame !== null) cancelAnimationFrame(frame);
     frame = null;
-    target = null;
+    velocity = 0;
   };
 
-  const step = () => {
-    if (target === null) {
-      frame = null;
-      return;
-    }
-    const current = node.scrollTop;
-    const move = (target - current) * EASE;
-    // The browser rounds scrollTop to whole device pixels, so the last few
-    // sub-pixel steps would never land — the list stopped 2px short of its
-    // end. Under a pixel, finish in one go.
-    if (Math.abs(move) < 1) {
-      node.scrollTop = target;
+  const step = (now: number) => {
+    const dt = Math.min(48, now - last); // a dropped frame is not a leap
+    last = now;
+    position += velocity * dt;
+    velocity *= Math.exp(-dt / FRICTION_MS);
+    const max = maxTop();
+    if (position <= 0 || position >= max) {
+      position = Math.min(Math.max(position, 0), max);
+      node.scrollTop = position;
       stop();
       return;
     }
-    node.scrollTop = current + move;
-    // Pinned against an edge the browser will not pass: stop rather than spin.
-    if (node.scrollTop === current) {
-      node.scrollTop = target;
+    node.scrollTop = position;
+    if (Math.abs(velocity) < REST) {
       stop();
       return;
     }
@@ -67,22 +64,22 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
 
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey || !event.deltaY) return; // pinch-zoom, sideways
-    // A list nested inside already took this notch; the page around it must
-    // not scroll on the same notch as well.
     if (event.defaultPrevented) return;
     const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? node.clientHeight : 1;
-    // A fast spin carries further, the way a flick does: each notch in a quick
-    // run adds a quarter more than the one before, up to double.
-    streak = event.timeStamp - lastWheel < SPIN_GAP_MS ? streak + 1 : 0;
-    lastWheel = event.timeStamp;
-    const boost = CARRY * Math.min(2, 1 + streak * 0.35);
-    const base = target ?? node.scrollTop;
-    const next = clamp(base + event.deltaY * unit * boost);
-    // Nothing left to scroll this way: let the page have the wheel.
-    if (Math.abs(next - base) < 0.5) return;
+    const delta = event.deltaY * unit;
+    const max = maxTop();
+    // Resting against the edge it is being pushed into: the page scrolls.
+    // 1px slack: scrollTop is rounded and can sit a pixel short of the end.
+    if (frame === null && ((delta < 0 && node.scrollTop <= 1) || (delta > 0 && node.scrollTop >= max - 1))) return;
     event.preventDefault();
-    target = next;
-    if (frame === null) frame = requestAnimationFrame(step);
+    if (frame === null) position = node.scrollTop; // someone else may have moved it
+    // Reversing kills the coast rather than fighting it.
+    if (Math.sign(delta) !== Math.sign(velocity)) velocity = 0;
+    velocity = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, velocity + delta * PUSH_PER_PX));
+    if (frame === null) {
+      last = performance.now();
+      frame = requestAnimationFrame(step);
+    }
   };
 
   node.addEventListener("wheel", onWheel, { passive: false });
