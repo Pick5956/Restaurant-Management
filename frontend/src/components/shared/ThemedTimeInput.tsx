@@ -20,6 +20,8 @@ const PANEL_PADDING = 12;
 const DONE_BLOCK = 46;
 const PANEL_HEIGHT = WHEEL_HEIGHT + DONE_BLOCK + PANEL_PADDING * 2;
 const VIEWPORT_MARGIN = 8;
+// Rows laid out per wheel, so a hard flick still has somewhere to go.
+const LOOP_ROWS = 60;
 // How long the column must sit still before the value under the band counts.
 const SETTLE_MS = 120;
 
@@ -43,6 +45,12 @@ function formatPreview(value: string) {
  * tap on any row rolls that row to the band. While it turns, the row nearest
  * the band is drawn large from the live scroll position, so the wheel shows
  * what it will land on before it lands.
+ *
+ * It loops: past 23 comes 00 again. The values are laid out several times
+ * over, the wheel opens on the middle copy, and each time it comes to rest it
+ * is moved — without animation — to the same value in the middle copy, so
+ * there is always a full turn left in either direction. Minutes have only four
+ * values, so they get more copies to have the same room to spin.
  */
 function WheelColumn({
   label,
@@ -59,14 +67,19 @@ function WheelColumn({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const settleTimer = useRef<number | null>(null);
+  const size = values.length;
+  // Odd, so there is a middle copy; at least ~60 rows in all.
+  const copies = Math.max(5, Math.ceil(LOOP_ROWS / size) | 1);
+  const middle = Math.floor(copies / 2) * size;
+  const rows = size * copies;
   const selectedIndex = Math.max(0, values.indexOf(selected));
-  const [live, setLive] = useState(selectedIndex);
+  const [live, setLive] = useState(middle + selectedIndex);
 
   // Land on the saved value before the panel paints, without animating.
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
-    ref.current.scrollTop = selectedIndex * ROW;
-    setLive(selectedIndex);
+    ref.current.scrollTop = (middle + selectedIndex) * ROW;
+    setLive(middle + selectedIndex);
     // Only on open; later moves roll themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -79,18 +92,22 @@ function WheelColumn({
   );
 
   const rollTo = (index: number) => {
-    const clamped = Math.min(Math.max(index, 0), values.length - 1);
+    const clamped = Math.min(Math.max(index, 0), rows - 1);
     ref.current?.scrollTo({ top: clamped * ROW, behavior: "smooth" });
   };
 
   const onScroll = () => {
     const node = ref.current;
     if (!node) return;
-    const index = Math.min(Math.max(Math.round(node.scrollTop / ROW), 0), values.length - 1);
+    const index = Math.min(Math.max(Math.round(node.scrollTop / ROW), 0), rows - 1);
     setLive(index);
     if (settleTimer.current) window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
-      if (values[index] !== selected) onSelect(values[index]);
+      const value = values[index % size];
+      if (value !== selected) onSelect(value);
+      // Back to the middle copy, same value, same pixels on screen.
+      const home = middle + (index % size);
+      if (home !== index) node.scrollTop = home * ROW;
     }, SETTLE_MS);
   };
 
@@ -99,7 +116,7 @@ function WheelColumn({
       ref={ref}
       role="listbox"
       aria-label={label}
-      aria-activedescendant={`${label}-${values[live]}`}
+      aria-activedescendant={`${label}-${live}`}
       tabIndex={0}
       onScroll={onScroll}
       onKeyDown={(event) => {
@@ -121,12 +138,13 @@ function WheelColumn({
       }}
       className="relative w-16 snap-y snap-mandatory overflow-y-auto overscroll-contain outline-none [&::-webkit-scrollbar]:hidden"
     >
-      {values.map((entry, index) => {
+      {Array.from({ length: rows }, (_, index) => {
+        const entry = values[index % size];
         const distance = Math.abs(index - live);
         return (
           <button
-            key={entry}
-            id={`${label}-${entry}`}
+            key={index}
+            id={`${label}-${index}`}
             type="button"
             role="option"
             aria-selected={index === live}
