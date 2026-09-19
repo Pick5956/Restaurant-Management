@@ -1872,7 +1872,7 @@ export default function Home() {
                           // a pixel or two past the sheet, and with the other
                           // axis scrolling that was enough to flash a
                           // horizontal scrollbar under the cursor.
-                          <div className="max-h-72 overflow-x-clip overflow-y-auto print:max-h-none print:overflow-visible">
+                          <div ref={smoothScroll} className="max-h-72 overflow-x-clip overflow-y-auto print:max-h-none print:overflow-visible">
                             {/* border-separate so the rows can cast a shadow on
                                 hover — a collapsed table never paints one. The
                                 row dividers move onto the cells to suit. */}
@@ -2134,7 +2134,7 @@ export default function Home() {
                               {copy.loading}
                             </div>
                           ) : shownExpenses.length ? (
-                            <div className="max-h-64 overflow-y-auto">
+                            <div ref={smoothScroll} className="max-h-64 overflow-y-auto">
                               <div className="grid grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-medium text-gray-500 dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-400">
                                 <span>{copy.expenseCategory}</span>
                                 <span>{copy.expenseNote}</span>
@@ -2154,7 +2154,7 @@ export default function Home() {
                               ) : null}
                             </div>
                           ) : shownSales?.orders.length ? (
-                            <div className="max-h-64 overflow-y-auto">
+                            <div ref={smoothScroll} className="max-h-64 overflow-y-auto">
                               <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_60px_repeat(3,minmax(0,0.7fr))] gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-medium text-gray-500 dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-400">
                                 <span>{copy.order}</span>
                                 <span>{copy.location}</span>
