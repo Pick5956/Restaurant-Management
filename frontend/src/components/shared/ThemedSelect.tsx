@@ -61,7 +61,9 @@ const TRIGGER_OPEN =
 
 
 function triggerSize(compact: boolean, boundary: SelectBoundary) {
-  if (boundary === "filled") return "h-12 text-[16px]";
+  // The settings rows keep every control at one height (40px), so a select
+  // stands exactly as tall as the text field in the row above it.
+  if (boundary === "filled") return "h-10 text-[16px]";
   return compact ? "h-9 text-[12px]" : "h-10 text-[13px]";
 }
 

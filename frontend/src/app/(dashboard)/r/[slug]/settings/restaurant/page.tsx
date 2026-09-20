@@ -130,7 +130,6 @@ export default function RestaurantSettingsPage() {
         coverHint: "รูปพื้นหลังด้านบนของหน้าสั่งอาหารที่ลูกค้าเห็นเมื่อสแกน QR ถ้าไม่มีจะใช้ภาพตั้งต้น",
         nameHint: "ชื่อที่แสดงบนใบเสร็จ หน้าสั่งอาหาร และทุกหน้าของระบบ",
         branchHint: "ใช้แยกร้านที่มีหลายสาขา ถ้ามีร้านเดียวใช้สาขาหลักได้",
-        typeHint: "ประเภทของร้าน ใช้จัดหมวดร้านในระบบ",
         phoneHint: "เบอร์ที่แสดงบนใบเสร็จให้ลูกค้าติดต่อร้าน",
         addressHint: "ที่อยู่ที่แสดงบนใบเสร็จ",
         openHint: "เวลาที่ร้านเปิดรับออเดอร์",
@@ -143,8 +142,6 @@ export default function RestaurantSettingsPage() {
         promptpayNameHint: "ชื่อบัญชีที่แสดงคู่กับ QR ตอนลูกค้าจ่ายเงิน",
         promptpayQrHint: "QR พร้อมเพย์ของร้านที่แสดงในหน้าชำระเงิน",
         geofenceHint: "กันคนถ่ายรูป QR ไปสั่งจากนอกร้าน ถ้าอ่านตำแหน่งลูกค้าไม่ได้ ออเดอร์จะรอพนักงานยืนยันแทนการถูกปฏิเสธ",
-        latitudeHint: "พิกัดละติจูดของร้าน",
-        longitudeHint: "พิกัดลองจิจูดของร้าน",
         radiusHint: "ระยะที่ลูกค้าสั่งได้นับจากพิกัดร้าน แนะนำ 100-200 เมตร เผื่อ GPS คลาดเคลื่อนในอาคาร",
         locateHint: "เติมพิกัดจากตำแหน่งของเครื่องนี้ กดตอนอยู่ที่ร้าน",
         noRestaurantHint: "เลือกร้านก่อน แล้วค่อยตั้งค่าข้อมูลร้าน",
@@ -225,7 +222,6 @@ export default function RestaurantSettingsPage() {
         coverHint: "The banner at the top of the ordering page customers see after scanning a QR code. Without one, a default image is used.",
         nameHint: "The name shown on receipts, the ordering page and every page of the system.",
         branchHint: "Tells branches of the same restaurant apart. With one location, Main branch is fine.",
-        typeHint: "The kind of restaurant, used to group restaurants in the system.",
         phoneHint: "The number printed on receipts for customers to reach the restaurant.",
         addressHint: "The address printed on receipts.",
         openHint: "When the restaurant starts taking orders.",
@@ -238,8 +234,6 @@ export default function RestaurantSettingsPage() {
         promptpayNameHint: "The account name shown beside the QR code when a customer pays.",
         promptpayQrHint: "The restaurant's PromptPay QR code shown on the payment screen.",
         geofenceHint: "Stops someone who photographed a QR code from ordering off-site. If the customer's location cannot be read, the order waits for staff to confirm instead of being refused.",
-        latitudeHint: "The restaurant's latitude.",
-        longitudeHint: "The restaurant's longitude.",
         radiusHint: "How far from the restaurant a customer may order. 100-200 m allows for indoor GPS drift.",
         locateHint: "Fills in the coordinates from this device. Press it while at the restaurant.",
         noRestaurantHint: "Choose a restaurant first, then set it up here.",
@@ -552,7 +546,6 @@ export default function RestaurantSettingsPage() {
         <SettingsField label={copy.branch} description={copy.branchHint} value={form.branch_name} onChange={(value) => setField("branch_name", value)} onCommit={() => commit(["branch_name"])} error={errors.branch_name} />
         <SettingsSelect
           label={copy.type}
-          description={copy.typeHint}
           value={form.restaurant_type}
           onChange={(value) => commit(["restaurant_type"], { restaurant_type: value })}
           options={RESTAURANT_TYPES.map((item) => ({ value: item, label: getRestaurantTypeLabel(item, language) }))}
@@ -585,8 +578,8 @@ export default function RestaurantSettingsPage() {
         <SettingsSwitch label={copy.geofenceEnable} description={copy.geofenceHint} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
         {form.geofence_enabled ? (
           <>
-            <SettingsField label={copy.latitude} description={copy.latitudeHint} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
-            <SettingsField label={copy.longitude} description={copy.longitudeHint} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
+            <SettingsField label={copy.latitude} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
+            <SettingsField label={copy.longitude} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
             <SettingsField label={copy.radius} description={copy.radiusHint} value={form.order_radius_meters} onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} inputMode="numeric" />
             <SettingsActionRow title={copy.useCurrentLocation} description={copy.locateHint} loading={locating} onClick={useCurrentLocation}>
               {copy.useCurrentLocation}

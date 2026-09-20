@@ -16,7 +16,6 @@ const routeTitles: Array<{ match: (pathname: string) => boolean; th: string; en:
   { match: (path) => path === "/ai-assistant", th: "ผู้ช่วยร้าน", en: "Restaurant assistant" },
   { match: (path) => path === "/settings", th: "ตั้งค่าร้าน", en: "Settings" },
   { match: (path) => path.startsWith("/settings/restaurant"), th: "ข้อมูลร้าน", en: "Restaurant settings" },
-  { match: (path) => path.startsWith("/settings/team"), th: "ตั้งค่าทีม", en: "Team settings" },
   { match: (path) => path.startsWith("/settings/account"), th: "บัญชีของฉัน", en: "My account" },
   { match: (path) => path.startsWith("/settings/display"), th: "การแสดงผล", en: "Display settings" },
   { match: (path) => path === "/restaurants", th: "เลือกร้าน", en: "Choose restaurant" },

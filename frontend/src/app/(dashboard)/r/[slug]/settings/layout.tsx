@@ -1,24 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Globe, Search, Store, User, Users, X } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, Globe, Search, Store, User, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { can, canAccessTeam } from "@/src/lib/rbac";
+import { can } from "@/src/lib/rbac";
 import { FOCUS_RING, RAISED, SettingsSearchContext } from "./_components/SettingsPrimitives";
 
-type NavItem = { key: "all" | "account" | "display" | "restaurant" | "team"; href: string; label: string; icon?: ReactNode };
+type NavItem = { key: "account" | "display" | "restaurant"; href: string; label: string; icon?: ReactNode };
 
 const ICON = "mr-2 h-5 w-5 shrink-0";
 
 /**
  * The settings frame, laid out after the reference the owner chose: a back
  * arrow and title, a full-width search, then the category list beside the
- * rows (a scrolling strip above them on a phone). "View all" is /settings;
- * every other entry is its own page. While a query is typed every category is
- * shown and the rows that do not match hide.
+ * rows (a scrolling strip above them on a phone). /settings shows every
+ * category at once and has no entry of its own; each other entry is its own
+ * page. While a query is typed every category is shown and the rows that do
+ * not match hide.
  */
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const { language } = useLanguage();
@@ -32,22 +33,19 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   const isViewAll = pagePath === "/settings";
 
   const copy = language === "th"
-    ? { title: "ตั้งค่า", back: "ย้อนกลับ", search: "ค้นหา", searchLabel: "ค้นหาการตั้งค่า", clear: "ล้างคำค้นหา", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`, all: "ดูทั้งหมด", account: "บัญชี", display: "ภาษาและการแสดงผล", restaurant: "ร้านอาหาร", team: "ทีม" }
-    : { title: "Settings", back: "Back", search: "Search", searchLabel: "Search settings", clear: "Clear search", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”`, all: "View all", account: "Account", display: "Language and display", restaurant: "Restaurant", team: "Team" };
+    ? { title: "ตั้งค่า", back: "ย้อนกลับ", search: "ค้นหา", searchLabel: "ค้นหาการตั้งค่า", clear: "ล้างคำค้นหา", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`, account: "บัญชี", display: "ภาษาและการแสดงผล", restaurant: "ร้านอาหาร" }
+    : { title: "Settings", back: "Back", search: "Search", searchLabel: "Search settings", clear: "Clear search", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”`, account: "Account", display: "Language and display", restaurant: "Restaurant" };
 
-  const personal: NavItem[] = [
-    { key: "all", href: "/settings", label: copy.all },
+  // One list, no groups: the owner moved the restaurant in beside the personal
+  // categories on 2026-09-21, when the team entry was dropped (staff and their
+  // permissions live on the staff page, which is where that entry only pointed).
+  const items: NavItem[] = [
     { key: "account", href: "/settings/account", label: copy.account, icon: <User aria-hidden="true" className={ICON} /> },
     { key: "display", href: "/settings/display", label: copy.display, icon: <Globe aria-hidden="true" className={ICON} /> },
   ];
-  const restaurantItems: NavItem[] = [];
   if (can(activeMembership, "manage_restaurant_settings")) {
-    restaurantItems.push({ key: "restaurant", href: "/settings/restaurant", label: copy.restaurant, icon: <Store aria-hidden="true" className={ICON} /> });
+    items.push({ key: "restaurant", href: "/settings/restaurant", label: copy.restaurant, icon: <Store aria-hidden="true" className={ICON} /> });
   }
-  if (canAccessTeam(activeMembership)) {
-    restaurantItems.push({ key: "team", href: "/settings/team", label: copy.team, icon: <Users aria-hidden="true" className={ICON} /> });
-  }
-  const groups = [personal, restaurantItems].filter((group) => group.length > 0);
 
   // On a phone the list is a strip that scrolls sideways; bring the open
   // category into it instead of leaving it past the right edge.
@@ -110,15 +108,17 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     // The reference's page container: at most 1440 wide and centred, 16px
     // sides and 32px below. The top is deeper than the reference's 8px, which
     // sits under its 64px header bar; this page has no bar above it.
-    <div className="mx-auto min-h-dvh pt-4 lg:pt-10 w-full max-w-[1440px] bg-white px-4 pb-8 text-gray-950 dark:bg-gray-950 dark:text-white">
+    <div data-settings-root="" className="mx-auto min-h-dvh pt-4 lg:pt-10 w-full max-w-[1440px] bg-white px-4 pb-8 text-gray-950 dark:bg-gray-950 dark:text-white">
       <div className="mb-6 flex h-11 items-center">
         <button
           type="button"
           onClick={goBack}
           aria-label={copy.back}
-          className={`mr-4 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${FOCUS_RING}`}
+          // The same back control the rest of the web app uses (expenses, POS,
+          // reports): a bordered square, no round grey blob of its own.
+          className={`ui-press mr-4 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 ${FOCUS_RING}`}
         >
-          <ArrowLeft aria-hidden="true" className="h-6 w-6" />
+          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
         </button>
         <h1 className="text-[24px] font-semibold leading-8">{copy.title}</h1>
       </div>
@@ -155,40 +155,29 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       <div className="md:flex md:items-stretch">
         <nav aria-label={copy.categories} className="md:shrink-0">
           <ul ref={navRef} className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
-            {groups.map((group, groupIndex) => (
-              <Fragment key={groupIndex}>
-                {groupIndex > 0 ? (
-                  <li aria-hidden="true" className="hidden md:block">
-                    <hr className="my-2 border border-[color:var(--dashboard-shell-border)]" />
-                  </li>
-                ) : null}
-                {group.map((item) => {
-                  const active = pagePath === item.href;
-                  const marked = !active && isViewAll && inView === item.key;
-                  return (
-                    <li key={item.key} className="shrink-0">
-                      <Link
-                        href={href(item.href)}
-                        aria-current={active ? "page" : undefined}
-                        onClick={() => setQuery("")}
-                        className={`flex h-[34px] items-center whitespace-nowrap rounded px-3 text-[16px] transition-colors md:h-8 ${FOCUS_RING} ${
-                          item.key === "all" ? "font-medium" : ""
-                        } ${
-                          active
-                            ? "bg-orange-700 text-white"
-                            : marked
-                              ? "text-orange-700 hover:bg-gray-100 dark:text-orange-400 dark:hover:bg-gray-800"
-                              : "text-gray-950 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-800"
-                        }`}
-                      >
-                        {item.icon}
-                        {item.label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </Fragment>
-            ))}
+            {items.map((item) => {
+              const active = pagePath === item.href;
+              const marked = !active && isViewAll && inView === item.key;
+              return (
+                <li key={item.key} className="shrink-0">
+                  <Link
+                    href={href(item.href)}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setQuery("")}
+                    className={`flex h-[34px] items-center whitespace-nowrap rounded px-3 text-[16px] transition-colors md:h-8 ${FOCUS_RING} ${
+                      active
+                        ? "bg-orange-700 text-white"
+                        : marked
+                          ? "text-orange-700 hover:bg-gray-100 dark:text-orange-400 dark:hover:bg-gray-800"
+                          : "text-gray-950 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
 

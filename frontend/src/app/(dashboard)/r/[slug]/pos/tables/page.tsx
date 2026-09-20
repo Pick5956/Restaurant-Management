@@ -47,7 +47,6 @@ import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
 
 const activeOrderStatuses = ["open", "sent_to_kitchen", "cooking", "ready", "served"];
 const tableRefreshIntervalMs = 60_000;
-const tagBadgeClass = "border-2 border-gray-950 bg-white text-gray-950 shadow-none dark:border-white dark:bg-gray-900 dark:text-white";
 type TableSheetMode = "open" | "reserved";
 /** What the free-table sheet is for. The form and its one footer action follow it. */
 type TableSheetIntent = "dine_in" | "reserve";
@@ -301,7 +300,6 @@ export default function PosTablesPage() {
         table.display_label,
         table.table_zone?.name,
         table.zone,
-        ...(table.tags?.map((tag) => tag.name) ?? []),
       ].some((value) => String(value ?? "").toLowerCase().includes(keyword));
     }).forEach((table) => {
       const key = table.zone_id ? String(table.zone_id) : "none";
@@ -750,8 +748,6 @@ export default function PosTablesPage() {
                   const order = activeOrderByTable.get(table.ID);
                   const busy = Boolean(order);
                   const status = busy ? "occupied" : table.status;
-                  const shownTags = table.tags?.slice(0, 2) ?? [];
-                  const extraTags = Math.max((table.tags?.length ?? 0) - shownTags.length, 0);
                   const disabled = status === "reserved" || status === "inactive";
                   const bookingClock = reservationClock(table.upcoming_reservation_at, language);
                   const bookingReminder = reservationReminder(table.upcoming_reservation_at, new Date(), language);
@@ -824,10 +820,7 @@ export default function PosTablesPage() {
                           ) : status === "reserved" && table.reservation_phone ? (
                             <p className="truncate text-[12px] font-semibold text-sky-700 dark:text-sky-200">{table.reservation_name ? `${table.reservation_name} · ` : ""}{copy.reservationInfo}: {table.reservation_phone}</p>
                           ) : (
-                            <div className="flex min-h-[22px] flex-wrap items-start gap-1 overflow-hidden">
-                              {shownTags.map((tag) => <span key={tag.ID} className={`rounded-[4px] px-2 py-0.5 text-[10px] font-extrabold leading-4 tracking-[0.01em] ${tagBadgeClass}`}>{tag.name}</span>)}
-                              {extraTags > 0 ? <span className="rounded-[4px] border-2 border-gray-950 bg-white px-2 py-0.5 text-[10px] font-extrabold leading-4 text-gray-950 dark:border-white dark:bg-gray-900 dark:text-white">+{extraTags}</span> : null}
-                            </div>
+                            <div className="min-h-[22px]" />
                           )}
                         </div>
                       </div>

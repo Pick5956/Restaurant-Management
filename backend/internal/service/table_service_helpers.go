@@ -13,41 +13,34 @@ import (
 
 const customerTableTokenBytes = 24
 
-func tableFromRequest(repo *repository.TableRepository, restaurantID uint, req *TableRequest) (*entity.RestaurantTable, []entity.TableTag, error) {
+func tableFromRequest(repo *repository.TableRepository, restaurantID uint, req *TableRequest) (*entity.RestaurantTable, error) {
 	capacity := req.Capacity
 	normalizedCapacity, err := normalizeCapacity(capacity)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
 		status = entity.TableStatusFree
 	}
 	if !isValidTableStatus(status) {
-		return nil, nil, errors.New("invalid table status")
+		return nil, errors.New("invalid table status")
 	}
 	zone, zoneID, err := zoneContext(repo, restaurantID, req.ZoneID)
 	if err != nil {
-		return nil, nil, err
-	}
-	tags, err := repo.FindTags(restaurantID, req.TagIDs)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(tags) != len(uniqueUint(req.TagIDs)) {
-		return nil, nil, errors.New("one or more table tags were not found")
+		return nil, err
 	}
 	next, err := repo.NextSequence(restaurantID, zoneID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	next, label, err := nextFreeTableLabel(repo, restaurantID, zone, next)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	customerToken, err := GenerateCustomerTableToken()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	return &entity.RestaurantTable{
 		RestaurantID:   restaurantID,
@@ -59,7 +52,7 @@ func tableFromRequest(repo *repository.TableRepository, restaurantID uint, req *
 		Zone:           zoneName(zone),
 		Status:         status,
 		CustomerToken:  customerToken,
-	}, tags, nil
+	}, nil
 }
 
 func isValidTableStatus(status string) bool {
@@ -295,49 +288,3 @@ func zoneFromRequest(repo *repository.TableRepository, restaurantID, currentID u
 	return zone, nil
 }
 
-func tagFromRequest(restaurantID uint, req *TableTagRequest) (*entity.TableTag, error) {
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return nil, errors.New("tag name is required")
-	}
-	color := strings.TrimSpace(req.Color)
-	if color == "" {
-		color = "gray"
-	}
-	if !validTagColor(color) {
-		return nil, errors.New("invalid tag color")
-	}
-	tag := &entity.TableTag{
-		RestaurantID: restaurantID,
-		Name:         name,
-		Color:        color,
-		DisplayOrder: req.DisplayOrder,
-		IsActive:     true,
-	}
-	if req.IsActive != nil {
-		tag.IsActive = *req.IsActive
-	}
-	return tag, nil
-}
-
-func validTagColor(color string) bool {
-	switch color {
-	case "gray", "orange", "sky", "emerald", "amber":
-		return true
-	default:
-		return false
-	}
-}
-
-func uniqueUint(values []uint) []uint {
-	seen := map[uint]bool{}
-	unique := []uint{}
-	for _, value := range values {
-		if value == 0 || seen[value] {
-			continue
-		}
-		seen[value] = true
-		unique = append(unique, value)
-	}
-	return unique
-}

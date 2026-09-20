@@ -1,11 +1,10 @@
 "use client";
 
 import { useAuth } from "@/src/providers/AuthProvider";
-import { can, canAccessTeam } from "@/src/lib/rbac";
+import { can } from "@/src/lib/rbac";
 import AccountSettingsPage from "./account/page";
 import DisplaySettingsPage from "./display/page";
 import RestaurantSettingsPage from "./restaurant/page";
-import TeamSettingsPage from "./team/page";
 
 /**
  * "View all": every category's rows one after another, in the order of the
@@ -25,11 +24,6 @@ export default function SettingsViewAllPage() {
       {can(activeMembership, "manage_restaurant_settings") ? (
         <div data-settings-category="restaurant" className="scroll-mt-24">
           <RestaurantSettingsPage />
-        </div>
-      ) : null}
-      {canAccessTeam(activeMembership) ? (
-        <div data-settings-category="team" className="scroll-mt-24">
-          <TeamSettingsPage />
         </div>
       ) : null}
     </>

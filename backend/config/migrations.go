@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 32
+	CurrentSchemaVersion int64 = 33
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -82,7 +82,6 @@ func schemaMigrationPlan() []SchemaMigration {
 					&entity.MenuOptionGroup{},
 					&entity.MenuOption{},
 					&entity.TableZone{},
-					&entity.TableTag{},
 					&entity.RestaurantTable{},
 					&entity.Order{},
 					&entity.OrderItem{},
@@ -718,6 +717,24 @@ func schemaMigrationPlan() []SchemaMigration {
 				// Re-seed so manage_promotions reaches the manager system role.
 				if err := seed.SeedRoles(ctx.DB); err != nil {
 					return fmt.Errorf("reseed roles for promotions: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 33,
+			Name:    "drop_table_tags",
+			Up: func(ctx *MigrationContext) error {
+				// Table tags are gone. Nothing read them but the table editor, and the
+				// floor already tells tables apart by zone and number, so the join
+				// table goes first and the tags themselves after it.
+				for _, statement := range []string{
+					`DROP TABLE IF EXISTS restaurant_table_tags`,
+					`DROP TABLE IF EXISTS table_tags`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("drop table tags: %w", err)
+					}
 				}
 				return nil
 			},

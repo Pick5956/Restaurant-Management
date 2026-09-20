@@ -36,5 +36,4 @@ type RestaurantTable struct {
 
 	Restaurant *Restaurant `json:"restaurant,omitempty" gorm:"foreignKey:RestaurantID"`
 	TableZone  *TableZone  `json:"table_zone,omitempty" gorm:"foreignKey:ZoneID"`
-	Tags       []TableTag  `json:"tags,omitempty" gorm:"many2many:restaurant_table_tags;"`
 }

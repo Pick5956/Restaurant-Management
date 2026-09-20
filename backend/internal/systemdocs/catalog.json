@@ -639,8 +639,8 @@
               "en": "Create zones such as indoor, storefront, or upstairs, then add tables to each zone."
             },
             {
-              "th": "ให้ระบบสร้างเลขโต๊ะจากโซนและตัวอักษรนำหน้า แล้วกำหนดจำนวนที่นั่งและแท็กเพื่อให้ทีมค้นหาโต๊ะได้ง่าย",
-              "en": "Let Dishy generate table numbers from the zone and optional prefix, then set seats and tags so the team can find tables quickly."
+              "th": "ให้ระบบสร้างเลขโต๊ะจากโซนและตัวอักษรนำหน้า แล้วกำหนดจำนวนที่นั่ง",
+              "en": "Let Dishy generate table numbers from the zone and optional prefix, then set the seating capacity."
             },
             {
               "th": "ผังปัจจุบันเป็นตารางแบ่งโซน ไม่ใช่ผังลากวางตามตำแหน่งจริง",

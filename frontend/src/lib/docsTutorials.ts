@@ -210,8 +210,8 @@ export const DOC_TUTORIALS: DocTutorial[] = [
       en: "Create tables with automatic numbering",
     },
     description: {
-      th: "ตั้งโซนหรือ tags ถ้าต้องใช้ จากนั้นระบุจำนวนโต๊ะและที่นั่งก่อนยืนยันสร้าง",
-      en: "Set up zones or tags if needed, then enter the table count and seats before creating them.",
+      th: "ตั้งโซนถ้าต้องใช้ จากนั้นระบุจำนวนโต๊ะและที่นั่งก่อนยืนยันสร้าง",
+      en: "Set up zones if needed, then enter the table count and seats before creating them.",
     },
     result: {
       th: "โต๊ะใหม่แสดงในโซนที่เลือกพร้อมเลขที่ระบบสร้าง และพร้อมนำไปเปิดออเดอร์เมื่อสถานะเป็น “ว่าง”",
@@ -236,15 +236,6 @@ export const DOC_TUTORIALS: DocTutorial[] = [
           {
             number: 2,
             kind: "action",
-            label: { th: "จัดการ tags", en: "Manage tags" },
-            detail: {
-              th: "ถ้าต้องใช้คุณลักษณะช่วยค้นหา ให้กรอก “ชื่อ tag” แล้วกด “เพิ่ม tag” โดย tags ไม่ใช่สถานะออเดอร์",
-              en: "If searchable attributes are useful, enter a “Tag name” and select “Add tag.” Tags are not order statuses.",
-            },
-          },
-          {
-            number: 3,
-            kind: "action",
             label: { th: "เพิ่มโต๊ะ", en: "Add table" },
             detail: {
               th: "กดปุ่มนี้เพื่อเปิด “ตั้งค่าโต๊ะ” ซึ่งสร้างได้ทั้งโต๊ะเดียวและหลายโต๊ะในครั้งเดียว",
@@ -258,18 +249,18 @@ export const DOC_TUTORIALS: DocTutorial[] = [
         title: { th: "ตั้งค่าโต๊ะ", en: "Table settings" },
         items: [
           {
-            number: 4,
+            number: 3,
             kind: "field",
-            label: { th: "โซน · จำนวนโต๊ะ · จำนวนที่นั่ง · Tags", en: "Zone · Table count · Seats · Tags" },
+            label: { th: "โซน · จำนวนโต๊ะ · จำนวนที่นั่ง", en: "Zone · Table count · Seats" },
             value: { th: "ตรวจตัวอย่างเลขก่อนสร้าง", en: "Check the number preview" },
             detail: {
-              th: "เลือกโซน กรอกจำนวนโต๊ะและที่นั่ง แล้วเลือก Tags ถ้าต้องใช้ ระบบออกเลขให้เองและแสดงที่ “ตัวอย่างเลข”",
-              en: "Choose a zone, enter the table count and seats, and select Tags if needed. Dishy generates the numbers and shows them under “Number preview.”",
+              th: "เลือกโซน กรอกจำนวนโต๊ะและที่นั่ง ระบบออกเลขให้เองและแสดงที่ “ตัวอย่างเลข”",
+              en: "Choose a zone and enter the table count and seats. Dishy generates the numbers and shows them under “Number preview.”",
             },
             span: "full",
           },
           {
-            number: 5,
+            number: 4,
             kind: "action",
             label: { th: "เพิ่มโต๊ะ / บันทึกโต๊ะ", en: "Add table / Save table" },
             detail: {
@@ -486,8 +477,8 @@ export const DOC_TUTORIALS: DocTutorial[] = [
             kind: "field",
             label: { th: "ค้นหาโต๊ะ", en: "Search tables" },
             detail: {
-              th: "ค้นหาจากเลขโต๊ะ โซน หรือแท็กก่อนเลือก โดยเฉพาะร้านที่มีหลายพื้นที่",
-              en: "Search by table, zone, or tag before selecting, especially in multi-zone restaurants.",
+              th: "ค้นหาจากเลขโต๊ะหรือโซนก่อนเลือก โดยเฉพาะร้านที่มีหลายพื้นที่",
+              en: "Search by table or zone before selecting, especially in multi-zone restaurants.",
             },
           },
           {

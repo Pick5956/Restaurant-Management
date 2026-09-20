@@ -29,7 +29,6 @@ func SchemaModels() []any {
 		&entity.MenuOption{},
 		&entity.MenuOptionIngredient{},
 		&entity.TableZone{},
-		&entity.TableTag{},
 		&entity.RestaurantTable{},
 		&entity.Order{},
 		&entity.OrderItem{},

@@ -69,10 +69,10 @@ const FIELD_ERROR = "mt-1.5 text-[12px] leading-5 text-red-700 dark:text-red-400
 export const SettingsSearchContext = createContext("");
 
 /** Every word of the query has to appear in the row's title or description. */
-export function matchesSetting(query: string, ...texts: string[]): boolean {
+export function matchesSetting(query: string, ...texts: Array<string | undefined>): boolean {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const haystack = texts.join(" ").toLocaleLowerCase();
+  const haystack = texts.filter(Boolean).join(" ").toLocaleLowerCase();
   return words.every((word) => haystack.includes(word));
 }
 
@@ -81,7 +81,9 @@ export function matchesSetting(query: string, ...texts: string[]): boolean {
 
 type RowProps = {
   title: string;
-  description: string;
+  /** Left out when the title already says it ("ชื่อ", "ละติจูด"): a line that
+   *  only repeats the label is noise, not help. */
+  description?: string;
   children: ReactNode;
   /** The input the title labels. Without it the title is plain text with an id. */
   htmlFor?: string;
@@ -89,24 +91,39 @@ type RowProps = {
 };
 
 /**
- * One setting. Title 18px over a row of description (14px, 80% opacity, at
- * most half the width) and control, pushed to the ends; a hairline under it.
- * Phones stack all three.
+ * One setting. With a description: the 18px title, then 4px lower a row of the
+ * description (14px, 80% opacity, at most half the width) and the control,
+ * pushed to the ends, both starting at the same line. Without one the control
+ * moves up beside the title, because a line holding nothing but a control left
+ * the row looking broken open. A hairline under either shape; phones stack.
  */
 export function SettingsItem({ title, description, children, htmlFor, titleId }: RowProps) {
   const query = useContext(SettingsSearchContext);
   const titleClass = "block text-[18px] leading-7 text-gray-950 dark:text-white";
+  const titleNode = htmlFor ? (
+    <label htmlFor={htmlFor} id={titleId} className={titleClass}>{title}</label>
+  ) : (
+    <p id={titleId} className={titleClass}>{title}</p>
+  );
+  const control = <div className="min-w-0 md:shrink-0">{children}</div>;
   return (
     <div data-setting-row hidden={!matchesSetting(query, title, description)} className={`mb-2 border-b pb-4 ${HAIRLINE}`}>
-      {htmlFor ? (
-        <label htmlFor={htmlFor} id={titleId} className={titleClass}>{title}</label>
+      {description ? (
+        <>
+          {titleNode}
+          <div className="mt-1 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <p className="text-[14px] leading-5 text-gray-950 opacity-80 md:max-w-[50%] dark:text-white">{description}</p>
+            {control}
+          </div>
+        </>
       ) : (
-        <p id={titleId} className={titleClass}>{title}</p>
+        // The title never moves: it sits at the top of every row, described or
+        // not. Here the control comes up to that same top line.
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4">
+          {titleNode}
+          {control}
+        </div>
       )}
-      <div className="mt-4 flex flex-col justify-between gap-4 md:flex-row">
-        <p className="text-[14px] leading-5 text-gray-950 opacity-80 md:max-w-[50%] dark:text-white">{description}</p>
-        <div className="min-w-0 md:shrink-0">{children}</div>
-      </div>
     </div>
   );
 }
@@ -129,7 +146,7 @@ const BUTTON_TONE: Record<ButtonVariant, string> = {
 /** A button's look, for a Link that has to act as one. */
 export function settingsButtonClass(variant: ButtonVariant, extra = "") {
   return [
-    "ui-press relative inline-flex h-12 shrink-0 items-center justify-center overflow-hidden rounded px-3 text-[16px] transition-colors",
+    "ui-press relative inline-flex h-10 shrink-0 items-center justify-center overflow-hidden rounded px-3 text-[16px] transition-colors",
     "disabled:cursor-not-allowed disabled:opacity-50",
     FOCUS_RING,
     BUTTON_TONE[variant],
@@ -170,7 +187,7 @@ export function SettingsButton({
 }
 
 /** A row whose control is one action button. */
-export function SettingsActionRow({ title, description, ...button }: { title: string; description: string } & Parameters<typeof SettingsButton>[0]) {
+export function SettingsActionRow({ title, description, ...button }: { title: string; description?: string } & Parameters<typeof SettingsButton>[0]) {
   return (
     <SettingsItem title={title} description={description}>
       <SettingsButton {...button} className={`${ACTION_WIDTH} ${button.className ?? ""}`} />
@@ -183,7 +200,7 @@ export function SettingsActionRow({ title, description, ...button }: { title: st
 
 type FieldProps = {
   label: string;
-  description: string;
+  description?: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
@@ -298,7 +315,7 @@ export function SettingsTextArea({ label, description, value, onChange, error, d
   );
 }
 
-export function SettingsSelect({ label, description, value, onChange, options }: { label: string; description: string; value: string; onChange: (value: string) => void; options: ThemedSelectOption[] }) {
+export function SettingsSelect({ label, description, value, onChange, options }: { label: string; description?: string; value: string; onChange: (value: string) => void; options: ThemedSelectOption[] }) {
   const titleId = useId();
   return (
     <SettingsItem title={label} description={description} titleId={titleId}>
@@ -308,7 +325,7 @@ export function SettingsSelect({ label, description, value, onChange, options }:
 }
 
 /** A value that can be read here but not edited. */
-export function SettingsValue({ label, description, value }: { label: string; description: string; value: string }) {
+export function SettingsValue({ label, description, value }: { label: string; description?: string; value: string }) {
   return (
     <SettingsItem title={label} description={description}>
       <p className={`${FIELD_WIDTH} truncate text-[16px] leading-10 text-gray-950 dark:text-white md:text-right`}>{value}</p>
@@ -324,7 +341,7 @@ export function SettingsValue({ label, description, value }: { label: string; de
  * that sits at either end. The words are for the eye; the row title names the
  * switch and aria-checked carries its state.
  */
-export function SettingsSwitch({ label, description, checked, onChange, disabled }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
+export function SettingsSwitch({ label, description, checked, onChange, disabled }: { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   const { language } = useLanguage();
   const titleId = useId();
   const [offWord, onWord] = language === "en" ? ["Off", "On"] : ["ปิด", "เปิด"];
@@ -337,7 +354,9 @@ export function SettingsSwitch({ label, description, checked, onChange, disabled
         aria-labelledby={titleId}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`flex h-6 items-center gap-2 rounded text-[16px] text-gray-950 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white ${FOCUS_RING}`}
+        // 40px like every other control in a settings row, so the rows stand
+        // the same height whatever they hold.
+        className={`flex h-10 items-center gap-2 rounded text-[16px] text-gray-950 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white ${FOCUS_RING}`}
       >
         <span aria-hidden="true">{offWord}</span>
         <span aria-hidden="true" className="relative block h-5 w-10">
@@ -376,7 +395,7 @@ export function SettingsMediaRow({
   onFile,
 }: {
   title: string;
-  description: string;
+  description?: string;
   imageSrc: string;
   imageAlt: string;
   emptyLabel: string;
@@ -392,13 +411,13 @@ export function SettingsMediaRow({
   return (
     <SettingsItem title={title} description={description}>
       <div className="flex items-center gap-4">
-        <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded ${RAISED} ${shape === "wide" ? "h-12 w-20" : "h-12 w-12"}`}>
+        <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded ${RAISED} ${shape === "wide" ? "h-10 w-16" : "h-10 w-10"}`}>
           {imageSrc ? (
             <Image
               src={imageSrc}
               alt={imageAlt}
-              width={shape === "wide" ? 80 : 48}
-              height={48}
+              width={shape === "wide" ? 64 : 40}
+              height={40}
               unoptimized
               className={`h-full w-full ${fit === "contain" ? "object-contain" : "object-cover"}`}
             />
@@ -435,7 +454,7 @@ export function SettingsSkeleton({ label, rows = 4 }: { label: string; rows?: nu
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} aria-hidden="true" className={`mb-2 border-b pb-4 ${HAIRLINE}`}>
           <Skeleton className="h-6 w-44 motion-reduce:animate-none" />
-          <div className="mt-4 flex flex-col justify-between gap-4 md:flex-row">
+          <div className="mt-1 flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <Skeleton className="h-4 w-full max-w-sm motion-reduce:animate-none" />
             <Skeleton className="h-12 w-full motion-reduce:animate-none md:w-[300px]" />
           </div>

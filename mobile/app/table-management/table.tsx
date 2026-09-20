@@ -5,7 +5,6 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import {
   bulkCreateTables,
   deleteTable,
-  listTableTags,
   listTables,
   listTableZones,
   moveTableZone,
@@ -25,18 +24,17 @@ import { canEditTableAvailability, tableEditorSaveStatus } from '@/src/lib/table
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
-import type { RestaurantTable, TableStatus, TableTag, TableZone } from '@/src/types/table';
+import type { RestaurantTable, TableStatus, TableZone } from '@/src/types/table';
 
 type TableForm = {
   zoneId: number;
   capacity: string;
   count: string;
   status: TableStatus;
-  tagIds: number[];
 };
 
 function emptyTableForm(): TableForm {
-  return { zoneId: 0, capacity: '2', count: '1', status: 'free', tagIds: [] };
+  return { zoneId: 0, capacity: '2', count: '1', status: 'free' };
 }
 
 export default function TableFormScreen() {
@@ -53,7 +51,6 @@ export default function TableFormScreen() {
 
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [zones, setZones] = useState<TableZone[]>([]);
-  const [tags, setTags] = useState<TableTag[]>([]);
   const [form, setForm] = useState<TableForm>(emptyTableForm());
   const [initialized, setInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -67,7 +64,6 @@ export default function TableFormScreen() {
     [editingId, isEditing, tables],
   );
   const activeZones = useMemo(() => zones.filter((zone) => zone.is_active), [zones]);
-  const activeTags = useMemo(() => tags.filter((tag) => tag.is_active), [tags]);
   const availabilityStatusEditable = !editingTable || canEditTableAvailability(editingTable.status);
   const statusOptions = useMemo<Array<{ label: string; value: TableStatus }>>(() => [
     { label: copy('เปิดใช้งาน', 'Active'), value: 'free' },
@@ -94,14 +90,12 @@ export default function TableFormScreen() {
     }
     setError(null);
     try {
-      const [tableResponse, zoneResponse, tagResponse] = await Promise.all([
+      const [tableResponse, zoneResponse] = await Promise.all([
         listTables(),
         listTableZones(),
-        listTableTags(),
       ]);
       setTables(tableResponse.tables ?? []);
       setZones(zoneResponse.zones ?? []);
-      setTags(tagResponse.tags ?? []);
     } catch (err) {
       setError(err instanceof Error
         ? err.message
@@ -124,7 +118,6 @@ export default function TableFormScreen() {
         capacity: String(editingTable.capacity || 2),
         count: '1',
         status: editingTable.status,
-        tagIds: editingTable.tags?.map((tag) => tag.ID) || [],
       });
     } else {
       setForm(emptyTableForm());
@@ -165,13 +158,6 @@ export default function TableFormScreen() {
     );
   }
 
-  function toggleTag(id: number) {
-    setForm((current) => ({
-      ...current,
-      tagIds: current.tagIds.includes(id) ? current.tagIds.filter((tagId) => tagId !== id) : [...current.tagIds, id],
-    }));
-  }
-
   async function persist() {
     if (!canManage || submitting || invalidRoute || (isEditing && !editingTable)) return;
     const safeCapacity = Math.min(50, Math.max(1, toInt(form.capacity, 2)));
@@ -182,7 +168,6 @@ export default function TableFormScreen() {
       status: editingTable
         ? tableEditorSaveStatus(editingTable.status, form.status)
         : form.status,
-      tag_ids: form.tagIds,
     };
 
     setSubmitting(true);
@@ -300,25 +285,6 @@ export default function TableFormScreen() {
                 <Text style={[typeScale.caption, { color: palette.muted }]}>{copy('สถานะนี้เปลี่ยนตามการจองหรือออเดอร์', 'This status follows the reservation or order.')}</Text>
               </View>
             ) : null}
-          </Surface>
-
-          <Surface>
-            <SectionHeader title={copy('แท็ก', 'Tags')} detail={activeTags.length ? copy(`${form.tagIds.length} แท็กที่เลือก`, `${form.tagIds.length} selected`) : undefined} />
-            {activeTags.length ? activeTags.map((tag, index) => {
-              const active = form.tagIds.includes(tag.ID);
-              return (
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: active }}
-                  key={tag.ID}
-                  onPress={() => toggleTag(tag.ID)}
-                  style={({ pressed }) => ({ minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: index ? 1 : 0, borderTopColor: palette.border, opacity: pressed ? 0.72 : 1 })}
-                >
-                  <Text style={[typeScale.body, { flex: 1 }]}>{tag.name}</Text>
-                  <AppIcon color={active ? palette.accent : palette.muted} name={active ? 'checkbox' : 'square-outline'} size={22} />
-                </Pressable>
-              );
-            }) : <EmptyState title={copy('ยังไม่มีแท็กสำหรับโต๊ะ', 'No table tags yet')} />}
             {tabletWorkspace && confirmAction !== 'delete' && confirmAction !== 'qr' ? <Button icon="checkmark" label={confirmAction === 'bulk' ? copy('ยืนยันสร้างโต๊ะ', 'Confirm table creation') : editingTable ? copy('บันทึกโต๊ะ', 'Save table') : copy('เพิ่มโต๊ะ', 'Add tables')} onPress={saveTable} loading={submitting} /> : null}
           </Surface>
         </View>

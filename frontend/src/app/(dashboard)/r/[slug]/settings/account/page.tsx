@@ -73,20 +73,15 @@ export default function AccountSettingsPage() {
         nickname: "ชื่อเล่น",
         nicknameHint: "ชื่อที่เพื่อนร่วมงานเห็นในออเดอร์ ครัว และรายชื่อพนักงาน ถ้าเว้นว่างจะใช้ชื่อจริงแทน",
         phone: "เบอร์โทร",
-        phoneHint: "เบอร์ที่ร้านใช้ติดต่อคุณ",
         firstName: "ชื่อ",
-        firstNameHint: "ชื่อจริงของคุณ",
         lastName: "นามสกุล",
-        lastNameHint: "นามสกุลของคุณ",
         save: "บันทึกบัญชี",
         required: "กรอกชื่อ",
         saveError: "บันทึกข้อมูลบัญชีไม่สำเร็จ",
         uploadError: "อัปโหลดรูปไม่สำเร็จ",
         uploadHint: "ใช้ไฟล์ jpg, png หรือ webp ไม่เกิน 5MB",
         google: "บัญชี Google",
-        googleHint: "เข้าสู่ระบบด้วยบัญชี Google",
         local: "อีเมลและรหัสผ่าน",
-        localHint: "เข้าสู่ระบบด้วยอีเมลและรหัสผ่านของ Dishy",
         connected: "เชื่อมแล้ว",
         notConnected: "ยังไม่เชื่อม",
         places: "ร้านที่คุณอยู่",
@@ -107,20 +102,15 @@ export default function AccountSettingsPage() {
         nickname: "Nickname",
         nicknameHint: "The name your coworkers see on orders, in the kitchen and in the staff list. Leave it empty to use your first name.",
         phone: "Phone",
-        phoneHint: "The number the restaurant uses to reach you.",
         firstName: "First name",
-        firstNameHint: "Your first name.",
         lastName: "Last name",
-        lastNameHint: "Your last name.",
         save: "Save account",
         required: "Enter your first name",
         saveError: "Could not save account details.",
         uploadError: "Could not upload the photo.",
         uploadHint: "Use a jpg, png or webp file up to 5MB.",
         google: "Google account",
-        googleHint: "Sign in with your Google account.",
         local: "Email and password",
-        localHint: "Sign in with your Dishy email and password.",
         connected: "Connected",
         notConnected: "Not connected",
         places: "Your restaurants",
@@ -228,16 +218,16 @@ export default function AccountSettingsPage() {
         </SettingsItem>
         <SettingsValue label={copy.email} description={copy.emailHint} value={user?.email || copy.noEmail} />
         <SettingsField label={copy.nickname} description={copy.nicknameHint} value={form.nickname} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
-        <SettingsField label={copy.phone} description={copy.phoneHint} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
-        <SettingsField label={copy.firstName} description={copy.firstNameHint} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
-        <SettingsField label={copy.lastName} description={copy.lastNameHint} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
+        <SettingsField label={copy.phone} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
+        <SettingsField label={copy.firstName} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
+        <SettingsField label={copy.lastName} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
       </div>
 
       {[
-        { key: "google", label: copy.google, hint: copy.googleHint, connected: isGoogleAccount, icon: <GoogleGlyph className="h-[18px] w-[18px]" /> },
-        { key: "local", label: copy.local, hint: copy.localHint, connected: !isGoogleAccount, icon: <Mail aria-hidden="true" className="h-[18px] w-[18px] text-gray-700 dark:text-gray-200" /> },
+        { key: "google", label: copy.google, connected: isGoogleAccount, icon: <GoogleGlyph className="h-[18px] w-[18px]" /> },
+        { key: "local", label: copy.local, connected: !isGoogleAccount, icon: <Mail aria-hidden="true" className="h-[18px] w-[18px] text-gray-700 dark:text-gray-200" /> },
       ].map((account) => (
-        <SettingsItem key={account.key} title={account.label} description={account.hint}>
+        <SettingsItem key={account.key} title={account.label}>
           <div className="flex items-center gap-3 md:justify-end">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-(--settings-field)">{account.icon}</span>
             <SettingsBadge tone={account.connected ? "success" : "neutral"}>

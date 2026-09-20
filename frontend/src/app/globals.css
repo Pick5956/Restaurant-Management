@@ -1129,6 +1129,14 @@ textarea {
     scrollbar-color: rgba(224, 168, 124, 0.55) transparent;
   }
 
+  /* Settings is centred inside the sheet, so whether the scrollbar is there
+     decides where its box sits: a short page (language and display) slid
+     inwards against a long one (account). Reserve the bar's width on every
+     settings page so the box does not move between them. */
+  [data-shell-scroll]:has([data-settings-root]) {
+    scrollbar-gutter: stable;
+  }
+
   /* No track: the canvas shows through, so the thumb reads as part of the sheet. */
   [data-shell-scroll]::-webkit-scrollbar {
     width: 10px;

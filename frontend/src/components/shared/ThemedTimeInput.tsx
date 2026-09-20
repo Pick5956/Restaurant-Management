@@ -491,7 +491,7 @@ export default function ThemedTimeInput({
   // An error on the filled face is an inset red edge; keyboard focus draws the
   // orange ring outside it, so both read at once.
   const fieldClassName = filled
-    ? `flex h-12 w-full items-center gap-2.5 rounded bg-(--settings-field) px-4 text-left transition-colors hover:bg-(--settings-field-hover) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:outline-orange-400 ${
+    ? `flex h-10 w-full items-center gap-2.5 rounded bg-(--settings-field) px-4 text-left transition-colors hover:bg-(--settings-field-hover) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:outline-orange-400 ${
       error ? "shadow-[inset_0_0_0_2px_var(--color-red-700)] dark:shadow-[inset_0_0_0_2px_var(--color-red-400)]" : ""
     }`
     : `flex h-11 w-full items-center gap-2.5 rounded-md border bg-white px-3 text-left outline-none transition-[border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 sm:h-10 ${

@@ -18,7 +18,6 @@ export interface RestaurantTable {
   upcoming_reservation_at?: string | null;
   upcoming_reservation_name?: string | null;
   table_zone?: TableZone | null;
-  tags?: TableTag[];
   CreatedAt?: string;
   UpdatedAt?: string;
 }
@@ -27,7 +26,6 @@ export interface RestaurantTableInput {
   zone_id?: number | null;
   capacity: number;
   status: TableStatus;
-  tag_ids?: number[];
 }
 
 export interface BulkCreateTablesInput {
@@ -35,7 +33,6 @@ export interface BulkCreateTablesInput {
   count: number;
   capacity: number;
   status?: TableStatus;
-  tag_ids?: number[];
 }
 
 export interface MoveTableZoneInput {
@@ -56,26 +53,6 @@ export interface TableZone {
 export interface TableZoneInput {
   name: string;
   prefix?: string;
-  display_order: number;
-  is_active: boolean;
-}
-
-export type TableTagColor = "gray" | "orange" | "sky" | "emerald" | "amber";
-
-export interface TableTag {
-  ID: number;
-  restaurant_id: number;
-  name: string;
-  color: TableTagColor;
-  display_order: number;
-  is_active: boolean;
-  CreatedAt?: string;
-  UpdatedAt?: string;
-}
-
-export interface TableTagInput {
-  name: string;
-  color: TableTagColor;
   display_order: number;
   is_active: boolean;
 }

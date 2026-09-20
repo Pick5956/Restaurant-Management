@@ -95,7 +95,7 @@ const navigationEntries: NavigationEntry[] = [
     href: "/staff",
     label: { th: "พนักงาน", en: "Staff" },
     permission: [...TEAM_MANAGEMENT_PERMISSIONS],
-    aliases: ["staff", "team", "employees", "workers", "พนักงาน", "ทีม", "ทีมงาน", "จัดการคน"],
+    aliases: ["staff", "team", "employees", "workers", "พนักงาน", "ทีม", "ทีมงาน", "จัดการคน", "team settings", "permissions", "roles", "invitations", "สิทธิ์", "บทบาท", "ทีมและสิทธิ์", "คำเชิญ"],
   },
   {
     href: "/reports",
@@ -132,12 +132,6 @@ const navigationEntries: NavigationEntry[] = [
       "vat",
       "service charge",
     ],
-  },
-  {
-    href: "/settings/team",
-    label: { th: "ทีมและสิทธิ์", en: "Team and permissions" },
-    permission: [...TEAM_MANAGEMENT_PERMISSIONS],
-    aliases: ["team settings", "permissions", "roles", "invitations", "สิทธิ์", "บทบาท", "ทีมและสิทธิ์", "คำเชิญ"],
   },
 ];
 

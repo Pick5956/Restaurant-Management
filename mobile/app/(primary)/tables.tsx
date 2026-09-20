@@ -121,7 +121,7 @@ export default function TablesScreen() {
     const map = new Map<string, { key: string; label: string; tables: RestaurantTable[] }>();
     tables.filter((table) => {
       const zoneMatches = selectedZone === 'all' || String(table.zone_id || 'none') === selectedZone;
-      const searchMatches = !keyword || [table.table_number, table.display_label, table.table_zone?.name, ...(table.tags || []).map((tag) => tag.name)].some((value) => String(value || '').toLowerCase().includes(keyword));
+      const searchMatches = !keyword || [table.table_number, table.display_label, table.table_zone?.name].some((value) => String(value || '').toLowerCase().includes(keyword));
       return zoneMatches && searchMatches;
     }).forEach((table) => {
       const key = String(table.zone_id || 'none');
@@ -195,7 +195,7 @@ export default function TablesScreen() {
         // the gesture already being made to look at the results — a dedicated
         // dismiss control would only be in the way of the field it sits beside.
         <SearchField
-          accessibilityLabel={copy('ค้นหาโต๊ะ โซน หรือแท็ก', 'Search tables, zones, or tags')}
+          accessibilityLabel={copy('ค้นหาโต๊ะหรือโซน', 'Search tables or zones')}
           autoFocus
           clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
           value={search}
@@ -225,7 +225,7 @@ export default function TablesScreen() {
     // dead option is worse than no dropdown. The row gives its width back to the
     // search field, which is then the only thing the bar is for.
     <SearchField
-      accessibilityLabel={copy('ค้นหาโต๊ะ โซน หรือแท็ก', 'Search tables, zones, or tags')}
+      accessibilityLabel={copy('ค้นหาโต๊ะหรือโซน', 'Search tables or zones')}
       clearLabel={copy('ล้างคำค้นหา', 'Clear search')}
       value={search}
       onChangeText={setSearch}
@@ -351,13 +351,12 @@ export default function TablesScreen() {
                       {/* The booking shares the seats line rather than taking one
                           of its own. A line of its own grew the card, and because
                           a wrapped row stretches to its tallest tile that pushed
-                          every card beside it out with empty space. Tags give way
-                          to it: a table someone is coming for outranks decoration. */}
+                          every card beside it out with empty space. */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                         <Text selectable numberOfLines={1} style={[typeScale.caption, { minWidth: 0, flex: 1, color: palette.muted }]}>{order
                           ? copy(`${order.customer_count.toLocaleString('th-TH')} คน`, `${order.customer_count.toLocaleString('en-US')} guests`)
                           : copy(`${table.capacity.toLocaleString('th-TH')} ที่นั่ง`, `${table.capacity.toLocaleString('en-US')} seats`)}
-                        {!reminder && table.tags?.length ? ` · ${table.tags.map((tag) => tag.name).join(', ')}` : ''}</Text>
+                        </Text>
                         {reminder ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                             <AppIcon color={palette.info} name="time-outline" size={13} />

@@ -167,6 +167,10 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// the registry, Order.Promotions (a has-many, no column) and
 		// OrderItem.DiscountAmount (a column), so the fingerprint advances.
 		32: "8be2fca141b0172cf8468e6b91761d3853ea4f0461596844ca23e43d5ee0a5e5",
+		// Version 33 drops table_tags and restaurant_table_tags: the tag system
+		// is gone, so TableTag leaves the registry and RestaurantTable loses its
+		// Tags association, and the fingerprint advances with them.
+		33: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -194,6 +198,7 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		30: "ingredient_lots",
 		31: "ingredient_pack_units",
 		32: "promotions",
+		33: "drop_table_tags",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

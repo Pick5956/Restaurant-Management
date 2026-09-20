@@ -57,20 +57,20 @@ const WEEKEND_MASK = 0b1000001;
 const MAX_MONEY = 1_000_000;
 
 const inputClass =
-  "h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[16px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-white sm:text-[14px]";
+  "h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[16px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 hover:border-gray-300 focus:border-orange-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:hover:border-gray-700 dark:focus:border-orange-500 sm:text-[14px]";
 const invalidClass = "border-red-400 dark:border-red-500/70";
 const labelClass = "mb-1.5 block text-[12px] font-medium text-gray-500 dark:text-gray-400";
 
-// The schedule's choices (days, hours, dates). A chosen option is filled solid
-// - dark on light, light on dark - the way the kitchen's cancel reasons are, so
-// it reads at a glance in both themes. The old raised-white-on-grey-track look
-// was almost invisible in light mode.
+// The schedule's choices (days, hours, dates) are marked the way the type
+// picker above them is - the one treatment the owner kept on 2026-09-21: an
+// orange edge and ring over a light orange fill, never a near-black block.
 const scheduleLabelClass = "mb-2 block text-[13px] font-semibold text-gray-800 dark:text-gray-200";
 const choiceBase =
   "inline-flex h-9 items-center justify-center rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 dark:focus-visible:outline-orange-400";
-const choiceOn = "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950";
+const choiceOn =
+  "border-orange-500 bg-orange-50 text-gray-950 ring-1 ring-orange-500 dark:border-orange-500 dark:bg-orange-500/10 dark:text-white";
 const choiceOff =
-  "border-gray-300 bg-white text-gray-600 hover:border-gray-500 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-white";
+  "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800";
 
 type PromotionDialogProps = {
   initial: PromotionForm;
@@ -120,7 +120,7 @@ function Segmented<T extends string>({
               ? `${choiceBase} cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-orange-700 dark:has-[:focus-visible]:outline-orange-400 ${
                   value === option.value ? choiceOn : choiceOff
                 }`
-              : "flex h-8 cursor-pointer items-center rounded-[5px] px-3 text-[12px] font-semibold text-gray-500 transition-colors hover:text-gray-800 has-[:checked]:bg-white has-[:checked]:text-gray-950 has-[:checked]:shadow-sm has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gray-900/20 dark:text-gray-400 dark:hover:text-gray-200 dark:has-[:checked]:bg-gray-800 dark:has-[:checked]:text-white dark:has-[:focus-visible]:ring-white/30"
+              : "flex h-8 cursor-pointer items-center rounded-[5px] px-3 text-[12px] font-semibold text-gray-500 transition-colors hover:text-gray-800 has-[:checked]:bg-white has-[:checked]:text-gray-950 has-[:checked]:shadow-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-orange-700 dark:text-gray-400 dark:hover:text-gray-200 dark:has-[:checked]:bg-gray-800 dark:has-[:checked]:text-white dark:has-[:focus-visible]:outline-orange-400"
           }
         >
           <input
@@ -528,7 +528,7 @@ export default function PromotionDialog({
                       onClick={() => set({ daysMask: mask })}
                       className={`h-7 rounded-md px-2 text-[12px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 dark:focus-visible:outline-orange-400 ${
                         form.daysMask === mask
-                          ? "bg-gray-900 text-white dark:bg-white dark:text-gray-950"
+                          ? "bg-orange-50 text-orange-800 dark:bg-orange-500/10 dark:text-orange-300"
                           : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
                       }`}
                     >

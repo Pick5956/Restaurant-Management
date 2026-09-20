@@ -27,9 +27,33 @@ describe("SettingsItem", () => {
     expect(markup).toContain("text-[18px]");
     expect(markup).toContain("md:max-w-[50%]");
     expect(markup).toContain("md:flex-row");
+    // Every row starts its description and its control on the same line, so
+    // the gap under the title is identical in all of them.
+    expect(markup).toContain("md:items-start");
+    expect(markup).toContain("mt-1");
     // A hairline under every row, coloured by the shell token.
     expect(markup).toContain("border-b");
     expect(markup).toContain("border-[color:var(--dashboard-shell-border)]");
+  });
+
+  it("draws no description line when the title already says it", () => {
+    const markup = renderToStaticMarkup(<SettingsItem title="ละติจูด">control</SettingsItem>);
+
+    expect(markup).not.toContain("md:max-w-[50%]");
+    expect(markup).toContain("text-[18px]");
+    // The control moves up beside the title rather than holding a line of its
+    // own, and still sits at the right-hand end.
+    expect(markup).toContain("md:justify-between");
+    expect(markup).not.toContain("mt-1");
+  });
+
+  it("still matches a search on its title alone when it has no description", () => {
+    const row = <SettingsItem title="ละติจูด">control</SettingsItem>;
+    const match = renderToStaticMarkup(<SettingsSearchContext.Provider value="ละติจูด">{row}</SettingsSearchContext.Provider>);
+    const miss = renderToStaticMarkup(<SettingsSearchContext.Provider value="โลโก้">{row}</SettingsSearchContext.Provider>);
+
+    expect(attribute(match, "div", "hidden")).toBeUndefined();
+    expect(attribute(miss, "div", "hidden")).toBe("");
   });
 
   it("hides when the search query does not match its title or description", () => {
@@ -128,12 +152,12 @@ describe("SettingsButton", () => {
     expect(markup).toContain("บันทึก");
   });
 
-  it("is the reference's 48px button otherwise", () => {
+  it("is a 40px button otherwise, the height every settings control shares", () => {
     const markup = renderToStaticMarkup(<SettingsButton>บันทึก</SettingsButton>);
 
     expect(attribute(markup, "button", "aria-busy")).toBeUndefined();
     expect(attribute(markup, "button", "type")).toBe("button");
-    expect((attribute(markup, "button", "class") ?? "").split(" ")).toContain("h-12");
+    expect((attribute(markup, "button", "class") ?? "").split(" ")).toContain("h-10");
   });
 
   it("draws the brand focus ring in both themes", () => {

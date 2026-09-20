@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { Check, Search, X } from "lucide-react";
+import { Check, Plus, Search, X } from "lucide-react";
 import { formatCurrency, type AppLanguage } from "@/src/lib/format";
 import type { Category, MenuItem } from "@/src/types/menu";
 import type { PromotionCopy } from "./promotionCopy";
@@ -106,8 +106,12 @@ export default function DishPicker({ label, selected, onChange, menus, categorie
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
           aria-controls={listId}
-          className="ui-press inline-flex h-8 items-center rounded-md border border-gray-200 bg-white px-2.5 text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+          // The chosen dishes sit beside it as chips of the same size, so
+          // without a mark of its own this button reads as one more chip. The
+          // icon and the brand orange say it is the action.
+          className="ui-press inline-flex h-8 items-center gap-1.5 rounded-md border border-orange-200 bg-white px-2.5 text-[12px] font-semibold text-orange-700 transition-colors hover:bg-orange-50 dark:border-orange-500/40 dark:bg-gray-900 dark:text-orange-300 dark:hover:bg-orange-500/10"
         >
+          {open ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
           {open ? copy.done : copy.choose}
         </button>
       </div>
