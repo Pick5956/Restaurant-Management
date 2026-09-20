@@ -9,7 +9,6 @@ import type {
   AIConversationSummary,
   AIConversationTurn,
   AIInsight,
-  AIReceiptDraft,
   AISnapshot,
 } from "../types/ai";
 
@@ -152,11 +151,3 @@ export const updateAISettings = (patch: AISettingsPatch) =>
 export const deleteAllAIConversations = () =>
   apiClient.delete<{ deleted: number }>("/api/v1/ai/operations/conversations");
 
-export const extractReceipt = (imageBase64: string, mimeType: string) =>
-  apiClient.post<{ draft: AIReceiptDraft }>(
-    "/api/v1/ai/operations/receipt",
-    { image: imageBase64, mime_type: mimeType },
-    // vision reads take longer than chat, and a stuck key rotates on the server;
-    // cap the wait so the UI fails gracefully instead of hanging forever.
-    { timeout: 70000 },
-  );

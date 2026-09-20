@@ -157,8 +157,14 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 	// Total ingredient quantity consumed today, keyed by ingredient id, so the
 	// live stock can be dropped by what the day's cooking actually used.
 	consumed := map[uint]float64{}
-	seq := 0
-	tag := fmt.Sprintf("%x", rng.Intn(1<<24))
+	// Bills are numbered the way the POS numbers them — YYYYMMDD-NNN, carrying
+	// on after anything already used that day — with " (Test)" after it.
+	compactDate := day.Format("20060102")
+	seq64, seqErr := repository.MaxOrderSequenceOn(db, restaurantID, dateStr)
+	if seqErr != nil {
+		return summary, seqErr
+	}
+	seq := int(seq64)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Every table in the shop, for seating the day's dine-in bills. The
@@ -189,7 +195,7 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 				Model:         gorm.Model{CreatedAt: openedAt, UpdatedAt: done},
 				RestaurantID:  restaurantID,
 				OrderType:     orderType,
-				OrderNumber:   fmt.Sprintf("DA-%s-%s-%03d", dateStr, tag, seq),
+				OrderNumber:   fmt.Sprintf("%s-%03d%s", compactDate, seq, entity.TestOrderSuffix),
 				OrderDate:     dateStr,
 				StaffID:       staffID,
 				CustomerCount: 1 + rng.Intn(4),

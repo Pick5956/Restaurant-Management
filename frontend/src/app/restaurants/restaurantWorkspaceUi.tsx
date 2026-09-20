@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell } from "lucide-react";
 
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
@@ -136,13 +135,6 @@ export function WorkspaceShell({
         <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <BrandMark />
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              aria-label={language === "th" ? "การแจ้งเตือน" : "Notifications"}
-              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900"
-            >
-              <Bell className="h-4 w-4" strokeWidth={2} />
-            </button>
             <DashboardAccountMenu />
           </div>
         </div>

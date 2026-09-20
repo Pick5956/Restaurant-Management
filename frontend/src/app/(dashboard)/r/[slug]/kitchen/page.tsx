@@ -561,7 +561,7 @@ export default function KitchenPage() {
       >
         <div className="min-h-0 overflow-hidden">
           <article
-            className={`relative overflow-hidden rounded-md border ${
+            className={`relative overflow-hidden rounded-2xl border ${
               isReadyLane
                 ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/20"
                 : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
@@ -624,7 +624,7 @@ export default function KitchenPage() {
                     type="button"
                     disabled={submittingId !== null}
                     onClick={() => markAllReady(order)}
-                    className="ui-press inline-flex h-9 items-center justify-center rounded-md px-2 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100/70 hover:text-emerald-900 focus-visible:outline-none disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-950/35 dark:hover:text-emerald-100"
+                    className="ui-press inline-flex h-9 items-center justify-center rounded-xl px-2 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100/70 hover:text-emerald-900 focus-visible:outline-none disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-950/35 dark:hover:text-emerald-100"
                   >
                     {copy.markAllReady}
                   </button>
@@ -665,7 +665,7 @@ export default function KitchenPage() {
                         {item.note && <p className="mt-1 text-[12px] text-gray-500">{item.note}</p>}
                       </div>
                       {!canUpdate && isReadyLane ? (
-                        <span className="inline-flex h-10 min-w-[82px] shrink-0 items-center justify-center gap-1.5 rounded-md text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+                        <span className="inline-flex h-10 min-w-[82px] shrink-0 items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
                           <Check className="h-4 w-4" aria-hidden="true" />
                           {copy.ready}
                         </span>
@@ -678,7 +678,7 @@ export default function KitchenPage() {
                               title={copy.undo}
                               disabled={submittingId !== null}
                               onClick={() => revertToCooking(order, item)}
-                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-600 hover:bg-amber-100/70 hover:text-amber-800 focus-visible:outline-none disabled:opacity-50 dark:text-gray-300 dark:hover:bg-amber-950/35 dark:hover:text-amber-200"
+                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-amber-100/70 hover:text-amber-800 focus-visible:outline-none disabled:opacity-50 dark:text-gray-300 dark:hover:bg-amber-950/35 dark:hover:text-amber-200"
                             >
                               <Undo2 className="h-[18px] w-[18px]" aria-hidden="true" />
                             </button>
@@ -689,7 +689,7 @@ export default function KitchenPage() {
                               title={copy.markReady}
                               disabled={submittingId !== null}
                               onClick={() => markReady(order, item.ID)}
-                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-100/70 hover:text-emerald-800 focus-visible:outline-none disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-950/35 dark:hover:text-emerald-200"
+                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-xl text-emerald-600 hover:bg-emerald-100/70 hover:text-emerald-800 focus-visible:outline-none disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-950/35 dark:hover:text-emerald-200"
                             >
                               <Check className="h-5 w-5" strokeWidth={3} aria-hidden="true" />
                             </button>
@@ -701,7 +701,7 @@ export default function KitchenPage() {
                               title={copy.cancelItem}
                               disabled={submittingId !== null}
                               onClick={() => openCancelDialog(order, item)}
-                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-100/70 hover:text-red-800 focus-visible:outline-none disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950/35 dark:hover:text-red-200"
+                              className="ui-press inline-flex h-10 w-10 items-center justify-center rounded-xl text-red-600 transition-colors hover:bg-red-100/70 hover:text-red-800 focus-visible:outline-none disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950/35 dark:hover:text-red-200"
                             >
                               <X className="h-[18px] w-[18px]" strokeWidth={2.5} aria-hidden="true" />
                             </button>
@@ -772,7 +772,7 @@ export default function KitchenPage() {
     return (
       <section
         aria-label={label}
-        className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+        className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
       >
         {collapsible ? (
           <button
@@ -913,13 +913,13 @@ export default function KitchenPage() {
       <div style={{ fontFamily: "var(--font-latin), var(--font-kitchen), var(--font-kanit), sans-serif" }}>
       <RealtimeConnectionNotice language={language} status={realtimeStatus} className="mb-4" />
 
-      {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</div>}
 
       <div className="mb-3 flex items-center justify-end">
         <button
           type="button"
           onClick={() => setHistoryOpen(true)}
-          className="ui-press inline-flex h-10 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+          className="ui-press inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
         >
           <History className="h-4 w-4" aria-hidden="true" />
           {copy.recall}
@@ -940,10 +940,10 @@ export default function KitchenPage() {
             aria-modal="true"
             aria-labelledby="kitchen-cancel-title"
             aria-describedby="kitchen-cancel-description"
-            className={`${cancelDialogClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900`}
+            className={`${cancelDialogClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900`}
           >
             <div className="flex items-start gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300">
                 <AlertTriangle className="h-4 w-4" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
@@ -959,7 +959,7 @@ export default function KitchenPage() {
                 aria-label={copy.keepItem}
                 disabled={submittingId !== null}
                 onClick={closeCancelDialog}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-white"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-white"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -980,7 +980,7 @@ export default function KitchenPage() {
                       setCancelReasonError("");
                       cancelReasonRef.current?.focus();
                     }}
-                    className={`h-9 rounded-md border px-3 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
+                    className={`h-9 rounded-xl border px-3 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
                       cancelReason === reason
                         ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950"
                         : "border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-800"
@@ -1004,7 +1004,7 @@ export default function KitchenPage() {
                   setCancelReason(event.target.value);
                   if (cancelReasonError) setCancelReasonError("");
                 }}
-                className={`mt-3 w-full resize-none rounded-md border bg-white px-3 py-2.5 text-[13px] leading-5 text-gray-900 outline-none transition-colors placeholder:text-gray-500 disabled:opacity-60 dark:bg-gray-900 dark:text-white ${
+                className={`mt-3 w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-[13px] leading-5 text-gray-900 outline-none transition-colors placeholder:text-gray-500 disabled:opacity-60 dark:bg-gray-900 dark:text-white ${
                   cancelReasonError
                     ? "border-red-400 focus:border-red-500 dark:border-red-700"
                     : "border-gray-300 focus:border-gray-500 dark:border-gray-700 dark:focus:border-gray-500"
@@ -1025,14 +1025,14 @@ export default function KitchenPage() {
                 type="button"
                 disabled={submittingId !== null}
                 onClick={closeCancelDialog}
-                className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
               >
                 {copy.keepItem}
               </button>
               <button
                 type="submit"
                 disabled={submittingId !== null || !cancelReason.trim()}
-                className="h-10 rounded-md bg-red-600 px-3 text-[13px] font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-400"
+                className="h-10 rounded-xl bg-red-600 px-3 text-[13px] font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-400"
               >
                 {copy.confirmCancel}
               </button>
@@ -1050,7 +1050,7 @@ export default function KitchenPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="kitchen-recall-title"
-            className="motion-bottom-sheet flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900"
+            className="motion-bottom-sheet flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900"
           >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
               <h2 id="kitchen-recall-title" className="text-[16px] font-semibold text-gray-950 dark:text-white">{copy.recall}</h2>
@@ -1058,7 +1058,7 @@ export default function KitchenPage() {
                 type="button"
                 onClick={() => setHistoryOpen(false)}
                 aria-label={copy.recallClose}
-                className="ui-press grid h-9 w-9 place-items-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
+                className="ui-press grid h-9 w-9 place-items-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1095,7 +1095,7 @@ export default function KitchenPage() {
                             aria-label={copy.undo}
                             disabled={submittingId !== null}
                             onClick={() => recallOrder(order)}
-                            className="ui-press grid h-10 w-10 shrink-0 place-items-center rounded-md text-gray-600 hover:bg-amber-100/70 hover:text-amber-800 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-amber-950/35 dark:hover:text-amber-200"
+                            className="ui-press grid h-10 w-10 shrink-0 place-items-center rounded-xl text-gray-600 hover:bg-amber-100/70 hover:text-amber-800 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-amber-950/35 dark:hover:text-amber-200"
                           >
                             <Undo2 className="h-[18px] w-[18px]" aria-hidden="true" />
                           </button>

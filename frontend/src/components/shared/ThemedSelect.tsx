@@ -40,7 +40,7 @@ export type ThemedSelectProps = {
 type SelectBoundary = "subtle" | "filled";
 
 const TRIGGER_BASE =
-  "w-full border text-left text-gray-900 transition-[background-color,border-color,box-shadow,transform,opacity] dark:text-white";
+  "w-full border text-left text-gray-900 transition-[background-color,border-color,box-shadow,transform,translate,opacity] dark:text-white";
 
 function triggerShape(boundary: SelectBoundary) {
   return boundary === "filled" ? "rounded px-4 pr-10" : "rounded-md px-3 pr-9";

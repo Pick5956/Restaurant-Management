@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 
@@ -35,6 +35,14 @@ const fontLatin = Inter({
   variable: "--font-latin",
   display: "swap",
 });
+
+// Browser bars on phones follow the page, light or dark.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f1f5f9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f0f0f" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: {

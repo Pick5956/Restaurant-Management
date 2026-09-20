@@ -115,11 +115,19 @@ func (r *OrderRepository) CountOrdersForDate(restaurantID uint, orderDate string
 // The regex guard keeps the cast safe: order numbers written by other paths
 // (voids use a `VOID-<nanos>` form) would otherwise break `::int`.
 func (r *OrderRepository) MaxOrderSequenceForDate(restaurantID uint, orderDate string) (int64, error) {
+	return MaxOrderSequenceOn(r.db, restaurantID, orderDate)
+}
+
+// MaxOrderSequenceOn is the highest NNN used on a day, counting the seeded
+// "YYYYMMDD-NNN (Test)" numbers too, so a real bill opened on a seeded day
+// takes the next number rather than a second 001. The demo seeders call it
+// directly to number their own bills the same way.
+func MaxOrderSequenceOn(db *gorm.DB, restaurantID uint, orderDate string) (int64, error) {
 	var max int64
-	err := r.db.Unscoped().
+	err := db.Unscoped().
 		Model(&entity.Order{}).
-		Where("restaurant_id = ? AND order_date = ? AND order_number ~ ?", restaurantID, orderDate, `^[0-9]{8}-[0-9]+$`).
-		Select(`COALESCE(MAX(split_part(order_number, '-', 2)::int), 0)`).
+		Where("restaurant_id = ? AND order_date = ? AND order_number ~ ?", restaurantID, orderDate, `^[0-9]{8}-[0-9]+( \(Test\))?$`).
+		Select(`COALESCE(MAX((regexp_match(order_number, '^[0-9]{8}-([0-9]+)'))[1]::int), 0)`).
 		Scan(&max).Error
 	return max, err
 }

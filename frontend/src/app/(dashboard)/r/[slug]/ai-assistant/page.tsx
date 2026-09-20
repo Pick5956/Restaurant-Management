@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, X } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
@@ -173,6 +174,17 @@ export default function AIAssistantPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // The thread coasts on the mouse wheel like the overview page. A stable
+  // callback ref, so re-renders (the "latest" button flips on every scroll)
+  // do not detach it and cut a coast short; it still fills scrollAreaRef.
+  const attachScrollArea = useCallback((el: HTMLDivElement | null) => {
+    scrollAreaRef.current = el;
+    const release = smoothScroll(el);
+    return () => {
+      release?.();
+      scrollAreaRef.current = null;
+    };
+  }, []);
   // The jump button only earns its place when the reader is not already at the
   // end; shown always, it covers a message to offer a trip to where they are.
   const [atLatest, setAtLatest] = useState(true);
@@ -217,9 +229,10 @@ export default function AIAssistantPage() {
   // Switching chats leaves the current one behind, and a preview waiting on
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
-    if (pendingActionPreview && !(await discardPendingActionPreview())) return;
+    if (pendingActionPreview && !(await discardPendingActionPreview())) return false;
     setListOpen(false);
     setActiveThread(storageKey, conversationId);
+    return true;
   };
 
   const welcomeMessage = (): Message => ({ id: "welcome", role: "assistant", content: welcomeText, createdAt: new Date() });
@@ -764,7 +777,7 @@ export default function AIAssistantPage() {
     : null;
 
   return (
-    <main className="ai-aura-bg relative flex h-[calc(100dvh-3.5rem)] min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
+    <main className="ai-aura-bg relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
       {/* Sunset Boulevard aura — full-bleed behind the whole page (light theme only) */}
       <div className="ai-aura-layer ai-aura-layer-1 dark:hidden" aria-hidden="true" />
       <div className="ai-aura-layer ai-aura-layer-2 dark:hidden" aria-hidden="true" />
@@ -843,19 +856,15 @@ export default function AIAssistantPage() {
           />
           {/* Messages — scroll area bleeds to the window's right edge so its
               scrollbar sits flush; pr-8 keeps the bubbles off the scrollbar. */}
+          {/* The top fade lives on this wrapper, not on the scroller. A mask on
+              the scrolling box itself stops the browser from scrolling it on the
+              compositor — every frame of a scroll repainted every message on the
+              main thread, which is why the chat stuttered where the inventory
+              list glided. Masked from outside, the box scrolls on the fast path
+              and the fade looks the same. The wrapper also carries the negative
+              right margin, so the fade does not clip the flush scrollbar. */}
           <div
-            ref={scrollAreaRef}
-            onScroll={() => {
-              const area = scrollAreaRef.current;
-              if (!area) return;
-              // A couple of lines of slack, so the button does not flash on the
-              // half-pixel drift a smooth scroll leaves behind.
-              setAtLatest(area.scrollHeight - area.scrollTop - area.clientHeight <= 48);
-            }}
-            className={`ai-scroll relative flex-1 min-h-0 space-y-4 px-1 pb-4 pt-14 sm:px-5 sm:pb-5 lg:-mr-8 lg:pr-8 ${
-              /* Nothing to scroll through yet — don't show a scrollbar on a fresh chat */
-              isEmpty && !loading ? "overflow-hidden" : "overflow-y-auto"
-            }`}
+            className="relative flex min-h-0 flex-1 flex-col lg:-mr-8"
             style={{
               /* Top fade: content dissolves into the aura instead of being cut by a
                  hard edge or hidden abruptly behind the floating controls. The
@@ -865,130 +874,145 @@ export default function AIAssistantPage() {
               maskImage: "linear-gradient(to bottom, transparent 0, #000 3.25rem)",
             }}
           >
-            {isEmpty && !loading ? (
-              /* Absolute fill, not h-full: h-full resolves against the scroll box's
-                 content area, so this container's own padding pushed it 72px past
-                 the viewport — which both squashed the orb and created a scrollbar
-                 on a fresh chat. */
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-6 text-center">
-                <SiriOrb
-                  size="128px"
-                  className="shrink-0 drop-shadow-[0_15px_50px_rgba(249,115,22,0.4)]"
-                  active={voiceListening}
-                  level={voiceLevel}
-                />
-                {/* One line on the empty screen. The heading repeated the app's
-                    own name above a sentence that said it again — three ways of
-                    saying "restaurant analysis assistant" over the questions the
-                    owner came to press. */}
-                <div className="shrink-0">
-                  <h2 className="text-lg font-semibold text-gray-950 dark:text-white">{welcomeText}</h2>
+            <div
+              ref={attachScrollArea}
+              onScroll={() => {
+                const area = scrollAreaRef.current;
+                if (!area) return;
+                // A couple of lines of slack, so the button does not flash on the
+                // half-pixel drift a smooth scroll leaves behind.
+                setAtLatest(area.scrollHeight - area.scrollTop - area.clientHeight <= 48);
+              }}
+              className={`ai-scroll relative flex-1 min-h-0 space-y-4 px-1 pb-4 pt-14 sm:px-5 sm:pb-5 lg:pr-8 ${
+                /* Nothing to scroll through yet — don't show a scrollbar on a fresh chat */
+                isEmpty && !loading ? "overflow-hidden" : "overflow-y-auto"
+              }`}
+            >
+              {isEmpty && !loading ? (
+                /* Absolute fill, not h-full: h-full resolves against the scroll box's
+                   content area, so this container's own padding pushed it 72px past
+                   the viewport — which both squashed the orb and created a scrollbar
+                   on a fresh chat. */
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-6 text-center">
+                  <SiriOrb
+                    size="128px"
+                    className="shrink-0 drop-shadow-[0_15px_50px_rgba(249,115,22,0.4)]"
+                    active={voiceListening}
+                    level={voiceLevel}
+                  />
+                  {/* One line on the empty screen. The heading repeated the app's
+                      own name above a sentence that said it again — three ways of
+                      saying "restaurant analysis assistant" over the questions the
+                      owner came to press. */}
+                  <div className="shrink-0">
+                    <h2 className="text-lg font-semibold text-gray-950 dark:text-white">{welcomeText}</h2>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              messages.map((msg) => {
-              if (msg.role === "user") {
+              ) : (
+                messages.map((msg) => {
+                if (msg.role === "user") {
+                  return (
+                    <div key={msg.id} className="ml-auto flex max-w-[96%] items-end justify-end gap-2.5 sm:max-w-[85%]">
+                      <div className="break-words rounded-2xl rounded-br-md bg-gradient-to-br from-orange-500 to-amber-500 px-4 py-2.5 text-xs leading-relaxed text-white shadow-sm shadow-orange-500/25 sm:text-[13px]">
+                        {msg.content}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
-                  <div key={msg.id} className="ml-auto flex max-w-[96%] items-end justify-end gap-2.5 sm:max-w-[85%]">
-                    <div className="break-words rounded-2xl rounded-br-md bg-gradient-to-br from-orange-500 to-amber-500 px-4 py-2.5 text-xs leading-relaxed text-white shadow-sm shadow-orange-500/25 sm:text-[13px]">
-                      {msg.content}
+                  <Fragment key={msg.id}>
+                  <div className="flex max-w-full items-start gap-2 sm:max-w-[90%] sm:gap-2.5">
+                    <SiriOrb size="30px" className="mt-0.5 shrink-0" />
+                    <div className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]">
+                      <SafeAIResponseContent content={msg.content} compact language={language} />
+                      {msg.forecast && msg.forecast.forecast.length > 0 && (
+                        <ForecastChart data={msg.forecast} language={language} />
+                      )}
+                      {msg.chart && msg.chart.categories.length > 0 && (
+                        <AIChart data={msg.chart} language={language} />
+                      )}
+                      {pendingAction && pendingActionMsgId === msg.id && (
+                        <AIInlineConfirm
+                          message={pendingAction.description ?? (language === "th" ? "กรุณาตรวจสอบก่อนดำเนินการต่อครับ" : "Please review before continuing.")}
+                          confirmLabel={language === "th" ? "ยืนยันและเปิดหน้าตรวจสอบ" : "Confirm and open review page"}
+                          cancelLabel={language === "th" ? "ยกเลิก" : "Cancel"}
+                          onConfirm={() => {
+                            const href = pendingAction.href;
+                            dismissPendingAction();
+                            if (href) router.push(href);
+                          }}
+                          onCancel={dismissPendingAction}
+                        />
+                      )}
                     </div>
                   </div>
+                  {followUpsOn && msg.actions && msg.actions.length > 0 && (
+                    <AIFollowUpList
+                      items={msg.actions}
+                      messageId={msg.id}
+                      language={language}
+                      onSelect={(action) => handleGuidedAction(action, msg.id)}
+                      className="-mt-3"
+                    />
+                  )}
+                  {planAnchorId === msg.id && planCard}
+                  {previewAnchorId === msg.id && previewCard}
+                  </Fragment>
                 );
-              }
-              return (
-                <Fragment key={msg.id}>
+                })
+              )}
+
+              {loading && draft && (
                 <div className="flex max-w-full items-start gap-2 sm:max-w-[90%] sm:gap-2.5">
                   <SiriOrb size="30px" className="mt-0.5 shrink-0" />
-                  <div className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]">
-                    <SafeAIResponseContent content={msg.content} compact language={language} />
-                    {msg.forecast && msg.forecast.forecast.length > 0 && (
-                      <ForecastChart data={msg.forecast} language={language} />
-                    )}
-                    {msg.chart && msg.chart.categories.length > 0 && (
-                      <AIChart data={msg.chart} language={language} />
-                    )}
-                    {pendingAction && pendingActionMsgId === msg.id && (
-                      <AIInlineConfirm
-                        message={pendingAction.description ?? (language === "th" ? "กรุณาตรวจสอบก่อนดำเนินการต่อครับ" : "Please review before continuing.")}
-                        confirmLabel={language === "th" ? "ยืนยันและเปิดหน้าตรวจสอบ" : "Confirm and open review page"}
-                        cancelLabel={language === "th" ? "ยกเลิก" : "Cancel"}
-                        onConfirm={() => {
-                          const href = pendingAction.href;
-                          dismissPendingAction();
-                          if (href) router.push(href);
-                        }}
-                        onCancel={dismissPendingAction}
-                      />
-                    )}
+                  <div
+                    className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
+                    aria-live="polite"
+                  >
+                    <SafeAIResponseContent content={draft} compact language={language} />
+                    <span className="ai-stream-caret" aria-hidden="true" />
                   </div>
                 </div>
-                {followUpsOn && msg.actions && msg.actions.length > 0 && (
-                  <AIFollowUpList
-                    items={msg.actions}
-                    messageId={msg.id}
-                    language={language}
-                    onSelect={(action) => handleGuidedAction(action, msg.id)}
-                    className="-mt-3"
-                  />
-                )}
-                {planAnchorId === msg.id && planCard}
-                {previewAnchorId === msg.id && previewCard}
-                </Fragment>
-              );
-              })
-            )}
-
-            {loading && draft && (
-              <div className="flex max-w-full items-start gap-2 sm:max-w-[90%] sm:gap-2.5">
-                <SiriOrb size="30px" className="mt-0.5 shrink-0" />
-                <div
-                  className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
-                  aria-live="polite"
-                >
-                  <SafeAIResponseContent content={draft} compact language={language} />
-                  <span className="ai-stream-caret" aria-hidden="true" />
+              )}
+              {loading && !draft && (
+                <div className="flex items-center gap-2.5">
+                  <SiriOrb size="30px" className="shrink-0" />
+                  <div
+                    className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 dark:border-gray-700/60 dark:bg-gray-800/80"
+                    role="status"
+                    aria-label={copy.thinking}
+                  >
+                    <span className="ai-shimmer-text text-sm font-medium">{copy.thinking}</span>
+                  </div>
                 </div>
-              </div>
-            )}
-            {loading && !draft && (
-              <div className="flex items-center gap-2.5">
-                <SiriOrb size="30px" className="shrink-0" />
-                <div
-                  className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 dark:border-gray-700/60 dark:bg-gray-800/80"
-                  role="status"
-                  aria-label={copy.thinking}
-                >
-                  <span className="ai-shimmer-text text-sm font-medium">{copy.thinking}</span>
+              )}
+
+              {outage && (
+                <AIOutageNotice
+                  language={language}
+                  outage={outage}
+                  retrying={loading}
+                  onRetry={() => {
+                    const question = lastQuestion;
+                    setOutage(null);
+                    if (question) void submitQuestion(question);
+                  }}
+                />
+              )}
+
+              {error && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+                  {error}
                 </div>
-              </div>
-            )}
+              )}
 
-            {outage && (
-              <AIOutageNotice
-                language={language}
-                outage={outage}
-                retrying={loading}
-                onRetry={() => {
-                  const question = lastQuestion;
-                  setOutage(null);
-                  if (question) void submitQuestion(question);
-                }}
-              />
-            )}
+              {/* fallback: ไม่เจอข้อความเจ้าของใบ จึงวางท้ายสายเหมือนเดิม
+                  ดีกว่าไม่แสดงเลย เพราะเซิร์ฟเวอร์ยังกันคำสั่งอื่นอยู่ */}
+              {planAnchorId === null && planCard}
+              {previewAnchorId === null && previewCard}
 
-            {error && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
-                {error}
-              </div>
-            )}
-
-            {/* fallback: ไม่เจอข้อความเจ้าของใบ จึงวางท้ายสายเหมือนเดิม
-                ดีกว่าไม่แสดงเลย เพราะเซิร์ฟเวอร์ยังกันคำสั่งอื่นอยู่ */}
-            {planAnchorId === null && planCard}
-            {previewAnchorId === null && previewCard}
-
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* Dictation spotlight — the big orb rises over the conversation while
@@ -1078,15 +1102,6 @@ export default function AIAssistantPage() {
                 />
               )}
               <div className="flex items-center gap-1">
-              {/* Scan / tools — far-left slot, only when not dictating */}
-              {!voiceListening && (
-                <AIInputTools
-                  tools={["scan"]}
-                  language={language}
-                  disabled={loading || actionConfirming || actionCancelling}
-                  onInsertText={handleVoiceText}
-                />
-              )}
               {/* Discard the take — left slot, like a voice memo's cancel */}
               {voiceListening && (
                 <HoverTip label={language === "th" ? "ยกเลิก ไม่เอาเสียงนี้" : "Cancel, discard this take"}>
@@ -1199,12 +1214,9 @@ export default function AIAssistantPage() {
             The right/top offsets match the bell's own (main's padding + its
             right-3/top-3) so the card's edge lines up with the control. */}
         <aside
-          /* Phone: the sheet stops at the app bar rather than running under it.
-             inset-0 covered the bar geometrically but the bar paints from a
-             higher stacking context, so it sat on top of the panel's own title
-             row and hid the close button. Starting below it also keeps the bell
-             and the menu reachable while the panel is open. */
-          className={`fixed inset-x-0 bottom-0 top-14 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
+          /* Phone: a full-height sheet. The app bar it used to stop under was
+             taken out on 19 ก.ย. 2569; the side handle opens the menu now. */
+          className={`fixed inset-x-0 bottom-0 top-0 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
             drawerOpen
               ? "translate-y-0 opacity-100 sm:scale-100"
               : "pointer-events-none translate-y-full opacity-0 sm:translate-y-0 sm:scale-95"
@@ -1214,7 +1226,7 @@ export default function AIAssistantPage() {
           {/* No chrome of its own: the close control rides the panel's own title
               row. A bar holding nothing but an X was a thick empty band above the
               heading — two rows of furniture for one list. */}
-          <div className="ai-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
+          <div ref={smoothScroll} className="ai-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
             <AIInsightsPanel
               language={language}
               onCount={setInsightsCount}

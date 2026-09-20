@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { MessageSquareText, MoreHorizontal, Pencil, Plus, Search, SquarePen, Trash2, X } from "lucide-react";
 import { deleteAIConversation, listAIConversations, renameAIConversation } from "@/src/lib/ai";
 import { matchesThreadQuery, notifyConversationsChanged, threadGroup, useConversationsVersion, type AIThreadGroup } from "@/src/lib/aiThreads";
@@ -92,8 +94,9 @@ export default function AIChatList({
 }: {
   language: "th" | "en";
   activeId: string | null;
-  onOpen: (conversationId: string) => void;
-  onNew: () => void;
+  /** May return false (or resolve to false) to refuse; the list then stays open. */
+  onOpen: (conversationId: string) => unknown;
+  onNew: () => unknown;
   variant: Variant;
   /** The close control (backdrop click and Escape use it too). */
   onClose?: () => void;
@@ -117,6 +120,17 @@ export default function AIChatList({
     if (closing) return;
     setClosing(true);
     window.setTimeout(() => onClose?.(), 220);
+  };
+  // Picking a chat (or a new one) leaves the same way as closing. The parent
+  // may still refuse — a pending action preview it could not settle — and
+  // then the list comes back instead of staying invisible.
+  const leaveThen = (go: () => unknown) => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(async () => {
+      const result = await go();
+      if (result === false) setClosing(false);
+    }, 200);
   };
   // The panel opens with the cursor in the search box and leaves on Escape,
   // unless a rename or the delete dialog is up — that one owns Escape then.
@@ -230,7 +244,7 @@ export default function AIChatList({
     "group flex w-full items-start gap-2 rounded-xl py-2 pl-2.5 pr-9 text-left transition-colors";
 
   const list = (
-    <div className="ai-scroll min-h-0 flex-1 overflow-y-auto overflow-x-visible px-2 pb-3">
+    <div ref={smoothScroll} className="ai-scroll min-h-0 flex-1 overflow-y-auto overflow-x-visible px-2 pb-3">
       {conversations === null ? (
         <p className="px-2 py-6 text-center text-[12px] text-gray-400">…</p>
       ) : visibleCount === 0 ? (
@@ -284,7 +298,7 @@ export default function AIChatList({
                   <div key={conversation.id} className="relative">
                     <button
                       type="button"
-                      onClick={() => onOpen(conversation.id)}
+                      onClick={() => leaveThen(() => onOpen(conversation.id))}
                       aria-current={active ? "true" : undefined}
                       className={`${rowButton} ${
                         active
@@ -385,7 +399,7 @@ export default function AIChatList({
   const newChatButton = (
     <button
       type="button"
-      onClick={onNew}
+      onClick={() => leaveThen(onNew)}
       className="mx-2 mb-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-orange-200 bg-white/80 text-[13px] font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-50 dark:border-orange-900/50 dark:bg-gray-900 dark:text-orange-300 dark:hover:bg-orange-950/30"
     >
       <Plus className="h-4 w-4" /> {t.newChat}
@@ -440,7 +454,7 @@ export default function AIChatList({
           <div className="px-2 pt-2">
             <button
               type="button"
-              onClick={onNew}
+              onClick={() => leaveThen(onNew)}
               className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-[13px] font-medium text-gray-800 transition-colors hover:bg-orange-50/70 dark:text-gray-100 dark:hover:bg-gray-800/70"
             >
               <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
@@ -456,9 +470,15 @@ export default function AIChatList({
     );
   }
 
-  return (
-    <div className={`absolute inset-0 z-30 flex flex-col bg-[#faf8f2] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
-      <div className="flex items-center justify-between px-3 pb-2 pt-3">
+  // Phones: the whole screen, above the menu tab (z-30) so the tab does not sit
+  // on the title. It was absolute inside the chat's padded box, which left
+  // bands of the page showing on three sides (19 ก.ย. 2569). Portalled to
+  // body: the AI page's .ai-aura-bg isolates its children, so a z-index set
+  // in there could never rise above the tab.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className={`fixed inset-0 z-40 flex flex-col bg-[#faf8f2] pb-[env(safe-area-inset-bottom)] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
+      <div className="flex items-center justify-between px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold text-gray-900 dark:text-white">
           <MessageSquareText className="h-4 w-4 text-orange-500" /> {t.title}
         </h2>
@@ -475,6 +495,7 @@ export default function AIChatList({
       {searchBox}
       {list}
       {dialogs}
-    </div>
+    </div>,
+    document.body,
   );
 }

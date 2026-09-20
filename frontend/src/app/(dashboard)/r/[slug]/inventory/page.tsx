@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
+  ArrowDownLeft,
   ArrowRight,
   ArrowUp,
+  ArrowUpRight,
   Boxes,
   Check,
+  ClipboardCheck,
   Download,
   ChevronLeft,
   ChevronRight,
@@ -49,12 +52,15 @@ import type {
   IngredientLot,
   IngredientTransaction,
 } from "@/src/types/ingredient";
-import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
+import { InventoryPageSkeleton } from "./InventorySkeletons";
+import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
-import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
+import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
+import { SEALED_UNITS } from "./inventoryPageUtils";
 import NumberInput from "@/src/components/shared/NumberInput";
 import {
   hasFieldErrors,
@@ -63,9 +69,11 @@ import {
   validateIngredientForm,
 } from "./inventoryFormValidation";
 import {
+  defaultEntryUnit,
   emptyTypedAmounts,
   entryChain,
   formatPackCount,
+  hasPack,
   largestPurchaseUnit,
   packExample,
   packUnitChoices,
@@ -87,14 +95,15 @@ import {
   formatExpiryDate,
   ingredientExpiryState,
   matchesExpiryFilter,
+  restockShelfLifePresets,
   type ExpiryFilter,
 } from "./inventoryExpiryUtils";
+import RestockExpiryChips from "./RestockExpiryChips";
 import InventoryMobile from "./mobile/InventoryMobile";
-import { useIsMobile } from "./mobile/primitives";
+import { useIsMobile, useWarmConfirm } from "./mobile/primitives";
 import {
   emptyForm,
   buildAdjustStockPayload,
-  getInventoryValue,
   getStatus,
   getReorderPercent,
   getStockPercent,
@@ -189,6 +198,9 @@ function buildCopy(language: "th" | "en") {
         cancel: "ยกเลิก",
         confirmDelete: "ยืนยันการลบ",
         deleteMsg: (name: string) => `ลบ "${name}" ออกจากคลังวัตถุดิบ?`,
+        removeTitle: (name: string) => `ลบ "${name}"?`,
+        removeBody: "วัตถุดิบนี้จะหายจากคลังและรายการทั้งหมด ถ้าอยู่ในสูตรเมนู ระบบจะไม่ให้ลบ",
+        removeConfirm: "ลบวัตถุดิบ",
         adjustTitle: "ปรับสต็อก",
         adjustIn: "รับเข้า",
         spentAmount: "ยอดที่จ่ายจริง (ไม่บังคับ)",
@@ -293,6 +305,9 @@ function buildCopy(language: "th" | "en") {
         cancel: "Cancel",
         confirmDelete: "Confirm delete",
         deleteMsg: (name: string) => `Remove "${name}" from inventory?`,
+        removeTitle: (name: string) => `Delete "${name}"?`,
+        removeBody: "It disappears from the inventory. An ingredient used in a menu recipe cannot be deleted.",
+        removeConfirm: "Delete ingredient",
         adjustTitle: "Adjust stock",
         adjustIn: "Stock in",
         spentAmount: "Actual amount paid (optional)",
@@ -398,14 +413,38 @@ function groupTxByDate(txs: IngredientTransaction[], copy: Copy) {
   }));
 }
 
+// Weights and volumes a delivery or a count can be typed in, beside the
+// shelf's own unit and its containers.
+const ADJUST_MEASURE_UNITS = ["กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร"];
+
+type AdjustReason = "kitchen" | "waste" | "expired" | "other";
+const ADJUST_REASONS: Record<AdjustReason, [string, string]> = {
+  kitchen: ["ใช้ในครัว", "Kitchen use"],
+  waste: ["เสีย/ทิ้ง", "Spoiled"],
+  expired: ["หมดอายุ", "Expired"],
+  other: ["อื่นๆ", "Other"],
+};
+
+/** Expiry chips for a restock of this item: sealed bottles and cans last. */
+function adjustShelfLifePresets(item: Ingredient): number[] {
+  const sealed = SEALED_UNITS.has(item.unit) || SEALED_UNITS.has(item.pack_unit ?? "");
+  return restockShelfLifePresets(item.storage_type, sealed);
+}
+
 export default function InventoryPage() {
   const { activeMembership } = useAuth();
   // One tree renders at a time rather than two hidden by CSS: both mounted would
   // run the inventory fetch twice and keep two copies of the same state.
   const isMobile = useIsMobile();
+  // The page glides on the mouse wheel and coasts on after it, like the
+  // overview page. The scroller belongs to the shell layout, so it is wired
+  // up here and let go when the page is left.
+  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { language } = useLanguage();
   const { showToast } = useToast();
-  const confirm = useConfirm();
+  // Every "are you sure" on this page is the warm dialog the AI chat uses for
+  // deleting a conversation (and the phone layout already uses here).
+  const { ask, dialog: warmDialog } = useWarmConfirm();
   const lang = language as "th" | "en";
   const canManage = can(activeMembership, "manage_inventory");
   const canManageExpenses = can(activeMembership, "manage_expenses");
@@ -425,7 +464,40 @@ export default function InventoryPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stock" | "history">("stock");
+  const [tab, setTab] = useState<InventoryView>("stock");
+  // Where the view switch's thumb slides from: the view that was showing.
+  const [previousTab, setPreviousTab] = useState<InventoryView>("stock");
+  // Both views stay mounted once opened and only the one showing is visible, so
+  // switching back is instant: the history is not fetched and redrawn from a
+  // skeleton on every visit, which read as a flash rather than a switch.
+  const [historyVisited, setHistoryVisited] = useState(false);
+  const switchTab = (next: InventoryView) => {
+    if (next === tab) return;
+    setPreviousTab(tab);
+    if (next === "history") setHistoryVisited(true);
+    setTab(next);
+  };
+  const stockToolbarRef = useRef<HTMLDivElement>(null);
+  const historyToolbarRef = useRef<HTMLDivElement>(null);
+  const stockViewRef = useRef<HTMLDivElement>(null);
+  const historyViewRef = useRef<HTMLDivElement>(null);
+  const firstViewPaint = useRef(true);
+  // Play the entrance on the toolbar and the view that just became visible.
+  // The class is taken off and put back with a forced layout between, so the
+  // animation restarts on an element that stays mounted.
+  useLayoutEffect(() => {
+    if (firstViewPaint.current) {
+      firstViewPaint.current = false;
+      return;
+    }
+    const shown = tab === "stock" ? [stockToolbarRef.current, stockViewRef.current] : [historyToolbarRef.current, historyViewRef.current];
+    for (const element of shown) {
+      if (!element) continue;
+      element.classList.remove("inv-view-enter");
+      void element.offsetWidth;
+      element.classList.add("inv-view-enter");
+    }
+  }, [tab]);
   const [stockExporting, setStockExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockStatus>("all");
@@ -488,8 +560,6 @@ export default function InventoryPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
-  const [deleteTarget, setDeleteTarget] = useState<Ingredient | null>(null);
-  const [deleteClosing, setDeleteClosing] = useState(false);
 
   const [adjustTarget, setAdjustTarget] = useState<Ingredient | null>(null);
   const [adjustClosing, setAdjustClosing] = useState(false);
@@ -498,10 +568,14 @@ export default function InventoryPage() {
   const [adjustUnit, setAdjustUnit] = useState("");
   // The server decides which units this ingredient accepts and what each one is
   // worth, so the picker and the preview below never carry their own factors.
-  const adjustUnitOptions = useMemo(
-    () => (adjustTarget?.unit_family ?? []).map((option) => ({ value: option.unit, label: option.unit })),
-    [adjustTarget],
-  );
+  // unit_family also carries ช้อนชา/ช้อนโต๊ะ for recipes. Nobody receives or
+  // counts stock by the spoon, so only the shelf's own unit, its containers and
+  // plain weights/volumes are offered here.
+  const adjustUnitOptions = useMemo(() => {
+    if (!adjustTarget) return [];
+    const keep = new Set([adjustTarget.unit, adjustTarget.pack_unit, adjustTarget.case_unit, ...ADJUST_MEASURE_UNITS]);
+    return (adjustTarget.unit_family ?? []).filter((option) => keep.has(option.unit)).map((option) => option.unit);
+  }, [adjustTarget]);
   const convertedAdjustQty = useMemo(() => {
     if (!adjustTarget || !adjustUnit || adjustUnit === adjustTarget.unit) return null;
     const quantity = Number(adjustQty);
@@ -512,6 +586,11 @@ export default function InventoryPage() {
   }, [adjustQty, adjustTarget, adjustUnit]);
   const [adjustPaidAmount, setAdjustPaidAmount] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  // The note field stays folded away until asked for; most adjustments have none.
+  const [adjustNoteOpen, setAdjustNoteOpen] = useState(false);
+  // Why stock went out. There is no column for it yet, so it is written at the
+  // front of the note ("เสีย/ทิ้ง · …"), which the history already shows.
+  const [adjustReason, setAdjustReason] = useState<AdjustReason | null>(null);
   // Days from today for the lot a stock-in opens; null is "ไม่ระบุ".
   const [adjustExpiryDays, setAdjustExpiryDays] = useState<number | null>(null);
   const [formExpiryDays, setFormExpiryDays] = useState<number | null>(null);
@@ -548,6 +627,7 @@ export default function InventoryPage() {
   // spacer is hidden there and no measurement is needed.
   const stickyToolbarRef = useRef<HTMLDivElement>(null);
   const [stickyToolbarHeight, setStickyToolbarHeight] = useState(0);
+  const [historyToolbarSlot, setHistoryToolbarSlot] = useState<HTMLDivElement | null>(null);
   const categoryOptions = useMemo(
     () => [
       { value: "0", label: categories.length === 0 ? copy.noCategories : copy.uncategorized },
@@ -611,7 +691,6 @@ export default function InventoryPage() {
   }, [ingredients]);
 
   const totalItems = ingredients.length;
-  const totalValue = ingredients.reduce((sum, item) => sum + getInventoryValue(item), 0);
   const categoryNameById = useMemo(
     () => new Map(categories.map((category) => [category.ID, category.name])),
     [categories],
@@ -701,8 +780,9 @@ export default function InventoryPage() {
   // sticky cell against the table's own box every frame — which is the shimmy
   // the header had while the list scrolled. Separated borders give the cell its
   // own, so it rides steady and the underline below can be a plain border.
-  const stickyThCls =
-    "sticky top-[calc(3.5rem+var(--inv-th-top,0px))] z-10 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900 lg:top-[var(--inv-th-top,0px)]";
+  // Stickiness, fill and the rounded corners come from `.inv-thead` in
+  // globals.css, shared with the history table.
+  const stickyThCls = "px-4 py-2.5";
 
   const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
     const active = sortKey === key;
@@ -869,11 +949,14 @@ export default function InventoryPage() {
   }
 
   async function handleDeleteCategory(category: IngredientCategory) {
-    const confirmed = await confirm({
+    const confirmed = await ask({
       title: copy.confirmDeleteCategory(category.name),
+      description:
+        lang === "th"
+          ? "หมวดนี้จะหายไป วัตถุดิบไม่ได้หายไปด้วย (ลบได้เฉพาะหมวดที่ไม่มีวัตถุดิบแล้ว)"
+          : "Only the category goes; it can only be deleted once no ingredient uses it.",
       confirmLabel: copy.deleteCategory,
       cancelLabel: copy.cancel,
-      tone: "danger",
     });
     if (!confirmed) return;
     try {
@@ -888,15 +971,22 @@ export default function InventoryPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  async function requestDelete(target: Ingredient) {
+    const confirmed = await ask({
+      title: copy.removeTitle(target.name),
+      description: copy.removeBody,
+      confirmLabel: copy.removeConfirm,
+      cancelLabel: copy.cancel,
+    });
+    if (!confirmed) return;
     await deleteOnce.current(async () => {
       try {
-        await deleteIngredient(deleteTarget.ID);
-        setIngredients((prev) => prev.filter((item) => item.ID !== deleteTarget.ID));
+        await deleteIngredient(target.ID);
+        setIngredients((prev) => prev.filter((item) => item.ID !== target.ID));
         showToast({ title: copy.ingredientDeleted });
-      } finally {
-        closeDeleteModal();
+      } catch (error: unknown) {
+        const err = error as { response?: { data?: { error?: string } } };
+        showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang), tone: "error" });
       }
     });
   }
@@ -1076,8 +1166,21 @@ export default function InventoryPage() {
     setAdjustUnit(largestPurchaseUnit(item));
     setAdjustPaidAmount("");
     setAdjustNote("");
-    setAdjustExpiryDays(defaultShelfLifeDays(item.storage_type));
+    setAdjustNoteOpen(false);
+    setAdjustReason(null);
+    setAdjustExpiryDays(adjustShelfLifePresets(item)[0]);
     setAdjustError("");
+  }
+
+  function switchAdjustType(type: "in" | "out" | "adjust") {
+    if (!adjustTarget) return;
+    setAdjustType(type);
+    setAdjustError("");
+    if (type !== "in") setAdjustPaidAmount("");
+    if (type !== "out") setAdjustReason(null);
+    // A delivery is counted in cases, a shelf a bottle at a time. Only while the
+    // box is empty, so a number already typed never changes meaning underneath.
+    if (adjustQty.trim() === "") setAdjustUnit(type === "in" ? largestPurchaseUnit(adjustTarget) : defaultEntryUnit(adjustTarget, "count"));
   }
 
   async function handleAdjust() {
@@ -1112,12 +1215,11 @@ export default function InventoryPage() {
       return;
     }
     if (adjustType !== "in") {
-      const confirmed = await confirm({
+      const confirmed = await ask({
         title: copy.confirmAdjustTitle,
-        message: copy.confirmAdjustBody,
+        description: copy.confirmAdjustBody,
         confirmLabel: copy.confirmAdjust,
         cancelLabel: copy.cancel,
-        tone: "warning",
       });
       if (!confirmed) return;
     }
@@ -1129,7 +1231,10 @@ export default function InventoryPage() {
           type: adjustType,
           quantity: qty,
           unit: adjustUnit,
-          note: adjustNote,
+          note:
+            adjustType === "out" && adjustReason
+              ? [ADJUST_REASONS[adjustReason][lang === "th" ? 0 : 1], adjustNote.trim()].filter(Boolean).join(" · ")
+              : adjustNote,
           paidAmount: adjustPaidAmount,
           canManageExpenses,
           expiresAt:
@@ -1203,12 +1308,11 @@ export default function InventoryPage() {
   async function handleDiscardLot(lot: IngredientLot) {
     if (!txTarget) return;
     const target = txTarget;
-    const confirmed = await confirm({
+    const confirmed = await ask({
       title: xcopy.discardTitle,
-      message: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
+      description: xcopy.discardBody(target.name, formatNumber(lot.remaining, lang), target.unit),
       confirmLabel: xcopy.discard,
       cancelLabel: copy.cancel,
-      tone: "danger",
     });
     if (!confirmed) return;
     setLotSaving(true);
@@ -1270,15 +1374,6 @@ export default function InventoryPage() {
     }, 260);
   }
 
-  function closeDeleteModal() {
-    if (deleteClosing) return;
-    setDeleteClosing(true);
-    window.setTimeout(() => {
-      setDeleteTarget(null);
-      setDeleteClosing(false);
-    }, 260);
-  }
-
   function closeAdjustModal() {
     if (adjustClosing) return;
     setAdjustClosing(true);
@@ -1324,16 +1419,11 @@ export default function InventoryPage() {
   }
   const modalBackdrop = useBackdropClose(closeModal);
   const categoryBackdrop = useBackdropClose(closeCategoryModal);
-  const deleteBackdrop = useBackdropClose(closeDeleteModal);
   const adjustBackdrop = useBackdropClose(closeAdjustModal);
   const txBackdrop = useBackdropClose(closeTxDrawer);
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <RestaurantCardSkeleton />
-      </div>
-    );
+    return <InventoryPageSkeleton label={lang === "th" ? "กำลังโหลดคลังวัตถุดิบ" : "Loading inventory"} />;
   }
 
   if (!canView) {
@@ -1344,39 +1434,19 @@ export default function InventoryPage() {
     return <InventoryMobile canView={canView} canManage={canManage} />;
   }
 
+  // Stock / history switch. It sits in the toolbar row beside the filter
+  // button, so the bar is one row tall and the table starts right under it.
+  const viewTabs = <InventoryViewTabs tab={tab} previous={previousTab} onChange={switchTab} lang={lang} />;
+
   return (
     <>
       <div
         data-shell-sticky=""
         ref={stickyToolbarRef}
-        className="fixed inset-x-0 top-14 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto"
+        className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto"
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">
-          {/* The tabs live inside the sticky bar so switching views stays reachable
-              on a phone, where the bar is fixed and the list scrolls under it. */}
-          <div className="mb-2 flex w-fit items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-            {(["stock", "history"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setTab(key)}
-                className={`inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold transition ${
-                  tab === key
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                    : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
-                }`}
-              >
-                {key === "stock"
-                  ? lang === "th"
-                    ? "สต๊อกปัจจุบัน"
-                    : "Stock"
-                  : lang === "th"
-                    ? "ประวัติทั้งคลัง"
-                    : "History"}
-              </button>
-            ))}
-          </div>
           {/* The history tab brings its own search box and export button, so the
               stock toolbar would duplicate both — it belongs to the stock tab only. */}
           {/* Below sm the header is a column, so every direct child becomes its own
@@ -1384,7 +1454,12 @@ export default function InventoryPage() {
               slab covering most of a phone screen, so the children are grouped:
               search + filter share one row, and the actions wrap instead of
               stacking. Same shape the tables page uses. */}
-          {tab === "stock" && (
+          {/* The history tab renders its own filter row into this slot, so its
+              controls and the tabs share the sticky bar just like the stock tab. */}
+          <div ref={historyToolbarRef} hidden={tab !== "history"}>
+            <div ref={setHistoryToolbarSlot} />
+          </div>
+          <div ref={stockToolbarRef} hidden={tab !== "stock"}>
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
           <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
@@ -1482,7 +1557,7 @@ export default function InventoryPage() {
                     ))}
                   </div>
                   <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.category}</p>
-                  <div className="flex max-h-40 flex-wrap gap-2 overflow-auto">
+                  <div ref={smoothScroll} className="flex max-h-40 flex-wrap gap-2 overflow-auto">
                     <button
                       onClick={() => setCategoryFilter(0)}
                       className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition ${
@@ -1527,18 +1602,14 @@ export default function InventoryPage() {
               </>
             )}
           </div>
+          {viewTabs}
           </div>
-          {/* Value and the action buttons wrap onto as few rows as fit, rather than
-              one row each. The flex-1 spacer only exists to push them right on a
-              wide row, so it is hidden where the header is a column. */}
+          {/* The action buttons wrap onto as few rows as fit, rather than one row
+              each. The flex-1 spacer only exists to push them right on a wide row,
+              so it is hidden where the header is a column. The stock value chip
+              that used to lead this group was removed on the owner's call. */}
           <div className="hidden flex-1 sm:block" />
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <div className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-orange-200/80 bg-orange-50/80 px-3 text-center dark:border-orange-900/40 dark:bg-orange-950/20">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">{lang === "th" ? "มูลค่า" : "Value"}</span>
-            <span className="text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">
-              {formatCurrency(totalValue, lang)}
-            </span>
-          </div>
           <div className="relative shrink-0">
             <button
               type="button"
@@ -1574,8 +1645,8 @@ export default function InventoryPage() {
                         ? "กำลังสร้างไฟล์…"
                         : "Preparing…"
                       : lang === "th"
-                        ? "ส่งออก CSV"
-                        : "Export CSV"}
+                        ? "ส่งออกเป็นตาราง"
+                        : "Export as sheet"}
                   </button>
                   {canManage && (
                     <button
@@ -1615,65 +1686,63 @@ export default function InventoryPage() {
           )}
           </div>
           </header>
+          </div>
+          {/* Active filters ride in the bar too: anything between the bar and the
+              table pushes the table down at the top of the page, and it then jumps
+              up to meet the bar once the column titles start sticking. */}
+          {tab === "stock" && (statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
+              {statusFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("all")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {lang === "th" ? "สถานะ" : "Status"} ·{" "}
+                  {statusFilter === "ok" ? copy.filterOk : statusFilter === "low" ? copy.filterLow : copy.filterOut}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {categoryFilter !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter(0)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {copy.category} · {categoryNameById.get(categoryFilter) ?? ""}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {expiryFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setExpiryFilter("all")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setCategoryFilter(0);
+                  setExpiryFilter("all");
+                }}
+                className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                {lang === "th" ? "ล้างทั้งหมด" : "Clear all"}
+              </button>
+            </div>
           )}
         </div>
       </div>
       <div aria-hidden="true" className="lg:hidden" style={{ height: stickyToolbarHeight }} />
-      <div className="min-h-dvh bg-slate-100 px-4 py-4 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:py-6">
+      <div className="min-h-dvh bg-slate-100 px-4 pb-4 pt-0 text-slate-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:pb-6">
         <div className="space-y-5">
-        {tab === "stock" && (
-        <>
-
-        {(statusFilter !== "all" || categoryFilter !== 0 || expiryFilter !== "all") && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400 dark:text-slate-500">{lang === "th" ? "กรองอยู่" : "Filters"}</span>
-            {statusFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setStatusFilter("all")}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {lang === "th" ? "สถานะ" : "Status"} ·{" "}
-                {statusFilter === "ok" ? copy.filterOk : statusFilter === "low" ? copy.filterLow : copy.filterOut}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            {categoryFilter !== 0 && (
-              <button
-                type="button"
-                onClick={() => setCategoryFilter(0)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {copy.category} · {categoryNameById.get(categoryFilter) ?? ""}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            {expiryFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setExpiryFilter("all")}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {xcopy.filterLabel} · {expiryFilter === "soon" ? xcopy.filterSoon : xcopy.filterExpired}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter("all");
-                setCategoryFilter(0);
-                setExpiryFilter("all");
-              }}
-              className="text-xs text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-300"
-            >
-              {lang === "th" ? "ล้างทั้งหมด" : "Clear all"}
-            </button>
-          </div>
-        )}
-
-
-
+        <div ref={stockViewRef} hidden={tab !== "stock"}>
 
           <div className="grid gap-4">
             {/* The radius and the clipping live on the same element, or the
@@ -1694,11 +1763,8 @@ export default function InventoryPage() {
                   </div>
                 ) : (
                   <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
-                    <thead>
-                      <tr
-                        className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500"
-                        style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}
-                      >
+                    <thead className="inv-thead" style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         {canManage && (
                           <th className={`${stickyThCls} w-12 text-center align-middle`}>
                             <input
@@ -1709,7 +1775,7 @@ export default function InventoryPage() {
                                 if (el) el.indeterminate = selectedIds.size > 0 && !allSelected;
                               }}
                               onChange={toggleSelectAll}
-                              className="h-4 w-4 cursor-pointer accent-orange-500"
+                              className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                             />
                           </th>
                         )}
@@ -1743,12 +1809,12 @@ export default function InventoryPage() {
                                   aria-label={`select ${item.name}`}
                                   checked={selectedIds.has(item.ID)}
                                   onChange={() => toggleSelect(item.ID)}
-                                  className="h-4 w-4 cursor-pointer accent-orange-500"
+                                  className="mx-auto block h-4 w-4 cursor-pointer accent-orange-500"
                                 />
                               </td>
                             )}
                             <td className="px-4 py-3">
-                              <span className="font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                              <span className="text-[13px] font-semibold text-slate-900 dark:text-white">{item.name}</span>
                             </td>
                             <td className="px-4 py-3">
                               <div className="w-44">
@@ -1837,7 +1903,7 @@ export default function InventoryPage() {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setDeleteTarget(item)}
+                                      onClick={() => void requestDelete(item)}
                                       title={copy.delete}
                                       className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
                                     >
@@ -1859,17 +1925,25 @@ export default function InventoryPage() {
                 <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
                     <span>{copy.perPage}</span>
-                    <select
-                      value={pageSize}
-                      onChange={(event) => setPageSize(Number(event.target.value))}
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 outline-none transition focus:border-orange-400 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200"
-                    >
+                    {/* Four sizes fit side by side, so they are buttons rather than a
+                        native select: one tap, and no browser-drawn popup. */}
+                    <div role="group" aria-label={copy.perPage} className="flex h-8 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-[3px] dark:border-gray-800 dark:bg-gray-900">
                       {[10, 25, 50, 100].map((size) => (
-                        <option key={size} value={size}>
+                        <button
+                          key={size}
+                          type="button"
+                          aria-pressed={pageSize === size}
+                          onClick={() => setPageSize(size)}
+                          className={`inline-flex h-6 min-w-[34px] items-center justify-center rounded-md px-2 text-xs font-semibold tabular-nums transition ${
+                            pageSize === size
+                              ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-gray-800"
+                          }`}
+                        >
                           {size}
-                        </option>
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
                     <span className="tabular-nums">
@@ -1903,10 +1977,20 @@ export default function InventoryPage() {
               )}
             </section>
           </div>
-        </>
-        )}
+        </div>
 
-        {tab === "history" && <InventoryHistoryTab categories={categories} lang={lang} />}
+        {historyVisited && (
+          <div ref={historyViewRef} hidden={tab !== "history"}>
+          <InventoryHistoryTab
+            categories={categories}
+            lang={lang}
+            toolbarSlot={historyToolbarSlot}
+            viewTabs={viewTabs}
+            stickyTop={stickyToolbarHeight}
+            active={tab === "history"}
+          />
+          </div>
+        )}
         </div>
 
       {modalOpen && (
@@ -1945,7 +2029,7 @@ export default function InventoryPage() {
                 <X className="mx-auto h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
@@ -2283,7 +2367,7 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-auto p-4">
               <div className="mb-3 flex flex-wrap items-end gap-2">
                 <div className="w-56">
                   <p className="mb-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
@@ -2447,7 +2531,7 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="max-h-[46vh] space-y-1 overflow-y-auto px-4 py-3">
+            <div ref={smoothScroll} className="max-h-[46vh] space-y-1 overflow-y-auto px-4 py-3">
               {categories.length === 0 ? (
                 <p className="px-2 py-6 text-center text-sm text-slate-400">{copy.noCategories}</p>
               ) : (
@@ -2544,185 +2628,274 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {deleteTarget && (
-        <div {...deleteBackdrop} className={`${deleteClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${deleteClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="px-6 py-5">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-300">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">{copy.confirmDelete}</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{copy.deleteMsg(deleteTarget.name)}</p>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-gray-800">
-              <button
-                onClick={closeDeleteModal}
-                className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
-              >
-                {copy.cancel}
-              </button>
-              <button
-                onClick={handleDelete}
-                className="rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
-              >
-                {copy.delete}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {warmDialog}
 
-      {adjustTarget && (
+      {adjustTarget && (() => {
+        const t = adjustTarget;
+        const factor = t.unit_family?.find((entry) => entry.unit === adjustUnit)?.stock_per_unit ?? 1;
+        const typed = parseFloat(adjustQty);
+        const stockQty = Number.isFinite(typed) && typed > 0 ? typed * (adjustUnit && adjustUnit !== t.unit ? factor : 1) : 0;
+        // Money reads per bottle when there is a bottle, per shelf unit otherwise.
+        const priceUnit = hasPack(t) ? (t.pack_unit as string) : t.unit;
+        const perPriceUnit = hasPack(t) ? (t.pack_size as number) : 1;
+        const paidTyped = Number(adjustPaidAmount);
+        const paid = adjustPaidAmount.trim() !== "" && Number.isFinite(paidTyped) ? paidTyped : referenceAdjustAmount;
+        const paidPer = stockQty > 0 && paid > 0 ? (paid / stockQty) * perPriceUnit : 0;
+        const lostValue =
+          adjustType === "out" && (adjustReason === "waste" || adjustReason === "expired") && stockQty > 0
+            ? stockQty * (t.cost_per_unit ?? 0)
+            : 0;
+        const typeMeta = {
+          in: { label: copy.adjustIn, Icon: ArrowDownLeft, on: "text-emerald-700 dark:text-emerald-300", verb: lang === "th" ? "รับเข้า" : "Receive" },
+          out: { label: lang === "th" ? "ใช้ / ทิ้ง" : "Use / discard", Icon: ArrowUpRight, on: "text-red-600 dark:text-red-300", verb: lang === "th" ? "ตัดออก" : "Take out" },
+          adjust: { label: lang === "th" ? "นับจริง" : "Count", Icon: ClipboardCheck, on: "text-orange-700 dark:text-orange-300", verb: lang === "th" ? "บันทึกยอด" : "Set to" },
+        } as const;
+        const saveLabel =
+          stockQty > 0 ? `${typeMeta[adjustType].verb} ${formatNumber(typed, lang)} ${adjustUnit || t.unit}` : typeMeta[adjustType].verb;
+        const label = "mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400";
+        const field =
+          "flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 transition focus-within:border-orange-400 dark:border-gray-700 dark:bg-gray-900";
+        const bare = "h-full min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white";
+
+        return (
         <div {...adjustBackdrop} className={`${adjustClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${adjustClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="border-b border-slate-200 px-6 py-4 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{copy.adjustTitle}</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {adjustTarget.name} • {copy.current} {formatNumber(adjustTarget.stock, lang)} {adjustTarget.unit}
-              </p>
-            </div>
-            <div className="space-y-4 px-6 py-5">
-              <div className="grid grid-cols-3 gap-2">
-                {(["in", "out", "adjust"] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => {
-                      setAdjustType(type);
-                      if (type !== "in") setAdjustPaidAmount("");
-                    }}
-                    className={`rounded-md border py-2 text-xs font-semibold transition ${
-                      adjustType === type
-                        ? type === "in"
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                          : type === "out"
-                            ? "border-red-300 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300"
-                            : "border-orange-300 bg-orange-50 text-orange-600 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
-                        : "border-slate-200 text-slate-500 hover:border-slate-300 dark:border-gray-700 dark:text-slate-300"
-                    }`}
-                  >
-                    {type === "in" ? copy.adjustIn : type === "out" ? copy.adjustOut : copy.adjustSet}
-                  </button>
-                ))}
+          <div className={`${adjustClosing ? "smooth-pop-exit" : "smooth-pop"} w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
+            <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{t.name}</h2>
+                <p className="mt-0.5 text-[13px] tabular-nums text-slate-500 dark:text-slate-400">
+                  {copy.current} {formatNumber(t.stock, lang)} {t.unit}
+                  {(t.cost_per_unit ?? 0) > 0
+                    ? ` · ${lang === "th" ? "ทุน" : "cost"} ${formatCurrency(t.cost_per_unit * perPriceUnit, lang, 2)}/${priceUnit}`
+                    : ""}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={closeAdjustModal}
+                aria-label={copy.cancel}
+                className="-mr-1.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-800 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 pb-5">
+              <div role="tablist" className="grid grid-cols-3 gap-0.5 rounded-xl bg-slate-100 p-[3px] dark:bg-gray-800">
+                {(["in", "out", "adjust"] as const).map((type) => {
+                  const meta = typeMeta[type];
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="tab"
+                      aria-selected={adjustType === type}
+                      onClick={() => switchAdjustType(type)}
+                      className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[12px] font-semibold transition ${
+                        adjustType === type
+                          ? `bg-white shadow-sm dark:bg-gray-900 ${meta.on}`
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      <meta.Icon className="h-3.5 w-3.5" />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {copy.quantity}
+                <label htmlFor="adjust-qty" className={label}>
+                  {adjustType === "adjust" ? (lang === "th" ? "นับได้" : "Counted") : copy.quantity}
                 </label>
-                <div className={adjustUnitOptions.length > 1 ? "grid grid-cols-[minmax(0,1fr)_9rem] gap-2" : ""}>
-                  <input
-                    type="number"
-                    min={0}
-                    value={adjustQty}
-                    onChange={(event) => setAdjustQty(event.target.value)}
-                    className={inputCls}
-                    autoFocus
-                  />
-                  {adjustUnitOptions.length > 1 ? (
-                    <ThemedSelect
-                      value={adjustUnit || adjustTarget.unit}
-                      onChange={setAdjustUnit}
-                      options={adjustUnitOptions}
-                      aria-label={copy.quantity}
+                {/* Wraps under the box when the unit list is long (มล. · ลิตร ·
+                    ขวด · ลัง), sits beside it when it is short. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={`${field} min-w-[9rem] flex-1`}>
+                    <input
+                      id="adjust-qty"
+                      type="number"
+                      min={0}
+                      inputMode="decimal"
+                      value={adjustQty}
+                      onChange={(event) => setAdjustQty(event.target.value)}
+                      className={`${bare} text-base font-semibold tabular-nums`}
+                      autoFocus
                     />
+                    {adjustUnitOptions.length <= 1 ? (
+                      <span className="shrink-0 text-sm text-slate-400">{t.unit}</span>
+                    ) : null}
+                  </div>
+                  {adjustUnitOptions.length > 1 ? (
+                    <div role="group" aria-label={lang === "th" ? "หน่วย" : "Unit"} className="flex h-11 items-center gap-0.5 rounded-xl bg-slate-100 p-[3px] dark:bg-gray-800">
+                      {adjustUnitOptions.map((unit) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          aria-pressed={(adjustUnit || t.unit) === unit}
+                          onClick={() => setAdjustUnit(unit)}
+                          className={`h-full rounded-lg px-3 text-[13px] font-semibold transition ${
+                            (adjustUnit || t.unit) === unit
+                              ? "bg-white text-slate-900 shadow-sm dark:bg-gray-900 dark:text-white"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          {unit}
+                        </button>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
-                {/* Entering in another unit is only useful if the result is
-                    visible before saving - the shelf still counts in its own. */}
                 {convertedAdjustQty !== null ? (
-                  <p className="mt-1.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-                    {entryChain(adjustTarget, parseFloat(adjustQty), adjustUnit, lang) ??
-                      `= ${convertedAdjustQty.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${adjustTarget.unit}`}
+                  <p className="mt-1.5 text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
+                    {formatNumber(typed, lang)} {adjustUnit}{" "}
+                    {entryChain(t, typed, adjustUnit, lang) ??
+                      `= ${formatNumber(convertedAdjustQty, lang)} ${t.unit}`}
                   </p>
                 ) : null}
               </div>
+
               {adjustType === "in" && canManageExpenses && (
                 <div>
-                  <label htmlFor="adjust-paid-amount" className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {copy.spentAmount}
+                  <label htmlFor="adjust-paid-amount" className={label}>
+                    {lang === "th" ? "ยอดที่จ่าย" : "Amount paid"}
                   </label>
-                  <input
-                    id="adjust-paid-amount"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    inputMode="decimal"
-                    value={adjustPaidAmount}
-                    onChange={(event) => setAdjustPaidAmount(event.target.value)}
-                    className={inputCls}
-                  />
-                  {/* What the server will book if this field stays empty, so the
-                      fallback is visible before it happens rather than after. */}
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    {adjustPaidAmount.trim() === "" && referenceAdjustAmount > 0
-                      ? copy.spentAmountFallback(formatCurrency(referenceAdjustAmount, lang))
-                      : copy.spentAmountHint}
-                  </p>
+                  {/* Left blank, the server books the cost per unit, so that
+                      figure is the placeholder rather than a sentence under it. */}
+                  <div className={field}>
+                    <span className="text-sm text-slate-400">฿</span>
+                    <input
+                      id="adjust-paid-amount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={adjustPaidAmount}
+                      placeholder={referenceAdjustAmount > 0 ? String(referenceAdjustAmount) : "0"}
+                      onChange={(event) => setAdjustPaidAmount(event.target.value)}
+                      className={`${bare} tabular-nums`}
+                    />
+                    {paidPer > 0 ? (
+                      <span className="shrink-0 text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
+                        = {formatCurrency(paidPer, lang, 2)}/{priceUnit}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               )}
+
               {adjustType === "in" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {xcopy.label}
-                  </label>
-                  <ExpiryChips
-                    key={adjustTarget.ID}
+                  <p className={label}>{lang === "th" ? "หมดอายุ" : "Expires"}</p>
+                  <RestockExpiryChips
+                    key={t.ID}
                     value={adjustExpiryDays}
                     onChange={setAdjustExpiryDays}
-                    storageType={adjustTarget.storage_type}
+                    presets={adjustShelfLifePresets(t)}
                     lang={lang}
                   />
                 </div>
               )}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.note}</label>
-                <input
-                  type="text"
-                  value={adjustNote}
-                  onChange={(event) => setAdjustNote(event.target.value)}
-                  className={inputCls}
-                />
-              </div>
-              {adjustPreview !== null && (
-                <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 dark:bg-gray-800">
-                  <span className="text-xs text-slate-400">{copy.previewAfter}</span>
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <span className="tabular-nums text-slate-400">{formatNumber(adjustTarget.stock, lang)}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-300" />
-                    <span
-                      className={`tabular-nums ${
-                        adjustPreview > adjustTarget.stock
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : adjustPreview < adjustTarget.stock
-                            ? "text-red-500 dark:text-red-400"
-                            : "text-slate-900 dark:text-white"
-                      }`}
-                    >
-                      {formatNumber(adjustPreview, lang)}
-                    </span>
-                    <span className="text-xs font-normal text-slate-400">{adjustTarget.unit}</span>
+
+              {adjustType === "out" && (
+                <div>
+                  <p className={label}>{lang === "th" ? "เหตุผล" : "Reason"}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(ADJUST_REASONS) as AdjustReason[]).map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        aria-pressed={adjustReason === reason}
+                        onClick={() => setAdjustReason((current) => (current === reason ? null : reason))}
+                        className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-semibold transition ${
+                          adjustReason === reason
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
+                        }`}
+                      >
+                        {ADJUST_REASONS[reason][lang === "th" ? 0 : 1]}
+                      </button>
+                    ))}
                   </div>
+                  {lostValue > 0 ? (
+                    <p className="mt-2 text-[12px] font-semibold tabular-nums text-red-600 dark:text-red-400">
+                      {lang === "th" ? "มูลค่าที่เสีย" : "Value lost"} {formatCurrency(lostValue, lang, 2)}
+                    </p>
+                  ) : null}
                 </div>
               )}
+
+              {adjustNoteOpen ? (
+                <div>
+                  <label htmlFor="adjust-note" className={label}>{copy.note}</label>
+                  <div className={field}>
+                    <input
+                      id="adjust-note"
+                      type="text"
+                      value={adjustNote}
+                      onChange={(event) => setAdjustNote(event.target.value)}
+                      className={bare}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAdjustNoteOpen(true)}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-orange-700 transition hover:text-orange-800 dark:text-orange-400"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {lang === "th" ? "เพิ่มหมายเหตุ" : "Add a note"}
+                </button>
+              )}
+
+              {/* Always there, so the effect of the numbers is read before saving. */}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-gray-800">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{copy.previewAfter}</span>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="tabular-nums text-slate-400">{formatNumber(t.stock, lang)}</span>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300" />
+                  <span
+                    className={`tabular-nums ${
+                      adjustPreview === null
+                        ? "text-slate-300 dark:text-slate-600"
+                        : adjustPreview > t.stock
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : adjustPreview < t.stock
+                            ? "text-red-500 dark:text-red-400"
+                            : "text-slate-900 dark:text-white"
+                    }`}
+                  >
+                    {adjustPreview === null ? "—" : formatNumber(adjustPreview, lang)}
+                  </span>
+                  <span className="text-xs font-normal text-slate-400">{t.unit}</span>
+                </div>
+              </div>
               {adjustError && <p className="text-xs text-red-500">{adjustError}</p>}
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-gray-800">
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-gray-800">
               <button
+                type="button"
                 onClick={closeAdjustModal}
-                className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
               >
                 {copy.cancel}
               </button>
               <button
+                type="button"
                 onClick={handleAdjust}
                 disabled={adjusting}
-                className="rounded-md bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
+                className="rounded-xl bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
               >
-                {adjusting ? "..." : copy.save}
+                {adjusting ? "..." : saveLabel}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {txTarget && (
         <div {...txBackdrop} className={`${txClosing ? "smooth-overlay-exit" : "smooth-overlay"} fixed inset-0 z-50 flex justify-end bg-gray-950/45 backdrop-blur-sm`}>
@@ -2741,7 +2914,7 @@ export default function InventoryPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div ref={smoothScroll} className="flex-1 overflow-y-auto px-5 py-4">
               {lots.length > 0 && (
                 <div className="mb-6">
                   <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">

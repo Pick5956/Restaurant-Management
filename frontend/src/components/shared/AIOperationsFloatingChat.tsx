@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import {
   ArrowUp,
@@ -305,6 +306,17 @@ export default function AIOperationsFloatingChat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // The thread coasts on the mouse wheel like the overview page. A stable
+  // callback ref, so re-renders during a scroll do not detach it and cut a
+  // coast short; it still fills scrollAreaRef.
+  const attachScrollArea = useCallback((el: HTMLDivElement | null) => {
+    scrollAreaRef.current = el;
+    const release = smoothScroll(el);
+    return () => {
+      release?.();
+      scrollAreaRef.current = null;
+    };
+  }, []);
   // Whether the thread is scrolled to its end. The jump button only earns its
   // place when it is not: shown always, it covers a message to offer a trip to
   // where the reader already is.
@@ -861,6 +873,9 @@ export default function AIOperationsFloatingChat() {
           sm+: the docked bottom-right card, unchanged — sm:translate-y-0 cancels the
           sheet transform and it fades with opacity as before. */}
       <div
+        // Closed, the panel stays mounted off screen; its orbs hold still
+        // rather than repaint every frame unseen (see siri-orb.tsx).
+        data-orbs-paused={isOpen ? undefined : ""}
         className={`fixed inset-x-0 bottom-0 z-[var(--z-chat)] flex h-[88dvh] items-stretch transition-transform duration-300 ease-out ${
           isOpen ? "translate-y-0" : "translate-y-full"
         } ${isOpen ? "pointer-events-auto" : "pointer-events-none"} sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[min(680px,calc(100dvh-3rem))] sm:w-[380px] sm:translate-y-0 sm:transition-opacity md:w-[400px] ${
@@ -935,7 +950,7 @@ export default function AIOperationsFloatingChat() {
               Phone: extra top padding clears the floating controls, and the same
               top fade as the AI page lets content dissolve instead of being cut. */}
           <div
-            ref={scrollAreaRef}
+            ref={attachScrollArea}
             onScroll={handleThreadScroll}
             className="ai-sheet-fade flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-14 space-y-4 scrollbar-thin sm:px-4 sm:pt-4"
           >
@@ -1124,12 +1139,6 @@ export default function AIOperationsFloatingChat() {
                 className="min-h-9 w-full resize-none bg-transparent px-2 py-1.5 text-sm font-medium !text-gray-950 placeholder-gray-400 outline-none dark:!text-gray-50 dark:placeholder-gray-500"
               />
               <div className="flex items-center gap-1">
-              <AIInputTools
-                tools={["scan"]}
-                language={language}
-                disabled={loading || actionConfirming || actionCancelling}
-                onInsertText={(text) => setInput((v) => (v.trim() ? `${v.trim()} ${text}` : text))}
-              />
               <div className="flex-1" />
               {composer.canExpand && (
                 <button
@@ -1181,7 +1190,7 @@ export default function AIOperationsFloatingChat() {
         className={`fixed bottom-4 right-4 z-[var(--z-chat)] flex h-14 w-14 touch-none select-none items-center justify-center overflow-hidden rounded-full shadow-xl shadow-orange-500/30 transform-gpu ease-out sm:bottom-6 sm:right-6 ${
           orbDrag
             ? "cursor-grabbing scale-105 shadow-2xl shadow-orange-500/40 transition-none"
-            : "cursor-grab transition-[opacity,transform,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
+            : "cursor-grab transition-[opacity,transform,translate,scale,box-shadow,left,top] duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-orange-500/40 active:scale-[0.98]"
         } ${orbPalette.ring ? "ring-2 ring-white/80" : ""} ${
           isOpen
             ? "opacity-0 scale-95 pointer-events-none"

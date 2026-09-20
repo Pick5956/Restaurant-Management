@@ -125,6 +125,9 @@ body {
 }
 
 html {
+  /* Painted here too, not only on body: phone Safari reads the root's colour
+     for the bands around the page. */
+  background: var(--background);
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
@@ -1004,9 +1007,13 @@ textarea {
 
    The 2px is given to the clip box and taken straight back from the layout, so
    nothing moves; the glyph simply has room to exist inside the clip. Applies to
-   the two Tailwind utilities that clip text. */
-.truncate,
-[class*="line-clamp-"] {
+   the two Tailwind utilities that clip text.
+   Only where the box has no side padding of its own: this rule sits outside
+   Tailwind's layers, so it beat px-2 and left pills with 2px on the left and
+   8px on the right — the category chips on the phone stock cards read as
+   off-centre (19 ก.ย. 2569). A padded box already has room for the vowel. */
+.truncate:not([class*="px-"]):not([class*="pl-"]):not([class*="ps-"]),
+[class*="line-clamp-"]:not([class*="px-"]):not([class*="pl-"]):not([class*="ps-"]) {
   padding-left: 2px;
   margin-left: -2px;
 }
@@ -1156,20 +1163,16 @@ textarea {
 .ai-aura-bg {
   isolation: isolate;
 }
+/* No blur filter. The layers are vertical gradients, already soft, so a
+   90–130px blur changed almost nothing on screen — but a filter on a
+   full-screen layer is redrawn on the GPU every frame something above it
+   moves, and it made scrolling the chat stutter where the other pages glide. */
 .ai-aura-layer {
   position: absolute;
   inset: 0;
   z-index: -1;
   mix-blend-mode: multiply;
-  filter: blur(90px);
-  transform: translateZ(0);
-  will-change: transform;
   pointer-events: none;
-}
-@media (min-width: 1024px) {
-  .ai-aura-layer {
-    filter: blur(130px);
-  }
 }
 .ai-aura-layer-1 {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0) 48%, rgba(255, 206, 164, 0.26) 76%, rgba(255, 172, 104, 0.50) 100%);
@@ -1398,12 +1401,14 @@ textarea {
     transform: scale(0.94);
   }
 }
+/* Reduce Motion (on many iPads) had cut these to 0.01ms, so every confirm
+   dialog snapped in and out. It keeps the fade now and drops only the scale. */
 @media (prefers-reduced-motion: reduce) {
-  .warm-dialog-backdrop,
-  .warm-dialog,
-  .warm-dialog-backdrop.is-closing,
+  .warm-dialog {
+    animation: warm-dialog-fade 0.18s ease-out both;
+  }
   .warm-dialog-backdrop.is-closing .warm-dialog {
-    animation-duration: 0.01ms;
+    animation: warm-dialog-fade-out 0.16s ease-in both;
   }
 }
 
@@ -1623,7 +1628,143 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ai-stream-caret { animation: none; }
 }
+/* Reduce Motion (on many iPads) used to switch the chat list's animations off
+   altogether, so it snapped open and shut. It now keeps a short fade — no
+   slide, no scale — which is what the setting asks for. */
 @media (prefers-reduced-motion: reduce) {
-  .ai-chatlist-sheet-in, .ai-chatlist-sheet-out, .ai-chatlist-fade, .ai-chatlist-pop,
-  .ai-chatlist-panel-in .ai-chatlist-card, .ai-chatlist-panel-out .ai-chatlist-card { animation: none; }
+  .ai-chatlist-sheet-in, .ai-chatlist-fade, .ai-chatlist-pop,
+  .ai-chatlist-panel-in .ai-chatlist-card { animation: ai-chatlist-fade 0.18s ease-out both; }
+  .ai-chatlist-sheet-out, .ai-chatlist-panel-out .ai-chatlist-card { animation: ai-chatlist-fade-out 0.16s ease-in both; }
+}
+
+/* Inventory tables (stock + history): the column titles stay under the page's
+   sticky toolbar, and keep the card's rounded top while they do. A plain sticky
+   cell is a square box, so once the card's own rounded top had scrolled away the
+   header turned into a hard-cornered bar. The corner cells therefore paint
+   themselves: ::before is a square of page colour that hides the rows sliding
+   underneath, ::after the rounded grey fill with the card's border on it. Both sit
+   at z-index -1, inside the stacking context the sticky cell already makes, so the
+   title text stays on top. `--inv-th-top` is the toolbar's measured height. */
+.inv-thead {
+  --inv-head-bg: var(--color-slate-50);
+  --inv-head-line: var(--color-slate-200);
+  --inv-head-page: #f1f5f9;
+}
+.dark .inv-thead {
+  --inv-head-bg: #151515;
+  --inv-head-line: var(--color-gray-800);
+  --inv-head-page: #0f0f0f;
+}
+.inv-thead th {
+  position: sticky;
+  top: var(--inv-th-top, 0px);
+  z-index: 10;
+  /* One height for both tables. The stock header's checkbox and sort buttons
+     made it 42px against the history header's 38px, so switching tabs the
+     titles jumped. */
+  height: 42px;
+  vertical-align: middle;
+  background-color: var(--inv-head-bg);
+  border-bottom: 1px solid var(--inv-head-line);
+}
+@media (min-width: 1024px) {
+  .inv-thead th { top: var(--inv-th-top, 0px); }
+}
+.inv-thead th:first-child,
+.inv-thead th:last-child { background-color: transparent; }
+.inv-thead th:first-child::before,
+.inv-thead th:last-child::before,
+.inv-thead th:first-child::after,
+.inv-thead th:last-child::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.inv-thead th:first-child::before,
+.inv-thead th:last-child::before {
+  top: -1px;
+  width: 1rem;
+  height: 1rem;
+  background-color: var(--inv-head-page);
+}
+.inv-thead th:first-child::before { left: -1px; }
+.inv-thead th:last-child::before { right: -1px; }
+.inv-thead th:first-child::after,
+.inv-thead th:last-child::after {
+  top: -1px;
+  bottom: 0;
+  background-color: var(--inv-head-bg);
+  border-top: 1px solid var(--inv-head-line);
+}
+.inv-thead th:first-child::after {
+  left: -1px;
+  right: 0;
+  border-left: 1px solid var(--inv-head-line);
+  border-top-left-radius: 1rem;
+}
+.inv-thead th:last-child::after {
+  right: -1px;
+  left: 0;
+  border-right: 1px solid var(--inv-head-line);
+  border-top-right-radius: 1rem;
+}
+/* The middle cells carry the card's top edge too, for when it is stuck. */
+.inv-thead th:not(:first-child):not(:last-child) {
+  box-shadow: 0 -1px 0 var(--inv-head-line);
+}
+
+/* Inventory: stock <-> history (19 ก.ย. 2569). The view that comes in rises a
+   few pixels as it fades up, and the switch's dark thumb slides across to it.
+   The animation leaves no transform behind once it ends, so the sticky column
+   titles keep sticking to the page. */
+@keyframes inv-view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.inv-view-enter {
+  animation: inv-view-enter 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inv-tab-thumb {
+  transition: none;
+}
+
+.inv-tab-thumb.is-moving {
+  transition: left 260ms cubic-bezier(0.32, 0.72, 0, 1), width 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* With Reduce Motion on (iPads often have it) the view still fades in and the
+   thumb still moves, only without the rise: turning the switch off entirely
+   made it look like nothing had been built at all. */
+@keyframes inv-view-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv-view-enter { animation-name: inv-view-fade; }
+  .inv-tab-thumb.is-moving { transition-duration: 180ms; }
+}
+
+/* The assistant's settings sheet opens and closes like the chat list: the
+   backdrop fades, the card grows from 96% and settles; leaving is the reverse.
+   With Reduce Motion both only fade. */
+@keyframes ai-settings-card-in {
+  from { transform: translateY(8px) scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes ai-settings-card-out {
+  from { transform: none; opacity: 1; }
+  to { transform: translateY(8px) scale(0.96); opacity: 0; }
+}
+.ai-settings-in .ai-settings-backdrop { animation: ai-chatlist-fade 0.2s ease-out both; }
+.ai-settings-in .ai-settings-card { animation: ai-settings-card-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.ai-settings-out { pointer-events: none; }
+.ai-settings-out .ai-settings-backdrop { animation: ai-chatlist-fade-out 0.2s ease-in both; }
+.ai-settings-out .ai-settings-card { animation: ai-settings-card-out 0.18s ease-in both; }
+@media (prefers-reduced-motion: reduce) {
+  .ai-settings-in .ai-settings-card { animation: ai-chatlist-fade 0.18s ease-out both; }
+  .ai-settings-out .ai-settings-card { animation: ai-chatlist-fade-out 0.16s ease-in both; }
 }

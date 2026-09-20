@@ -312,6 +312,7 @@ func (s *OrderService) GetOrder(restaurantID, orderID uint) (*entity.Order, erro
 
 // GetOrderByNumber looks up an order by its human-readable order_number (e.g. "20260724-015").
 func (s *OrderService) GetOrderByNumber(restaurantID uint, orderNumber string) (*entity.Order, error) {
+	orderNumber = canonicalOrderNumber(orderNumber)
 	if !validOrderNumber(orderNumber) {
 		return nil, errors.New("invalid order number")
 	}
@@ -353,6 +354,8 @@ func ValidateOrderListFilters(status, orderDate, paymentStatus, search string) e
 // as well as the legacy letter-prefixed format (e.g. "A001") so that orders
 // created before the format change can still be looked up by number.
 func validOrderNumber(value string) bool {
+	// A seeded bill: the real format with " (Test)" after it.
+	value = strings.TrimSuffix(value, entity.TestOrderSuffix)
 	if len(value) < 4 || len(value) > 32 {
 		return false
 	}
@@ -384,6 +387,17 @@ func validOrderNumber(value string) bool {
 		}
 	}
 	return true
+}
+
+// canonicalOrderNumber puts back the case of the seeded suffix. The route
+// upper-cases what it is given so "a001" finds A001, which turns
+// "20260919-001 (Test)" into "... (TEST)".
+func canonicalOrderNumber(value string) string {
+	upper := strings.ToUpper(entity.TestOrderSuffix)
+	if strings.HasSuffix(strings.ToUpper(value), upper) {
+		return value[:len(value)-len(upper)] + entity.TestOrderSuffix
+	}
+	return value
 }
 
 func (s *OrderService) UpdateOrder(restaurantID, userID, orderID uint, req *UpdateOrderRequest) (*entity.Order, error) {
