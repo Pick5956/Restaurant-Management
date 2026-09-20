@@ -163,6 +163,13 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// the purchase units a delivery is entered in — inside the frozen
 		// registry, so the fingerprint advances with the columns.
 		31: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
+		// Version 32 reseeds the cashier role to match the waiter set (data only),
+		// so the fingerprint is unchanged from version 31.
+		32: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
+		// Version 33 grants cashier and waiter the operational dashboard view
+		// (view_dashboard/view_kitchen/view_inventory) — data only, so the
+		// fingerprint is still unchanged.
+		33: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -189,6 +196,8 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		29: "restaurant_slug",
 		30: "ingredient_lots",
 		31: "ingredient_pack_units",
+		32: "cashier_default_match_waiter",
+		33: "cashier_waiter_frontline_dashboard",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {
