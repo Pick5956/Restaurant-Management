@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, Share, useWindowDimensions, View } from 'react-native';
+import { Linking, Share, useWindowDimensions, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 
 import {

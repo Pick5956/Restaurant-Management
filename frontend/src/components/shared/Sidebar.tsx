@@ -141,6 +141,28 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
   ] as const;
 }
 
+// The first page this member is allowed to open, in nav order — where the
+// dishy logo and the access-denied "back" button send them. It reads the same
+// nav definition the sidebar filters by, so it can never point somewhere the
+// rail would hide: a chef with no dashboard access lands on the kitchen, not on
+// a page that would just bounce them back. Language is irrelevant to hrefs and
+// permissions, so any value builds the same map.
+export function firstAccessibleHref(membership: Parameters<typeof can>[0]): string {
+  for (const section of buildNav('en')) {
+    for (const item of section.items) {
+      if (item.ownerOnly && membership?.role?.name !== 'owner') continue;
+      const permissions = item.permission
+        ? Array.isArray(item.permission) ? item.permission : [item.permission]
+        : [];
+      if (permissions.length === 0 || permissions.some((permission) => can(membership, permission))) {
+        return item.href;
+      }
+    }
+  }
+  // Account settings carries no permission, so it is always a valid last resort.
+  return '/settings/account';
+}
+
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   // Nav hrefs stay restaurant-relative ("/menu"); `pathname` here is the page
   // without its /r/<slug> prefix so every comparison below keeps working, and
@@ -367,6 +389,10 @@ export default function Sidebar() {
   const { href: restaurantPageHref, pagePath } = useRestaurantNav();
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
+  const { activeMembership } = useAuth();
+  // The logo goes to the member's first reachable page, not a hard-coded
+  // overview a chef cannot open.
+  const landingHref = firstAccessibleHref(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
   const collapseTitle = collapsed
@@ -429,7 +455,7 @@ export default function Sidebar() {
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
           <Link
-            href={restaurantPageHref("/home")}
+            href={restaurantPageHref(landingHref)}
             aria-label="Dishy"
             onClick={() => setMobileOpen(false)}
             className="flex min-w-0 items-center gap-2 px-1.5"
@@ -492,7 +518,7 @@ export default function Sidebar() {
               </svg>
             </button>
             <Link
-              href={restaurantPageHref("/home")}
+              href={restaurantPageHref(landingHref)}
               aria-label="Dishy"
               tabIndex={collapsed ? -1 : undefined}
               className={`flex min-w-0 items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${

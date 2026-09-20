@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 33
+	CurrentSchemaVersion int64 = 35
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -735,6 +735,44 @@ func schemaMigrationPlan() []SchemaMigration {
 					if err := ctx.DB.Exec(statement).Error; err != nil {
 						return fmt.Errorf("drop table tags: %w", err)
 					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 34,
+			Name:    "cashier_default_match_waiter",
+			Up: func(ctx *MigrationContext) error {
+				// Cashiers work the front like another order-taker — they can open a
+				// takeaway order and settle bills — so their default now matches the
+				// waiter set (take_order/take_payment/view_orders), dropping the
+				// dashboard/tables view they had before. Update the global system
+				// cashier role in place; per-member permission overrides are untouched.
+				result := ctx.DB.Model(&entity.Role{}).
+					Where("name = ? AND restaurant_id IS NULL AND is_system = ?", "cashier", true).
+					Update("permissions", `["take_order","take_payment","view_orders"]`)
+				if result.Error != nil {
+					return fmt.Errorf("update cashier default permissions: %w", result.Error)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 35,
+			Name:    "cashier_waiter_frontline_dashboard",
+			Up: func(ctx *MigrationContext) error {
+				// Cashiers and waiters both work the front as order-takers, so they
+				// share one default. Beyond taking orders and settling bills they now
+				// also get the read-only operational view: the overview dashboard, the
+				// kitchen queue and low-stock alerts (view_dashboard/view_kitchen/
+				// view_inventory) — enough to run the "งานที่ต้องจัดการตอนนี้" and
+				// "สถานะโต๊ะ" cards without unlocking sales reports. Update the global
+				// system roles in place; per-member permission overrides are untouched.
+				result := ctx.DB.Model(&entity.Role{}).
+					Where("name IN ? AND restaurant_id IS NULL AND is_system = ?", []string{"cashier", "waiter"}, true).
+					Update("permissions", `["take_order","take_payment","view_orders","view_dashboard","view_kitchen","view_inventory"]`)
+				if result.Error != nil {
+					return fmt.Errorf("update cashier/waiter default permissions: %w", result.Error)
 				}
 				return nil
 			},
