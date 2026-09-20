@@ -204,8 +204,78 @@ function MarkedDot({ cx, cy, index, ctx }: { cx?: number; cy?: number; index?: n
   return <circle cx={cx} cy={cy} r={3.5} fill={PALETTE[0]} stroke={SURFACE} strokeWidth={2} />;
 }
 
+// What is running low, as a list rather than a chart. Of ingredients that ran
+// out every bar is zero, so the bar chart this replaced drew an empty frame
+// with a column of names (เจ้าของทัก 20 ก.ย. 2569). A row carries the three
+// numbers that decide anything: what is left, the minimum it is under, and how
+// much to buy — laid out like a stock card, which is where the owner reads the
+// same thing elsewhere in the app.
+function StockList({ data, language }: { data: AIChartData; language: "th" | "en" }) {
+  const th = language === "th";
+  const stock = data.series[0]?.values ?? [];
+  const minimum = data.series[1]?.values ?? [];
+  const restock = data.series[2]?.values ?? [];
+  const num = (v: number) => new Intl.NumberFormat(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 }).format(v);
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-baseline justify-between gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-800">
+        <p className="text-[13px] font-semibold text-gray-900 dark:text-white">{data.title}</p>
+        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+          {th ? `${data.categories.length} รายการ` : `${data.categories.length} items`}
+        </p>
+      </div>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+        {data.categories.map((name, i) => {
+          const left = stock[i] ?? 0;
+          const min = minimum[i] ?? 0;
+          const buy = restock[i] ?? 0;
+          const unit = data.units?.[i] ?? data.unit ?? "";
+          const status = data.status?.[i] ?? "";
+          const out = status === "critical";
+          const share = min > 0 ? Math.min(100, Math.max(0, (left / min) * 100)) : 0;
+          const tone = out ? "var(--ai-critical)" : status === "warning" ? "var(--ai-warning)" : "var(--ai-good)";
+          return (
+            <li key={`${name}-${i}`} className="px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white">{name}</p>
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  style={{ color: tone, backgroundColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
+                >
+                  {statusLabel(status, language) || (th ? "พอ" : "ok")}
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-[15px] font-bold tabular-nums" style={{ color: out ? tone : undefined }}>
+                  {num(left)}
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">{unit}</span>
+                <span className="ml-auto text-[11px] text-gray-500 dark:text-gray-400">
+                  {th ? "ขั้นต่ำ" : "minimum"} {num(min)} {unit}
+                </span>
+              </div>
+              {/* The one drawn thing left: how full the shelf is against its own
+                  minimum. Empty track when it ran out, which reads as empty. */}
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: tone }} />
+              </div>
+              {buy > 0 ? (
+                <p className="mt-1.5 text-[11px] text-gray-600 dark:text-gray-300">
+                  {th ? "ควรสั่งเพิ่ม" : "order"} <span className="font-semibold tabular-nums">{num(buy)}</span> {unit}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function AIChart({ data, language = "th" }: { data: AIChartData; language?: "th" | "en" }) {
   if (!data || !data.categories?.length || !data.series?.length) return null;
+  if (data.kind === "stocklist") return <StockList data={data} language={language} />;
 
   const drawn = data.series.filter((s) => s.role !== "tooltip");
   const extra = data.series.filter((s) => s.role === "tooltip");
