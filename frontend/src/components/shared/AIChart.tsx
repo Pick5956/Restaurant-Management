@@ -204,71 +204,66 @@ function MarkedDot({ cx, cy, index, ctx }: { cx?: number; cy?: number; index?: n
   return <circle cx={cx} cy={cy} r={3.5} fill={PALETTE[0]} stroke={SURFACE} strokeWidth={2} />;
 }
 
-// What is running low, as a list rather than a chart. Of ingredients that ran
-// out every bar is zero, so the bar chart this replaced drew an empty frame
-// with a column of names (เจ้าของทัก 20 ก.ย. 2569). A row carries the three
-// numbers that decide anything: what is left, the minimum it is under, and how
-// much to buy — laid out like a stock card, which is where the owner reads the
-// same thing elsewhere in the app.
+// What is running low: how many ran out, how many are close, and their names
+// as chips. It replaced a bar chart of stock as a percent of the minimum — of
+// things that ran out every bar is 0%, so the owner saw an empty frame with a
+// column of names (20 ก.ย. 2569). He picked this over a card list and a table:
+// the question is "what is out", and a chat answer should stay short; the
+// amounts to order are one tap away in the stock page.
+function StockCount({ label, n, tone, language }: { label: string; n: number; tone: string; language: "th" | "en" }) {
+  const unit = language === "th" ? "อย่าง" : n === 1 ? "item" : "items";
+  return (
+    <div>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="text-[26px] font-bold leading-none" style={{ color: tone }}>
+        {n} <span className="text-[13px] font-semibold text-gray-500 dark:text-gray-400">{unit}</span>
+      </p>
+    </div>
+  );
+}
+
 function StockList({ data, language }: { data: AIChartData; language: "th" | "en" }) {
   const th = language === "th";
-  const stock = data.series[0]?.values ?? [];
-  const minimum = data.series[1]?.values ?? [];
-  const restock = data.series[2]?.values ?? [];
-  const num = (v: number) => new Intl.NumberFormat(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 }).format(v);
+  const status = data.status ?? [];
+  const rows = data.categories.map((name, i) => ({ name, status: status[i] ?? "" }));
+  const out = rows.filter((r) => r.status === "critical");
+  const low = rows.filter((r) => r.status === "warning");
+  const listed = [...out, ...low];
+  if (listed.length === 0) return null;
 
   return (
-    <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-baseline justify-between gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-800">
-        <p className="text-[13px] font-semibold text-gray-900 dark:text-white">{data.title}</p>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400">
-          {th ? `${data.categories.length} รายการ` : `${data.categories.length} items`}
-        </p>
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-end gap-3">
+        {out.length > 0 ? <StockCount label={th ? "หมดแล้ว" : "out of stock"} n={out.length} tone="var(--ai-critical)" language={language} /> : null}
+        {low.length > 0 ? (
+          <div className={out.length > 0 ? "border-l border-gray-200 pl-3 dark:border-gray-800" : ""}>
+            <StockCount label={th ? "ใกล้หมด" : "running low"} n={low.length} tone="var(--ai-warning)" language={language} />
+          </div>
+        ) : null}
       </div>
-      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-        {data.categories.map((name, i) => {
-          const left = stock[i] ?? 0;
-          const min = minimum[i] ?? 0;
-          const buy = restock[i] ?? 0;
-          const unit = data.units?.[i] ?? data.unit ?? "";
-          const status = data.status?.[i] ?? "";
-          const out = status === "critical";
-          const share = min > 0 ? Math.min(100, Math.max(0, (left / min) * 100)) : 0;
-          const tone = out ? "var(--ai-critical)" : status === "warning" ? "var(--ai-warning)" : "var(--ai-good)";
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {listed.map((r, i) => {
+          const tone = r.status === "critical" ? "var(--ai-critical)" : "var(--ai-warning)";
           return (
-            <li key={`${name}-${i}`} className="px-3 py-2.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white">{name}</p>
-                <span
-                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                  style={{ color: tone, backgroundColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
-                >
-                  {statusLabel(status, language) || (th ? "พอ" : "ok")}
-                </span>
-              </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-[15px] font-bold tabular-nums" style={{ color: out ? tone : undefined }}>
-                  {num(left)}
-                </span>
-                <span className="text-[11px] text-gray-500 dark:text-gray-400">{unit}</span>
-                <span className="ml-auto text-[11px] text-gray-500 dark:text-gray-400">
-                  {th ? "ขั้นต่ำ" : "minimum"} {num(min)} {unit}
-                </span>
-              </div>
-              {/* The one drawn thing left: how full the shelf is against its own
-                  minimum. Empty track when it ran out, which reads as empty. */}
-              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: tone }} />
-              </div>
-              {buy > 0 ? (
-                <p className="mt-1.5 text-[11px] text-gray-600 dark:text-gray-300">
-                  {th ? "ควรสั่งเพิ่ม" : "order"} <span className="font-semibold tabular-nums">{num(buy)}</span> {unit}
-                </p>
-              ) : null}
-            </li>
+            <span
+              key={`${r.name}-${i}`}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium"
+              style={{ color: tone, backgroundColor: `color-mix(in srgb, ${tone} 12%, transparent)` }}
+            >
+              {r.name}
+              {/* "ใกล้หมด" on a chip, not statusLabel's "ต่ำกว่าขั้นต่ำ": the
+                  chip has room for two words, and the count above says the
+                  same thing in the same words. */}
+              <span className="text-[11px] opacity-70">
+                {r.status === "critical" ? (th ? "หมด" : "out") : th ? "ใกล้หมด" : "low"}
+              </span>
+            </span>
           );
         })}
-      </ul>
+      </div>
+      <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+        {th ? "ดูจำนวนที่ต้องสั่งได้ในหน้าคลังวัตถุดิบ" : "The amounts to order are in the stock page"}
+      </p>
     </div>
   );
 }

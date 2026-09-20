@@ -290,7 +290,7 @@ func buildPeakWeekdayChart(rows []repository.AIPeriodSummary) *AIChartData {
 // saw an empty frame with seven labels (20 ก.ย. 2569). A list also reads at one
 // row, where a chart needed three.
 func buildStockVsMinChart(risks []AIStockRisk) *AIChartData {
-	const limit = 7
+	const limit = 12
 	rows := make([]AIStockRisk, 0, len(risks))
 	for _, r := range risks {
 		if r.MinStock <= 0 {
