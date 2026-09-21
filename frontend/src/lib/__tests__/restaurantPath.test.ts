@@ -48,7 +48,7 @@ describe("splitRestaurantPath", () => {
   });
 
   it("round-trips with restaurantHref", () => {
-    for (const path of ["/home", "/settings/team", "/pos/orders/7?ref=A001", "/"]) {
+    for (const path of ["/home", "/settings/account", "/pos/orders/7?ref=A001", "/"]) {
       const { slug, path: back } = splitRestaurantPath(restaurantHref("krua-pick", path));
       expect(slug).toBe("krua-pick");
       expect(back).toBe(path);

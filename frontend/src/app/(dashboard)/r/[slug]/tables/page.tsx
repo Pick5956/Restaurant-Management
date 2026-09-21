@@ -6,9 +6,9 @@ import { ChevronDown, ChevronUp, Download, KeyRound } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
-import { bulkCreateTables, createTableTag, createTableZone, deleteTable, deleteTableTag, deleteTableZone, listTableTags, listTables, listTableZones, moveTableZone, regenerateTableCustomerToken, updateTable, updateTableTag, updateTableZone } from "@/src/lib/table";
+import { bulkCreateTables, createTableZone, deleteTable, deleteTableZone, listTables, listTableZones, moveTableZone, regenerateTableCustomerToken, updateTable, updateTableZone } from "@/src/lib/table";
 import { createSingleFlight } from "@/src/lib/singleFlight";
-import type { RestaurantTable, RestaurantTableInput, TableTag, TableTagInput, TableZone, TableZoneInput } from "@/src/types/table";
+import type { RestaurantTable, RestaurantTableInput, TableZone, TableZoneInput } from "@/src/types/table";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
@@ -22,14 +22,12 @@ import {
 } from "@/src/lib/qr";
 import {
   emptyTableForm,
-  emptyTagForm,
   emptyZoneForm,
   safeQrFileName,
   statusMeta,
   tableAccentClass,
   tableStatusEditorState,
   tableStatusPillClass,
-  tagBadgeClass,
 } from "./tablesPageUtils";
 
 export default function TablesPage() {
@@ -41,9 +39,7 @@ export default function TablesPage() {
   const canView = canManage || can(activeMembership, "view_tables");
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [zones, setZones] = useState<TableZone[]>([]);
-  const [tags, setTags] = useState<TableTag[]>([]);
   const [zoneFilter, setZoneFilter] = useState("all");
-  const [tagFilter, setTagFilter] = useState("all");
   const [editingTable, setEditingTable] = useState<RestaurantTable | null>(null);
   const [tableForm, setTableForm] = useState<RestaurantTableInput>(emptyTableForm);
   const [tableDrawerOpen, setTableDrawerOpen] = useState(false);
@@ -52,10 +48,7 @@ export default function TablesPage() {
   const [zoneForm, setZoneForm] = useState<TableZoneInput>(emptyZoneForm);
   const [editingZone, setEditingZone] = useState<TableZone | null>(null);
   const [zoneManagerOpen, setZoneManagerOpen] = useState(false);
-  const [tagForm, setTagForm] = useState<TableTagInput>(emptyTagForm);
-  const [editingTag, setEditingTag] = useState<TableTag | null>(null);
-  const [tagManagerOpen, setTagManagerOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ type: "table"; table: RestaurantTable } | { type: "zone"; zone: TableZone } | { type: "tag"; tag: TableTag } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "table"; table: RestaurantTable } | { type: "zone"; zone: TableZone } | null>(null);
   const [deleteClosing, setDeleteClosing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -86,7 +79,6 @@ export default function TablesPage() {
         zones: "โซน",
         allZones: "ทุกโซน",
         noZone: "ไม่มีโซน",
-        allTags: "ทุก tag",
         seats: "ที่นั่ง",
         edit: "แก้ไข",
         delete: "ลบ",
@@ -95,7 +87,6 @@ export default function TablesPage() {
         tableEditor: "ตั้งค่าโต๊ะ",
         autoNumber: "เลขโต๊ะออกให้อัตโนมัติ",
         zone: "โซน",
-        tags: "Tags",
         capacity: "จำนวนที่นั่ง",
         status: "สถานะ",
         lifecycleStatusHelp: "สถานะนี้เปลี่ยนจากขั้นตอนการจองหรือออเดอร์เท่านั้น",
@@ -104,7 +95,6 @@ export default function TablesPage() {
         preview: "ตัวอย่างเลข",
         createBatch: "สร้างชุดโต๊ะ",
         zoneManager: "จัดการโซน",
-        tagManager: "จัดการ tags",
         zoneName: "ชื่อโซน",
         prefix: "ตัวอักษรนำหน้าเลขโต๊ะ (ไม่บังคับ)",
         prefixPlaceholder: "เช่น R สำหรับริมน้ำ",
@@ -116,10 +106,7 @@ export default function TablesPage() {
         moveUp: "เลื่อนขึ้น",
         moveDown: "เลื่อนลง",
         orderUpdated: "อัปเดตลำดับแล้ว",
-        tagName: "ชื่อ tag",
         color: "สี",
-        addTag: "เพิ่ม tag",
-        saveTag: "บันทึก tag",
         cancel: "ยกเลิก",
         emptyTitle: "ยังไม่มีโต๊ะ",
         emptyManage: "สร้างโต๊ะเป็นชุดเพื่อให้ระบบออกเลขให้อัตโนมัติ",
@@ -135,8 +122,6 @@ export default function TablesPage() {
         batchCreated: "สร้างชุดโต๊ะแล้ว",
         zoneCreated: "เพิ่มโซนแล้ว",
         zoneUpdated: "อัปเดตโซนแล้ว",
-        tagCreated: "เพิ่ม tag แล้ว",
-        tagUpdated: "อัปเดต tag แล้ว",
         itemDeleted: "ลบข้อมูลแล้ว",
         confirmBatchTitle: "สร้างโต๊ะเป็นชุด?",
         confirmBatchBody: "ระบบจะเพิ่มโต๊ะหลายรายการตามจำนวนที่ตั้งไว้และอัปเดตผังโต๊ะทันที",
@@ -170,7 +155,6 @@ export default function TablesPage() {
         zones: "Zones",
         allZones: "All zones",
         noZone: "No zone",
-        allTags: "All tags",
         seats: "seats",
         edit: "Edit",
         delete: "Delete",
@@ -179,7 +163,6 @@ export default function TablesPage() {
         tableEditor: "Table settings",
         autoNumber: "Table number is generated automatically",
         zone: "Zone",
-        tags: "Tags",
         capacity: "Seats",
         status: "Status",
         lifecycleStatusHelp: "This status changes only through the reservation or order workflow.",
@@ -188,7 +171,6 @@ export default function TablesPage() {
         preview: "Number preview",
         createBatch: "Create tables",
         zoneManager: "Manage zones",
-        tagManager: "Manage tags",
         zoneName: "Zone name",
         prefix: "Table number letters (optional)",
         prefixPlaceholder: "e.g. R for riverside",
@@ -200,10 +182,7 @@ export default function TablesPage() {
         moveUp: "Move up",
         moveDown: "Move down",
         orderUpdated: "Order updated",
-        tagName: "Tag name",
         color: "Color",
-        addTag: "Add tag",
-        saveTag: "Save tag",
         cancel: "Cancel",
         emptyTitle: "No tables yet",
         emptyManage: "Bulk create tables and let the system number them automatically.",
@@ -219,8 +198,6 @@ export default function TablesPage() {
         batchCreated: "Tables created",
         zoneCreated: "Zone added",
         zoneUpdated: "Zone updated",
-        tagCreated: "Tag added",
-        tagUpdated: "Tag updated",
         itemDeleted: "Item deleted",
         confirmBatchTitle: "Create tables in bulk?",
         confirmBatchBody: "The system will add multiple tables and update the layout immediately.",
@@ -249,10 +226,9 @@ export default function TablesPage() {
     setLoading(true);
     setError("");
     try {
-      const [tableRes, zoneRes, tagRes] = await Promise.all([listTables(), listTableZones(), listTableTags()]);
+      const [tableRes, zoneRes] = await Promise.all([listTables(), listTableZones()]);
       setTables(tableRes.data.tables ?? []);
       setZones(zoneRes.data.zones ?? []);
-      setTags(tagRes.data.tags ?? []);
     } catch {
       setError(copy.loadError);
     } finally {
@@ -282,22 +258,16 @@ export default function TablesPage() {
     () => [...zones].sort((a, b) => (a.display_order - b.display_order) || (a.ID - b.ID)),
     [zones],
   );
-  const sortedTags = useMemo(
-    () => [...tags].sort((a, b) => (a.display_order - b.display_order) || (a.ID - b.ID)),
-    [tags],
-  );
   const activeZones = sortedZones;
-  const activeTags = sortedTags;
   // Restaurants created without zones show no zone chrome at all; the "No zone"
   // label only makes sense once at least one zone exists to contrast against.
   const hasAnyZone = zones.length > 0;
   const filteredTables = useMemo(() => {
     return tables.filter((table) => {
       const zoneMatch = zoneFilter === "all" || (zoneFilter === "none" ? !table.zone_id : table.zone_id === Number(zoneFilter));
-      const tagMatch = tagFilter === "all" || table.tags?.some((tag) => tag.ID === Number(tagFilter));
-      return zoneMatch && tagMatch;
+      return zoneMatch;
     });
-  }, [tagFilter, tables, zoneFilter]);
+  }, [tables, zoneFilter]);
   const occupiedCount = tables.filter((table) => table.status === "occupied").length;
   const inactiveCount = tables.filter((table) => table.status === "inactive").length;
   const tableEditorStatus = tableStatusEditorState(tableForm.status);
@@ -327,12 +297,10 @@ export default function TablesPage() {
     }
   }, [customerOrderLink]);
 
-  const toggleTableTag = (id: number) => setTableForm((current) => ({ ...current, tag_ids: current.tag_ids?.includes(id) ? current.tag_ids.filter((item) => item !== id) : [...(current.tag_ids ?? []), id] }));
-
   const startEditTable = (table: RestaurantTable) => {
     setEditingTable(table);
     setFormError("");
-    setTableForm({ zone_id: table.zone_id ?? null, capacity: table.capacity, status: table.status, tag_ids: table.tags?.map((tag) => tag.ID) ?? [] });
+    setTableForm({ zone_id: table.zone_id ?? null, capacity: table.capacity, status: table.status });
     setTableDrawerClosing(false);
     setTableDrawerOpen(true);
   };
@@ -472,82 +440,6 @@ export default function TablesPage() {
     }
   };
 
-  const saveTag = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!tagForm.name.trim()) {
-      setFormError(copy.requiredName);
-      return;
-    }
-    await saveOnceRef.current(async () => {
-      setSubmitting(true);
-      setFormError("");
-      try {
-        const nextDisplayOrder = editingTag
-          ? Number(tagForm.display_order) || editingTag.display_order
-          : Math.max(0, ...tags.map((tag) => tag.display_order || 0)) + 1;
-        const payload = { ...tagForm, name: tagForm.name.trim(), color: "gray" as const, display_order: nextDisplayOrder, is_active: true };
-        const res = editingTag ? await updateTableTag(editingTag.ID, payload) : await createTableTag(payload);
-        setTags((current) => editingTag ? current.map((tag) => tag.ID === res.data.ID ? res.data : tag) : [...current, res.data]);
-        if (editingTag) {
-          setTables((current) => current.map((table) => ({
-            ...table,
-            tags: table.tags?.map((tag) => tag.ID === res.data.ID ? { ...tag, ...res.data } : tag) ?? table.tags,
-          })));
-        }
-        showToast({ title: editingTag ? copy.tagUpdated : copy.tagCreated });
-        setEditingTag(null);
-        setTagForm(emptyTagForm);
-      } catch {
-        setFormError(copy.saveError);
-      } finally {
-        setSubmitting(false);
-      }
-    });
-  };
-
-  const moveTagOrder = async (tagID: number, direction: -1 | 1) => {
-    const currentIndex = sortedTags.findIndex((tag) => tag.ID === tagID);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sortedTags.length) return;
-
-    const reordered = [...sortedTags];
-    [reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]];
-    const normalized = reordered.map((tag, index) => ({ ...tag, display_order: index + 1 }));
-    const previousTags = tags;
-
-    setSubmitting(true);
-    setFormError("");
-    setTags(normalized);
-    if (editingTag) {
-      const currentEditingTag = normalized.find((tag) => tag.ID === editingTag.ID);
-      if (currentEditingTag) {
-        setEditingTag(currentEditingTag);
-        setTagForm((current) => ({ ...current, display_order: currentEditingTag.display_order }));
-      }
-    }
-
-    try {
-      await Promise.all(normalized.map((tag) => updateTableTag(tag.ID, {
-        name: tag.name,
-        color: tag.color,
-        display_order: tag.display_order,
-        is_active: true,
-      })));
-      setTables((current) => current.map((table) => ({
-        ...table,
-        tags: table.tags
-          ?.map((tableTag) => normalized.find((tag) => tag.ID === tableTag.ID) ?? tableTag)
-          .sort((a, b) => (a.display_order - b.display_order) || (a.ID - b.ID)) ?? table.tags,
-      })));
-      showToast({ title: copy.orderUpdated });
-    } catch {
-      setTags(previousTags);
-      setFormError(copy.saveError);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const toggleZoneEdit = (zone: TableZone) => {
     setFormError("");
     if (editingZone?.ID === zone.ID) {
@@ -557,17 +449,6 @@ export default function TablesPage() {
     }
     setEditingZone(zone);
     setZoneForm({ name: zone.name, prefix: zone.prefix, display_order: zone.display_order, is_active: true });
-  };
-
-  const toggleTagEdit = (tag: TableTag) => {
-    setFormError("");
-    if (editingTag?.ID === tag.ID) {
-      setEditingTag(null);
-      setTagForm(emptyTagForm);
-      return;
-    }
-    setEditingTag(tag);
-    setTagForm({ name: tag.name, color: "gray", display_order: tag.display_order, is_active: true });
   };
 
   const confirmDelete = async () => {
@@ -587,18 +468,6 @@ export default function TablesPage() {
           if (editingZone?.ID === deleteTarget.zone.ID) {
             setEditingZone(null);
             setZoneForm(emptyZoneForm);
-          }
-        }
-        if (deleteTarget.type === "tag") {
-          await deleteTableTag(deleteTarget.tag.ID);
-          setTags((current) => current.filter((tag) => tag.ID !== deleteTarget.tag.ID));
-          setTables((current) => current.map((table) => ({
-            ...table,
-            tags: table.tags?.filter((tag) => tag.ID !== deleteTarget.tag.ID) ?? table.tags,
-          })));
-          if (editingTag?.ID === deleteTarget.tag.ID) {
-            setEditingTag(null);
-            setTagForm(emptyTagForm);
           }
         }
         showToast({ title: copy.itemDeleted });
@@ -693,14 +562,10 @@ export default function TablesPage() {
                   <ThemedSelect triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)" aria-label={copy.allZones} value={zoneFilter} onChange={setZoneFilter} options={[{ value: "all", label: copy.allZones }, { value: "none", label: copy.noZone }, ...activeZones.map((zone) => ({ value: String(zone.ID), label: zone.name }))]} />
                 </div>
               )}
-              <div className="w-full sm:w-52">
-                <ThemedSelect triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)" aria-label={copy.allTags} value={tagFilter} onChange={setTagFilter} options={[{ value: "all", label: copy.allTags }, ...activeTags.map((tag) => ({ value: String(tag.ID), label: tag.name }))]} />
-              </div>
             </div>
             {canManage ? (
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setZoneManagerOpen(true)} className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.zoneManager}</button>
-                <button type="button" onClick={() => setTagManagerOpen(true)} className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.tagManager}</button>
                 <button type="button" onClick={startCreateTable} className="h-9 rounded-xl bg-orange-700 px-3 text-[12px] font-semibold text-white shadow-(--dashboard-control-shadow) hover:bg-orange-800 dark:bg-orange-700 dark:text-white">+ {copy.createTable}</button>
               </div>
             ) : null}
@@ -730,9 +595,6 @@ export default function TablesPage() {
           ) : filteredTables.length ? (
             <div className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
               {filteredTables.map((table) => {
-                const shownTags = table.tags?.slice(0, 2) ?? [];
-                const extraTags = Math.max((table.tags?.length ?? 0) - shownTags.length, 0);
-
                 return (
                   <button
                     key={table.ID}
@@ -749,12 +611,6 @@ export default function TablesPage() {
                           <p className="mt-2 truncate text-[12px] font-medium text-gray-500 dark:text-gray-400">{hasAnyZone ? `${table.table_zone?.name || table.zone || copy.noZone} · ` : ""}{table.capacity} {copy.seats}</p>
                         </div>
                         <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${tableStatusPillClass(table.status)}`}>{STATUS[table.status].label}</span>
-                      </div>
-                      <div className="mt-auto">
-                        <div className="flex min-h-[22px] flex-wrap items-start gap-1 overflow-hidden">
-                          {shownTags.map((tag) => <span key={tag.ID} className={`rounded-[4px] px-2 py-0.5 text-[10px] font-extrabold leading-4 tracking-[0.01em] ${tagBadgeClass}`}>{tag.name}</span>)}
-                          {extraTags > 0 ? <span className="rounded-[4px] border-2 border-gray-950 bg-white px-2 py-0.5 text-[10px] font-extrabold leading-4 text-gray-950 dark:border-white dark:bg-gray-900 dark:text-white">+{extraTags}</span> : null}
-                        </div>
                       </div>
                     </div>
                   </button>
@@ -834,14 +690,6 @@ export default function TablesPage() {
                         {copy.preview}: <span className="font-mono font-semibold text-gray-900 dark:text-white">{bulkPreview}</span>
                       </p>
                     )}
-                    <div>
-                      <p className="mb-1.5 text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.tags}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {activeTags.map((tag) => (
-                          <button key={tag.ID} type="button" onClick={() => toggleTableTag(tag.ID)} className={`rounded-[4px] px-2 py-1 text-[11px] font-bold ${tableForm.tag_ids?.includes(tag.ID) ? tagBadgeClass : "border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"}`}>{tag.name}</button>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 </div>
 
@@ -933,33 +781,6 @@ export default function TablesPage() {
               </label>
             </div>
             <button disabled={submitting} className="h-10 w-full rounded-md bg-orange-700 text-[13px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">{editingZone ? copy.saveZone : copy.addZone}</button>
-          </form>
-        </ManagerModal>
-      )}
-
-      {tagManagerOpen && (
-        <ManagerModal title={copy.tagManager} onClose={() => setTagManagerOpen(false)}>
-          <div className="space-y-2">
-            {sortedTags.map((tag, index) => (
-              <ManagerRow
-                key={tag.ID}
-                title={tag.name}
-                muted={false}
-                badgeClass={tagBadgeClass}
-                selected={editingTag?.ID === tag.ID}
-                onToggle={() => toggleTagEdit(tag)}
-                onDelete={() => setDeleteTarget({ type: "tag", tag })}
-                onMoveUp={() => void moveTagOrder(tag.ID, -1)}
-                onMoveDown={() => void moveTagOrder(tag.ID, 1)}
-                moveUpDisabled={submitting || index === 0}
-                moveDownDisabled={submitting || index === sortedTags.length - 1}
-                copy={copy}
-              />
-            ))}
-          </div>
-          <form onSubmit={saveTag} className="mt-4 space-y-2 border-t border-gray-200 pt-4 dark:border-gray-800">
-            <input value={tagForm.name} onChange={(event) => setTagForm((current) => ({ ...current, name: event.target.value }))} placeholder={copy.tagName} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] dark:border-gray-700 dark:bg-gray-800" />
-            <button disabled={submitting} className="h-10 w-full rounded-md bg-orange-700 text-[13px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">{editingTag ? copy.saveTag : copy.addTag}</button>
           </form>
         </ManagerModal>
       )}

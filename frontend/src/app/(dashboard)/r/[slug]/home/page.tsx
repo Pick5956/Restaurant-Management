@@ -65,6 +65,7 @@ import type {
   SalesDetailReport,
 } from "@/src/types/report";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
+import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import RealtimeConnectionNotice from "@/src/components/shared/RealtimeConnectionNotice";
 import { useOrderEvents } from "@/src/hooks/useOrderEvents";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
@@ -923,6 +924,7 @@ export default function Home() {
   const { href: restaurantPageHref } = useRestaurantNav();
   const { activeMembership } = useAuth();
   const restaurantId = activeMembership?.restaurant_id ?? null;
+  const canViewDashboard = can(activeMembership, "view_dashboard");
   const canViewExpenses = can(activeMembership, "manage_expenses") || can(activeMembership, "view_reports");
   const canViewReports = can(activeMembership, "view_reports");
   const { language } = useLanguage();
@@ -1211,7 +1213,7 @@ export default function Home() {
 
 
   const loadOperations = useCallback(async (background = false) => {
-    if (!activeMembership?.restaurant_id) return;
+    if (!activeMembership?.restaurant_id || !canViewDashboard) return;
     const requestId = ++requestIdRef.current;
     if (background) setRefreshing(true);
     else setLoading(true);
@@ -1256,7 +1258,7 @@ export default function Home() {
         setRefreshing(false);
       }
     }
-  }, [activeMembership?.restaurant_id, copy.loadError, isToday, selectedDate]);
+  }, [activeMembership?.restaurant_id, canViewDashboard, copy.loadError, isToday, selectedDate]);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void loadOperations(), 0);
@@ -1279,7 +1281,12 @@ export default function Home() {
 
   // Kitchen and floor are live-only. The month summary is not — it reads a
   // whole month off the reports, so it stands on a past date next to sales.
-  const visibleCards = isToday ? defaultCardOrder : ["sales", "monthReview"];
+  // Front-of-house roles without report access see only the two operational
+  // cards (live work + floor), never the sales/month ones — and those two are
+  // today-only, so a past date has nothing for them.
+  const visibleCards = canViewReports
+    ? (isToday ? defaultCardOrder : ["sales", "monthReview"])
+    : ["liveWork", "floorStatus"];
   // What's actually on screen: a card remembered from today (or from before
   // the page was left) is treated as closed on a date that doesn't show it.
   const openCard = expandedKey && visibleCards.includes(expandedKey) ? expandedKey : null;
@@ -1694,6 +1701,11 @@ export default function Home() {
 
   const dateLoading = loading && loadedDate !== selectedDate;
 
+  // The overview reads orders, the kitchen queue and reports; a role without
+  // view_dashboard (e.g. the chef) reaches it only by typing the URL or the
+  // logo, so it is closed off here rather than shown half-loaded.
+  if (!canViewDashboard) return <PermissionDenied />;
+
   return (
     <div
       // Tall enough to carry the page background to the bottom. Phones have no
@@ -1710,7 +1722,10 @@ export default function Home() {
       {/* The date control and the cards it filters: changing the day slides
           them in as one. */}
       <div ref={contentRef} className="mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-        {/* The date sits in the same stack as the cards it filters. */}
+        {/* The date sits in the same stack as the cards it filters. Hidden for
+            front-of-house roles without report access: they only ever see
+            today's live cards, so there is no past date to browse. */}
+        {canViewReports ? (
         <div className="flex items-center gap-2">
           <div className="inline-flex min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white sm:flex-initial dark:border-gray-800 dark:bg-gray-900">
             <button type="button" onClick={() => selectDate(shiftDashboardDate(selectedDate, -1))} aria-label={copy.previousDay} title={copy.previousDay} className="ui-press inline-flex h-10 w-10 items-center justify-center border-r border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">
@@ -1743,6 +1758,7 @@ export default function Home() {
           </div>
           {!isToday ? <button type="button" onClick={() => selectDate(today)} className="ui-press h-10 shrink-0 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.today}</button> : null}
         </div>
+        ) : null}
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div> : null}
         <RealtimeConnectionNotice language={language} status={realtimeStatus} />
 
@@ -1767,6 +1783,7 @@ export default function Home() {
                 takes 264px, so a tablet in landscape leaves about 744px for
                 the cards — two columns' worth. Three from `xl`. */}
             <div className={openCard !== null ? "flex flex-wrap items-end gap-x-1.5 max-sm:gap-x-0" : "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"}>
+            {canViewReports ? (
             <CollapsibleCard
               title={copy.salesOverview}
               icon={ReceiptText}
@@ -2206,11 +2223,13 @@ export default function Home() {
                 </div>
               </div>
             </CollapsibleCard>
+            ) : null}
 
             {/* The manager's month, and the one card built to leave the screen:
                 its Export PDF builds the file from the same figures the sheet
                 renders, rather than photographing the DOM or keeping a hidden
                 second copy that could drift from it. */}
+            {canViewReports ? (
             <CollapsibleCard
               title={copy.monthReview}
               icon={CalendarRange}
@@ -2328,6 +2347,7 @@ export default function Home() {
                 </div>
               </div>
             </CollapsibleCard>
+            ) : null}
 
             {/* Why the live cards are missing, said where they would have been:
                 beside the sales tab (or its tile), rather than as a banner at
@@ -2336,7 +2356,7 @@ export default function Home() {
                 closed folder's tab while a card is open, a full tile in the
                 grid — so the row never looks like it lost two cards. It stays
                 a plain div: nothing to click, so no tab press or tile hover. */}
-            {!isToday ? (
+            {canViewReports && !isToday ? (
               <div
                 style={{ order: collapsedRank("sales") }}
                 className={

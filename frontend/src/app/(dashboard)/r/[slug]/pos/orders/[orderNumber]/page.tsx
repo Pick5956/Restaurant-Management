@@ -11,6 +11,7 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
 import { MENU_CARD_GRID_CLASS, MENU_CARD_SHELL_CLASS } from "@/src/lib/menuGrid";
 import { menuCategoryIds, menuOptionLimits } from "@/src/lib/menuUtils";
+import { billDiscountLines } from "@/src/lib/billPromotions";
 import { groupOrderItems, type OrderItemGroup } from "@/src/lib/orderItemGroups";
 import { canCloseEmptyTableOrder } from "@/src/lib/orderNavigation";
 import { printThermalReceipt } from "@/src/lib/thermalReceiptPrint";
@@ -180,6 +181,8 @@ export default function PosOrderDetailPage() {
       keepTableOpen: "เปิดโต๊ะไว้",
       tableClosed: "ปิดโต๊ะแล้ว",
       remove: "ลบ",
+      foodSubtotal: "ยอดอาหาร",
+      discount: "ส่วนลด",
       total: "ยอดรวม",
       loadError: "โหลดออเดอร์ไม่สำเร็จ",
       saveError: "ทำรายการไม่สำเร็จ",
@@ -253,6 +256,8 @@ export default function PosOrderDetailPage() {
       keepTableOpen: "Keep table open",
       tableClosed: "Table closed",
       remove: "Remove",
+      foodSubtotal: "Food subtotal",
+      discount: "Discount",
       total: "Total",
       loadError: "Could not load order.",
       saveError: "Could not complete the action.",
@@ -1126,8 +1131,12 @@ export default function PosOrderDetailPage() {
                   ))
                   : <p className="px-4 py-12 text-center text-[13px] text-gray-500">{orderSummaryCopy.empty}</p>}
               </div>
-              <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-3.5 dark:border-gray-800 dark:bg-gray-900 sm:px-5">
-                <div className="flex min-w-0 items-baseline justify-end gap-2 text-right">
+              <div className="flex shrink-0 items-baseline justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3.5 dark:border-gray-800 dark:bg-gray-900 sm:px-5">
+                {/* The promotions the till applied, so the total below them never looks wrong. */}
+                <p className="min-w-0 truncate text-[12px] text-gray-500 dark:text-gray-400">
+                  {billDiscountLines(order, copy.discount).map((line) => `${line.label} −฿${line.amount.toLocaleString()}`).join(", ")}
+                </p>
+                <div className="flex shrink-0 items-baseline gap-2 text-right">
                   <p className="text-[12px] font-semibold text-gray-500 dark:text-gray-400">{copy.total}</p>
                   <p className="font-mono text-[20px] font-extrabold tabular-nums text-gray-950 dark:text-white">฿{order.total_amount.toLocaleString()}</p>
                 </div>
@@ -1177,6 +1186,7 @@ export default function PosOrderDetailPage() {
       {billViewOpen && bill && (() => {
         const billGroups = groupOrderItems(bill.items.filter((it) => it.status !== "cancelled"));
         const billSections = fulfillmentSections(billGroups);
+        const billDiscounts = billDiscountLines(bill, copy.discount);
         const billItemCount = billGroups.reduce((sum, group) => sum + group.quantity, 0);
         const billUndelivered = bill.items.filter((it) => it.status === "pending" || it.status === "cooking").length;
 
@@ -1354,6 +1364,18 @@ export default function PosOrderDetailPage() {
                 </div>
                 <div data-screen-receipt className="shrink-0 border-t border-gray-200 bg-white px-4 py-3 text-[12px] dark:border-gray-800 dark:bg-gray-900 sm:px-5">
                   <div className="space-y-1.5 text-gray-600 dark:text-gray-300">
+                    {/* Promotions the till applied by itself: the food price, then one line per promotion, then the total they leave. */}
+                    {billDiscounts.length > 0 ? (
+                      <>
+                        <div className="flex justify-between gap-4"><span>{copy.foodSubtotal}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">฿{bill.subtotal.toLocaleString()}</span></div>
+                        {billDiscounts.map((line) => (
+                          <div key={line.key} className="flex justify-between gap-4">
+                            <span className="min-w-0 truncate">{line.label}</span>
+                            <span className="shrink-0 font-mono tabular-nums text-gray-900 dark:text-white">−฿{line.amount.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : null}
                     <div className="flex justify-between gap-4"><span>{copy.total}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">฿{bill.total_amount.toLocaleString()}</span></div>
                     {bill.service_charge_enabled || bill.service_charge_amount > 0 ? (
                       <div className="flex justify-between gap-4"><span>{copy.service} {bill.service_charge_enabled ? `${bill.service_charge_rate}%` : ""}</span><span className="font-mono tabular-nums text-gray-900 dark:text-white">฿{bill.service_charge_amount.toLocaleString()}</span></div>
@@ -1406,7 +1428,7 @@ export default function PosOrderDetailPage() {
                     <span><strong>{receiptCopy.paymentComplete}</strong><span className="hidden sm:inline"> · {receiptCopy.paymentCompleteHint}</span></span>
                   </div>
                 ) : null}
-                <button type="button" onClick={() => printThermalReceipt("print-bill")} className={paymentComplete ? "ui-press inline-flex h-10 items-center gap-2 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800" : "h-10 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-orange-700"}>{paymentComplete ? <><Printer className="h-4 w-4" aria-hidden="true" />{receiptCopy.printReceipt}</> : copy.print}</button>
+                <button type="button" onClick={() => printThermalReceipt("print-bill")} className={paymentComplete ? "ui-press inline-flex h-10 items-center gap-2 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800" : "h-10 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}>{paymentComplete ? <><Printer className="h-4 w-4" aria-hidden="true" />{receiptCopy.printReceipt}</> : copy.print}</button>
                 {!paymentComplete ? <button type="button" disabled={submitting || !canPay || billUndelivered > 0} onClick={confirmPayment} className="ui-press h-10 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-orange-700 dark:text-white">{copy.confirmPayment}</button> : null}
               </div>
             </div>

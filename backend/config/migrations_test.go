@@ -163,6 +163,19 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// the purchase units a delivery is entered in — inside the frozen
 		// registry, so the fingerprint advances with the columns.
 		31: "7daa17191afd47de78c728e75b959644b26d0a3d5df340771fb952978268abd9",
+		// Version 32 adds promotions, promotion_targets and order_promotions to
+		// the registry, Order.Promotions (a has-many, no column) and
+		// OrderItem.DiscountAmount (a column), so the fingerprint advances.
+		32: "8be2fca141b0172cf8468e6b91761d3853ea4f0461596844ca23e43d5ee0a5e5",
+		// Version 33 drops table_tags and restaurant_table_tags: the tag system
+		// is gone, so TableTag leaves the registry and RestaurantTable loses its
+		// Tags association, and the fingerprint advances with them.
+		33: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
+		// Versions 34 and 35 are main's cashier/waiter role defaults, renumbered
+		// past this branch's 32 and 33 in the merge. They rewrite permission rows
+		// and touch no model, so the registry fingerprint is unchanged from 33.
+		34: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
+		35: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -189,6 +202,10 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		29: "restaurant_slug",
 		30: "ingredient_lots",
 		31: "ingredient_pack_units",
+		32: "promotions",
+		33: "drop_table_tags",
+		34: "cashier_default_match_waiter",
+		35: "cashier_waiter_frontline_dashboard",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

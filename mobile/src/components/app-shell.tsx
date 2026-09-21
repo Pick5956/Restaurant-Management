@@ -1023,7 +1023,9 @@ export function AppRefreshControl({
   );
 }
 
-function ScreenHeading({
+// Exported for a screen that has to place its own heading - the iPad order
+// split draws it over the grid's column so the dish panel can run to the top.
+export function ScreenHeading({
   title,
   titleContent,
   subtitle,

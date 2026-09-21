@@ -448,7 +448,7 @@ func (r *AIRepository) SalesForRange(restaurantID uint, start, end time.Time) (A
 func (r *AIRepository) TopMenuItems(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM(order_items.subtotal), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
 			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
@@ -508,7 +508,7 @@ func (r *AIRepository) MenuCatalogue(restaurantID uint) ([]AIMenuCatalogueItem, 
 func (r *AIRepository) MenusByRevenue(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM(order_items.subtotal), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
 			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
@@ -788,7 +788,7 @@ func (r *AIRepository) SlowMovingMenus(restaurantID uint, since time.Time) ([]AI
 	err := r.db.Table("menu_items").
 		Select("menu_items.name AS menu_name, COALESCE(sales.qty, 0) AS quantity, COALESCE(sales.revenue, 0) AS revenue").
 		Joins(`LEFT JOIN (
-			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(order_items.subtotal) AS revenue
+			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(`+orderItemNetRevenue+`) AS revenue
 			FROM order_items
 			JOIN orders ON orders.id = order_items.order_id
 			WHERE order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ?
@@ -857,11 +857,11 @@ const (
 	aiMenuMarginSelect = `
 			order_items.menu_name,
 			COALESCE(SUM(order_items.quantity), 0) AS quantity,
-			COALESCE(SUM(order_items.subtotal), 0) AS revenue,
+			COALESCE(SUM(` + orderItemNetRevenue + `), 0) AS revenue,
 			COALESCE(SUM(deductions.cost), 0) AS cost,
-			COALESCE(SUM(order_items.subtotal), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
-			CASE WHEN COALESCE(SUM(order_items.subtotal), 0) > 0
-				THEN ((COALESCE(SUM(order_items.subtotal), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(order_items.subtotal), 0)) * 100
+			COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
+			CASE WHEN COALESCE(SUM(` + orderItemNetRevenue + `), 0) > 0
+				THEN ((COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(` + orderItemNetRevenue + `), 0)) * 100
 				ELSE 0
 			END AS margin`
 

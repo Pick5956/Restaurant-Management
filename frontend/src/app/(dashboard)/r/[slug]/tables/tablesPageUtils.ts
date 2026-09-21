@@ -1,8 +1,7 @@
-import type { RestaurantTableInput, TableStatus, TableTagInput, TableZoneInput } from "@/src/types/table";
+import type { RestaurantTableInput, TableStatus, TableZoneInput } from "@/src/types/table";
 
-export const emptyTableForm: RestaurantTableInput = { zone_id: null, capacity: 2, status: "free", tag_ids: [] };
+export const emptyTableForm: RestaurantTableInput = { zone_id: null, capacity: 2, status: "free" };
 export const emptyZoneForm: TableZoneInput = { name: "", prefix: "", display_order: 0, is_active: true };
-export const emptyTagForm: TableTagInput = { name: "", color: "gray", display_order: 0, is_active: true };
 
 export function statusMeta(language: "th" | "en") {
   return {
@@ -12,8 +11,6 @@ export function statusMeta(language: "th" | "en") {
     inactive: { label: language === "th" ? "ปิดใช้งาน" : "Inactive", cls: "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-300" },
   } satisfies Record<TableStatus, { label: string; cls: string }>;
 }
-
-export const tagBadgeClass = "border-2 border-gray-950 bg-white text-gray-950 shadow-none dark:border-white dark:bg-gray-950 dark:text-white";
 
 export function tableAccentClass(status: TableStatus) {
   if (status === "inactive") return "bg-gray-400";

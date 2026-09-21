@@ -12,6 +12,7 @@ import { GlassMorphMenu } from '@/src/components/ai/chrome';
 import { MenuImage } from '@/src/components/menu-image';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
 import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, RadioGroup, SectionHeader, StatusBadge } from '@/src/components/ui';
+import { billDiscountLines } from '@/src/lib/bill-promotions';
 import { money } from '@/src/lib/format';
 import {
   currentRoundPresentation,
@@ -404,8 +405,10 @@ export default function BillScreen() {
   const summaryRows: Array<[string, string]> = [
     [copy('ยอดอาหาร', 'Food subtotal'), money(bill.subtotal, language)],
   ];
-  if (bill.discount_amount) {
-    summaryRows.push([copy('ส่วนลด', 'Discount'), `−${money(bill.discount_amount, language)}`]);
+  // One row per promotion the server applied, so the staff can tell a
+  // customer exactly what took the price down.
+  for (const line of billDiscountLines(bill, copy('ส่วนลด', 'Discount'))) {
+    summaryRows.push([line.label, `−${money(line.amount, language)}`]);
   }
   if (bill.service_charge_enabled) {
     summaryRows.push([
@@ -653,8 +656,8 @@ export default function BillScreen() {
   const billSummaryPanel = summaryRows.length > 1 ? (
     <Panel>
       <SectionHeader title={copy('สรุปยอด', 'Bill summary')} />
-      {summaryRows.map(([label, value]) => (
-        <View key={label} style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.md }}>
+      {summaryRows.map(([label, value], index) => (
+        <View key={`${index}-${label}`} style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.md }}>
           <Text selectable style={[typeScale.body, { flex: 1, color: palette.muted }]}>{label}</Text>
           <Text selectable style={typeScale.cardTitle}>{value}</Text>
         </View>

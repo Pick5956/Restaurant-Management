@@ -46,9 +46,4 @@ func SetupMenuTableRoutes(v1 *gin.RouterGroup) {
 	v1.POST("/table-zones", tableCtrl.CreateZone)
 	v1.PUT("/table-zones/:id", tableCtrl.UpdateZone)
 	v1.DELETE("/table-zones/:id", tableCtrl.DeleteZone)
-
-	v1.GET("/table-tags", tableCtrl.ListTags)
-	v1.POST("/table-tags", tableCtrl.CreateTag)
-	v1.PUT("/table-tags/:id", tableCtrl.UpdateTag)
-	v1.DELETE("/table-tags/:id", tableCtrl.DeleteTag)
 }

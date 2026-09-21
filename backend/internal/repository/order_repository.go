@@ -46,7 +46,8 @@ func withOrderDetails(db *gorm.DB) *gorm.DB {
 		Preload("Items.Menu", orderItemMenuColumns).
 		Preload("Items.SelectedOptions", func(db *gorm.DB) *gorm.DB { return db.Order("group_name asc, id asc") }).
 		Preload("Payments", func(db *gorm.DB) *gorm.DB { return db.Order("paid_at asc, id asc") }).
-		Preload("StatusLogs", func(db *gorm.DB) *gorm.DB { return db.Order("changed_at asc, id asc") })
+		Preload("StatusLogs", func(db *gorm.DB) *gorm.DB { return db.Order("changed_at asc, id asc") }).
+		Preload("Promotions", func(db *gorm.DB) *gorm.DB { return db.Order("id asc") })
 }
 
 func operationalTableColumns(db *gorm.DB) *gorm.DB {

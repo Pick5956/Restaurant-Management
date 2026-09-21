@@ -44,14 +44,20 @@ Scan the QR with Expo Go on iOS or Android. Password login uses `/api/login`, st
 
 Google login requires native code and does not run in Expo Go. The app uses package/bundle ID `pro.dishy.restauranthub` and exchanges the provider ID token through the existing `/api/google-login` endpoint.
 
-Add OAuth and EAS project metadata to ignored `mobile/.env.local`:
+Add the OAuth client IDs to ignored `mobile/.env.local`:
 
 ```env
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<your-google-web-client-id>
 EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<your-google-ios-client-id>
-EXPO_EAS_PROJECT_ID=<your-eas-project-id>
-EXPO_EAS_OWNER=<your-expo-account-name>
 ```
+
+The EAS project ID is committed in `app.json` (`extra.eas.projectId`) and points at
+`@thanathonhodon/restaurant-hub-mobile`, the project that holds the Android keystore. Leave it
+there: `expo start` needs it too, because Expo Go on iOS only opens a project whose manifest is
+signed for an EAS project (see "On iOS, stay on Expo Go"). `EXPO_EAS_PROJECT_ID` /
+`EXPO_EAS_OWNER` in `.env.local` override it for one machine - only useful if you serve Metro to
+iOS under an EAS project of your own; never set them when building the APK, or the build lands
+under a different keystore and will not install over the existing one.
 
 The Web client ID must match the backend Google audience configuration. In Google Cloud, create an Android OAuth client for `pro.dishy.restauranthub` and the SHA-1 of the certificate that signs the development APK. iOS additionally needs an OAuth client for bundle ID `pro.dishy.restauranthub`.
 
@@ -131,21 +137,32 @@ So: **iOS teammates run Expo Go**, with three things to watch.
 
 - **Expo Go must match the SDK this project is on** (SDK 57 since the upgrade). The store version
   tracks the newest SDK and refuses to open a project once it moves on.
-- **The machine serving Metro must be signed in to Expo.** From SDK 57, Expo Go on iOS only opens a
-  project whose manifest is signed, and it asks for that signature by sending
-  `expo-expect-signature: keyid="expo-root"`. An anonymous Metro answers without one and the phone
-  says "You need to be signed in". Android does not ask, so it works either way.
+- **Both ends must be signed in to the same Expo account.** Since SDK 57, Expo Go on iOS only
+  opens a project whose manifest is signed for an EAS project, and only when the Expo Go app is
+  signed in as an account with access to that project
+  ([Expo changelog](https://expo.dev/changelog/expo-go-57-login)). Concretely, all three:
 
-  Sign in with a personal access token rather than the browser flow: `npx expo login --browser`
-  crashes on Windows, because `cmd /c start` mis-parses the `&` in the callback URL. Create the
-  token at expo.dev under **your own** account (Account settings -> Access tokens - the *organisation*
-  token page needs Admin or Owner on the org) and put it in the ignored `mobile/.env`:
+  1. `app.json` carries the EAS project ID (it does - do not remove it; without it the CLI cannot
+     fetch a signing certificate and the phone says *"You need to be signed in to Expo Go and Expo
+     CLI"*).
+  2. The machine serving Metro is signed in: `npx eas-cli login` (browser flow) or
+     `EXPO_TOKEN=<personal access token>` in the environment. Signed in as the wrong account, or
+     with Expo Go not signed in, the phone says *"You're signed in to Expo CLI as X, but not signed
+     in to Expo Go"*.
+  3. Expo Go on the device is signed in as the **same** account. Expo Go's *Log in* screen only
+     takes a username and password; an account created with Google has none. Use **Sign up ->
+     Continue with Google** instead - it recognises the existing account and signs you in.
 
-  ```env
-  EXPO_TOKEN=<your-personal-expo-access-token>
-  ```
+  Anonymous Metro (`EXPO_OFFLINE=1`, no project ID) no longer works on iOS. Android Expo Go does
+  not enforce this yet; Expo has said it will.
 
-  Signing in renames the tunnel subdomain from `anonymous` to your account name, so any link you
+  **Teammates on iOS:** the project belongs to one personal account, so nobody else's account can
+  open it. Either the owner moves the project into an Expo *organisation* and invites the team
+  (everyone signs into Expo Go with their own account - the tidy option), or a teammate creates
+  their own EAS project and points their machine at it with `EXPO_EAS_PROJECT_ID` /
+  `EXPO_EAS_OWNER` in `.env.local` (Metro only - see "Google login development build").
+
+  Signing in renames the tunnel subdomain from `anonymous` to the account name, so any link
   shared before that stops working.
 - **Start Metro in Expo Go mode**, not development-client mode:
 

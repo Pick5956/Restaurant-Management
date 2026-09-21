@@ -165,6 +165,36 @@ test('the totals block only carries the lines the bill actually has', () => {
   );
 });
 
+test('each promotion the till applied gets its own deduction line', () => {
+  const model = buildReceiptModel({
+    order: { order_number: 'A006', order_type: 'dine_in' },
+    items: [],
+    subtotal: 500,
+    discount_amount: 130,
+    promotions: [
+      { ID: 1, order_id: 1, promotion_id: 7, name: 'ชาเย็น 1 แถม 1', type: 'buy_x_get_y', times: 2, amount: 80 },
+      { ID: 2, order_id: 1, promotion_id: 9, name: 'ครบ 300 ลด 10%', type: 'bill_discount', times: 1, amount: 50 },
+    ],
+    service_charge_enabled: false,
+    service_charge_amount: 0,
+    vat_enabled: false,
+    vat_amount: 0,
+    grand_total: 370,
+    payment_status: 'paid',
+    payments: [],
+  });
+
+  assert.deepEqual(
+    model.totals.map((total) => [total.key, total.label, total.amount]),
+    [
+      ['subtotal', 'ยอดอาหาร', '฿500.00'],
+      ['promotion-1', 'ชาเย็น 1 แถม 1 ×2', '−฿80.00'],
+      ['promotion-2', 'ครบ 300 ลด 10%', '−฿50.00'],
+      ['grand', 'ยอดสุทธิ', '฿370.00'],
+    ],
+  );
+});
+
 test('only the grand total is emphasised, and a discount reads as a deduction', () => {
   const model = buildReceiptModel({
     order: { order_number: 'A005', order_type: 'dine_in' },

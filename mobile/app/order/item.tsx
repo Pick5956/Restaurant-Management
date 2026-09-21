@@ -1,184 +1,91 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, useWindowDimensions, View } from 'react-native';
+import { useRef } from 'react';
+import { useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { listMenuItems } from '@/src/api/menu';
-import { addOrderItem, getOrder, updateOrderItem } from '@/src/api/order';
-import { AppIcon } from '@/src/components/app-icon';
-import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
-import { MenuImage } from '@/src/components/menu-image';
-import { ActionDock, Button, ChipGroup, EmptyState, Feedback, IconButton, TextField } from '@/src/components/ui';
-import { money } from '@/src/lib/format';
-import { findPendingOrderItem } from '@/src/lib/order-detail-runtime';
-import { isOptionSelectionBelowMinimum } from '@/src/lib/order-workflow';
+import {
+  ORDER_PANEL_MAX_WIDTH,
+  OrderItemAddButton,
+  OrderItemEditorBody,
+  OrderItemPanel,
+  OrderPanelFrame,
+  useNoteKeyboardAlignment,
+  useOrderItemEditor,
+} from '@/src/components/order-item-editor';
+import { ActionDock, EmptyState, IconButton } from '@/src/components/ui';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
-import type { MenuItem } from '@/src/types/menu';
-import type { Order } from '@/src/types/order';
+import { breakpoints, spacing } from '@/src/theme';
 
 
 export default function AddOrderItemScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { activeMembership } = useAuth();
-  const { copy, language } = useDisplayPreferences();
+  const { copy } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
   const params = useLocalSearchParams<{ id: string; menuId: string; itemId?: string; served?: string }>();
   const orderId = Number(params.id); const menuId = Number(params.menuId);
   // With `itemId` this screen is editing a line that is already on the order
-  // rather than adding one. Same screen on purpose: a waiter fixing an option
-  // is doing the same job they did when they chose it, and the quantity-only
-  // editor this replaced could not undo a wrong option at all - it told them to
-  // delete the line and start again.
+  // rather than adding one - see useOrderItemEditor for why it is one screen.
   const itemId = Number(params.itemId);
   const editing = Number.isInteger(itemId) && itemId > 0;
   // Opened from the bill's served-item page: the dish is already on the table,
   // so the line goes onto the bill as served and never reaches the kitchen.
-  // Everything else - options, note, quantity - is chosen the same way.
   const served = !editing && params.served === '1';
   const validParams = Number.isInteger(orderId) && orderId > 0 && Number.isInteger(menuId) && menuId > 0;
-  const [order, setOrder] = useState<Order | null>(null);
-  const [menu, setMenu] = useState<MenuItem | null>(null);
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState('');
-  const [fulfillment, setFulfillment] = useState<'dine_in' | 'takeaway'>('dine_in');
-  const [selectedOptionIds, setSelectedOptionIds] = useState<number[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const scrollControl = useRef<AppScreenScrollControl | null>(null);
-  const noteRef = useRef<View>(null);
-  // Where the note block sat, and where the page sat, at the moment the field
-  // took focus - read together so they describe the same instant.
-  const noteAnchor = useRef<{ bottom: number; offset: number } | null>(null);
-  // The top of the keyboard, kept by a listener that is mounted for the whole
-  // screen rather than switched on when the field takes focus.
-  const keyboardTop = useRef<number | null>(null);
-  const noteFocused = useRef(false);
-
-  // iOS scrolls the CARET clear of the keyboard and stops there - see
-  // AppScreenScrollControl. On a three-line box the caret is on line one, so
-  // that leaves the rest of the box and the stepper under it covered, and the
-  // page has to be moved the rest of the way.
-  //
-  // The destination is absolute, computed from the anchor taken at focus rather
-  // than from a fresh measurement. A measurement taken now would be racing
-  // iOS's scroll - sometimes before it, sometimes after - and pairing it with
-  // the current offset would overshoot by however far iOS had already moved.
-  const alignNoteAboveKeyboard = useCallback(() => {
-    const anchor = noteAnchor.current;
-    const top = keyboardTop.current;
-    if (!noteFocused.current || !anchor || top === null) return;
-    // `screenY` is the top of the keyboard including its accessory bar, so this
-    // is the exact deficit and nothing more. Running it again with the same
-    // anchor asks for the same absolute place, so a second call cannot drift.
-    const target = anchor.offset + anchor.bottom + spacing.lg - top;
-    if (target > 0) scrollControl.current?.scrollTo(target);
-  }, []);
-
-  // Subscribed for the life of the screen, not for the life of the focus. The
-  // listener used to be added by an effect that ran AFTER the render that
-  // focus triggered, and `measureInWindow` answered on its own schedule too -
-  // so on the first tap iOS had already raised the keyboard before either was
-  // ready and nothing moved the page. It took a scroll, a dismiss and a second
-  // tap to land, because by then the previous focus had left an anchor behind.
-  // Now whichever of the two arrives last does the scrolling.
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
-    const show = Keyboard.addListener(showEvent, (event) => {
-      const top = event?.endCoordinates?.screenY;
-      if (typeof top !== 'number') return;
-      keyboardTop.current = top;
-      alignNoteAboveKeyboard();
-    });
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const hide = Keyboard.addListener(hideEvent, () => {
-      keyboardTop.current = null;
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, [alignNoteAboveKeyboard]);
-  useEffect(() => { if (!canTakeOrder || !validParams) return; Promise.all([getOrder(orderId), listMenuItems()]).then(([nextOrder, response]) => { const nextMenu = response.menu_items.find((item) => item.ID === menuId) || null; setOrder(nextOrder); setMenu(nextMenu); const existing = editing ? findPendingOrderItem(nextOrder.items, itemId) : null; setFulfillment(existing?.fulfillment_type || nextOrder.order_type || 'dine_in'); setQuantity(existing ? Math.max(1, existing.quantity) : 1); setNote(existing?.note || ''); setSelectedOptionIds(existing ? (existing.selected_options || []).map((option) => option.menu_option_id) : (nextMenu?.option_groups || []).flatMap((group) => (group.options || []).filter((option) => option.is_active && option.is_default).map((option) => option.ID))); if (!nextMenu) setError(copy('ไม่พบเมนูนี้', 'Menu item not found')); else if (editing && !findPendingOrderItem(nextOrder.items, itemId)) setError(copy('รายการนี้ส่งเข้าครัวแล้ว แก้ไขไม่ได้', 'This item is already with the kitchen and can no longer be edited')); }).catch((err) => setError(err instanceof Error ? err.message : copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item'))); }, [canTakeOrder, copy, editing, itemId, menuId, orderId, validParams]);
-  const optionTotal = useMemo(() => (menu?.option_groups || []).flatMap((group) => group.options || []).filter((option) => selectedOptionIds.includes(option.ID)).reduce((sum, option) => sum + Number(option.price_delta), 0), [menu, selectedOptionIds]);
-  const total = (Number(menu?.price || 0) + optionTotal) * quantity;
-  const missingRequired = Boolean(menu?.option_groups?.some((group) => (
-    group.is_active
-    && isOptionSelectionBelowMinimum(
-      group.min_select,
-      (group.options || []).filter(
-        (option) => option.is_active && selectedOptionIds.includes(option.ID),
-      ).length,
-    )
-  )));
-
-  function toggle(groupIds: number[], optionId: number, max: number) {
-    setSelectedOptionIds((current) => {
-      const outside = current.filter((id) => !groupIds.includes(id)); const inside = current.filter((id) => groupIds.includes(id));
-      if (inside.includes(optionId)) return [...outside, ...inside.filter((id) => id !== optionId)];
-      if (max <= 1) return [...outside, optionId];
-      if (inside.length >= max) return current;
-      return [...outside, ...inside, optionId];
-    });
-  }
-  async function add() {
-    // A sold-out menu still has to be SAVEABLE while editing: the line is
-    // already on the order, and refusing would strand whoever opened it to fix
-    // an option. Only adding a new one is blocked.
-    if (!canTakeOrder || missingRequired || !menu || (!editing && !menu.is_available)) return;
-    setSaving(true); setError(null);
-    try {
-      if (editing) await updateOrderItem(orderId, itemId, { quantity, note: note.trim(), selected_option_ids: selectedOptionIds });
-      else await addOrderItem(orderId, { menu_id: menu.ID, quantity, note: note.trim(), selected_option_ids: selectedOptionIds, fulfillment_type: fulfillment, serve_immediately: served });
-      router.back();
-    }
-    catch (err) { setError(err instanceof Error ? err.message : editing ? copy('บันทึกรายการไม่สำเร็จ', 'Could not save this item') : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item')); }
-    finally { setSaving(false); }
-  }
   if (!canTakeOrder) return <AppScreen title={copy('เลือกเมนู', 'Choose menu item')} topLevel={false}><EmptyState title={copy('ไม่มีสิทธิ์รับออเดอร์', 'No order-taking permission')} /></AppScreen>;
   if (!validParams) return <AppScreen title={copy('เลือกเมนู', 'Choose menu item')} topLevel={false}><EmptyState title={copy('ไม่พบรายการนี้', 'Item not found')} detail={copy('รหัสออเดอร์หรือเมนูไม่ถูกต้อง กรุณากลับไปเลือกใหม่', 'The order or menu ID is invalid. Go back and choose again.')} /></AppScreen>;
+
+  // Not the phone's full-screen editor on a tablet: its photo alone filled an
+  // iPad (owner, 2026-09-19). The same editor at a phone's width instead, the
+  // panel the order screen opens dishes in. The order screen and the served
+  // page no longer come here on a tablet; editing a line from the bill does.
+  if (width >= breakpoints.tablet) {
+    return (
+      <AppScreen
+        title={editing
+          ? copy('แก้ไขรายการ', 'Edit item')
+          : served ? copy('เพิ่มรายการที่เสิร์ฟแล้ว', 'Add served item') : copy('เลือกเมนู', 'Choose menu item')}
+        topLevel={false}
+        scroll={false}
+        contentMaxWidth={ORDER_PANEL_MAX_WIDTH}
+      >
+        <View style={{ minHeight: 0, flex: 1, paddingBottom: Math.max(insets.bottom, spacing.lg) }}>
+          <OrderPanelFrame>
+            <OrderItemPanel
+              itemId={itemId}
+              menuId={menuId}
+              onDone={() => router.back()}
+              orderId={orderId}
+              served={served}
+            />
+          </OrderPanelFrame>
+        </View>
+      </AppScreen>
+    );
+  }
+
+  return <PhoneOrderItemScreen itemId={itemId} menuId={menuId} orderId={orderId} served={served} />;
+}
+
+function PhoneOrderItemScreen({ orderId, menuId, itemId, served }: { orderId: number; menuId: number; itemId: number; served: boolean }) {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { copy } = useDisplayPreferences();
+  const scrollControl = useRef<AppScreenScrollControl | null>(null);
+  const editor = useOrderItemEditor({ orderId, menuId, itemId, served, onDone: () => router.back() });
+  const noteKeyboard = useNoteKeyboardAlignment(scrollControl);
   // The image and the rules between sections run the full width of the screen,
   // so they have to escape the padding AppScreen puts on its content. Same
   // measure AppScreen uses, mirrored.
   const gutter = width >= breakpoints.tablet ? spacing.xxl : spacing.lg;
-  const fullBleed = { marginHorizontal: -gutter };
-  const rule = <View style={[fullBleed, { height: 1, backgroundColor: palette.divider }]} />;
-
-  /** A section heading: name on the left, its rule badge on the right. */
-  function sectionHead(title: string, badge?: { label: string; tone: 'required' | 'optional' }) {
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
-        <Text selectable style={[typeScale.title, { minWidth: 0, flex: 1 }]}>{title}</Text>
-        {badge ? (
-          <Text
-            selectable
-            style={{
-              flexShrink: 0,
-              overflow: 'hidden',
-              borderRadius: 999,
-              paddingHorizontal: 9,
-              paddingVertical: 2,
-              fontSize: 11,
-              lineHeight: 17,
-              fontWeight: '700',
-              color: badge.tone === 'required' ? '#7A3B0B' : '#275C3B',
-              backgroundColor: badge.tone === 'required' ? '#FEF3C7' : '#DCEBD2',
-            }}
-          >
-            {badge.label}
-          </Text>
-        ) : null}
-      </View>
-    );
-  }
 
   return (
     <AppScreen
-      title={menu?.name || copy('เลือกเมนู', 'Choose menu item')}
+      title={editor.menu?.name || copy('เลือกเมนู', 'Choose menu item')}
       // No header row at all: the image runs to the very top edge of the display.
       // A heading here would have cost a band of empty screen above the photo and
       // repeated the name, which the row under the image already carries.
@@ -198,193 +105,21 @@ export default function AddOrderItemScreen() {
       topLevel={false}
       contentStyle={{ gap: 0 }}
       scrollControlRef={scrollControl}
-      footer={menu ? (
+      footer={editor.menu ? (
         <ActionDock>
-          <Button
-            icon={editing ? 'checkmark' : 'add'}
-            label={editing
-              ? copy(`บันทึกรายการ · ${money(total, language)}`, `Save item · ${money(total, language)}`)
-              : served
-                ? copy(`เพิ่มเข้าบิล · ${money(total, language)}`, `Add to bill · ${money(total, language)}`)
-                : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
-            onPress={add}
-            loading={saving}
-            disabled={missingRequired || (!editing && !menu.is_available)}
-            pill
-           
-            variant="glass"
-          />
+          <OrderItemAddButton editor={editor} />
         </ActionDock>
       ) : undefined}
     >
-      {menu ? (
-        <View>
-          <View style={fullBleed}>
-            <MenuImage
-              accessibilityLabel={copy(`รูปเมนู ${menu.name}`, `Photo of ${menu.name}`)}
-              imageUrl={menu.image_url}
-              // Square corners: the frame's own radius is for an image inset
-              // from the page, and once it runs edge to edge a rounded corner
-              // bites a notch out of the screen instead of softening a card.
-              style={{ borderRadius: 0 }}
-              variant="hero"
-            />
-          </View>
-
-          {/* Name and price share the first line, the price hard right. */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.md }}>
-            <Text accessibilityRole="header" selectable style={[typeScale.hero, { minWidth: 0, flex: 1 }]}>{menu.name}</Text>
-            <Text selectable style={[typeScale.hero, { flexShrink: 0 }]}>{money(menu.price, language)}</Text>
-          </View>
-          {menu.description ? (
-            <Text selectable style={[typeScale.body, { color: palette.muted, paddingTop: spacing.xs, paddingBottom: spacing.md }]}>{menu.description}</Text>
-          ) : <View style={{ height: spacing.md }} />}
-
-          {!menu.is_available ? (
-            <View style={{ paddingBottom: spacing.md }}>
-              <Feedback title={copy('เมนูนี้หมดชั่วคราว', 'This menu item is sold out')} detail={copy('กลับไปเลือกเมนูอื่น', 'Choose another menu item.')} tone="warning" />
-            </View>
-          ) : null}
-
-          {/* Not offered while editing: the update endpoint takes quantity,
-              note and options, and a line's dine-in/takeaway is settled when it
-              is added. A control that silently does nothing is worse than no
-              control. */}
-          {!editing && order?.order_type !== 'takeaway' ? (
-            <>
-              {rule}
-              <View style={{ gap: spacing.md, paddingVertical: spacing.lg }}>
-                {sectionHead(copy('รูปแบบ', 'Fulfillment'))}
-                <ChipGroup glass value={fulfillment} onChange={setFulfillment} options={[{ label: copy('ทานที่ร้าน', 'Dine-in'), value: 'dine_in' }, { label: copy('ซื้อกลับบ้าน', 'Takeaway'), value: 'takeaway' }]} />
-              </View>
-            </>
-          ) : null}
-
-          {/* Always open, never an accordion. Every group is a decision the
-              kitchen needs, and a collapsed one hides that it is still waiting. */}
-          {(menu.option_groups || []).filter((group) => group.is_active).map((group) => {
-            const options = (group.options || []).filter((option) => option.is_active);
-            const ids = options.map((option) => option.ID);
-            const minSelect = Math.max(0, Number(group.min_select) || 0);
-            const maxSelect = Math.max(1, Number(group.max_select) || 1);
-            const single = maxSelect <= 1;
-            // Round means "you have to pick one of these", square means "take it
-            // or leave it". The shape used to follow max_select - one choice
-            // drew a radio - but whether a group can be SKIPPED is the thing a
-            // person needs to know before touching it, and it is the thing that
-            // stops the add button working. The accessibility role still
-            // follows the real behaviour: a screen reader must hear checkbox
-            // for a group that takes several answers, whatever the icon is.
-            const required = minSelect > 0;
-            return (
-              <View key={group.ID}>
-                {rule}
-                <View style={{ gap: spacing.xs, paddingVertical: spacing.lg }}>
-                  {sectionHead(group.name, minSelect > 0
-                    ? { label: copy(`ต้องเลือก ${minSelect}`, `Choose ${minSelect}`), tone: 'required' }
-                    : { label: copy(`เลือกได้ ${maxSelect}`, `Up to ${maxSelect}`), tone: 'optional' })}
-                  {options.map((option) => {
-                    const active = selectedOptionIds.includes(option.ID);
-                    return (
-                      <Pressable
-                        accessibilityRole={single ? 'radio' : 'checkbox'}
-                        accessibilityState={{ checked: active }}
-                        key={option.ID}
-                        onPress={() => toggle(ids, option.ID, maxSelect)}
-                        style={({ pressed }) => ({ minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.md, opacity: pressed ? 0.7 : 1 })}
-                      >
-                        <AppIcon
-                          color={active ? palette.primary : palette.placeholder}
-                          name={required
-                            ? (active ? 'radio-button-on' : 'radio-button-off')
-                            : (active ? 'checkbox' : 'square-outline')}
-                          size={23}
-                        />
-                        <Text selectable style={{ minWidth: 0, flex: 1, color: palette.text, fontSize: 15, lineHeight: 23, fontWeight: '500' }}>{option.name}</Text>
-                        {option.price_delta ? <Text selectable style={{ flexShrink: 0, color: palette.muted, fontSize: 13, fontWeight: '700' }}>+{money(option.price_delta, language)}</Text> : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            );
-          })}
-
-          {rule}
-          {/* Measured on focus to work out how much of it the keyboard covers, so
-              it has to wrap everything that must end up visible. */}
-          <View ref={noteRef} style={{ gap: spacing.md, paddingVertical: spacing.lg }}>
-            {sectionHead(served ? copy('หมายเหตุ', 'Note') : copy('หมายเหตุถึงครัว', 'Kitchen note'), { label: copy('ไม่จำเป็นต้องระบุ', 'Optional'), tone: 'optional' })}
-            <TextField
-              value={note}
-              onChangeText={setNote}
-              multiline
-              onFocus={() => {
-                noteFocused.current = true;
-                // Measured here rather than when the keyboard arrives: nothing has
-                // scrolled yet, so the position and the offset agree.
-                noteRef.current?.measureInWindow((_x, y, _width, height) => {
-                  noteAnchor.current = {
-                    bottom: y + height,
-                    offset: scrollControl.current?.getOffset() ?? 0,
-                  };
-                  alignNoteAboveKeyboard();
-                });
-              }}
-              onBlur={() => {
-                noteFocused.current = false;
-                noteAnchor.current = null;
-              }}
-            />
-          </View>
-
-          {/* No heading. Two matching circles either side of the number, centred
-              on the screen and sitting under the note — the shape says what it
-              does, so a word above it would only be describing the obvious. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingBottom: spacing.lg }}>
-            <IconButton
-              accessibilityLabel={copy('ลดจำนวน', 'Decrease quantity')}
-              disabled={quantity <= 1}
-              icon="remove"
-              onPress={() => setQuantity((value) => Math.max(1, value - 1))}
-              variant="glass"
-            />
-            <Text selectable style={[typeScale.number, { minWidth: 40, textAlign: 'center' }]}>{quantity.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}</Text>
-            <IconButton
-              accessibilityLabel={copy('เพิ่มจำนวน', 'Increase quantity')}
-              disabled={quantity >= 100}
-              icon="add"
-              onPress={() => setQuantity((value) => Math.min(100, value + 1))}
-              variant="glass"
-            />
-          </View>
-
-          {missingRequired ? (
-            <View style={{ paddingBottom: spacing.lg }}>
-              <Feedback title={copy('เลือกตัวเลือกที่จำเป็นให้ครบ', 'Complete the required selections')} tone="warning" />
-            </View>
-          ) : null}
-          {/* Directly above the button that raises it. This error only ever comes
-              from pressing "add to order", which is at the bottom of a screen
-              long enough to scroll — reporting it at the top would put it out of
-              sight of the person who just caused it, and in immersive mode
-              underneath the status bar as well. */}
-          {error ? (
-            <View style={{ paddingBottom: spacing.lg }}>
-              <Feedback title={copy('เพิ่มเมนูไม่ได้', 'Could not add this item')} detail={error} tone="danger" />
-            </View>
-          ) : null}
-        </View>
-      ) : (
-        // No menu means it never loaded, so there is no image to sit under and
-        // nothing has reserved the status bar. The back control is pinned over
-        // this same area, so the banner clears its height too.
-        <View style={{ paddingTop: insets.top + 52, paddingBottom: spacing.lg }}>
-          {error ? (
-            <Feedback title={copy('เปิดเมนูนี้ไม่ได้', 'Could not open this item')} detail={error} tone="danger" />
-          ) : null}
-        </View>
-      )}
+      <OrderItemEditorBody
+        editor={editor}
+        gutter={gutter}
+        // No menu means nothing has reserved the status bar, and the back
+        // control is pinned over this same area, so the banner clears its
+        // height too.
+        missingTopInset={insets.top + 52}
+        noteKeyboard={noteKeyboard}
+      />
     </AppScreen>
   );
 }

@@ -13,6 +13,7 @@ const fallbackRolePermissions: Record<string, Permission[]> = {
   manager: [
     "view_dashboard",
     "manage_menu",
+    "manage_promotions",
     "view_tables",
     "manage_table",
     "take_order",
@@ -30,8 +31,8 @@ const fallbackRolePermissions: Record<string, Permission[]> = {
     "view_audit_log",
     "manage_restaurant_settings",
   ],
-  cashier: ["view_dashboard", "take_payment", "view_orders", "view_tables"],
-  waiter: ["take_order", "take_payment", "view_orders"],
+  cashier: ["take_order", "take_payment", "view_orders", "view_dashboard", "view_kitchen", "view_inventory"],
+  waiter: ["take_order", "take_payment", "view_orders", "view_dashboard", "view_kitchen", "view_inventory"],
   chef: ["view_kitchen", "update_order_status", "view_inventory"],
 };
 
@@ -79,8 +80,4 @@ export function can(membership: Membership | null | undefined, permission: Permi
   const roleName = membership?.role?.name ?? "";
   const permissions = fallbackRolePermissions[roleName] ?? [];
   return permissionListAllows(permissions, roleName, permission);
-}
-
-export function canAccessTeam(membership: Membership | null | undefined) {
-  return TEAM_MANAGEMENT_PERMISSIONS.some((permission) => can(membership, permission));
 }

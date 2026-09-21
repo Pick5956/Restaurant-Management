@@ -343,15 +343,15 @@ export default function CustomerTableOrderPage() {
   };
 
   if (loading) {
-    return <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">{copy.loading}</div>;
+    return <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">{copy.loading}</div>;
   }
 
   if (error && !payload) {
-    return <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 text-center text-sm text-red-600 dark:bg-gray-950 dark:text-red-300">{error}</div>;
+    return <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-center text-sm text-red-600 dark:bg-gray-950 dark:text-red-300">{error}</div>;
   }
 
   return (
-    <div className={`min-h-dvh overflow-x-hidden bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${showCartAction ? "pb-24" : "pb-6"}`}>
+    <div className={`min-h-dvh overflow-x-hidden bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${showCartAction ? "pb-24" : "pb-6"}`}>
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">

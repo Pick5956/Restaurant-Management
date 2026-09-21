@@ -60,14 +60,26 @@ export default function MenuScreen() {
     });
   }, [category, items, search]);
 
+  // The switch is controlled, so its thumb follows `is_available` - not the
+  // finger. Flipping the row only after the server replied left a window where
+  // Android had already slid the thumb across, the next render snapped it back
+  // to the stale prop, and the reply slid it over again: a visible wobble on
+  // every tap. Flip locally first and let the reply (or a failure) settle it.
+  function setAvailability(id: number, available: boolean) {
+    setItems((current) => current.map((entry) => (entry.ID === id ? { ...entry, is_available: available } : entry)));
+  }
+
   async function toggle(item: MenuItem) {
     if (!canManage) return;
+    const next = !item.is_available;
     setSavingId(item.ID);
     setError(null);
+    setAvailability(item.ID, next);
     try {
-      const updated = await setMenuItemAvailability(item.ID, !item.is_available);
+      const updated = await setMenuItemAvailability(item.ID, next);
       setItems((current) => current.map((entry) => (entry.ID === updated.ID ? updated : entry)));
     } catch (err) {
+      setAvailability(item.ID, !next);
       setError(err instanceof Error ? err.message : copy('เปลี่ยนสถานะเมนูไม่สำเร็จ', 'Could not change the menu status'));
     } finally {
       setSavingId(null);

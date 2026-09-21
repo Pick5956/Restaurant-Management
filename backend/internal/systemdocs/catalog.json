@@ -639,8 +639,8 @@
               "en": "Create zones such as indoor, storefront, or upstairs, then add tables to each zone."
             },
             {
-              "th": "ให้ระบบสร้างเลขโต๊ะจากโซนและตัวอักษรนำหน้า แล้วกำหนดจำนวนที่นั่งและแท็กเพื่อให้ทีมค้นหาโต๊ะได้ง่าย",
-              "en": "Let Dishy generate table numbers from the zone and optional prefix, then set seats and tags so the team can find tables quickly."
+              "th": "ให้ระบบสร้างเลขโต๊ะจากโซนและตัวอักษรนำหน้า แล้วกำหนดจำนวนที่นั่ง",
+              "en": "Let Dishy generate table numbers from the zone and optional prefix, then set the seating capacity."
             },
             {
               "th": "ผังปัจจุบันเป็นตารางแบ่งโซน ไม่ใช่ผังลากวางตามตำแหน่งจริง",
@@ -1255,7 +1255,9 @@
           "พร้อมเพย์",
           "ใบเสร็จ",
           "VAT",
-          "ค่าบริการ"
+          "ค่าบริการ",
+          "โปรโมชัน",
+          "ส่วนลด"
         ],
         "en": [
           "bill",
@@ -1264,7 +1266,9 @@
           "PromptPay",
           "receipt",
           "VAT",
-          "service charge"
+          "service charge",
+          "promotion",
+          "discount"
         ]
       },
       "routes": [
@@ -1273,6 +1277,13 @@
           "label": {
             "th": "คลังออเดอร์และพิมพ์ซ้ำ",
             "en": "Order archive and reprints"
+          }
+        },
+        {
+          "href": "/promotions",
+          "label": {
+            "th": "ตั้งโปรโมชัน",
+            "en": "Set up promotions"
           }
         },
         {
@@ -1294,6 +1305,62 @@
             {
               "th": "เมื่อออเดอร์มีรายการอย่างน้อยหนึ่งรายการและไม่มีรายการรอส่งครัว ปุ่มออกบิล / รับเงินจะเปิดให้ตรวจรายการและยอดต่าง ๆ หากยังมีรายการกำลังทำ สามารถเปิดดูบิลได้ แต่ต้องทำรายการนั้นให้เสร็จหรือยกเลิกก่อนยืนยันรับเงิน",
               "en": "When an order has at least one active item and none is waiting to be sent to the kitchen, Bill / Pay opens the item and total review. If any item is still cooking, you can inspect the bill but must complete or cancel that item before confirming payment."
+            }
+          ]
+        },
+        {
+          "id": "promotions",
+          "keywords": {
+            "th": [
+              "โปรโมชัน",
+              "ส่วนลด",
+              "1 แถม 1",
+              "ซื้อแถม",
+              "ราคาเซ็ต",
+              "ลดท้ายบิล"
+            ],
+            "en": [
+              "promotion",
+              "discount",
+              "buy one get one",
+              "set price",
+              "bill discount"
+            ]
+          },
+          "title": {
+            "th": "โปรโมชันที่ระบบคิดให้เอง",
+            "en": "Promotions the till applies by itself"
+          },
+          "paragraphs": [
+            {
+              "th": "ผู้มีสิทธิ์จัดการโปรโมชันตั้งโปรไว้ที่หน้าโปรโมชัน ระบบคิดส่วนลดให้เองทุกครั้งที่มีการเพิ่มหรือแก้รายการในออเดอร์ ทั้งจากหน้ารับออเดอร์ แอปมือถือ และลูกค้าสั่งผ่าน QR พนักงานไม่ต้องกรอกส่วนลดเอง บิลแสดงยอดอาหาร โปรที่ใช้ แล้วจึงเป็นยอดรวม",
+              "en": "Anyone with the manage-promotions permission sets promotions up on the Promotions page. Dishy applies them by itself every time an order's items change, from the POS, the mobile app, or customer QR ordering, so staff never type a discount. The bill shows the food subtotal, each promotion applied, then the total."
+            }
+          ],
+          "bullets": [
+            {
+              "th": "ซื้อแถม: ซื้อครบตามจำนวนแล้ว ระบบแถมจานที่ถูกที่สุดในกลุ่มให้",
+              "en": "Buy & get: once the set number of dishes is ordered, the cheapest dishes in the group are free."
+            },
+            {
+              "th": "ลดราคาเมนู: ลดเป็นเปอร์เซ็นต์หรือเป็นบาทต่อจาน เลือกได้ทั้งเมนูเดี่ยวและทั้งหมวด",
+              "en": "Dish discount: a percentage or a baht amount off each dish, for single dishes or whole categories."
+            },
+            {
+              "th": "ราคาเซ็ต: สั่งครบทุกจานในเซ็ต จ่ายราคาเซ็ตแทนราคารวมของจานเหล่านั้น",
+              "en": "Set price: order a dish for every slot of the set and pay the set price instead of their total."
+            },
+            {
+              "th": "ลดท้ายบิล: ยอดถึงขั้นต่ำแล้วลดทั้งบิล คิดหลังส่วนลดรายจาน และใช้ได้บิลละหนึ่งโปร",
+              "en": "Bill discount: once the bill reaches its minimum the whole bill is discounted, after dish promotions, one per bill."
+            },
+            {
+              "th": "จานหนึ่งรับได้หนึ่งโปร ถ้าเข้าได้หลายโปร ระบบเลือกโปรที่ลูกค้าได้ส่วนลดมากที่สุด ตัวเลือกเสริมที่มีราคายังคิดเงินตามปกติ",
+              "en": "A dish takes one promotion at most; when several fit, Dishy picks the one that saves the customer most. Paid options are still charged."
+            },
+            {
+              "th": "วันและช่วงเวลาของโปรดูจากเวลาที่สั่งแต่ละจาน เปิด ปิด หรือแก้โปรแล้ว บิลที่ยังไม่จ่ายคิดใหม่ทันที บิลที่จ่ายแล้วไม่เปลี่ยน",
+              "en": "A promotion's days and hours are checked against when each dish was ordered. Switching or editing a promotion reprices unpaid bills at once; paid bills never change."
             }
           ]
         },
@@ -2046,8 +2113,8 @@
               "en": "No split bills, refunds, or full tax-invoice numbering."
             },
             {
-              "th": "ยังไม่มีส่วนลดและโปรโมชันแบบครบวงจรในหน้าขาย",
-              "en": "No complete discount and promotion workflow in the sales interface."
+              "th": "ส่วนลดมาจากโปรโมชันที่ตั้งไว้เท่านั้น ยังไม่มีการกรอกส่วนลดเองทีละบิลหรือคูปอง",
+              "en": "Discounts come only from configured promotions; there is no manual per-bill discount or coupon."
             },
             {
               "th": "ยังไม่มี silent printing หรือระบบเชื่อมเครื่องพิมพ์เฉพาะ; ใช้หน้าต่างพิมพ์ของเบราว์เซอร์",

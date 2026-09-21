@@ -123,6 +123,14 @@ export const PERMISSION_SECTIONS: PermissionSection[] = [
         permissions: ["manage_menu"],
       },
       {
+        id: "promotions-manage",
+        th: "จัดการโปรโมชัน",
+        en: "Manage promotions",
+        descriptionTh: "อนุญาตให้ตั้ง แก้ไข เปิดปิด และลบโปรโมชันที่ระบบคิดส่วนลดให้เอง",
+        descriptionEn: "Allow creating, editing, switching, and deleting promotions the system applies by itself.",
+        permissions: ["manage_promotions"],
+      },
+      {
         id: "inventory-view",
         th: "ดูสต็อก",
         en: "View stock",

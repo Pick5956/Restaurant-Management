@@ -21,7 +21,6 @@ type TableRequest struct {
 	ZoneID   *uint  `json:"zone_id"`
 	Capacity int    `json:"capacity"`
 	Status   string `json:"status"`
-	TagIDs   []uint `json:"tag_ids"`
 }
 
 type BulkCreateTablesRequest struct {
@@ -29,7 +28,6 @@ type BulkCreateTablesRequest struct {
 	Count    int    `json:"count" binding:"required"`
 	Capacity int    `json:"capacity"`
 	Status   string `json:"status"`
-	TagIDs   []uint `json:"tag_ids"`
 }
 
 type MoveTableZoneRequest struct {
@@ -39,13 +37,6 @@ type MoveTableZoneRequest struct {
 type TableZoneRequest struct {
 	Name         string `json:"name" binding:"required"`
 	Prefix       string `json:"prefix"`
-	DisplayOrder int    `json:"display_order"`
-	IsActive     *bool  `json:"is_active"`
-}
-
-type TableTagRequest struct {
-	Name         string `json:"name" binding:"required"`
-	Color        string `json:"color"`
 	DisplayOrder int    `json:"display_order"`
 	IsActive     *bool  `json:"is_active"`
 }
@@ -76,7 +67,7 @@ func (s *TableService) ListTables(restaurantID uint) ([]entity.RestaurantTable, 
 func (s *TableService) CreateTable(restaurantID uint, req *TableRequest) (*entity.RestaurantTable, error) {
 	var created *entity.RestaurantTable
 	err := s.repo.Transaction(func(tx *repository.TableRepository) error {
-		table, tags, err := tableFromRequest(tx, restaurantID, req)
+		table, err := tableFromRequest(tx, restaurantID, req)
 		if err != nil {
 			return err
 		}
@@ -84,9 +75,6 @@ func (s *TableService) CreateTable(restaurantID uint, req *TableRequest) (*entit
 			return err
 		}
 		if err := tx.CreateTable(table); err != nil {
-			return err
-		}
-		if err := tx.ReplaceTableTags(table, tags); err != nil {
 			return err
 		}
 		created = table
@@ -105,7 +93,7 @@ func (s *TableService) UpdateTable(restaurantID, tableID uint, req *TableRequest
 		if err != nil {
 			return err
 		}
-		next, tags, err := tableFromRequest(tx, restaurantID, req)
+		next, err := tableFromRequest(tx, restaurantID, req)
 		if err != nil {
 			return err
 		}
@@ -121,9 +109,6 @@ func (s *TableService) UpdateTable(restaurantID, tableID uint, req *TableRequest
 			return errors.New("table has an open order")
 		}
 		if err := tx.UpdateTable(table); err != nil {
-			return err
-		}
-		if err := tx.ReplaceTableTags(table, tags); err != nil {
 			return err
 		}
 		updatedID = table.ID
@@ -569,13 +554,6 @@ func (s *TableService) BulkCreateTables(restaurantID uint, req *BulkCreateTables
 		if err != nil {
 			return err
 		}
-		tags, err := tx.FindTags(restaurantID, req.TagIDs)
-		if err != nil {
-			return err
-		}
-		if len(tags) != len(uniqueUint(req.TagIDs)) {
-			return errors.New("one or more table tags were not found")
-		}
 		next, err := tx.NextSequence(restaurantID, zoneID)
 		if err != nil {
 			return err
@@ -608,9 +586,6 @@ func (s *TableService) BulkCreateTables(restaurantID uint, req *BulkCreateTables
 				CustomerToken:  customerToken,
 			}
 			if err := tx.CreateTable(table); err != nil {
-				return err
-			}
-			if err := tx.ReplaceTableTags(table, tags); err != nil {
 				return err
 			}
 			created = append(created, *table)
@@ -730,46 +705,4 @@ func (s *TableService) DeleteZone(restaurantID, zoneID uint) error {
 		return errors.New("cannot delete a zone that still has tables")
 	}
 	return s.repo.DeleteZone(zone)
-}
-
-func (s *TableService) ListTags(restaurantID uint) ([]entity.TableTag, error) {
-	return s.repo.ListTags(restaurantID)
-}
-
-func (s *TableService) CreateTag(restaurantID uint, req *TableTagRequest) (*entity.TableTag, error) {
-	tag, err := tagFromRequest(restaurantID, req)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.repo.CreateTag(tag); err != nil {
-		return nil, err
-	}
-	return tag, nil
-}
-
-func (s *TableService) UpdateTag(restaurantID, tagID uint, req *TableTagRequest) (*entity.TableTag, error) {
-	tag, err := s.repo.FindTag(restaurantID, tagID)
-	if err != nil {
-		return nil, err
-	}
-	next, err := tagFromRequest(restaurantID, req)
-	if err != nil {
-		return nil, err
-	}
-	tag.Name = next.Name
-	tag.Color = next.Color
-	tag.DisplayOrder = next.DisplayOrder
-	tag.IsActive = next.IsActive
-	if err := s.repo.UpdateTag(tag); err != nil {
-		return nil, err
-	}
-	return tag, nil
-}
-
-func (s *TableService) DeleteTag(restaurantID, tagID uint) error {
-	tag, err := s.repo.FindTag(restaurantID, tagID)
-	if err != nil {
-		return err
-	}
-	return s.repo.DeleteTag(tag)
 }

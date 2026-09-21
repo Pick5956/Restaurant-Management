@@ -1,3 +1,4 @@
+import { billDiscountLines } from './bill-promotions.ts';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import type { Bill } from '@/src/types/order';
 import type { Restaurant } from '@/src/types/restaurant';
@@ -95,11 +96,11 @@ export function buildReceiptModel(
       emphasis: false,
     },
   ];
-  if (bill.discount_amount > 0) {
+  for (const line of billDiscountLines(bill, copy('ส่วนลด', 'Discount'))) {
     totals.push({
-      key: 'discount',
-      label: copy('ส่วนลด', 'Discount'),
-      amount: `−${receiptMoney(bill.discount_amount, language)}`,
+      key: line.key,
+      label: line.label,
+      amount: `−${receiptMoney(line.amount, language)}`,
       emphasis: false,
     });
   }

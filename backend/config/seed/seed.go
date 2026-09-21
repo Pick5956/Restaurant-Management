@@ -22,9 +22,9 @@ func SeedRoles(db *gorm.DB) error {
 func systemRoles() []entity.Role {
 	return []entity.Role{
 		{Name: "owner", DisplayName: "Owner", Permissions: `["*"]`, IsSystem: true},
-		{Name: "manager", DisplayName: "Manager", Permissions: `["view_dashboard","manage_menu","view_tables","manage_table","take_order","view_orders","take_payment","view_kitchen","update_order_status","view_inventory","manage_inventory","manage_expenses","view_reports","manage_invites","manage_members","manage_roles","view_audit_log","manage_restaurant_settings"]`, IsSystem: true},
-		{Name: "cashier", DisplayName: "Cashier", Permissions: `["view_dashboard","take_payment","view_orders","view_tables"]`, IsSystem: true},
-		{Name: "waiter", DisplayName: "Waiter", Permissions: `["take_order","take_payment","view_orders"]`, IsSystem: true},
+		{Name: "manager", DisplayName: "Manager", Permissions: `["view_dashboard","manage_menu","manage_promotions","view_tables","manage_table","take_order","view_orders","take_payment","view_kitchen","update_order_status","view_inventory","manage_inventory","manage_expenses","view_reports","manage_invites","manage_members","manage_roles","view_audit_log","manage_restaurant_settings"]`, IsSystem: true},
+		{Name: "cashier", DisplayName: "Cashier", Permissions: `["take_order","take_payment","view_orders","view_dashboard","view_kitchen","view_inventory"]`, IsSystem: true},
+		{Name: "waiter", DisplayName: "Waiter", Permissions: `["take_order","take_payment","view_orders","view_dashboard","view_kitchen","view_inventory"]`, IsSystem: true},
 		{Name: "chef", DisplayName: "Chef", Permissions: `["view_kitchen","update_order_status","view_inventory"]`, IsSystem: true},
 	}
 }

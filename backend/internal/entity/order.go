@@ -79,8 +79,14 @@ type Order struct {
 	Payments   []OrderPayment            `json:"payments,omitempty" gorm:"foreignKey:OrderID"`
 	StatusLogs []OrderStatusLog          `json:"status_logs,omitempty" gorm:"foreignKey:OrderID"`
 	Deductions []OrderInventoryDeduction `json:"deductions,omitempty" gorm:"foreignKey:OrderID"`
+	// Promotions are the promotions the order service applied; their amounts add
+	// up to DiscountAmount.
+	Promotions []OrderPromotion `json:"promotions,omitempty" gorm:"foreignKey:OrderID"`
 }
 
+// OrderItem is one line of an order. Subtotal is its price before promotions;
+// DiscountAmount is what dish-level promotions took off it, so the line sold
+// for Subtotal - DiscountAmount.
 type OrderItem struct {
 	gorm.Model
 	OrderID         uint       `json:"order_id" gorm:"not null;index;index:idx_order_items_order_status_batch,priority:1"`
@@ -91,6 +97,7 @@ type OrderItem struct {
 	OptionsTotal    float64    `json:"options_total" gorm:"type:numeric(14,2);not null;default:0;check:chk_order_items_options_total_nonnegative,options_total >= 0"`
 	Quantity        int        `json:"quantity" gorm:"not null;check:chk_order_items_quantity_positive,quantity > 0"`
 	Subtotal        float64    `json:"subtotal" gorm:"type:numeric(14,2);not null;check:chk_order_items_subtotal_nonnegative,subtotal >= 0"`
+	DiscountAmount  float64    `json:"discount_amount" gorm:"type:numeric(14,2);not null;default:0;check:chk_order_items_discount_nonnegative,discount_amount >= 0"`
 	FulfillmentType string     `json:"fulfillment_type" gorm:"size:32;not null;default:'dine_in';index;check:chk_order_items_fulfillment,fulfillment_type IN ('dine_in','takeaway')"`
 	Note            string     `json:"note" gorm:"size:500"`
 	Status          string     `json:"status" gorm:"size:32;not null;default:'pending';index:idx_order_items_status_sent,priority:1;index:idx_order_items_order_status_batch,priority:2;index:idx_order_items_restaurant_status,priority:2;check:chk_order_items_status,status IN ('pending','cooking','ready','served','cancelled')"`

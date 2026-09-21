@@ -130,7 +130,7 @@ export function WorkspaceShell({
   const { language } = useLanguage();
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="min-h-dvh bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <header className="fixed inset-x-0 top-0 z-[var(--z-sticky)] border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <BrandMark />

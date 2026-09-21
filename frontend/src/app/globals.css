@@ -20,6 +20,11 @@
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #94a3b8;
   --scrollbar-corner: #f1f5f9;
+  /* The settings pages' flat field and button fill, sampled from the owner's
+     reference settings page (#f0f1f2 on white). Tailwind's gray-100 is a
+     lighter, bluer #f3f4f6 that the owner found too white to see. */
+  --settings-field: #f0f1f2;
+  --settings-field-hover: #e4e6e8;
   --z-sticky: 20;
   --z-chat: 45;
   --z-dropdown: 50;
@@ -31,6 +36,8 @@
   --background: #0f0f0f;
   --foreground: #ededed;
   --dashboard-shell-border: #303030;
+  --settings-field: #303030;
+  --settings-field-hover: #454545;
   --dashboard-control-shadow: 0 0 2px rgba(0, 0, 0, 0.25), 0 0 16px rgba(0, 0, 0, 0.35);
   --scrollbar-track: #0f0f0f;
   --scrollbar-thumb: #383838;
@@ -60,6 +67,15 @@
   --rail-border: rgba(0, 0, 0, 0.12);
   --rail-active-bg: #fff7ed;
   --rail-active-fg: #c2410c;
+}
+
+/* The desktop rail sits "sunk" behind the page, the way the owner's reference
+   site draws its drawer: a soft shadow cast inward from the right edge. The
+   reference's own value (inset -25px 0 9px -25px, 10%) was too faint for the
+   owner, so this band is wider and darker. Only the desktop rail: the phone
+   drawer keeps its own drop shadow. */
+[data-nav-rail].dashboard-shell-border-r {
+  box-shadow: inset -14px 0 14px -10px rgba(0, 0, 0, 0.2);
 }
 
 .dark [data-nav-rail] {
@@ -1023,6 +1039,16 @@ textarea {
   --shell-radius: 0px;
 }
 
+/* Every dashboard page paints bg-slate-100 / slate-50 (dark:bg-gray-950) on its
+   own root. The background is one colour for the whole app - white, and the
+   body's night colour in dark mode - so the page root gets out of the way at
+   every width: under the desktop sheet and straight onto the body on a phone.
+   Scoped to the direct child of main, so cards and panels keep their own
+   surfaces. */
+[data-shell-scroll] > main > *:not(.ai-aura-bg):not([data-shell-sticky]) {
+  background-color: transparent !important;
+}
+
 @media (min-width: 1024px) {
   html:has([data-shell-frame]) {
     overflow: hidden;
@@ -1049,7 +1075,10 @@ textarea {
     margin: var(--shell-pad) var(--shell-gap) var(--shell-pad) 0;
     overflow: hidden;
     border-radius: var(--shell-radius);
-    background-color: #f1f5f9;
+    /* White, the page colour of the owner's reference settings page, on every
+       dashboard page (2026-09-19). It was slate-100 #f1f5f9, which also made
+       the settings fields (#f0f1f2) vanish into it. */
+    background-color: #ffffff;
     box-shadow: none;
   }
 
@@ -1066,16 +1095,12 @@ textarea {
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #f1f5f9;
+    background-color: #ffffff;
     backdrop-filter: none;
   }
 
   .dark [data-shell-sticky] {
     background-color: #0f0f0f;
-  }
-
-  [data-shell-scroll] > main > *:not(.ai-aura-bg):not([data-shell-sticky]) {
-    background-color: transparent !important;
   }
 
   /* The canvas is a light-mode surface in the design system. Dark mode uses the
@@ -1102,6 +1127,14 @@ textarea {
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: rgba(224, 168, 124, 0.55) transparent;
+  }
+
+  /* Settings is centred inside the sheet, so whether the scrollbar is there
+     decides where its box sits: a short page (language and display) slid
+     inwards against a long one (account). Reserve the bar's width on every
+     settings page so the box does not move between them. */
+  [data-shell-scroll]:has([data-settings-root]) {
+    scrollbar-gutter: stable;
   }
 
   /* No track: the canvas shows through, so the thumb reads as part of the sheet. */

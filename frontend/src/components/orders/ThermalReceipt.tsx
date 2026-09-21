@@ -1,3 +1,4 @@
+import { billDiscountLines } from "@/src/lib/billPromotions";
 import { groupOrderItems } from "@/src/lib/orderItemGroups";
 import type { Bill, OrderItem } from "@/src/types/order";
 import type { Restaurant } from "@/src/types/restaurant";
@@ -142,7 +143,9 @@ export default function ThermalReceipt({
 
       <dl className="space-y-1 text-[10px] leading-tight">
         <div className="flex justify-between gap-2"><dt>{copy.subtotal}</dt><dd className="font-mono tabular-nums">{money(bill.subtotal)}</dd></div>
-        {bill.discount_amount > 0 ? <div className="flex justify-between gap-2"><dt>{copy.discount}</dt><dd className="font-mono tabular-nums">-{money(bill.discount_amount)}</dd></div> : null}
+        {billDiscountLines(bill, copy.discount).map((line) => (
+          <div key={line.key} className="flex justify-between gap-2"><dt className="min-w-0">{line.label}</dt><dd className="shrink-0 font-mono tabular-nums">-{money(line.amount)}</dd></div>
+        ))}
         {bill.service_charge_enabled || bill.service_charge_amount > 0 ? <div className="flex justify-between gap-2"><dt>{copy.service} {bill.service_charge_enabled ? `${bill.service_charge_rate}%` : ""}</dt><dd className="font-mono tabular-nums">{money(bill.service_charge_amount)}</dd></div> : null}
         {bill.vat_enabled || bill.vat_amount > 0 ? <div className="flex justify-between gap-2"><dt>{copy.vat} {bill.vat_enabled ? `${bill.vat_rate}%` : ""}</dt><dd className="font-mono tabular-nums">{money(bill.vat_amount)}</dd></div> : null}
         <div className="mt-1.5 flex items-end justify-between gap-2 border-y border-black py-1.5">

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 31
+	CurrentSchemaVersion int64 = 35
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -82,7 +82,6 @@ func schemaMigrationPlan() []SchemaMigration {
 					&entity.MenuOptionGroup{},
 					&entity.MenuOption{},
 					&entity.TableZone{},
-					&entity.TableTag{},
 					&entity.RestaurantTable{},
 					&entity.Order{},
 					&entity.OrderItem{},
@@ -694,7 +693,128 @@ func schemaMigrationPlan() []SchemaMigration {
 				return nil
 			},
 		},
+		{
+			Version: 32,
+			Name:    "promotions",
+			Up: func(ctx *MigrationContext) error {
+				// Promotions the owner sets up once and the order service applies
+				// by itself: the rules, the dishes each one counts, and what every
+				// order earned from them.
+				if err := migratePromotions(ctx.DB); err != nil {
+					return fmt.Errorf("migrate promotions: %w", err)
+				}
+				// A line's share of dish-level promotions, so sales per dish can be
+				// read net of them. No existing line had any, so zero is right.
+				for _, statement := range []string{
+					`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14,2) NOT NULL DEFAULT 0`,
+					`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS chk_order_items_discount_nonnegative`,
+					`ALTER TABLE order_items ADD CONSTRAINT chk_order_items_discount_nonnegative CHECK (discount_amount >= 0)`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("add order item discount: %w", err)
+					}
+				}
+				// Re-seed so manage_promotions reaches the manager system role.
+				if err := seed.SeedRoles(ctx.DB); err != nil {
+					return fmt.Errorf("reseed roles for promotions: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 33,
+			Name:    "drop_table_tags",
+			Up: func(ctx *MigrationContext) error {
+				// Table tags are gone. Nothing read them but the table editor, and the
+				// floor already tells tables apart by zone and number, so the join
+				// table goes first and the tags themselves after it.
+				for _, statement := range []string{
+					`DROP TABLE IF EXISTS restaurant_table_tags`,
+					`DROP TABLE IF EXISTS table_tags`,
+				} {
+					if err := ctx.DB.Exec(statement).Error; err != nil {
+						return fmt.Errorf("drop table tags: %w", err)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			Version: 34,
+			Name:    "cashier_default_match_waiter",
+			Up: func(ctx *MigrationContext) error {
+				// Cashiers work the front like another order-taker — they can open a
+				// takeaway order and settle bills — so their default now matches the
+				// waiter set (take_order/take_payment/view_orders), dropping the
+				// dashboard/tables view they had before. Update the global system
+				// cashier role in place; per-member permission overrides are untouched.
+				result := ctx.DB.Model(&entity.Role{}).
+					Where("name = ? AND restaurant_id IS NULL AND is_system = ?", "cashier", true).
+					Update("permissions", `["take_order","take_payment","view_orders"]`)
+				if result.Error != nil {
+					return fmt.Errorf("update cashier default permissions: %w", result.Error)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 35,
+			Name:    "cashier_waiter_frontline_dashboard",
+			Up: func(ctx *MigrationContext) error {
+				// Cashiers and waiters both work the front as order-takers, so they
+				// share one default. Beyond taking orders and settling bills they now
+				// also get the read-only operational view: the overview dashboard, the
+				// kitchen queue and low-stock alerts (view_dashboard/view_kitchen/
+				// view_inventory) — enough to run the "งานที่ต้องจัดการตอนนี้" and
+				// "สถานะโต๊ะ" cards without unlocking sales reports. Update the global
+				// system roles in place; per-member permission overrides are untouched.
+				result := ctx.DB.Model(&entity.Role{}).
+					Where("name IN ? AND restaurant_id IS NULL AND is_system = ?", []string{"cashier", "waiter"}, true).
+					Update("permissions", `["take_order","take_payment","view_orders","view_dashboard","view_kitchen","view_inventory"]`)
+				if result.Error != nil {
+					return fmt.Errorf("update cashier/waiter default permissions: %w", result.Error)
+				}
+				return nil
+			},
+		},
 	}
+}
+
+// promotionForeignKeys are the links migration 32 adds by hand, named by the
+// model and association that own each one.
+var promotionForeignKeys = []struct {
+	model       any
+	association string
+}{
+	{&entity.Promotion{}, "Restaurant"},
+	{&entity.Promotion{}, "Targets"},
+	{&entity.PromotionTarget{}, "MenuItem"},
+	{&entity.PromotionTarget{}, "Category"},
+	{&entity.Order{}, "Promotions"},
+	{&entity.OrderPromotion{}, "Promotion"},
+}
+
+// migratePromotions creates only the three promotion tables, then adds their
+// links to the tables that already exist one by one. Plain AutoMigrate would
+// also walk into restaurants, menu_items and orders on the way; this keeps the
+// migration additive, the same way migration 11 does.
+func migratePromotions(database *gorm.DB) error {
+	migrationDB := database.Session(&gorm.Session{NewDB: true})
+	configCopy := *migrationDB.Config
+	configCopy.IgnoreRelationshipsWhenMigrating = true
+	migrationDB.Config = &configCopy
+	if err := migrationDB.AutoMigrate(&entity.Promotion{}, &entity.PromotionTarget{}, &entity.OrderPromotion{}); err != nil {
+		return err
+	}
+	for _, link := range promotionForeignKeys {
+		if database.Migrator().HasConstraint(link.model, link.association) {
+			continue
+		}
+		if err := database.Migrator().CreateConstraint(link.model, link.association); err != nil {
+			return fmt.Errorf("create %T %s constraint: %w", link.model, link.association, err)
+		}
+	}
+	return nil
 }
 
 type restaurantSlugRow struct {

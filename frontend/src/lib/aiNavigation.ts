@@ -56,6 +56,12 @@ const navigationEntries: NavigationEntry[] = [
     aliases: ["menu", "food menu", "dish", "dishes", "เมนู", "เมนูอาหาร", "รายการอาหาร"],
   },
   {
+    href: "/promotions",
+    label: { th: "โปรโมชัน", en: "Promotions" },
+    permission: "manage_promotions",
+    aliases: ["promotions", "promotion", "promo", "discounts", "deals", "โปรโมชัน", "โปรโมชั่น", "โปร", "ส่วนลด", "แถม"],
+  },
+  {
     href: "/tables",
     label: { th: "ผังโต๊ะ", en: "Tables" },
     permission: ["manage_table", "view_tables"],
@@ -89,7 +95,7 @@ const navigationEntries: NavigationEntry[] = [
     href: "/staff",
     label: { th: "พนักงาน", en: "Staff" },
     permission: [...TEAM_MANAGEMENT_PERMISSIONS],
-    aliases: ["staff", "team", "employees", "workers", "พนักงาน", "ทีม", "ทีมงาน", "จัดการคน"],
+    aliases: ["staff", "team", "employees", "workers", "พนักงาน", "ทีม", "ทีมงาน", "จัดการคน", "team settings", "permissions", "roles", "invitations", "สิทธิ์", "บทบาท", "ทีมและสิทธิ์", "คำเชิญ"],
   },
   {
     href: "/reports",
@@ -126,12 +132,6 @@ const navigationEntries: NavigationEntry[] = [
       "vat",
       "service charge",
     ],
-  },
-  {
-    href: "/settings/team",
-    label: { th: "ทีมและสิทธิ์", en: "Team and permissions" },
-    permission: [...TEAM_MANAGEMENT_PERMISSIONS],
-    aliases: ["team settings", "permissions", "roles", "invitations", "สิทธิ์", "บทบาท", "ทีมและสิทธิ์", "คำเชิญ"],
   },
 ];
 

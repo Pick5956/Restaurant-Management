@@ -50,13 +50,15 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
           label: language === 'th' ? 'รับออเดอร์' : 'Take orders',
           href: '/pos/tables',
           permission: 'take_order',
-          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M4 9h16"/><path d="M5 9l1-5h12l1 5"/><path d="M6 9v10a1 1 0 001 1h10a1 1 0 001-1V9"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>,
+          // An order slip: taking an order is writing one.
+          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>,
         },
         {
           label: language === 'th' ? 'จอครัว' : 'Kitchen',
           href: '/kitchen',
           permission: 'view_kitchen',
-          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M6 2v20"/><path d="M18 2v20"/><path d="M6 8h12"/><path d="M6 16h12"/><path d="M9 5h6"/><path d="M9 19h6"/></svg>,
+          // lucide `ChefHat`.
+          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></svg>,
         },
       ],
     },
@@ -67,13 +69,23 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
           label: language === 'th' ? 'เมนูอาหาร' : 'Menu',
           href: '/menu',
           permission: ['view_menu', 'manage_menu'],
-          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>,
+          // lucide `UtensilsCrossed`.
+          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg>,
+        },
+        {
+          label: language === 'th' ? 'โปรโมชัน' : 'Promotions',
+          href: '/promotions',
+          permission: 'manage_promotions',
+          // lucide `Tag`.
+          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>,
         },
         {
           label: language === 'th' ? 'ผังโต๊ะ' : 'Tables',
           href: '/tables',
           permission: ['manage_table', 'view_tables'],
-          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13M19 7v13M8 20h8"/></svg>,
+          // A floor plan: a square, a round and a long table seen from above.
+          // The circle keeps it apart from the overview's four-square grid.
+          icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="6.5" r="3.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg>,
         },
         {
           label: language === 'th' ? 'คลังออเดอร์' : 'Order archive',
@@ -121,25 +133,34 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
           label: language === 'th' ? 'ตั้งค่า' : 'Settings',
           href: '/settings',
           icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
-          subItems: [
-            {
-              label: language === 'th' ? 'ข้อมูลบัญชี' : 'My Account',
-              href: '/settings/account',
-            },
-            {
-              label: language === 'th' ? 'จัดการร้านและภาษี' : 'Restaurant & Taxes',
-              href: '/settings/restaurant',
-              permission: 'manage_restaurant_settings',
-            },
-            {
-              label: language === 'th' ? 'ภาษาและการแสดงผล' : 'Display settings',
-              href: '/settings/display',
-            },
-          ] as const,
+          // The settings pages carry their own category list, so the sidebar
+          // links the section once instead of repeating it underneath.
         },
       ],
     },
   ] as const;
+}
+
+// The first page this member is allowed to open, in nav order — where the
+// dishy logo and the access-denied "back" button send them. It reads the same
+// nav definition the sidebar filters by, so it can never point somewhere the
+// rail would hide: a chef with no dashboard access lands on the kitchen, not on
+// a page that would just bounce them back. Language is irrelevant to hrefs and
+// permissions, so any value builds the same map.
+export function firstAccessibleHref(membership: Parameters<typeof can>[0]): string {
+  for (const section of buildNav('en')) {
+    for (const item of section.items) {
+      if (item.ownerOnly && membership?.role?.name !== 'owner') continue;
+      const permissions = item.permission
+        ? Array.isArray(item.permission) ? item.permission : [item.permission]
+        : [];
+      if (permissions.length === 0 || permissions.some((permission) => can(membership, permission))) {
+        return item.href;
+      }
+    }
+  }
+  // Account settings carries no permission, so it is always a valid last resort.
+  return '/settings/account';
 }
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
@@ -368,6 +389,10 @@ export default function Sidebar() {
   const { href: restaurantPageHref, pagePath } = useRestaurantNav();
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
+  const { activeMembership } = useAuth();
+  // The logo goes to the member's first reachable page, not a hard-coded
+  // overview a chef cannot open.
+  const landingHref = firstAccessibleHref(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
   const collapseTitle = collapsed
@@ -430,7 +455,7 @@ export default function Sidebar() {
       >
         <div className="dashboard-shell-row border-b border-[var(--rail-border)] flex shrink-0 items-center justify-between gap-2 px-3">
           <Link
-            href={restaurantPageHref("/home")}
+            href={restaurantPageHref(landingHref)}
             aria-label="Dishy"
             onClick={() => setMobileOpen(false)}
             className="flex min-w-0 items-center gap-2 px-1.5"
@@ -493,7 +518,7 @@ export default function Sidebar() {
               </svg>
             </button>
             <Link
-              href={restaurantPageHref("/home")}
+              href={restaurantPageHref(landingHref)}
               aria-label="Dishy"
               tabIndex={collapsed ? -1 : undefined}
               className={`flex min-w-0 items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${

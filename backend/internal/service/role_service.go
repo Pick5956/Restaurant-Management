@@ -51,6 +51,7 @@ const (
 var editablePermissionKeys = map[string]bool{
 	"view_dashboard":                   true,
 	"manage_menu":                      true,
+	"manage_promotions":                true,
 	"view_tables":                      true,
 	"manage_table":                     true,
 	"take_order":                       true,

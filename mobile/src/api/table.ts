@@ -4,8 +4,6 @@ import type {
   MoveTableZoneInput,
   RestaurantTable,
   RestaurantTableInput,
-  TableTag,
-  TableTagInput,
   TableZone,
   TableZoneInput,
 } from '@/src/types/table';
@@ -67,30 +65,6 @@ export function updateTableZone(id: number, data: TableZoneInput) {
 
 export function deleteTableZone(id: number) {
   return apiRequest<{ status: string }>(`/api/v1/table-zones/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-export function listTableTags() {
-  return apiRequest<{ tags: TableTag[] }>('/api/v1/table-tags');
-}
-
-export function createTableTag(data: TableTagInput) {
-  return apiRequest<TableTag>('/api/v1/table-tags', {
-    method: 'POST',
-    body: JSON.stringify({ color: 'gray', ...data }),
-  });
-}
-
-export function updateTableTag(id: number, data: TableTagInput) {
-  return apiRequest<TableTag>(`/api/v1/table-tags/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify({ color: 'gray', ...data }),
-  });
-}
-
-export function deleteTableTag(id: number) {
-  return apiRequest<{ status: string }>(`/api/v1/table-tags/${id}`, {
     method: 'DELETE',
   });
 }
