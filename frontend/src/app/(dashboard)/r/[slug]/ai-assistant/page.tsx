@@ -1033,7 +1033,11 @@ export default function AIAssistantPage() {
               // No mic on the web either since 22 ก.ย. 2569 (the owner's call, the
               // same as the app): speaking goes through the device's own keyboard
               // or OS dictation, which types straight into this box.
-              className="flex flex-col gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
+              // One row: with the mic and the "+" gone the buttons had a whole
+              // line of their own under a one-line question, so the send button
+              // sits beside the text now (22 ก.ย. 2569). items-end keeps it on
+              // the last line as a long question grows.
+              className="flex items-end gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
             >
               <textarea
                   ref={inputRef}
@@ -1047,10 +1051,9 @@ export default function AIAssistantPage() {
                   }}
                   placeholder={copy.askPlaceholder}
                   rows={1}
-                  className="min-h-[2.25rem] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
+                  className="min-h-[2.25rem] min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
                 />
-              <div className="flex items-center gap-1">
-              <div className="flex-1" />
+              <div className="flex shrink-0 items-center gap-1">
               {/* Open the field taller once there is enough text that expanding
                   shows more of it. */}
               {composer.canExpand && (
