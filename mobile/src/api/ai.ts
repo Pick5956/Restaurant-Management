@@ -18,7 +18,6 @@ import type {
   AIConversationSummary,
   AIConversationTurn,
   AIInsight,
-  AIReceiptDraft,
   AISettingsPatch,
   AISettingsView,
   AISnapshot,
@@ -200,8 +199,4 @@ export const updateAISettings = (patch: AISettingsPatch) => apiRequest<AISetting
   { method: 'PUT', body: JSON.stringify(patch) },
 );
 
-export const extractReceipt = (imageBase64: string, mimeType: string) => apiRequest<{ draft: AIReceiptDraft }>(
-  '/api/v1/ai/operations/receipt',
-  { method: 'POST', body: JSON.stringify({ image: imageBase64, mime_type: mimeType }) },
-);
 

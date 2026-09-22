@@ -5,7 +5,6 @@ import type {
   AIChartData,
   AIConversationTurn,
   AINavigation,
-  AIReceiptDraft,
 } from '@/src/types/ai';
 
 // Pure pieces of the chat screen, ported from the web's aiStream / aiThreads /
@@ -297,58 +296,4 @@ export function splitChange(change: string): { from: string; to: string } | null
   const to = parts[1].trim();
   if (!from || !to) return null;
   return { from, to };
-}
-
-// ---------------------------------------------------------------- receipt scan
-
-const receiptCategoryTh: Record<string, string> = {
-  ingredient: 'ค่าวัตถุดิบ',
-  labor: 'ค่าแรง',
-  rent: 'ค่าเช่า',
-  utilities: 'ค่าน้ำค่าไฟ',
-  equipment: 'ค่าอุปกรณ์',
-  other: 'รายจ่ายอื่น',
-};
-
-/**
- * A scanned receipt becomes a sentence in the composer, so the owner reads it,
- * fixes what the scan got wrong, and sends it as an ordinary expense command
- * that still goes through the confirm card. The ledger is never written directly.
- */
-export function receiptDraftToCommand(draft: AIReceiptDraft, language: DisplayLanguage): string {
-  const amount = Number.isFinite(draft.amount) && draft.amount > 0
-    ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(draft.amount)
-    : '';
-  const what = [draft.vendor, draft.note].map((part) => part?.trim()).filter(Boolean).join(' ');
-  const day = draft.spent_at?.trim();
-  if (language === 'th') {
-    const category = receiptCategoryTh[draft.category] ?? 'รายจ่าย';
-    const parts = [`บันทึก${category}`, what, amount ? `${amount} บาท` : '', day ? `วันที่ ${day}` : ''];
-    return parts.filter(Boolean).join(' ');
-  }
-  const parts = [`Record ${draft.category || 'expense'} expense`, what, amount ? `${amount} baht` : '', day ? `on ${day}` : ''];
-  return parts.filter(Boolean).join(' ');
-}
-
-// ---------------------------------------------------------------- voice notes
-
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-/**
- * Base64 for the bytes of a recording. The JS engine the app runs on has no
- * btoa and no Buffer, and the clip is a few hundred kilobytes, so encoding it
- * here costs nothing worth optimising.
- */
-export function bytesToBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let index = 0; index < bytes.length; index += 3) {
-    const a = bytes[index];
-    const b = bytes[index + 1];
-    const c = bytes[index + 2];
-    out += BASE64_ALPHABET[a >> 2];
-    out += BASE64_ALPHABET[((a & 3) << 4) | ((b ?? 0) >> 4)];
-    out += index + 1 < bytes.length ? BASE64_ALPHABET[((b & 15) << 2) | ((c ?? 0) >> 6)] : '=';
-    out += index + 2 < bytes.length ? BASE64_ALPHABET[c & 63] : '=';
-  }
-  return out;
 }
