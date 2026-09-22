@@ -25,7 +25,6 @@ const ORB_SIZE = 56;
 const ORB_DRAG_THRESHOLD = 6;
 const ORB_SPOT_KEY = "ai_orb_spot";
 type OrbSpot = { side: "left" | "right"; top: number };
-import AIInputTools from "@/src/components/shared/AIInputTools";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage } from "@/src/lib/ai";
 import {
@@ -1153,12 +1152,6 @@ export default function AIOperationsFloatingChat() {
                   {composer.expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 </button>
               )}
-              <AIInputTools
-                tools={["voice"]}
-                language={language}
-                disabled={loading || actionConfirming || actionCancelling}
-                onInsertText={(text) => setInput((v) => (v.trim() ? `${v.trim()} ${text}` : text))}
-              />
               <button
                 type="submit"
                 aria-label={copy.send}
