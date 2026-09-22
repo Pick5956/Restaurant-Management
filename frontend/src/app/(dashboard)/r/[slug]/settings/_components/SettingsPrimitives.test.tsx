@@ -114,7 +114,7 @@ describe("SettingsField", () => {
   it("is the reference's flat field: 40px, tinted, 300px wide from md", () => {
     const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} />), "input", "class") ?? "").split(" ");
 
-    expect(classes).toEqual(expect.arrayContaining(["h-10", "rounded-[2px]", "bg-(--settings-field)", "md:w-[300px]"]));
+    expect(classes).toEqual(expect.arrayContaining(["h-10", "rounded", "bg-(--settings-field)", "md:w-[300px]"]));
   });
 
   it("gives a one-line field a full 40px line box so Thai tone marks are not clipped", () => {
@@ -133,13 +133,20 @@ describe("SettingsField", () => {
     expect(markup).toMatch(/\s(?:aria-invalid|data-invalid)="true"/);
   });
 
-  it("never pairs its focus outline with outline-none", () => {
-    // Tailwind v4's outline-none sets --tw-outline-style: none, which a later
-    // outline width does not undo - the focused field would draw no outline.
+  it("focuses like every other text box in the app, not with the heavy button ring", () => {
+    // The 2px orange-700 ring read as a dark frame on a field being typed in;
+    // text boxes app-wide take a 1px orange-500 edge, grey-300 on hover.
     const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} />), "input", "class") ?? "").split(" ");
 
-    expect(classes).toContain("focus-visible:outline-2");
-    expect(classes).not.toContain("outline-none");
+    expect(classes).toEqual(expect.arrayContaining(["ring-inset", "focus:ring-1", "focus:ring-orange-500", "hover:ring-1", "hover:ring-gray-300"]));
+    expect(classes).not.toContain("focus-visible:outline-orange-700");
+  });
+
+  it("keeps an invalid field's red edge while it is hovered or focused", () => {
+    const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} error="e" />), "input", "class") ?? "").split(" ");
+
+    expect(classes).toEqual(expect.arrayContaining(["ring-2", "ring-inset", "ring-red-700"]));
+    expect(classes.some((name) => name.startsWith("focus:ring") || name.startsWith("hover:ring"))).toBe(false);
   });
 });
 

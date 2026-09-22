@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Printer } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
@@ -457,8 +458,8 @@ export default function ExpensesPage() {
         <span className="hidden text-[16px] font-semibold print:block">{monthLabel}</span>
         <span className="text-[11px] text-gray-500 dark:text-gray-400 print:hidden">{scopedData.entries} {copy.entries}</span>
         {/* Icon-only, so the label has to survive as an accessible name. */}
-        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className="ui-press ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className={`ml-auto ${BACK_CONTROL} print:hidden`}>
+          <ArrowLeft className={BACK_ICON} aria-hidden="true" />
         </Link>
         <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
           <Printer className="h-4 w-4" aria-hidden="true" />

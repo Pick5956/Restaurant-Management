@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Clock3, ReceiptText } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
@@ -115,8 +116,8 @@ export default function CustomerTableOrdersPage() {
     <div className="min-h-dvh bg-white pb-8 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <Link href={customerTableMenuHref(token)} aria-label={copy.back} title={copy.back} className="ui-press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <Link href={customerTableMenuHref(token)} aria-label={copy.back} title={copy.back} className={BACK_CONTROL}>
+            <ArrowLeft className={BACK_ICON} aria-hidden="true" />
           </Link>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-orange-600 dark:text-orange-400">{payload.restaurant.name}</p>

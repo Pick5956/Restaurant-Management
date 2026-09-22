@@ -42,14 +42,25 @@ import SegmentedControl from "@/src/components/shared/SegmentedControl";
 import RealtimeConnectionNotice from "@/src/components/shared/RealtimeConnectionNotice";
 import ReservationHistoryModal from "@/src/components/tables/ReservationHistoryModal";
 import ReservationWhenPicker from "@/src/components/tables/ReservationWhenPicker";
+import TakeawayOrderCards from "@/src/components/tables/TakeawayOrderCards";
+import { activeTakeaways } from "@/src/lib/takeawayOrders";
 import { useOrderEvents } from "@/src/hooks/useOrderEvents";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
 
+const TAKEAWAY_ZONE = "takeaway";
 const activeOrderStatuses = ["open", "sent_to_kitchen", "cooking", "ready", "served"];
 const tableRefreshIntervalMs = 60_000;
 type TableSheetMode = "open" | "reserved";
 /** What the free-table sheet is for. The form and its one footer action follow it. */
 type TableSheetIntent = "dine_in" | "reserve";
+
+// The steppers in the party-size row. Each presses on its own with a darker
+// fill; no ui-press, whose nudge made the whole row look as if it sank.
+const COUNT_STEP_CLASS =
+  "group text-[13px] font-semibold text-gray-700 outline-none transition-colors duration-75 hover:bg-gray-50 active:bg-gray-200 focus-visible:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-gray-200 dark:hover:bg-gray-700 dark:active:bg-gray-600";
+// The glyph inside a stepper: it dips under the finger, so a tap is felt
+// without the row around it moving.
+const COUNT_STEP_GLYPH = "inline-block transition-transform duration-100 ease-out group-active:scale-75 group-disabled:scale-100";
 
 // Thai numbers are 9 digits (landline) or 10 (mobile): keep digits only and cap at 10.
 const PHONE_MAX_DIGITS = 10;
@@ -309,6 +320,11 @@ export default function PosTablesPage() {
     return Array.from(groups.values());
   }, [copy.noZone, search, tables, zoneFilter]);
 
+  // Open takeaway orders get a zone of their own on the floor, so a takeaway can
+  // be reopened from here like any table. "takeaway" is its zone-filter key.
+  const takeaways = useMemo(() => activeTakeaways(orders, search), [orders, search]);
+  const showTakeaways = zoneFilter === "all" || zoneFilter === TAKEAWAY_ZONE;
+
   // When the restaurant has no zones at all, drop the zone chrome entirely so the
   // floor reads as a plain, sequential list instead of a single "No zone" bucket.
   const hasAnyZone = useMemo(() => tables.some((table) => table.zone_id), [tables]);
@@ -330,12 +346,14 @@ export default function PosTablesPage() {
     list.filter((table) => !activeOrderByTable.has(table.ID) && table.status === "free").length;
 
   const allZonesLabel = language === "th" ? "ทุกโซน" : "All zones";
+  const allTakeawayCount = useMemo(() => activeTakeaways(orders).length, [orders]);
   const zoneSelectOptions = useMemo(
     () => [
       { value: "all", label: `${allZonesLabel} (${tables.length})` },
       ...zoneOptions.map((zone) => ({ value: zone.key, label: `${zone.label} (${zone.count})` })),
+      ...(allTakeawayCount ? [{ value: TAKEAWAY_ZONE, label: `${copy.takeaway} (${allTakeawayCount})` }] : []),
     ],
-    [allZonesLabel, tables.length, zoneOptions],
+    [allTakeawayCount, allZonesLabel, copy.takeaway, tables.length, zoneOptions],
   );
   const zoneCountLabel = (free: number, total: number) =>
     language === "th" ? `ว่าง ${free} จาก ${total} โต๊ะ` : `${free} of ${total} free`;
@@ -636,28 +654,31 @@ export default function PosTablesPage() {
   const sheetTableLabel = selectedTable?.display_label || selectedTable?.table_number || "";
 
   const customerCountField = (
-    <label className="block">
+    // A div, not a label: a label hands every click inside it to its input, so
+    // tapping − focused the number field and lit the orange focus edge. The
+    // buttons press on their own (a darker fill), never the whole box.
+    <div>
       <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.customerCount}</span>
-      <div className="grid grid-cols-[56px_1fr_56px] overflow-hidden rounded-md border border-gray-200 bg-white focus-within:border-orange-500 dark:border-gray-700 dark:bg-gray-800">
-        <button type="button" onClick={() => setCustomerCount((current) => Math.max(1, current - 1))} disabled={customerCount <= 1} className="ui-press h-14 border-r border-gray-200 text-xl font-semibold text-gray-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">
-          −
+      {/* One row: −5 and +5 at the ends,
+          −1 and +1 beside the count. Down as well as up, because overshooting
+          is as common as undershooting. No focus edge on the number: the
+          owner wanted the row to stay still whatever is tapped. */}
+      <div className="grid h-12 grid-cols-[72px_72px_1fr_72px_72px] divide-x divide-gray-200 overflow-hidden rounded-md border border-gray-200 bg-white dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
+        <button type="button" aria-label="-5" onClick={() => setCustomerCount((current) => Math.max(1, current - 5))} disabled={customerCount <= 1} className={COUNT_STEP_CLASS}>
+          <span className={COUNT_STEP_GLYPH}>−5</span>
         </button>
-        <NumberInput min={1} inputMode="numeric" value={customerCount} onValue={setCustomerCount} className="h-14 min-w-0 border-0 bg-transparent px-2 text-center text-[22px] font-semibold tabular-nums text-gray-900 outline-none dark:text-white" />
-        <button type="button" onClick={() => setCustomerCount((current) => current + 1)} className="ui-press h-14 border-l border-gray-200 text-xl font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
-          +
+        <button type="button" aria-label="-1" onClick={() => setCustomerCount((current) => Math.max(1, current - 1))} disabled={customerCount <= 1} className={`${COUNT_STEP_CLASS} text-lg`}>
+          <span className={COUNT_STEP_GLYPH}>−</span>
+        </button>
+        <NumberInput min={1} inputMode="numeric" aria-label={copy.customerCount} value={customerCount} onValue={setCustomerCount} className="h-full min-w-0 bg-transparent px-2 text-center text-[18px] font-semibold tabular-nums text-gray-900 outline-none dark:text-white" />
+        <button type="button" aria-label="+1" onClick={() => setCustomerCount((current) => current + 1)} className={`${COUNT_STEP_CLASS} text-lg`}>
+          <span className={COUNT_STEP_GLYPH}>+</span>
+        </button>
+        <button type="button" aria-label="+5" onClick={() => setCustomerCount((current) => current + 5)} className={COUNT_STEP_CLASS}>
+          <span className={COUNT_STEP_GLYPH}>+5</span>
         </button>
       </div>
-      {/* Up and down rather than two sizes of up: overshooting is as common as
-          undershooting, and getting back down meant holding the minus button. */}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setCustomerCount((current) => current + 5)} className="ui-press h-10 rounded-md border border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-800">
-          +5
-        </button>
-        <button type="button" onClick={() => setCustomerCount((current) => Math.max(1, current - 5))} className="ui-press h-10 rounded-md border border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-800">
-          −5
-        </button>
-      </div>
-    </label>
+    </div>
   );
 
   return (
@@ -665,7 +686,7 @@ export default function PosTablesPage() {
       {isNavigating ? (
         <div aria-hidden="true" className="fixed inset-0 z-[var(--z-modal)] cursor-wait bg-transparent" />
       ) : null}
-      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto">
+      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto">
         <h1 className="sr-only">{copy.eyebrow}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-5">
           <div className="grid w-full gap-1.5 lg:flex lg:items-center lg:gap-2">
@@ -684,7 +705,7 @@ export default function PosTablesPage() {
               <button
                 type="button"
                 onClick={() => setReservationsOpen(true)}
-                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
+                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:border-gray-300 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
               >
                 <CalendarClock className="h-4 w-4" />
                 {copy.reservationHistory}
@@ -693,7 +714,7 @@ export default function PosTablesPage() {
                 type="button"
                 disabled={isNavigating}
                 onClick={openTakeawaySheet}
-                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
+                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:border-gray-300 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
               >
                 <ShoppingBag className="h-4 w-4" />
                 {copy.takeaway}
@@ -735,7 +756,8 @@ export default function PosTablesPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          {groupedTables.length ? groupedTables.map((group) => (
+          {showTakeaways ? <TakeawayOrderCards orders={takeaways} language={language} disabled={isNavigating} onOpen={navigateToOrder} /> : null}
+          {groupedTables.length || (showTakeaways && takeaways.length) ? groupedTables.map((group) => (
             <section key={group.label}>
               {hasAnyZone && (
                 <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-[color:var(--dashboard-shell-border)] pb-2">
@@ -981,7 +1003,7 @@ export default function PosTablesPage() {
                     </>
                   ) : (
                     <>
-                      {customerCountField}
+                      {!takeawayOpen && customerCountField}
                       <label className="block">
                         <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.note}</span>
                         <textarea value={note} onChange={(event) => setNote(event.target.value)} className="min-h-24 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[15px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 sm:min-h-20 sm:text-[13px]" />

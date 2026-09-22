@@ -185,7 +185,7 @@ export function DashboardContentSkeleton() {
 export function DashboardPageSkeleton() {
   return (
     <div className="min-h-dvh bg-white dark:bg-gray-950">
-      <div className="hidden lg:block fixed inset-y-0 left-0 w-[220px] border-r border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950">
+      <div className="hidden lg:block fixed inset-y-0 left-0 w-[235px] border-r border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950">
         <div className="flex items-center gap-2.5">
           <Skeleton className="h-9 w-9" />
           <div className="space-y-1.5">

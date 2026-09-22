@@ -70,6 +70,14 @@ const nextConfig: NextConfig = {
     // The built-in Next MCP writes .next/dev/logs/next-development.log.
     // Project tooling keeps runtime logs in the root logs/ directory instead.
     mcpServer: false,
+    // Next 16 keeps Turbopack's dev build on disk (.next/dev) between runs.
+    // Tailwind's output depends on class names scanned out of every source
+    // file, which that cache does not track, so it kept serving an old
+    // stylesheet: new utilities (a w-[250px] rail, bg-white/82 headers) never
+    // reached the page, even across restarts, and the cache grew to 4.2 GB
+    // with a dev server near 5 GB (2026-09-22). Rebuilding on each start costs
+    // a few seconds and keeps the CSS true to the source.
+    turbopackFileSystemCacheForDev: false,
   },
   turbopack: {
     // Public docs and the backend AI embed import the same catalog from the
