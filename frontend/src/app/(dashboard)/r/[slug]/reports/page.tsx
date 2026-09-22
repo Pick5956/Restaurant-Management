@@ -96,6 +96,8 @@ export default function ReportsPage() {
         days: (n: number) => `${n} วัน`,
         presets: { today: "วันนี้", yesterday: "เมื่อวาน", last7: "7 วันล่าสุด", last14: "14 วันล่าสุด", last30: "30 วันล่าสุด", thisMonth: "เดือนนี้", lastMonth: "เดือนก่อน" } as Record<ReportPreset, string>,
         problems: { order: "วันเริ่มต้องไม่หลังวันจบ", future: "ยังไม่ถึงวันที่เลือก", tooLong: `เลือกได้ไม่เกิน ${REPORT_MAX_DAYS} วัน` },
+        sameRange: "กำลังแสดงช่วงนี้อยู่แล้ว",
+        applyHint: "โหลดรายงานของช่วงวันที่ที่เลือก",
       }
     : {
         denied: "You do not have permission to view reports.",
@@ -141,6 +143,8 @@ export default function ReportsPage() {
         days: (n: number) => `${n} days`,
         presets: { today: "Today", yesterday: "Yesterday", last7: "Last 7 days", last14: "Last 14 days", last30: "Last 30 days", thisMonth: "This month", lastMonth: "Last month" } as Record<ReportPreset, string>,
         problems: { order: "The start must not be after the end", future: "That day has not come yet", tooLong: `Choose ${REPORT_MAX_DAYS} days or fewer` },
+        sameRange: "Already showing this range",
+        applyHint: "Show the report for the selected range",
       }, [language]);
 
   // A day opens in a dialog. Only one is open at a time, so a single slot for
@@ -227,6 +231,15 @@ export default function ReportsPage() {
   const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const preset = matchPreset(range, today);
   const draftProblem = rangeProblem(draft, today);
+  // Why "ดู" is not clickable: an invalid range, or a draft that already matches
+  // what is on screen so there is nothing new to load. Surfaced as a tooltip.
+  const sameAsShown = draft.from === range.from && draft.to === range.to;
+  const applyDisabled = Boolean(draftProblem) || sameAsShown;
+  const applyHint = draftProblem
+    ? copy.problems[draftProblem]
+    : sameAsShown
+    ? copy.sameRange
+    : copy.applyHint;
   const applyDraft = () => {
     if (draftProblem) return;
     setRange({ from: draft.from, to: draft.to > today ? today : draft.to });
@@ -269,13 +282,19 @@ export default function ReportsPage() {
               {copy.to}
               <input id="report-period-to" type="date" value={draft.to} max={today} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
             </label>
-            <button
-              type="submit"
-              disabled={Boolean(draftProblem) || (draft.from === range.from && draft.to === range.to)}
-              className="ui-press h-10 rounded-xl bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
-            >
-              {copy.apply}
-            </button>
+            {/* The span carries the tooltip so it still shows while the button is
+                disabled — a disabled button swallows hover in Chrome, so
+                disabled:pointer-events-none lets the cursor fall through to it. */}
+            <span title={applyHint} className={`inline-flex${applyDisabled ? " cursor-not-allowed" : ""}`}>
+              <button
+                type="submit"
+                title={applyHint}
+                disabled={applyDisabled}
+                className="ui-press h-10 rounded-xl bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:pointer-events-none disabled:opacity-40"
+              >
+                {copy.apply}
+              </button>
+            </span>
             <span className="pb-2 text-[12px] text-gray-500 tabular-nums">
               {draftProblem ? <span className="text-red-600">{copy.problems[draftProblem]}</span> : copy.days(rangeDayCount(range))}
             </span>
