@@ -11,6 +11,7 @@ import AppLogo from '@/src/components/shared/AppLogo';
 import AppWordmark from '@/src/components/shared/AppWordmark';
 import { useBackdropClose } from '@/src/hooks/useBackdropClose';
 import { can, TEAM_MANAGEMENT_PERMISSIONS } from '@/src/lib/rbac';
+import { getDefaultWorkspaceRoute } from '@/src/lib/workMode';
 import type { Permission } from '@/src/types/auth';
 
 type SubItem = {
@@ -139,28 +140,6 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
       ],
     },
   ] as const;
-}
-
-// The first page this member is allowed to open, in nav order — where the
-// dishy logo and the access-denied "back" button send them. It reads the same
-// nav definition the sidebar filters by, so it can never point somewhere the
-// rail would hide: a chef with no dashboard access lands on the kitchen, not on
-// a page that would just bounce them back. Language is irrelevant to hrefs and
-// permissions, so any value builds the same map.
-export function firstAccessibleHref(membership: Parameters<typeof can>[0]): string {
-  for (const section of buildNav('en')) {
-    for (const item of section.items) {
-      if (item.ownerOnly && membership?.role?.name !== 'owner') continue;
-      const permissions = item.permission
-        ? Array.isArray(item.permission) ? item.permission : [item.permission]
-        : [];
-      if (permissions.length === 0 || permissions.some((permission) => can(membership, permission))) {
-        return item.href;
-      }
-    }
-  }
-  // Account settings carries no permission, so it is always a valid last resort.
-  return '/settings/account';
 }
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
@@ -390,9 +369,9 @@ export default function Sidebar() {
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
   const { activeMembership } = useAuth();
-  // The logo goes to the member's first reachable page, not a hard-coded
-  // overview a chef cannot open.
-  const landingHref = firstAccessibleHref(activeMembership);
+  // The logo goes to the member's default workspace, not a hard-coded overview
+  // a chef cannot open — the same resolver the restaurant entry redirect uses.
+  const landingHref = getDefaultWorkspaceRoute(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
   const collapseTitle = collapsed

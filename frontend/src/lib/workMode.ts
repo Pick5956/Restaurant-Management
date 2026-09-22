@@ -5,7 +5,9 @@ export function getDefaultWorkspaceRoute(membership: Membership | null | undefin
   const roleName = membership?.role?.name ?? "";
   if (roleName === "chef") return "/kitchen";
   if (roleName === "waiter") return "/pos/tables";
-  if (roleName === "cashier") return "/orders";
+  // Cashiers work the front like waiters — they start on the order-taking floor,
+  // not the paid-bill archive.
+  if (roleName === "cashier") return "/pos/tables";
   if (roleName === "owner" || roleName === "manager") return "/home";
 
   if (can(membership, "view_kitchen")) return "/kitchen";

@@ -2356,7 +2356,7 @@ export default function Home() {
                 closed folder's tab while a card is open, a full tile in the
                 grid — so the row never looks like it lost two cards. It stays
                 a plain div: nothing to click, so no tab press or tile hover. */}
-            {canViewReports && !isToday ? (
+            {!isToday ? (
               <div
                 style={{ order: collapsedRank("sales") }}
                 className={
