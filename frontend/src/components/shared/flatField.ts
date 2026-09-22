@@ -9,9 +9,8 @@
  * links; on a box someone is typing in it read as a dark frame (owner,
  * 2026-09-21).
  *
- * Used by the settings primitives, ThemedSelect's "filled" and "tinted" faces,
- * and every box on the menu page (2026-09-21: the settings fill and edges, but
- * each box keeps the corner radius it had).
+ * Used by the settings primitives and ThemedSelect's "filled" face. The menu
+ * page tried it on 2026-09-21 and went back to its white bordered boxes.
  */
 export const FLAT_FIELD_SURFACE = "border-0 bg-(--settings-field)";
 

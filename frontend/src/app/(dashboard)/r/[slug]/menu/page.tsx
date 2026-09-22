@@ -18,7 +18,6 @@ import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import ThemedMultiSelect from "@/src/components/shared/ThemedMultiSelect";
-import { flatField } from "@/src/components/shared/flatField";
 import { useDragReorder } from "@/src/hooks/useDragReorder";
 import MenuImageCropper from "@/src/components/menu/MenuImageCropper";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
@@ -42,13 +41,11 @@ type DeleteTarget =
   | { type: "item"; id: number; name: string };
 type ItemEditorTab = "basic" | "options" | "recipe";
 
-// TEMPORARY (2026-09-22): the owner asked for the old white bordered boxes for a
-// screenshot and will ask for the flat ones back. Set to false to restore.
-const TEMP_WHITE_FIELDS = true;
+// The menu page keeps the white bordered boxes (owner, 2026-09-22): the flat
+// tinted settings look was tried here and dropped.
 const WHITE_FIELD = "border border-gray-200 bg-white outline-none transition-colors focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800";
 const WHITE_FIELD_ERROR = "border border-red-300 bg-white outline-none transition-colors focus:border-orange-500 dark:border-red-900/60 dark:bg-gray-800";
-const fieldLook = (invalid = false) => (TEMP_WHITE_FIELDS ? (invalid ? WHITE_FIELD_ERROR : WHITE_FIELD) : flatField(invalid));
-const FIELD_BOUNDARY = TEMP_WHITE_FIELDS ? "subtle" : "tinted";
+const fieldLook = (invalid = false) => (invalid ? WHITE_FIELD_ERROR : WHITE_FIELD);
 
 export default function MenuPage() {
   const { activeMembership } = useAuth();
@@ -837,7 +834,6 @@ export default function MenuPage() {
                   </label>
                   <div className="w-full sm:w-40">
                     <ThemedSelect
-                      boundary={FIELD_BOUNDARY}
                       triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
                       aria-label={copy.allCategories}
                       value={String(filterCategory)}
@@ -1100,7 +1096,6 @@ export default function MenuPage() {
                       // chosen categories as chips inside the field, and a list
                       // that ticks each one and stays open (2026-09-21).
                       <ThemedMultiSelect
-                        boundary={FIELD_BOUNDARY}
                         aria-label={copy.itemCategories}
                         placeholder={copy.noCategoryPicked}
                         moreLabel={copy.moreCategories}
@@ -1323,7 +1318,6 @@ export default function MenuPage() {
                                   <span>{copy.countLabel}</span>
                                   <div className="w-[4.5rem] shrink-0">
                                     <ThemedSelect
-                                      boundary={FIELD_BOUNDARY}
                                       aria-label={copy.countLabel}
                                       compact
                                       value={String(maxSelect)}
@@ -1337,7 +1331,6 @@ export default function MenuPage() {
                                     <span>{copy.minLabel}</span>
                                     <div className="w-[4.5rem] shrink-0">
                                       <ThemedSelect
-                                        boundary={FIELD_BOUNDARY}
                                         aria-label={copy.minLabel}
                                         compact
                                         value={String(minSelect)}
@@ -1413,7 +1406,6 @@ export default function MenuPage() {
                                                 <div className="flex flex-wrap items-center gap-2">
                                                   <div className="min-w-0 flex-1">
                                                     <ThemedSelect
-                                                      boundary={FIELD_BOUNDARY}
                                                       aria-label={copy.ingredient}
                                                       compact
                                                       value={String(row.ingredient_id || 0)}
@@ -1435,7 +1427,6 @@ export default function MenuPage() {
                                                   />
                                                   <div className="w-[4.75rem] shrink-0 sm:w-24">
                                                     <ThemedSelect
-                                                      boundary={FIELD_BOUNDARY}
                                                       aria-label={copy.unit}
                                                       compact
                                                       value={chosenUnit}
@@ -1522,7 +1513,6 @@ export default function MenuPage() {
                       return (
                         <div key={componentIndex} className="grid gap-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
                           <ThemedSelect
-                            boundary={FIELD_BOUNDARY}
                             aria-label={copy.ingredient}
                             value={String(component.ingredient_id || 0)}
                             onChange={(next) => {
@@ -1543,7 +1533,6 @@ export default function MenuPage() {
                             />
                             <div className="w-28 shrink-0">
                               <ThemedSelect
-                                boundary={FIELD_BOUNDARY}
                                 compact
                                 value={component.unit || selectedIngredient?.unit || ""}
                                 onChange={(next) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, unit: next } : current))}

@@ -28,9 +28,7 @@ export type ThemedSelectProps = {
   // differently-rounded shape.
   triggerClassName?: string;
   // "filled" is the settings pages' field: a flat tinted box with no edge, 40px
-  // tall with 16px text. "tinted" is that same edgeless face at the page's own
-  // size and corner radius (the menu page, 2026-09-21): the settings look
-  // without the settings sizes or the 4px corners.
+  // tall with 16px text.
   boundary?: SelectBoundary;
   // The desktop trigger is a button, not a native select, so it has no implicit
   // name. Call sites were already passing aria-label and TypeScript let it
@@ -41,7 +39,7 @@ export type ThemedSelectProps = {
   "aria-labelledby"?: string;
 };
 
-export type SelectBoundary = "subtle" | "filled" | "tinted";
+export type SelectBoundary = "subtle" | "filled";
 
 // border-color is not transitioned: when an attached list closes, the field's
 // bottom edge has to be there at once, not fade in after it.
@@ -63,23 +61,17 @@ const TRIGGER_OPEN_FILLED = `border-transparent ${FLAT_FIELD_SURFACE} focus-visi
 
 export function triggerState(boundary: SelectBoundary, open: boolean) {
   if (boundary === "filled") return open ? TRIGGER_OPEN_FILLED : TRIGGER_CLOSED_FILLED;
-  if (boundary === "tinted") return open ? TRIGGER_OPEN_TINTED : TRIGGER_CLOSED_TINTED;
   return open ? TRIGGER_OPEN : TRIGGER_CLOSED;
 }
 const TRIGGER_CLOSED =
   "border-[color:var(--dashboard-shell-border)] bg-white hover:border-gray-300 hover:bg-gray-100 dark:bg-gray-900 dark:hover:border-[#2c3848] dark:hover:bg-gray-800";
 const TRIGGER_OPEN =
   "border-[#d6dbe2] bg-white focus-visible:!border-[#d6dbe2] dark:border-[#2c3848] dark:bg-gray-900 dark:focus-visible:!border-[#2c3848]";
-// The tinted face wears the filled one's surface and edges; only its size and
-// corners come from the ordinary select.
-const TRIGGER_CLOSED_TINTED = TRIGGER_CLOSED_FILLED;
-const TRIGGER_OPEN_TINTED = TRIGGER_OPEN_FILLED;
 
 /** An attached list's fill and edge: the open trigger's, so the two read as one piece. */
 export const MENU_SURFACE: Record<SelectBoundary, string> = {
   filled: `border-0 ${FLAT_FIELD_SURFACE}`,
   subtle: "border border-[#d6dbe2] bg-white dark:border-[#2c3848] dark:bg-gray-900",
-  tinted: `border-0 ${FLAT_FIELD_SURFACE}`,
 };
 
 
