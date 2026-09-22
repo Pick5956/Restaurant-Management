@@ -196,10 +196,12 @@ export type AIForecastResult = {
 // after `series` is a drawing hint (what to emphasise, what to fade and why, a
 // line to compare against) and never carries a figure the text does not.
 export type AIChartData = {
-  kind: "bar" | "line" | "pie";
+  kind: "bar" | "line" | "pie" | "stocklist";
   title: string;
   unit?: string;
   categories: string[];
+  /** One unit per category, for a list whose rows do not share one. */
+  units?: string[];
   series: AIChartSeries[];
   layout?: "horizontal";
   compare?: boolean;

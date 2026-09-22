@@ -204,8 +204,73 @@ function MarkedDot({ cx, cy, index, ctx }: { cx?: number; cy?: number; index?: n
   return <circle cx={cx} cy={cy} r={3.5} fill={PALETTE[0]} stroke={SURFACE} strokeWidth={2} />;
 }
 
+// What is running low: how many ran out, how many are close, and their names
+// as chips. It replaced a bar chart of stock as a percent of the minimum — of
+// things that ran out every bar is 0%, so the owner saw an empty frame with a
+// column of names (20 ก.ย. 2569). He picked this over a card list and a table:
+// the question is "what is out", and a chat answer should stay short; the
+// amounts to order are one tap away in the stock page.
+function StockCount({ label, n, tone, language }: { label: string; n: number; tone: string; language: "th" | "en" }) {
+  const unit = language === "th" ? "อย่าง" : n === 1 ? "item" : "items";
+  return (
+    <div>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="text-[26px] font-bold leading-none" style={{ color: tone }}>
+        {n} <span className="text-[13px] font-semibold text-gray-500 dark:text-gray-400">{unit}</span>
+      </p>
+    </div>
+  );
+}
+
+function StockList({ data, language }: { data: AIChartData; language: "th" | "en" }) {
+  const th = language === "th";
+  const status = data.status ?? [];
+  const rows = data.categories.map((name, i) => ({ name, status: status[i] ?? "" }));
+  const out = rows.filter((r) => r.status === "critical");
+  const low = rows.filter((r) => r.status === "warning");
+  const listed = [...out, ...low];
+  if (listed.length === 0) return null;
+
+  return (
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-end gap-3">
+        {out.length > 0 ? <StockCount label={th ? "หมดแล้ว" : "out of stock"} n={out.length} tone="var(--ai-critical)" language={language} /> : null}
+        {low.length > 0 ? (
+          <div className={out.length > 0 ? "border-l border-gray-200 pl-3 dark:border-gray-800" : ""}>
+            <StockCount label={th ? "ใกล้หมด" : "running low"} n={low.length} tone="var(--ai-warning)" language={language} />
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {listed.map((r, i) => {
+          const tone = r.status === "critical" ? "var(--ai-critical)" : "var(--ai-warning)";
+          return (
+            <span
+              key={`${r.name}-${i}`}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium"
+              style={{ color: tone, backgroundColor: `color-mix(in srgb, ${tone} 12%, transparent)` }}
+            >
+              {r.name}
+              {/* "ใกล้หมด" on a chip, not statusLabel's "ต่ำกว่าขั้นต่ำ": the
+                  chip has room for two words, and the count above says the
+                  same thing in the same words. */}
+              <span className="text-[11px] opacity-70">
+                {r.status === "critical" ? (th ? "หมด" : "out") : th ? "ใกล้หมด" : "low"}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+        {th ? "ดูจำนวนที่ต้องสั่งได้ในหน้าคลังวัตถุดิบ" : "The amounts to order are in the stock page"}
+      </p>
+    </div>
+  );
+}
+
 export default function AIChart({ data, language = "th" }: { data: AIChartData; language?: "th" | "en" }) {
   if (!data || !data.categories?.length || !data.series?.length) return null;
+  if (data.kind === "stocklist") return <StockList data={data} language={language} />;
 
   const drawn = data.series.filter((s) => s.role !== "tooltip");
   const extra = data.series.filter((s) => s.role === "tooltip");

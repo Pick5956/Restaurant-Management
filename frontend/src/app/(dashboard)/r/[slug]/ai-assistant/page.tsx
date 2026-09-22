@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
-import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings, Square, X } from "lucide-react";
+import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
@@ -46,14 +46,12 @@ import type { AIActionPreview, AIActionPlan, AIConversationMessage, AIForecastRe
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
-import AIInputTools from "@/src/components/shared/AIInputTools";
 import AISettingsModal from "@/src/components/shared/AISettingsModal";
 import ForecastChart from "@/src/components/shared/ForecastChart";
 import AIChart from "@/src/components/shared/AIChart";
 import AIInsightsPanel from "@/src/components/shared/AIInsightsPanel";
 import HoverTip from "@/src/components/shared/HoverTip";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
-import VoiceWaveform from "@/src/components/shared/VoiceWaveform";
 import AIFollowUpList from "@/src/components/shared/AIFollowUpList";
 import { cacheOwnerTitle, useFollowUpsEnabled, useWelcome } from "@/src/lib/aiPrefs";
 import SiriOrb from "@/src/components/ui/siri-orb";
@@ -161,8 +159,6 @@ export default function AIAssistantPage() {
   // stays mounted to show it. Once resolved, the preview must be dropped without
   // trying to cancel an already-executed action.
   const actionResolvedRef = useRef(false);
-  const [voiceListening, setVoiceListening] = useState(false);
-  const [voiceLevel, setVoiceLevel] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [insightsCount, setInsightsCount] = useState(0);
@@ -189,8 +185,6 @@ export default function AIAssistantPage() {
   // end; shown always, it covers a message to offer a trip to where they are.
   const [atLatest, setAtLatest] = useState(true);
   // Clearing deletes the server copy too and cannot be undone, so it asks first.
-  const voiceControlsRef = useRef<{ stop: () => void; cancel: () => void } | null>(null);
-  const sendAfterVoiceRef = useRef(false);
   const chatWriteSourceRef = useRef(Symbol("ai-assistant-page"));
   const canUseAI = activeMembership?.role?.name === "owner";
 
@@ -499,26 +493,6 @@ export default function AIAssistantPage() {
       if (conversationRequests.isCurrent(requestGeneration)) setDraft(null);
       setLoading(false);
     }
-  };
-
-  // Dictated text lands here. The send button sets a flag before stopping, so the
-  // transcript can go straight out instead of waiting in the box for a second click.
-  const handleVoiceText = (text: string) => {
-    const merged = input.trim() ? `${input.trim()} ${text}` : text;
-    if (sendAfterVoiceRef.current) {
-      sendAfterVoiceRef.current = false;
-      setInput("");
-      void submitQuestion(merged);
-      return;
-    }
-    setInput(merged);
-  };
-
-  const handleListeningChange = (listening: boolean) => {
-    setVoiceListening(listening);
-    // Runs after the transcript callback, so this only clears an unused flag
-    // (e.g. send was pressed but nothing was recognised).
-    if (!listening) sendAfterVoiceRef.current = false;
   };
 
   const handleConfirmActionPreview = async () => {
@@ -897,8 +871,6 @@ export default function AIAssistantPage() {
                   <SiriOrb
                     size="128px"
                     className="shrink-0 drop-shadow-[0_15px_50px_rgba(249,115,22,0.4)]"
-                    active={voiceListening}
-                    level={voiceLevel}
                   />
                   {/* One line on the empty screen. The heading repeated the app's
                       own name above a sentence that said it again — three ways of
@@ -1015,24 +987,6 @@ export default function AIAssistantPage() {
             </div>
           </div>
 
-          {/* Dictation spotlight — the big orb rises over the conversation while
-              the mic is live, so the empty state isn't the only place it reacts. */}
-          {voiceListening && !isEmpty && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/45 backdrop-blur-[2px] dark:bg-gray-900/55">
-              <div className="flex flex-col items-center gap-4">
-                <SiriOrb
-                  size="150px"
-                  className="shrink-0 drop-shadow-[0_15px_50px_rgba(249,115,22,0.45)]"
-                  active
-                  level={voiceLevel}
-                />
-                <span className="rounded-full bg-white/85 px-3.5 py-1.5 text-xs font-semibold text-orange-600 shadow-sm dark:bg-gray-800/85 dark:text-orange-400">
-                  {language === "th" ? "กำลังฟัง… พูดได้เลยครับ" : "Listening… go ahead"}
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* Quick questions (only before the conversation starts) — rounded pills */}
           {isEmpty && !loading && (
             <div className="px-3 pb-2">
@@ -1076,17 +1030,12 @@ export default function AIAssistantPage() {
             }}
           >
             <div
-              className={`flex flex-col gap-1 rounded-[1.75rem] border p-2 shadow-sm transition ${
-                voiceListening
-                  ? "border-orange-200 bg-orange-50/60 pl-2 dark:border-orange-900/50 dark:bg-orange-950/20"
-                  : "border-gray-200 bg-white pl-2 focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
-              }`}
+              // No mic on the web either since 22 ก.ย. 2569 (the owner's call, the
+              // same as the app): speaking goes through the device's own keyboard
+              // or OS dictation, which types straight into this box.
+              className="flex flex-col gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
             >
-              {voiceListening ? (
-                /* Dictation mode: the live waveform takes over the text field */
-                <VoiceWaveform level={voiceLevel} className="min-h-[2.25rem] w-full px-2" />
-              ) : (
-                <textarea
+              <textarea
                   ref={inputRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
@@ -1100,26 +1049,11 @@ export default function AIAssistantPage() {
                   rows={1}
                   className="min-h-[2.25rem] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
                 />
-              )}
               <div className="flex items-center gap-1">
-              {/* Discard the take — left slot, like a voice memo's cancel */}
-              {voiceListening && (
-                <HoverTip label={language === "th" ? "ยกเลิก ไม่เอาเสียงนี้" : "Cancel, discard this take"}>
-                  <button
-                    type="button"
-                    onClick={() => voiceControlsRef.current?.cancel()}
-                    aria-label={language === "th" ? "ยกเลิกการอัด" : "Cancel recording"}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-all hover:border-gray-300 hover:text-gray-800 active:scale-95 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-white"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </HoverTip>
-              )}
               <div className="flex-1" />
               {/* Open the field taller once there is enough text that expanding
-                  shows more of it. Hidden while dictating: the waveform owns
-                  the field then, and there is nothing to read back yet. */}
-              {!voiceListening && composer.canExpand && (
+                  shows more of it. */}
+              {composer.canExpand && (
                 <HoverTip label={composer.expanded
                   ? (language === "th" ? "ย่อช่องพิมพ์" : "Shrink the box")
                   : (language === "th" ? "ขยายช่องพิมพ์" : "Expand the box")}>
@@ -1136,45 +1070,6 @@ export default function AIAssistantPage() {
                   </button>
                 </HoverTip>
               )}
-              {/* Kept mounted while dictating (it owns the mic session), just hidden */}
-              <div className={voiceListening ? "hidden" : "contents"}>
-                <AIInputTools
-                  tools={["voice"]}
-                  language={language}
-                  disabled={loading || actionConfirming || actionCancelling}
-                  onInsertText={handleVoiceText}
-                  onListeningChange={handleListeningChange}
-                  onVoiceLevel={setVoiceLevel}
-                  voiceControlsRef={voiceControlsRef}
-                />
-              </div>
-              {voiceListening ? (
-                <>
-                  <HoverTip label={language === "th" ? "หยุด แล้วเอาข้อความไปแก้ก่อนส่ง" : "Stop and review before sending"}>
-                    <button
-                      type="button"
-                      onClick={() => voiceControlsRef.current?.stop()}
-                      aria-label={language === "th" ? "หยุดอัด" : "Stop recording"}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-all hover:border-gray-300 hover:text-gray-900 active:scale-95 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:text-white"
-                    >
-                      <Square className="h-3 w-3 fill-current" />
-                    </button>
-                  </HoverTip>
-                  <HoverTip label={language === "th" ? "หยุดแล้วส่งให้ AI ทันที" : "Stop and send to AI right away"}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sendAfterVoiceRef.current = true;
-                        voiceControlsRef.current?.stop();
-                      }}
-                      aria-label={language === "th" ? "หยุดแล้วส่งเลย" : "Stop and send"}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm shadow-orange-500/30 transition-all hover:brightness-105 hover:shadow-md active:scale-95"
-                    >
-                      <ArrowUp className="h-[18px] w-[18px]" strokeWidth={2.75} />
-                    </button>
-                  </HoverTip>
-                </>
-              ) : (
                 <button
                   type="submit"
                   disabled={loading || actionConfirming || actionCancelling || !input.trim()}
@@ -1188,7 +1083,6 @@ export default function AIAssistantPage() {
                     <ArrowUp className="h-[18px] w-[18px]" strokeWidth={2.75} />
                   )}
                 </button>
-              )}
               </div>
             </div>
           </form>
