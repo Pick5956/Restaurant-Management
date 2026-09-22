@@ -204,11 +204,3 @@ export const extractReceipt = (imageBase64: string, mimeType: string) => apiRequ
   '/api/v1/ai/operations/receipt',
   { method: 'POST', body: JSON.stringify({ image: imageBase64, mime_type: mimeType }) },
 );
-
-/** A voice note becomes text for the composer; nothing is asked or saved yet. */
-export const transcribeVoiceNote = (audioBase64: string, mimeType: string, language: string) => (
-  apiRequest<{ text: string }>('/api/v1/ai/operations/transcribe', {
-    method: 'POST',
-    body: JSON.stringify({ audio: audioBase64, mime_type: mimeType, language }),
-  })
-);

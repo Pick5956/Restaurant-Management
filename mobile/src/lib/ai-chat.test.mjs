@@ -13,7 +13,6 @@ import {
   threadGroup,
   turnsToMessages,
   welcomeFor,
-  bytesToBase64,
 } from './ai-chat.ts';
 
 test('parseSSE splits complete events and keeps the unfinished tail', () => {
@@ -143,16 +142,4 @@ test('receiptDraftToCommand writes a sentence the expense command understands', 
   assert.equal(text, 'บันทึกค่าน้ำค่าไฟ การไฟฟ้า ค่าไฟ ส.ค. 3,200 บาท วันที่ 2026-09-08');
   const bare = receiptDraftToCommand({ category: 'other', amount: 0, spent_at: '', vendor: '', note: '', confidence: 'low' }, 'th');
   assert.equal(bare, 'บันทึกรายจ่ายอื่น');
-});
-
-test('bytesToBase64 matches the standard encoding, padding included', () => {
-  const encode = (text) => bytesToBase64(new Uint8Array([...text].map((c) => c.charCodeAt(0))));
-  assert.equal(encode(''), '');
-  assert.equal(encode('f'), 'Zg==');
-  assert.equal(encode('fo'), 'Zm8=');
-  assert.equal(encode('foo'), 'Zm9v');
-  assert.equal(encode('foob'), 'Zm9vYg==');
-  assert.equal(encode('foobar'), 'Zm9vYmFy');
-  // Bytes above 127 are where a naive string-based encoder goes wrong.
-  assert.equal(bytesToBase64(new Uint8Array([0, 255, 128, 1])), Buffer.from([0, 255, 128, 1]).toString('base64'));
 });

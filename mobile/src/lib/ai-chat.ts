@@ -329,26 +329,3 @@ export function receiptDraftToCommand(draft: AIReceiptDraft, language: DisplayLa
   const parts = [`Record ${draft.category || 'expense'} expense`, what, amount ? `${amount} baht` : '', day ? `on ${day}` : ''];
   return parts.filter(Boolean).join(' ');
 }
-
-// ---------------------------------------------------------------- voice notes
-
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-/**
- * Base64 for the bytes of a recording. The JS engine the app runs on has no
- * btoa and no Buffer, and the clip is a few hundred kilobytes, so encoding it
- * here costs nothing worth optimising.
- */
-export function bytesToBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let index = 0; index < bytes.length; index += 3) {
-    const a = bytes[index];
-    const b = bytes[index + 1];
-    const c = bytes[index + 2];
-    out += BASE64_ALPHABET[a >> 2];
-    out += BASE64_ALPHABET[((a & 3) << 4) | ((b ?? 0) >> 4)];
-    out += index + 1 < bytes.length ? BASE64_ALPHABET[((b & 15) << 2) | ((c ?? 0) >> 6)] : '=';
-    out += index + 2 < bytes.length ? BASE64_ALPHABET[c & 63] : '=';
-  }
-  return out;
-}
