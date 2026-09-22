@@ -837,8 +837,6 @@ export default function AIAssistantScreen() {
               value={input}
               onChange={setInput}
               onSend={() => { void ask(input); }}
-              onInsert={(text) => { setInput(text); setTimeout(() => inputRef.current?.focus(), 50); }}
-              onNotice={(text, tone) => setNotice({ text, tone })}
               sending={loading}
               disabled={busy && !loading}
               language={language}

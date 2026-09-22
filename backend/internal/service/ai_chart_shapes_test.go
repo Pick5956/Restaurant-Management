@@ -45,25 +45,43 @@ func TestPeakWeekdayChartStartsOnMondayAndNeedsAllSeven(t *testing.T) {
 	}
 }
 
-func TestStockVsMinChartUsesShareOfMinimumAndStatus(t *testing.T) {
+func TestStockListShowsWhatIsLeftPerRowOutFirst(t *testing.T) {
 	risks := []AIStockRisk{
-		{Name: "นมข้นหวาน", Stock: 0, MinStock: 1500, Unit: "มล."},
-		{Name: "มะเขือ", Stock: 271.4, MinStock: 2695.6, Unit: "กรัม"},
-		{Name: "กะเพรา", Stock: 1600, MinStock: 1463.5, Unit: "กรัม"},
+		{Name: "กะเพรา", Stock: 1600, MinStock: 1463.5, Unit: "กรัม", RestockEstimate: 0},
+		{Name: "มะเขือ", Stock: 271.4, MinStock: 2695.6, Unit: "กรัม", RestockEstimate: 2424.2},
+		{Name: "นมข้นหวาน", Stock: 0, MinStock: 1500, Unit: "มล.", RestockEstimate: 1500},
 		{Name: "ไม่มีขั้นต่ำ", Stock: 5, MinStock: 0},
 	}
 	c := buildStockVsMinChart(risks)
-	if c == nil || c.Layout != "horizontal" || c.Reference == nil || c.Reference.Value != 100 {
-		t.Fatalf("chart = %+v", c)
+	if c == nil || c.Kind != AIChartStockList {
+		t.Fatalf("list = %+v", c)
 	}
 	if len(c.Categories) != 3 {
-		t.Fatalf("a row without a minimum has no share to show: %v", c.Categories)
+		t.Fatalf("a row without a minimum has nothing to compare against: %v", c.Categories)
 	}
-	if v := c.Series[0].Values; v[0] != 0 || v[1] != 10 || v[2] != 109 {
-		t.Fatalf("shares = %v", v)
+	// Out of stock first, then the emptiest share of its own minimum.
+	if c.Categories[0] != "นมข้นหวาน" || c.Categories[1] != "มะเขือ" || c.Categories[2] != "กะเพรา" {
+		t.Fatalf("order = %v", c.Categories)
+	}
+	// Each row keeps its own unit; the rows do not share one.
+	if c.Units[0] != "มล." || c.Units[2] != "กรัม" {
+		t.Fatalf("units = %v", c.Units)
+	}
+	if v := c.Series[0].Values; v[0] != 0 || v[1] != 271.4 {
+		t.Fatalf("stock = %v", v)
+	}
+	if v := c.Series[1].Values; v[0] != 1500 || v[2] != 1463.5 {
+		t.Fatalf("minimum = %v", v)
+	}
+	if v := c.Series[2].Values; v[0] != 1500 || v[2] != 0 {
+		t.Fatalf("restock = %v", v)
 	}
 	if s := c.Status; s[0] != "critical" || s[1] != "warning" || s[2] != "good" {
 		t.Fatalf("status = %v", s)
+	}
+	// One row is a list, not a chart that needs three.
+	if one := buildStockVsMinChart(risks[2:3]); one == nil || len(one.Categories) != 1 {
+		t.Fatalf("single row = %+v", one)
 	}
 }
 

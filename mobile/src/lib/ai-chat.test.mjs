@@ -8,7 +8,6 @@ import {
   matchesThreadQuery,
   parseSSE,
   readAIOutage,
-  receiptDraftToCommand,
   splitChange,
   threadGroup,
   turnsToMessages,
@@ -137,9 +136,3 @@ test('isConversationGone and readAIOutage read the ApiError details body', () =>
   assert.equal(readAIOutage({ details: '{"code":"nothing"}' }), null);
 });
 
-test('receiptDraftToCommand writes a sentence the expense command understands', () => {
-  const text = receiptDraftToCommand({ category: 'utilities', amount: 3200, spent_at: '2026-09-08', vendor: 'การไฟฟ้า', note: 'ค่าไฟ ส.ค.', confidence: 'high' }, 'th');
-  assert.equal(text, 'บันทึกค่าน้ำค่าไฟ การไฟฟ้า ค่าไฟ ส.ค. 3,200 บาท วันที่ 2026-09-08');
-  const bare = receiptDraftToCommand({ category: 'other', amount: 0, spent_at: '', vendor: '', note: '', confidence: 'low' }, 'th');
-  assert.equal(bare, 'บันทึกรายจ่ายอื่น');
-});

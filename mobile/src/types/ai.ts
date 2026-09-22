@@ -183,15 +183,6 @@ export type AIInsight = {
   more?: number;
 };
 
-export type AIReceiptDraft = {
-  category: 'ingredient' | 'labor' | 'rent' | 'utilities' | 'equipment' | 'other' | string;
-  amount: number;
-  spent_at: string;
-  vendor: string;
-  note: string;
-  confidence: 'high' | 'medium' | 'low' | string;
-};
-
 // The eight kinds of change the assistant can prepare, in the order the
 // settings sheet lists them. Keys match entity.AIActionType* on the backend.
 export const AI_ACTION_TYPES = [

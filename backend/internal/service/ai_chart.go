@@ -30,6 +30,10 @@ const (
 	AIChartBar  AIChartKind = "bar"
 	AIChartLine AIChartKind = "line"
 	AIChartPie  AIChartKind = "pie"
+	// AIChartStockList is not a chart: a list of ingredients with what is left
+	// against the minimum. Of things that ran out every bar is 0, so the bar
+	// chart it replaced drew nothing but labels (เจ้าของทัก 20 ก.ย. 2569).
+	AIChartStockList AIChartKind = "stocklist"
 )
 
 // AIChartData is a chart-ready payload. Categories are the x-axis labels; each
@@ -43,6 +47,9 @@ type AIChartData struct {
 	Title      string          `json:"title"`
 	Unit       string          `json:"unit,omitempty"` // e.g. "บาท" — for axis / tooltip
 	Categories []string        `json:"categories"`
+	// Units is one unit per category, for a list whose rows do not share one
+	// (มล. next to กรัม). Charts leave it empty and use Unit.
+	Units []string `json:"units,omitempty"`
 	Series     []AIChartSeries `json:"series"`
 
 	// Layout "horizontal" lays bars left→right with the category on the left —
@@ -276,48 +283,63 @@ func buildPeakWeekdayChart(rows []repository.AIPeriodSummary) *AIChartData {
 	}
 }
 
-// buildStockVsMinChart draws each low ingredient as its stock in percent of the
-// minimum the owner set, against a line at 100%. Units differ (มล., กรัม), so
-// the share of the minimum is the one axis they all share. Status colours the
-// bar: out is critical, below the minimum is warning. nil under three rows.
+// buildStockVsMinChart lists what is running low: what is left, the minimum it
+// is measured against, and how much to buy — one row per ingredient, out first
+// and the emptiest next. It used to be a horizontal bar chart of stock as a
+// percent of the minimum; of things that ran out every bar is 0%, so the owner
+// saw an empty frame with seven labels (20 ก.ย. 2569). A list also reads at one
+// row, where a chart needed three.
 func buildStockVsMinChart(risks []AIStockRisk) *AIChartData {
-	const limit = 7
-	categories := make([]string, 0, limit)
-	values := make([]float64, 0, limit)
-	status := make([]string, 0, limit)
+	const limit = 12
+	rows := make([]AIStockRisk, 0, len(risks))
 	for _, r := range risks {
 		if r.MinStock <= 0 {
 			continue
 		}
-		pct := r.Stock / r.MinStock * 100
-		if pct < 0 {
-			pct = 0
-		}
-		categories = append(categories, r.Name)
-		values = append(values, roundTo(pct, 0))
-		if r.Stock <= 0 {
-			status = append(status, "critical")
-		} else if pct < 100 {
-			status = append(status, "warning")
-		} else {
-			status = append(status, "good")
-		}
-		if len(categories) == limit {
-			break
-		}
+		rows = append(rows, r)
 	}
-	if !chartHasAtLeast(3, categories) {
+	// Out of stock first, then whoever has the least of their own minimum.
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].Stock/rows[i].MinStock < rows[j].Stock/rows[j].MinStock
+	})
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	if len(rows) == 0 {
 		return nil
 	}
+	categories := make([]string, 0, len(rows))
+	units := make([]string, 0, len(rows))
+	stock := make([]float64, 0, len(rows))
+	minimum := make([]float64, 0, len(rows))
+	restock := make([]float64, 0, len(rows))
+	status := make([]string, 0, len(rows))
+	for _, r := range rows {
+		categories = append(categories, r.Name)
+		units = append(units, r.Unit)
+		stock = append(stock, roundTo(math.Max(0, r.Stock), 2))
+		minimum = append(minimum, roundTo(r.MinStock, 2))
+		restock = append(restock, roundTo(math.Max(0, r.RestockEstimate), 2))
+		switch {
+		case r.Stock <= 0:
+			status = append(status, "critical")
+		case r.Stock < r.MinStock:
+			status = append(status, "warning")
+		default:
+			status = append(status, "good")
+		}
+	}
 	return &AIChartData{
-		Kind:       AIChartBar,
-		Title:      "คงเหลือเทียบขั้นต่ำ",
-		Unit:       "% ของขั้นต่ำ",
+		Kind:       AIChartStockList,
+		Title:      "ของที่ต้องสั่ง",
 		Categories: categories,
-		Series:     []AIChartSeries{{Name: "คงเหลือ", Values: values}},
-		Layout:     "horizontal",
-		Status:     status,
-		Reference:  &AIChartReference{Value: 100, Label: "ขั้นต่ำที่ตั้งไว้"},
+		Units:      units,
+		Series: []AIChartSeries{
+			{Name: "คงเหลือ", Values: stock},
+			{Name: "ขั้นต่ำ", Values: minimum},
+			{Name: "ควรสั่งเพิ่ม", Values: restock},
+		},
+		Status: status,
 	}
 }
 
