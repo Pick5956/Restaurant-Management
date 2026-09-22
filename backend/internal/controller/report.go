@@ -108,23 +108,6 @@ func (ctrl *ReportController) SalesDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, report)
 }
 
-func (ctrl *ReportController) ExpenseDetail(c *gin.Context) {
-	restaurantID, ok := requireRestaurantWithPermission(c, "view_reports", "missing view_reports permission")
-	if !ok {
-		return
-	}
-	date, hour, ok := barQuery(c)
-	if !ok {
-		return
-	}
-	report, err := ctrl.reportSvc.ExpenseDetail(restaurantID, date, hour)
-	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
-		return
-	}
-	c.JSON(http.StatusOK, report)
-}
-
 func (ctrl *ReportController) TopMenuItemsByMonth(c *gin.Context) {
 	restaurantID, ok := requireRestaurantWithPermission(c, "view_reports", "missing view_reports permission")
 	if !ok {

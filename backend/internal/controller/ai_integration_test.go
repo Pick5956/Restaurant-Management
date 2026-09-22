@@ -28,8 +28,6 @@ type fakeAIOperationsService struct {
 	request           *service.AIAskRequest
 	deleteCalls       int
 	deletedID         string
-	usageResponse     *service.AIUsageSnapshot
-	usageCalls        int
 	confirmResponse   *service.AIActionConfirmationResponse
 	confirmErr        error
 	confirmCalls      int
@@ -61,25 +59,9 @@ func (f *fakeAIOperationsService) DeleteConversationForOwner(actor service.AIAct
 	return f.askErr
 }
 
-func (f *fakeAIOperationsService) AIUsageForOwner(actor service.AIActorContext) (*service.AIUsageSnapshot, error) {
-	f.usageCalls++
-	f.actor = actor
-	return f.usageResponse, f.askErr
-}
-
 func (f *fakeAIOperationsService) ProactiveInsightsForOwner(actor service.AIActorContext) ([]service.AIInsight, error) {
 	f.actor = actor
 	return nil, f.askErr
-}
-
-func (f *fakeAIOperationsService) ExtractReceiptForOwner(actor service.AIActorContext, _ string, _ string) (*service.ReceiptDraft, error) {
-	f.actor = actor
-	return nil, f.askErr
-}
-
-func (f *fakeAIOperationsService) TranscribeForOwner(actor service.AIActorContext, _ string, _ string, _ string) (string, error) {
-	f.actor = actor
-	return "", f.askErr
 }
 
 func (f *fakeAIOperationsService) AIActionsSettingForOwner(uint) (service.AIActionsSettingView, error) {
@@ -161,7 +143,6 @@ func testAIRouter(svc AIOperationsService, member *entity.RestaurantMember, incl
 	})
 	router.POST("/ai/operations/ask", ctrl.AskOperations)
 	router.GET("/ai/operations/snapshot", ctrl.OperationsSnapshot)
-	router.GET("/ai/operations/metrics", ctrl.UsageMetrics)
 	router.POST("/ai/operations/actions/:previewID/confirm", ctrl.ConfirmAction)
 	router.DELETE("/ai/operations/actions/:previewID", ctrl.CancelAction)
 	router.DELETE("/ai/operations/conversations/:conversationID", ctrl.DeleteConversation)
@@ -305,21 +286,6 @@ func TestDeleteAIConversationUsesOwnerAndRestaurantScope(t *testing.T) {
 	}
 	if svc.deleteCalls != 1 || svc.deletedID != "conversation-123" || svc.actor.RestaurantID != 12 || svc.actor.OwnerUserID != 99 || svc.actor.Role != "owner" {
 		t.Fatalf("DeleteConversation scope = calls %d id %q actor %+v", svc.deleteCalls, svc.deletedID, svc.actor)
-	}
-}
-
-func TestAIUsageMetricsUsesOwnerAndRestaurantScope(t *testing.T) {
-	svc := &fakeAIOperationsService{usageResponse: &service.AIUsageSnapshot{Enabled: true, PlannerRequests: 3}}
-	router := testAIRouter(svc, memberWithRole("owner", `["*"]`), true)
-	recorder := httptest.NewRecorder()
-
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ai/operations/metrics", nil))
-
-	if recorder.Code != http.StatusOK || svc.usageCalls != 1 {
-		t.Fatalf("UsageMetrics status=%d calls=%d", recorder.Code, svc.usageCalls)
-	}
-	if svc.actor.RestaurantID != 12 || svc.actor.OwnerUserID != 99 || svc.actor.Role != "owner" {
-		t.Fatalf("UsageMetrics actor = %+v", svc.actor)
 	}
 }
 

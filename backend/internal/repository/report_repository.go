@@ -58,17 +58,6 @@ type ReportSalesDetailSummary struct {
 	Profit  float64 `json:"profit"`
 }
 
-// ReportExpenseDetailItem is one ingredient's share of a cost bar. Grouping by
-// ingredient (not by bill) is what makes this table answer "what did that cost
-// go on", which the per-bill sales table cannot.
-type ReportExpenseDetailItem struct {
-	IngredientID   uint    `json:"ingredient_id"`
-	IngredientName string  `json:"ingredient_name"`
-	Unit           string  `json:"unit"`
-	Quantity       float64 `json:"quantity"`
-	Cost           float64 `json:"cost"`
-}
-
 // salesBucketFormat is a TO_CHAR pattern that gets inlined into SQL. It is an
 // unexported type with only the two constants below, so no request-supplied
 // string can ever reach the query text.
@@ -276,37 +265,6 @@ func (r *ReportRepository) SalesDetail(restaurantID uint, since, until time.Time
 		rows[i].Profit = rows[i].Revenue - rows[i].Cost
 	}
 	return rows, nil
-}
-
-// ExpenseDetail breaks one cost bar down by ingredient. It repeats the cost leg
-// of salesBuckets exactly — same joins, same cohort — so the rows sum to the bar
-// they were opened from. `until` is exclusive.
-func (r *ReportRepository) ExpenseDetail(restaurantID uint, since, until time.Time, limit int) ([]ReportExpenseDetailItem, error) {
-	var rows []ReportExpenseDetailItem
-	err := r.db.Table("order_inventory_deductions").
-		Select(`ingredients.id AS ingredient_id, ingredients.name AS ingredient_name, ingredients.unit,
-			COALESCE(SUM(order_inventory_deductions.quantity), 0) AS quantity,
-			COALESCE(SUM(order_inventory_deductions.cost_snapshot), 0) AS cost`).
-		Joins("JOIN order_items ON order_items.id = order_inventory_deductions.order_item_id").
-		Joins("JOIN orders ON orders.id = order_items.order_id").
-		Joins("JOIN ingredients ON ingredients.id = order_inventory_deductions.ingredient_id").
-		Where(
-			`order_inventory_deductions.restaurant_id = ? AND order_inventory_deductions.deleted_at IS NULL
-				AND order_items.deleted_at IS NULL AND orders.deleted_at IS NULL
-				AND orders.completed_at >= ? AND orders.completed_at < ?
-				AND orders.status = ? AND orders.payment_status = ? AND order_items.status = ?`,
-			restaurantID,
-			since,
-			until,
-			entity.OrderStatusCompleted,
-			entity.PaymentStatusPaid,
-			entity.OrderItemStatusServed,
-		).
-		Group("ingredients.id, ingredients.name, ingredients.unit").
-		Order("cost desc, ingredients.name asc").
-		Limit(limit).
-		Scan(&rows).Error
-	return rows, err
 }
 
 // ExpenseTotal adds up the expense ledger over [since, until): every row a
