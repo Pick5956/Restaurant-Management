@@ -106,3 +106,25 @@ func TestIsForecastQuestion(t *testing.T) {
 		}
 	}
 }
+
+// Today's row is half a day when asked before closing. It must not reach the
+// model: it would be the newest same-weekday point and drag next week down.
+func TestForecastIgnoresTodaysUnfinishedDay(t *testing.T) {
+	loc := bangkokLocation()
+	today := time.Date(2026, 9, 22, 0, 0, 0, 0, loc) // a Tuesday
+	pts := buildSyntheticSeries(8, weekdayBase(), today)
+	pts = append(pts, forecastDailyPoint{date: today, rev: 1200}) // noon: a fraction of a normal Tuesday
+	kept := finishedDaysOnly(pts, today)
+	if len(kept) != len(pts)-1 || !kept[len(kept)-1].date.Before(today) {
+		t.Fatalf("today should be dropped, got last = %v", kept[len(kept)-1].date)
+	}
+	nextTuesday := today.AddDate(0, 0, 7)
+	withPartial, _ := forecastDay(pts, nextTuesday)
+	clean, _ := forecastDay(kept, nextTuesday)
+	if math.Abs(clean-weekdayBase()[time.Tuesday]) > 1 {
+		t.Fatalf("clean forecast = %.0f, want the Tuesday level %.0f", clean, weekdayBase()[time.Tuesday])
+	}
+	if withPartial >= clean {
+		t.Fatalf("the partial day should have pulled the forecast down (%.0f vs %.0f) — the bug this guards", withPartial, clean)
+	}
+}
