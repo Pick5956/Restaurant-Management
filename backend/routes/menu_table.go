@@ -35,7 +35,6 @@ func SetupMenuTableRoutes(v1 *gin.RouterGroup) {
 	v1.PATCH("/tables/:id/status", tableCtrl.UpdateTableStatus)
 	v1.POST("/tables/:id/reserve", tableCtrl.ReserveTable)
 	v1.POST("/tables/:id/cancel-reservation", tableCtrl.CancelReservation)
-	v1.POST("/tables/:id/seat-reservation", tableCtrl.SeatReservation)
 	v1.PATCH("/tables/:id/move-zone", tableCtrl.MoveTableZone)
 	v1.DELETE("/tables/:id", tableCtrl.DeleteTable)
 

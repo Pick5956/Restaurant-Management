@@ -186,21 +186,6 @@ func (ctrl *TableController) CancelReservation(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
-// POST /api/v1/tables/:id/seat-reservation
-func (ctrl *TableController) SeatReservation(c *gin.Context) {
-	_, ok := requireRestaurantWithAnyPermission(c, "missing table status permission", "manage_table", "take_order")
-	if !ok {
-		return
-	}
-	if _, ok := parseUintParam(c, "id"); !ok {
-		return
-	}
-	c.JSON(http.StatusGone, gin.H{
-		"code":  "legacy_seat_reservation_retired",
-		"error": "seat reservations by opening an order with seat_reservation enabled",
-	})
-}
-
 func (ctrl *TableController) RegenerateCustomerToken(c *gin.Context) {
 	restaurantID, ok := requireRestaurantWithPermission(c, "manage_table", "missing manage_table permission")
 	if !ok {
