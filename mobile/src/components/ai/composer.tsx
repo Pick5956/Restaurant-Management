@@ -2,15 +2,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { forwardRef, useState } from 'react';
-import { File as FileSystemFile } from 'expo-file-system';
 import { ActivityIndicator, Pressable, TextInput as NativeTextInput, View } from 'react-native';
 
-import { extractReceipt, transcribeVoiceNote } from '@/src/api/ai';
+import { extractReceipt } from '@/src/api/ai';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { bytesToBase64, receiptDraftToCommand } from '@/src/lib/ai-chat';
-import { enterRecordingMode, leaveRecordingMode, recordingPresets, requestRecordingPermission, useVoiceRecorder, voiceRecordingSupported } from '@/src/lib/voice-recording';
+import { receiptDraftToCommand } from '@/src/lib/ai-chat';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 
 import { GlassMenu, GlassSurface, type GlassMenuItem } from './chrome';
@@ -21,21 +19,13 @@ import { ai } from './theme';
 // Attachments live behind "+" rather than sitting on the bar, so the row stays
 // quiet and there is room for more of them later.
 //
-// Voice dictation from the web is left out: Expo Go has no speech-to-text.
+// No mic button (removed 22 ก.ย. 2569, the owner's call). To speak a question,
+// use the dictation key on the phone's own keyboard: it types straight into
+// this box, in any language the phone knows, with no recording, upload or
+// transcription quota on our side.
 
 /** One line of text plus its padding; above this the capsule becomes a box. */
 const ONE_LINE = 46;
-
-// Mono AAC in an m4a on both platforms. The stock low-quality preset records
-// narrowband AMR in a .3gp on Android, which the transcription endpoint does not
-// accept and which speech recognition reads poorly anyway.
-const VOICE_NOTE = {
-  ...(recordingPresets?.LOW_QUALITY ?? {}),
-  extension: '.m4a',
-  numberOfChannels: 1,
-  bitRate: 64000,
-  android: { outputFormat: 'mpeg4' as const, audioEncoder: 'aac' as const },
-};
 
 export const Composer = forwardRef<NativeTextInput, {
   value: string;
@@ -51,11 +41,6 @@ export const Composer = forwardRef<NativeTextInput, {
   const [focused, setFocused] = useState(false);
   const [contentHeight, setContentHeight] = useState(0);
   const [attachOpen, setAttachOpen] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  // Speech goes to the shop's own backend, which runs it through Whisper; the
-  // phone has no recogniser of its own inside Expo Go.
-  const recorder = useVoiceRecorder(VOICE_NOTE);
   const t = (th: string, en: string) => (language === 'th' ? th : en);
   const canSend = value.trim().length > 0 && !sending && !disabled;
   const tall = value.length > 0 && contentHeight > ONE_LINE;
@@ -93,80 +78,6 @@ export const Composer = forwardRef<NativeTextInput, {
       setScanning(false);
     }
   };
-
-  const startListening = async () => {
-    if (listening || transcribing || disabled) return;
-    try {
-      const granted = await requestRecordingPermission();
-      if (!granted) {
-        onNotice(t('ยังไม่ได้อนุญาตให้ใช้ไมค์ เปิดได้ในตั้งค่าของเครื่อง', 'Microphone access is off. Turn it on in system settings'), 'error');
-        return;
-      }
-      await enterRecordingMode();
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setListening(true);
-    } catch {
-      onNotice(t('เริ่มอัดเสียงไม่ได้ ลองอีกครั้ง', 'Could not start recording, try again'), 'error');
-    }
-  };
-
-  const stopListening = async () => {
-    if (!listening) return;
-    setListening(false);
-    setTranscribing(true);
-    try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) throw new Error('no recording');
-      const bytes = await new FileSystemFile(uri).bytes();
-      if (bytes.length < 2000) {
-        onNotice(t('สั้นไป ลองพูดอีกครั้ง', 'Too short, try speaking again'), 'error');
-        return;
-      }
-      const { text } = await transcribeVoiceNote(bytesToBase64(bytes), 'audio/m4a', language);
-      // It lands in the box, not in the chat: the owner reads it and fixes what
-      // was misheard before anything is asked.
-      onInsert(value.trim() ? `${value.trim()} ${text}` : text);
-    } catch (error) {
-      const status = typeof error === 'object' && error !== null && 'status' in error ? Number((error as { status?: number }).status) : 0;
-      onNotice(
-        status === 429
-          ? t('โควตาถอดเสียงเต็มชั่วคราว ลองใหม่ในสักครู่', 'Transcription quota is full right now, try again shortly')
-          : t('ถอดเสียงไม่สำเร็จ ลองพูดใหม่ให้ชัดขึ้น', 'Could not read that, try speaking again'),
-        'error',
-      );
-    } finally {
-      setTranscribing(false);
-      await leaveRecordingMode().catch(() => undefined);
-    }
-  };
-
-  // Nothing to offer on a build without the audio module: the button would
-  // only ever apologise, so it is not drawn at all.
-  const micButton = !voiceRecordingSupported ? null : (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={listening ? t('หยุดฟังแล้วแปลงเป็นข้อความ', 'Stop and transcribe') : t('พูดเพื่อพิมพ์', 'Speak to type')}
-      disabled={transcribing || disabled}
-      onPress={() => { void (listening ? stopListening() : startListening()); }}
-      style={({ pressed }) => ({
-        width: 46,
-        height: 46,
-        borderRadius: 23,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: listening ? '#ef4444' : pressed ? ai.orangeSoft : 'transparent',
-        opacity: disabled ? 0.5 : 1,
-      })}
-    >
-      {transcribing ? (
-        <ActivityIndicator size="small" color={ai.orange} />
-      ) : (
-        <AppIcon name={listening ? 'stop' : 'mic-outline'} size={listening ? 20 : 24} color={listening ? '#ffffff' : ai.faint} />
-      )}
-    </Pressable>
-  );
 
   const attachItems: GlassMenuItem[] = [
     {
@@ -282,9 +193,7 @@ export const Composer = forwardRef<NativeTextInput, {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           {plusButton}
           {scanning ? <Text style={{ fontSize: 12, color: ai.faint }}>{t('กำลังอ่านบิล…', 'Reading the receipt…')}</Text> : null}
-          {listening ? <Text style={{ fontSize: 12, color: '#ef4444', fontWeight: '600' }}>{t('กำลังฟัง…', 'Listening…')}</Text> : null}
           <View style={{ flex: 1 }} />
-          {micButton}
           {sendButton}
         </View>
       </GlassSurface>
@@ -301,7 +210,6 @@ export const Composer = forwardRef<NativeTextInput, {
     >
       {plusButton}
       {input}
-      {micButton}
       {sendButton}
       </GlassSurface>
     </View>

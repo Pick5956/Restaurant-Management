@@ -50,13 +50,7 @@
         }
       ],
       "expo-font",
-      "expo-status-bar",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "อนุญาตให้ Dishy ใช้ไมโครโฟนเพื่อพูดคำถามแทนการพิมพ์"
-        }
-      ]
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
