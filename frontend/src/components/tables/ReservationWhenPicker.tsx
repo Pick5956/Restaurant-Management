@@ -2,20 +2,16 @@
 
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import SegmentedControl from "@/src/components/shared/SegmentedControl";
+import ChoiceChips from "@/src/components/shared/ChoiceChips";
+import ThemedTimeInput from "@/src/components/shared/ThemedTimeInput";
 import {
   addDaysToKey,
   calendarMonthCells,
   chooseReservationDay,
   dateFromKey,
-  isCompleteReservationTime,
   localDateKey,
-  nudgeReservationTime,
-  parseReservationTime,
   RESERVATION_MAX_DAYS_AHEAD,
   reservationDayBookable,
-  reservationTimeDraft,
-  stepReservationTime,
   type ReservationWhen,
 } from "@/src/lib/reservationSchedule";
 
@@ -31,8 +27,6 @@ const COPY = {
     previousMonth: "เดือนก่อน",
     nextMonth: "เดือนถัดไป",
     arrivalTime: "เวลาที่ลูกค้าจะมา",
-    earlier: "เวลาก่อนหน้า",
-    later: "เวลาถัดไป",
     weekdays: ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"],
   },
   en: {
@@ -44,22 +38,17 @@ const COPY = {
     previousMonth: "Previous month",
     nextMonth: "Next month",
     arrivalTime: "Arrival time",
-    earlier: "Earlier",
-    later: "Later",
     weekdays: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
   },
 } as const;
 
 const localeOf = (language: Language) => (language === "th" ? "th-TH" : "en-US");
 
-const stepButtonClass =
-  "ui-press h-14 text-xl font-semibold text-gray-700 outline-none focus-visible:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:focus-visible:bg-gray-700";
-
 interface ReservationWhenPickerProps {
   value: ReservationWhen;
   onChange: (next: ReservationWhen) => void;
-  /** A typed time that is not a time of day. */
-  onInvalidTime: () => void;
+  /** Unused since the time became ThemedTimeInput, which only yields real times. */
+  onInvalidTime?: () => void;
   /**
    * Why the chosen time cannot be booked. Shown under the time field, not in the
    * sheet's banner: on a phone the banner is scrolled out of sight by the time
@@ -72,17 +61,19 @@ interface ReservationWhenPickerProps {
 
 /**
  * When the guests are coming: now, today, tomorrow or any day up to a year out,
- * at any minute. Built from buttons and one text field rather than native date
- * and time inputs - the Thai native date picker renders "4 Aug BE 2569", and the
- * native time field shows AM/PM wherever the browser runs in English.
+ * at any minute. The day is our own calendar rather than a native date input -
+ * the Thai native date picker renders "4 Aug BE 2569". The time is the same
+ * ThemedTimeInput the promotions dialog uses.
  */
-export default function ReservationWhenPicker({ value, onChange, onInvalidTime, error, language, disabled }: ReservationWhenPickerProps) {
+export default function ReservationWhenPicker({ value, onChange, error, language, disabled }: ReservationWhenPickerProps) {
   const copy = COPY[language];
 
   return (
     <div>
       <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.when}</span>
-      <SegmentedControl
+      {/* The day chips and the time field are the promotions dialog's own
+          (owner, 2026-09-22): ChoiceChips and ThemedTimeInput. */}
+      <ChoiceChips
         label={copy.when}
         value={value.choice}
         disabled={disabled}
@@ -104,14 +95,15 @@ export default function ReservationWhenPicker({ value, onChange, onInvalidTime, 
       ) : null}
       {value.choice !== "now" ? (
         <>
-          <ReservationTimeField
-            time={value.time}
-            language={language}
-            disabled={disabled}
-            invalid={Boolean(error)}
-            onChange={(time) => onChange({ ...value, time })}
-            onInvalid={onInvalidTime}
-          />
+          <div className="mt-2.5">
+            <ThemedTimeInput
+              value={value.time}
+              onChange={(time) => onChange({ ...value, time })}
+              disabled={disabled}
+              placement="above"
+              aria-label={copy.arrivalTime}
+            />
+          </div>
           {error ? (
             <p role="alert" className="mt-1.5 text-[12px] font-medium text-red-600 dark:text-red-400">
               {error}
@@ -257,100 +249,3 @@ function ReservationCalendar({
   );
 }
 
-function ReservationTimeField({
-  time,
-  onChange,
-  onInvalid,
-  invalid,
-  language,
-  disabled,
-}: {
-  time: string;
-  onChange: (time: string) => void;
-  onInvalid: () => void;
-  invalid: boolean;
-  language: Language;
-  disabled?: boolean;
-}) {
-  const copy = COPY[language];
-  // What is being typed, or null when the field shows the committed time.
-  const [draft, setDraft] = useState<string | null>(null);
-
-  const commit = (text: string) => {
-    const parsed = parseReservationTime(text);
-    if (parsed) onChange(parsed);
-    else if (text.replace(/\D/g, "")) onInvalid();
-  };
-
-  return (
-    <div
-      className={`mt-2 grid grid-cols-[56px_1fr_56px] overflow-hidden rounded-md border bg-white dark:bg-gray-800 ${
-        invalid ? "border-red-500 dark:border-red-500" : "border-gray-200 focus-within:border-orange-500 dark:border-gray-700 dark:focus-within:border-orange-500"
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => onChange(stepReservationTime(time, -1))}
-        disabled={disabled}
-        aria-label={copy.earlier}
-        className={`${stepButtonClass} border-r border-gray-200 dark:border-gray-700`}
-      >
-        −
-      </button>
-      <input
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        enterKeyHint="done"
-        aria-label={copy.arrivalTime}
-        aria-invalid={invalid || undefined}
-        disabled={disabled}
-        value={draft ?? time}
-        placeholder={time}
-        onFocus={() => {
-          // Focus empties the field and leaves the time as its placeholder, so
-          // typing always starts a new time. Selecting the old one instead does
-          // not hold: the mouseup that ends the click puts the caret back, and
-          // the digits land in the middle of the old time ("25" became 20:25).
-          // Leaving without typing keeps the time, since an empty draft commits nothing.
-          setDraft("");
-        }}
-        onChange={(event) => {
-          const next = reservationTimeDraft(event.target.value);
-          setDraft(next);
-          // A finished time is committed as it is typed, so confirming straight
-          // from the keyboard can never book the previous one.
-          if (isCompleteReservationTime(next)) {
-            const parsed = parseReservationTime(next);
-            if (parsed) onChange(parsed);
-          }
-        }}
-        onBlur={() => {
-          if (draft) commit(draft);
-          setDraft(null);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.currentTarget.blur();
-            return;
-          }
-          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-          event.preventDefault();
-          const next = nudgeReservationTime(parseReservationTime(draft ?? time) ?? time, event.key === "ArrowUp" ? 1 : -1);
-          setDraft(next);
-          onChange(next);
-        }}
-        className="h-14 min-w-0 border-0 bg-transparent px-2 text-center text-[22px] font-semibold tabular-nums text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
-      />
-      <button
-        type="button"
-        onClick={() => onChange(stepReservationTime(time, 1))}
-        disabled={disabled}
-        aria-label={copy.later}
-        className={`${stepButtonClass} border-l border-gray-200 dark:border-gray-700`}
-      >
-        +
-      </button>
-    </div>
-  );
-}

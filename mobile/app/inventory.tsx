@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIManager, View } from 'react-native';
+import { ActivityIndicator, Alert, LayoutAnimation, ScrollView, View } from 'react-native';
 import type { Anchor } from '@/src/components/inventory/parts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -51,10 +51,6 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { useToast } from '@/src/providers/toast-provider';
 import { palette } from '@/src/theme';
 import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type Sheet =
   | { kind: 'none' }

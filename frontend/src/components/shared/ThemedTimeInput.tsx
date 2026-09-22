@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Clock } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Clock } from "lucide-react";
+import DropdownChevron from "@/src/components/shared/DropdownChevron";
 import { useCoarsePointer } from "@/src/hooks/useCoarsePointer";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 
@@ -379,6 +381,7 @@ export default function ThemedTimeInput({
   error,
   help,
   boundary = "subtle",
+  placement = "auto",
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
 }: {
@@ -390,6 +393,10 @@ export default function ThemedTimeInput({
   // "filled" is the settings pages' field - a flat tinted box with no edge,
   // 48px tall - matching ThemedSelect's option of the same name.
   boundary?: "subtle" | "filled";
+  // Where the wheel opens. "auto" goes below unless there is no room; "above"
+  // goes above unless there is no room (the reservation sheet, whose footer
+  // sits right under the field).
+  placement?: "auto" | "above";
   // Names the OS time input on touch devices. Pass the visible label when the
   // field is not inside a <label>; inside one, the label already names it.
   "aria-label"?: string;
@@ -431,13 +438,14 @@ export default function ThemedTimeInput({
     if (!panel || !rect) return;
     const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
     const left = Math.min(Math.max(VIEWPORT_MARGIN, rect.left), maxLeft);
-    const opensAbove =
-      window.innerHeight - rect.bottom < PANEL_HEIGHT + 12 && rect.top > PANEL_HEIGHT + 12;
+    const roomAbove = rect.top > PANEL_HEIGHT + 12;
+    const roomBelow = window.innerHeight - rect.bottom >= PANEL_HEIGHT + 12;
+    const opensAbove = placement === "above" ? roomAbove || !roomBelow : !roomBelow && roomAbove;
     const rawTop = opensAbove ? rect.top - PANEL_HEIGHT - 8 : rect.bottom + 8;
     const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - PANEL_HEIGHT - VIEWPORT_MARGIN);
     const top = Math.min(Math.max(VIEWPORT_MARGIN, rawTop), maxTop);
     panel.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
-  }, []);
+  }, [placement]);
 
   const openPicker = () => setOpen(true);
 
@@ -514,10 +522,7 @@ export default function ThemedTimeInput({
       <span className="truncate text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
         {formatPreview(current)}
       </span>
-      <ChevronDown
-        className={`ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
-        aria-hidden="true"
-      />
+      <DropdownChevron open={open} className="ml-auto" />
     </>
   );
 
@@ -590,7 +595,12 @@ export default function ThemedTimeInput({
         </p>
       )}
 
-      {open && !disabled && (
+      {/* Portalled to body, like ThemedSelect's menu. The panel is position:
+          fixed, and fixed is only fixed to the viewport while no ancestor has
+          a transform: inside a sheet that slid in (the reservation sheet, whose
+          open animation leaves a transform) it was fixed to the sheet instead,
+          landed off to one side and was clipped by the sheet's scroll box. */}
+      {open && !disabled && typeof document !== "undefined" && createPortal(
         <div
           ref={panelRef}
           id={pickerId}
@@ -637,7 +647,8 @@ export default function ThemedTimeInput({
           >
             {copy.done}
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

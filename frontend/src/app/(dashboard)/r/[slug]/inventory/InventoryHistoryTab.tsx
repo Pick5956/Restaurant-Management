@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
+import DropdownChevron from "@/src/components/shared/DropdownChevron";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
 import type { IngredientCategory, IngredientTransaction, TransactionQuery, TransactionType } from "@/src/types/ingredient";
@@ -407,7 +408,7 @@ export default function InventoryHistoryTab({
             >
               <CalendarDays className="h-4 w-4" />
               {formatHistoryRange(from, to, lang)}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
+              <DropdownChevron open={rangeOpen} />
             </button>
             {rangeOpen && (
               <>

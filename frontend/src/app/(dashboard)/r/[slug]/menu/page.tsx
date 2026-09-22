@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Search, X } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
@@ -17,6 +17,9 @@ import type { Ingredient } from "@/src/types/ingredient";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
+import ThemedMultiSelect from "@/src/components/shared/ThemedMultiSelect";
+import { flatField } from "@/src/components/shared/flatField";
+import { useDragReorder } from "@/src/hooks/useDragReorder";
 import MenuImageCropper from "@/src/components/menu/MenuImageCropper";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
@@ -38,6 +41,14 @@ type DeleteTarget =
   | { type: "category"; id: number; name: string }
   | { type: "item"; id: number; name: string };
 type ItemEditorTab = "basic" | "options" | "recipe";
+
+// TEMPORARY (2026-09-22): the owner asked for the old white bordered boxes for a
+// screenshot and will ask for the flat ones back. Set to false to restore.
+const TEMP_WHITE_FIELDS = true;
+const WHITE_FIELD = "border border-gray-200 bg-white outline-none transition-colors focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800";
+const WHITE_FIELD_ERROR = "border border-red-300 bg-white outline-none transition-colors focus:border-orange-500 dark:border-red-900/60 dark:bg-gray-800";
+const fieldLook = (invalid = false) => (TEMP_WHITE_FIELDS ? (invalid ? WHITE_FIELD_ERROR : WHITE_FIELD) : flatField(invalid));
+const FIELD_BOUNDARY = TEMP_WHITE_FIELDS ? "subtle" : "tinted";
 
 export default function MenuPage() {
   const { activeMembership } = useAuth();
@@ -101,7 +112,6 @@ export default function MenuPage() {
         itemDeleteError: "ลบเมนูไม่สำเร็จ",
         categoryCreated: "เพิ่มหมวดหมู่แล้ว",
         categoryUpdated: "อัปเดตหมวดหมู่แล้ว",
-        orderUpdated: "อัปเดตลำดับแล้ว",
         itemCreated: "เพิ่มเมนูแล้ว",
         itemUpdated: "อัปเดตเมนูแล้ว",
         categoryDeleted: "ลบหมวดหมู่แล้ว",
@@ -134,7 +144,7 @@ export default function MenuPage() {
         noCategory: "ไม่มีหมวด",
         createCategoryFirst: "สร้างหมวดหมู่ก่อนเพิ่มเมนู",
         noCategoryPicked: "เมนูนี้ยังไม่ได้อยู่หมวดไหน",
-        addCategoryPlaceholder: "เพิ่มเข้าหมวด...",
+        moreCategories: (count: number) => `+${count} หมวด`,
         itemName: "ชื่อเมนู",
         itemNamePlaceholder: "เช่น ข้าวกะเพราหมูสับ",
         price: "ราคาเมนู (บาท)",
@@ -198,6 +208,7 @@ export default function MenuPage() {
         note: "หมายเหตุ",
         removeComponent: "ลบ",
         recipeCost: "ต้นทุน/จาน",
+        recipeCostUnset: "ไม่ระบุ",
         noIngredients: "เพิ่มวัตถุดิบในหน้า Inventory ก่อน",
       }
     : {
@@ -214,7 +225,6 @@ export default function MenuPage() {
         itemDeleteError: "Could not delete menu item.",
         categoryCreated: "Category added",
         categoryUpdated: "Category updated",
-        orderUpdated: "Order updated",
         itemCreated: "Menu item added",
         itemUpdated: "Menu item updated",
         categoryDeleted: "Category deleted",
@@ -247,7 +257,7 @@ export default function MenuPage() {
         noCategory: "No category",
         createCategoryFirst: "Create a category before adding a menu item",
         noCategoryPicked: "This dish is not in any category yet",
-        addCategoryPlaceholder: "Add to a category...",
+        moreCategories: (count: number) => `+${count} more`,
         itemName: "Menu item name",
         itemNamePlaceholder: "For example, Basil pork with rice",
         price: "Price (THB)",
@@ -311,6 +321,7 @@ export default function MenuPage() {
         note: "Note",
         removeComponent: "Remove",
         recipeCost: "Cost/portion",
+        recipeCostUnset: "not set",
         noIngredients: "Add ingredients in Inventory first.",
       };
 
@@ -443,14 +454,6 @@ export default function MenuPage() {
     const unique = Array.from(new Set(ids.filter(Boolean)));
     setItemForm((current) => ({ ...current, category_id: unique[0] ?? 0, category_ids: unique }));
     setItemErrors((current) => ({ ...current, category: undefined, submit: undefined }));
-  };
-
-  const toggleSelectedCategory = (categoryId: number) => {
-    setSelectedCategoryIds(
-      selectedCategoryIds.includes(categoryId)
-        ? selectedCategoryIds.filter((id) => id !== categoryId)
-        : [...selectedCategoryIds, categoryId]
-    );
   };
 
   const updateRecipeComponents = (updater: (components: MenuIngredientInput[]) => MenuIngredientInput[]) => {
@@ -588,13 +591,9 @@ export default function MenuPage() {
     editCategory(category);
   };
 
-  const moveCategoryOrder = async (categoryID: number, direction: -1 | 1) => {
-    const currentIndex = sortedCategories.findIndex((category) => category.ID === categoryID);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sortedCategories.length) return;
-
-    const reordered = [...sortedCategories];
-    [reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]];
+  // A drag is its own confirmation: the rows already sit in their new order, so
+  // no toast follows a successful save. Only a failure is reported.
+  const persistCategoryOrder = async (reordered: Category[]) => {
     const normalized = reordered.map((category, index) => ({ ...category, display_order: index + 1 }));
     const previousCategories = categories;
 
@@ -613,7 +612,6 @@ export default function MenuPage() {
         name: category.name,
         display_order: category.display_order,
       })));
-      showToast({ title: copy.orderUpdated });
     } catch {
       setCategories(previousCategories);
       setCategoryError(copy.categorySaveError);
@@ -621,6 +619,8 @@ export default function MenuPage() {
       setSubmitting(false);
     }
   };
+
+  const categoryDrag = useDragReorder(sortedCategories, (category) => category.ID, (next) => void persistCategoryOrder(next), submitting);
 
   const editItem = (item: MenuItem) => {
     setEditingItem(item);
@@ -819,7 +819,7 @@ export default function MenuPage() {
       <div
         data-shell-sticky=""
         ref={stickyToolbarRef}
-        className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto"
+        className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto"
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">
@@ -832,11 +832,12 @@ export default function MenuPage() {
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder={copy.searchPlaceholder}
                       aria-label={copy.searchPlaceholder}
-                      className="h-10 w-full min-w-0 rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white pl-7 pr-3 text-[15px] outline-none focus:border-orange-500 shadow-(--dashboard-control-shadow) placeholder:text-[15px] dark:bg-gray-800"
+                      className={`h-10 w-full min-w-0 rounded-xl pl-7 shadow-(--dashboard-control-shadow) pr-3 text-[15px] placeholder:text-[15px] ${fieldLook()}`}
                     />
                   </label>
                   <div className="w-full sm:w-40">
                     <ThemedSelect
+                      boundary={FIELD_BOUNDARY}
                       triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
                       aria-label={copy.allCategories}
                       value={String(filterCategory)}
@@ -902,11 +903,16 @@ export default function MenuPage() {
                       <div className="flex min-w-0 flex-1 flex-col p-3">
                         <h3 className="truncate text-[13px] font-semibold text-gray-900 dark:text-white">{item.name}</h3>
                         <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
-                        {item.ingredients?.length ? (
-                          <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
-                            {copy.recipeCost}: <span className="font-mono tabular-nums">{formatCurrency(recipeCost(item.ingredients.map((component) => ({ ingredient_id: component.ingredient_id, quantity: component.quantity, unit: component.unit })), recipeIngredients), language, 2)}</span>
-                          </p>
-                        ) : null}
+                        {/* Always drawn, so every card is the same height: a dish with
+                            no recipe says so instead of dropping the line. */}
+                        <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
+                          {copy.recipeCost}:{" "}
+                          {item.ingredients?.length ? (
+                            <span className="font-mono tabular-nums">{formatCurrency(recipeCost(item.ingredients.map((component) => ({ ingredient_id: component.ingredient_id, quantity: component.quantity, unit: component.unit })), recipeIngredients), language, 2)}</span>
+                          ) : (
+                            copy.recipeCostUnset
+                          )}
+                        </p>
                         <div className="mt-auto flex items-center justify-between gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
                           <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">
                             {menuCategoryIds(item)
@@ -951,9 +957,11 @@ export default function MenuPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               <div className="space-y-1">
-                {sortedCategories.map((category, index) => (
+                {sortedCategories.map((category) => (
                   <div
                     key={category.ID}
+                    ref={categoryDrag.rowRef(category.ID)}
+                    style={categoryDrag.rowStyle(category.ID)}
                     role="button"
                     tabIndex={0}
                     aria-pressed={editingCategory?.ID === category.ID}
@@ -963,45 +971,30 @@ export default function MenuPage() {
                       event.preventDefault();
                       toggleCategoryEdit(category);
                     }}
-                    className={`grid cursor-pointer grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 py-2 outline-none transition-[background-color,border-color,box-shadow] ${
-                      editingCategory?.ID === category.ID
+                    className={`grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md border py-2 pl-1 pr-3 outline-none transition-[background-color,border-color,box-shadow] ${
+                      categoryDrag.draggingKey === category.ID
+                        ? "border-gray-300 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                        : editingCategory?.ID === category.ID
                         ? "border-gray-950 bg-orange-50/70 shadow-[inset_3px_0_0_#f97316] dark:border-white/80 dark:bg-orange-950/20"
                         : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
                     }`}
                   >
+                    <span
+                      {...categoryDrag.handleProps(category.ID)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={language === "th" ? `ลากเพื่อย้าย ${category.name}` : `Drag to move ${category.name}`}
+                      className={`grid h-8 w-7 touch-none place-items-center rounded-md text-gray-400 outline-none hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-orange-500 dark:text-gray-500 dark:hover:text-gray-200 ${
+                        submitting ? "cursor-not-allowed opacity-50" : categoryDrag.draggingKey === category.ID ? "cursor-grabbing" : "cursor-grab"
+                      }`}
+                    >
+                      <GripVertical className="h-4 w-4" aria-hidden="true" />
+                    </span>
                     <div className="min-w-0">
                       <p className={`truncate text-[13px] font-medium ${!category.is_active ? "text-gray-500 line-through" : "text-gray-900 dark:text-white"}`}>{category.name}</p>
                       <p className="mt-0.5 text-[11px] text-gray-500">{categoryCounts[category.ID] ?? 0} {copy.menuSummary}</p>
                     </div>
                     <div className="flex gap-1">
-                      <span className="flex overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
-                        <button
-                          type="button"
-                          disabled={submitting || index === 0}
-                          aria-label={language === "th" ? "เลื่อนขึ้น" : "Move up"}
-                          title={language === "th" ? "เลื่อนขึ้น" : "Move up"}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void moveCategoryOrder(category.ID, -1);
-                          }}
-                          className="grid h-8 w-8 place-items-center text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          <ChevronUp className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={submitting || index === sortedCategories.length - 1}
-                          aria-label={language === "th" ? "เลื่อนลง" : "Move down"}
-                          title={language === "th" ? "เลื่อนลง" : "Move down"}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void moveCategoryOrder(category.ID, 1);
-                          }}
-                          className="grid h-8 w-8 place-items-center border-l border-gray-200 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                      </span>
                       <button type="button" disabled={submitting} onClick={(event) => { event.stopPropagation(); setDeleteTarget({ type: "category", id: category.ID, name: category.name }); }} className="h-8 rounded-md px-2 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-900/20">{copy.delete}</button>
                     </div>
                   </div>
@@ -1020,16 +1013,14 @@ export default function MenuPage() {
                   }}
                   placeholder={copy.categoryPlaceholder}
                   aria-invalid={Boolean(categoryError)}
-                  className={`h-10 w-full rounded-md border bg-white px-3 text-[13px] outline-none transition-colors focus:border-orange-500 dark:bg-gray-800 ${categoryError ? "border-red-300 dark:border-red-900/60" : "border-gray-200 dark:border-gray-700"}`}
+                  className={`h-10 w-full rounded-md px-3 text-[13px] ${fieldLook(Boolean(categoryError))}`}
                 />
                 <button disabled={submitting} className="ui-press h-10 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">
                   {editingCategory ? copy.saveCategory : copy.createCategory}
                 </button>
                 {categoryError ? (
                   <p className="text-[11px] font-medium text-red-600 dark:text-red-300">{categoryError}</p>
-                ) : (
-                  <p className="text-[11px] text-gray-500 dark:text-gray-500">{language === "th" ? "คลิกหมวดเพื่อแก้ชื่อ ใช้ปุ่มลูกศรเพื่อจัดลำดับ" : "Click a category to edit it. Use arrows to reorder."}</p>
-                )}
+                ) : null}
               </div>
             </form>
           </div>
@@ -1089,68 +1080,35 @@ export default function MenuPage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-start">
                   <label className="block">
                     <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.itemName}</span>
-                    <input value={itemForm.name} onChange={(event) => { setItemForm({ ...itemForm, name: event.target.value }); setItemErrors((current) => ({ ...current, name: undefined, submit: undefined })); }} placeholder={copy.itemNamePlaceholder} className={`h-10 w-full rounded-md border bg-white px-3 text-[13px] outline-none transition-colors focus:border-orange-500 dark:bg-gray-800 ${itemErrors.name ? "border-red-300 dark:border-red-900/60" : "border-gray-200 dark:border-gray-700"}`} />
+                    <input value={itemForm.name} onChange={(event) => { setItemForm({ ...itemForm, name: event.target.value }); setItemErrors((current) => ({ ...current, name: undefined, submit: undefined })); }} placeholder={copy.itemNamePlaceholder} className={`h-10 w-full rounded-md px-3 text-[13px] ${fieldLook(Boolean(itemErrors.name))}`} />
                     {itemErrors.name && <p className="mt-1.5 text-[11px] font-medium text-red-600 dark:text-red-300">{itemErrors.name}</p>}
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.price}</span>
-                    <NumberInput value={itemForm.price} blankWhenZero onValue={(value) => setItemForm({ ...itemForm, price: value })} placeholder={copy.pricePlaceholder} min={0} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
+                    <NumberInput value={itemForm.price} blankWhenZero onValue={(value) => setItemForm({ ...itemForm, price: value })} placeholder={copy.pricePlaceholder} min={0} className={`h-10 w-full rounded-md px-3 text-[13px] ${fieldLook()}`} />
                   </label>
                 </div>
                 <label className="block">
                   <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.description}</span>
-                  <textarea value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} placeholder={copy.descriptionPlaceholder} className="h-24 w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
+                  <textarea value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} placeholder={copy.descriptionPlaceholder} className={`h-24 w-full resize-none rounded-md px-3 py-2 text-[13px] ${fieldLook()}`} />
                 </label>
                 <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
                   <p className="text-[12px] font-semibold text-gray-900 dark:text-white">{copy.itemCategories}</p>
                   <div className="mt-3 space-y-3">
-                    {sortedCategories.length ? (() => {
-                      // Chips show only what is chosen, in the categories' own order.
-                      // Sorting the selected ones to the front made a chip jump the
-                      // instant you tapped it, and a wall of every category never
-                      // scaled past a couple of dozen anyway. Space is now
-                      // proportional to what this dish uses, not to the whole list.
-                      const picked = sortedCategories.filter((category) => selectedCategoryIds.includes(category.ID));
-                      const available = sortedCategories.filter((category) => !selectedCategoryIds.includes(category.ID));
-                      return (
-                        <>
-                          {picked.length ? (
-                            <div className="flex flex-wrap gap-2">
-                              {picked.map((category) => (
-                                <span
-                                  key={category.ID}
-                                  className="inline-flex h-8 max-w-[14rem] items-center gap-1 rounded-md border border-orange-600 bg-orange-50 py-0 pl-2.5 pr-1 text-[12px] font-medium text-orange-800 dark:border-orange-700 dark:bg-orange-900/25 dark:text-orange-200"
-                                >
-                                  <span className="truncate">{category.name}</span>
-                                  <button
-                                    type="button"
-                                    aria-label={`${copy.removeOption} ${category.name}`}
-                                    onClick={() => toggleSelectedCategory(category.ID)}
-                                    className="ui-press grid h-6 w-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-orange-100 dark:hover:bg-orange-900/50"
-                                  >
-                                    <X className="h-3 w-3" aria-hidden />
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400">{copy.noCategoryPicked}</p>
-                          )}
-                          {available.length ? (
-                            <ThemedSelect
-                              aria-label={copy.addCategoryPlaceholder}
-                              value=""
-                              placeholder={copy.addCategoryPlaceholder}
-                              onChange={(next) => {
-                                const id = Number(next);
-                                if (id) toggleSelectedCategory(id);
-                              }}
-                              options={available.map((category) => ({ value: String(category.ID), label: category.name }))}
-                            />
-                          ) : null}
-                        </>
-                      );
-                    })() : (
+                    {sortedCategories.length ? (
+                      // Picked the way the owner's reference picks several: the
+                      // chosen categories as chips inside the field, and a list
+                      // that ticks each one and stays open (2026-09-21).
+                      <ThemedMultiSelect
+                        boundary={FIELD_BOUNDARY}
+                        aria-label={copy.itemCategories}
+                        placeholder={copy.noCategoryPicked}
+                        moreLabel={copy.moreCategories}
+                        values={selectedCategoryIds.map(String)}
+                        onChange={(ids) => setSelectedCategoryIds(ids.map(Number))}
+                        options={sortedCategories.map((category) => ({ value: String(category.ID), label: category.name }))}
+                      />
+                    ) : (
                       <p className="text-[11px] text-gray-500 dark:text-gray-400">{copy.createCategoryFirst}</p>
                     )}
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
@@ -1167,7 +1125,7 @@ export default function MenuPage() {
                           }
                         }}
                         placeholder={copy.inlineCategoryPlaceholder}
-                        className="h-9 min-w-0 rounded-md border border-gray-200 bg-white px-3 text-[12px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-900"
+                        className={`h-9 min-w-0 rounded-md px-3 text-[12px] ${fieldLook()}`}
                       />
                       <button
                         type="button"
@@ -1282,7 +1240,7 @@ export default function MenuPage() {
                       );
                       const microLabel = "text-[11px] font-medium text-gray-500 dark:text-gray-400";
                       const inputClass =
-                        "h-10 min-w-0 rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800";
+                        `h-10 min-w-0 rounded-md px-3 text-[13px] ${fieldLook()}`;
                       // Every row in the panel spans the panel and ends on the same
                       // right edge. Capping fields individually is what made the card
                       // look ragged - the fix is a shared grid, not smaller boxes.
@@ -1299,7 +1257,7 @@ export default function MenuPage() {
                                 onChange={(event) => updateOptionGroup(groupIndex, { name: event.target.value })}
                                 placeholder={copy.optionGroupPlaceholder}
                                 aria-label={copy.groupNameLabel}
-                                className="h-8 w-full rounded-md border border-gray-200 bg-gray-50 px-2.5 text-[13px] font-semibold text-gray-900 outline-none transition-colors focus:border-orange-500 focus:bg-white placeholder:font-normal placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"
+                                className={`h-8 w-full rounded-md px-2.5 text-[13px] font-semibold text-gray-900 placeholder:font-normal placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500 ${fieldLook()}`}
                               />
                               <button
                                 type="button"
@@ -1365,6 +1323,7 @@ export default function MenuPage() {
                                   <span>{copy.countLabel}</span>
                                   <div className="w-[4.5rem] shrink-0">
                                     <ThemedSelect
+                                      boundary={FIELD_BOUNDARY}
                                       aria-label={copy.countLabel}
                                       compact
                                       value={String(maxSelect)}
@@ -1378,6 +1337,7 @@ export default function MenuPage() {
                                     <span>{copy.minLabel}</span>
                                     <div className="w-[4.5rem] shrink-0">
                                       <ThemedSelect
+                                        boundary={FIELD_BOUNDARY}
                                         aria-label={copy.minLabel}
                                         compact
                                         value={String(minSelect)}
@@ -1453,6 +1413,7 @@ export default function MenuPage() {
                                                 <div className="flex flex-wrap items-center gap-2">
                                                   <div className="min-w-0 flex-1">
                                                     <ThemedSelect
+                                                      boundary={FIELD_BOUNDARY}
                                                       aria-label={copy.ingredient}
                                                       compact
                                                       value={String(row.ingredient_id || 0)}
@@ -1470,10 +1431,11 @@ export default function MenuPage() {
                                                     value={row.quantity}
                                                     onValue={(value) => patchRow({ quantity: value })}
                                                     placeholder={copy.quantity}
-                                                    className="h-9 w-16 shrink-0 rounded-md border border-gray-200 bg-white px-2 text-[12px] tabular-nums outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 sm:w-20 sm:px-3"
+                                                    className={`h-9 w-16 shrink-0 rounded-md px-2 text-[12px] tabular-nums sm:w-20 sm:px-3 ${fieldLook()}`}
                                                   />
                                                   <div className="w-[4.75rem] shrink-0 sm:w-24">
                                                     <ThemedSelect
+                                                      boundary={FIELD_BOUNDARY}
                                                       aria-label={copy.unit}
                                                       compact
                                                       value={chosenUnit}
@@ -1560,6 +1522,7 @@ export default function MenuPage() {
                       return (
                         <div key={componentIndex} className="grid gap-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
                           <ThemedSelect
+                            boundary={FIELD_BOUNDARY}
                             aria-label={copy.ingredient}
                             value={String(component.ingredient_id || 0)}
                             onChange={(next) => {
@@ -1576,10 +1539,11 @@ export default function MenuPage() {
                               value={component.quantity}
                               onValue={(value) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, quantity: value } : current))}
                               placeholder={copy.quantity}
-                              className="h-9 w-24 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-[12px] tabular-nums outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800"
+                              className={`h-9 w-24 shrink-0 rounded-md px-3 text-[12px] tabular-nums ${fieldLook()}`}
                             />
                             <div className="w-28 shrink-0">
                               <ThemedSelect
+                                boundary={FIELD_BOUNDARY}
                                 compact
                                 value={component.unit || selectedIngredient?.unit || ""}
                                 onChange={(next) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, unit: next } : current))}
@@ -1630,7 +1594,7 @@ export default function MenuPage() {
                             value={component.note || ""}
                             onChange={(event) => updateRecipeComponents((components) => components.map((current, index) => index === componentIndex ? { ...current, note: event.target.value } : current))}
                             placeholder={copy.note}
-                            className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[12px] dark:border-gray-700 dark:bg-gray-800"
+                            className={`h-9 rounded-md px-3 text-[12px] ${fieldLook()}`}
                           />
                         </div>
                       );

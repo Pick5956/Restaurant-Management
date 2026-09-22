@@ -12,6 +12,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import { FLAT_FIELD_EDGE, FLAT_FIELD_ERROR } from "@/src/components/shared/flatField";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect, { type ThemedSelectOption } from "@/src/components/shared/ThemedSelect";
 import ThemedTimeInput from "@/src/components/shared/ThemedTimeInput";
@@ -37,8 +38,12 @@ const HAIRLINE = "border-[color:var(--dashboard-shell-border)]";
 export const FIELD_WIDTH = "w-full md:w-[300px]";
 export const ACTION_WIDTH = "w-full md:w-[220px]";
 
-/** An error on a flat field is an inset red edge. */
-const ERROR_EDGE = "shadow-[inset_0_0_0_2px_var(--color-red-700)] dark:shadow-[inset_0_0_0_2px_var(--color-red-400)]";
+/**
+ * A text box's hover and focus edge, shared with every flat field in the app
+ * (see flatField.ts). The 2px orange-700 ring (FOCUS_RING) stays on buttons,
+ * links and the switch.
+ */
+export const TEXT_FOCUS = FLAT_FIELD_EDGE;
 
 /**
  * A one-line field has no vertical padding and a line box the full 40px: the
@@ -48,15 +53,15 @@ const ERROR_EDGE = "shadow-[inset_0_0_0_2px_var(--color-red-700)] dark:shadow-[i
  */
 function fieldClass(error: boolean, fullWidth = false, multiline = false) {
   return [
-    multiline ? "block min-w-0 rounded-[2px] p-2" : "block h-10 min-w-0 rounded-[2px] px-2 leading-10",
+    multiline ? "block min-w-0 rounded p-2" : "block h-10 min-w-0 rounded px-2 leading-10",
     "text-[16px] text-gray-950 transition-colors",
     RAISED,
     fullWidth ? "w-full" : FIELD_WIDTH,
     "placeholder:text-gray-500 dark:text-white dark:placeholder:text-gray-400",
-    FOCUS_RING,
+    // An invalid field keeps its red edge while it is hovered or typed in.
+    error ? FLAT_FIELD_ERROR : TEXT_FOCUS,
     "disabled:cursor-not-allowed disabled:opacity-50",
     "scroll-mt-24",
-    error ? ERROR_EDGE : "",
   ].join(" ");
 }
 

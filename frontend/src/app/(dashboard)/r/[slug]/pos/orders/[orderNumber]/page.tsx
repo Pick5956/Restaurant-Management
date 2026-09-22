@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { AlertTriangle, ArrowLeft, ArrowRight, MapPin, Minus, Plus, Printer, ReceiptText, Search, ShoppingBasket, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
@@ -145,6 +146,7 @@ export default function PosOrderDetailPage() {
       emptyCart: "ยังไม่มีรายการ",
       sendKitchen: "ส่งเข้าครัว",
       close: "ออกบิล / รับเงิน",
+      closeShort: "รับเงิน",
       bill: "บิล",
       service: "Service charge",
       vat: "VAT",
@@ -188,8 +190,8 @@ export default function PosOrderDetailPage() {
       saveError: "ทำรายการไม่สำเร็จ",
       noMenu: "ยังไม่มีเมนู",
       soldOut: "หมด",
-      lowStockLeft: "เหลือ",
-      servingUnit: "ที่",
+      lowStockLeft: (n: number) => `เหลือ ${n}`,
+      noStockLimit: "ไม่จำกัด",
       leftToast: (n: number, name: string) => `${name} เหลืออีก ${n} ที่`,
       soldOutToast: (name: string) => `${name} หมดแล้ว`,
     }
@@ -220,6 +222,7 @@ export default function PosOrderDetailPage() {
       emptyCart: "No items yet",
       sendKitchen: "Send to Kitchen",
       close: "Bill / Pay",
+      closeShort: "Pay",
       bill: "Bill",
       service: "Service charge",
       vat: "VAT",
@@ -263,8 +266,8 @@ export default function PosOrderDetailPage() {
       saveError: "Could not complete the action.",
       noMenu: "No menu items.",
       soldOut: "Sold out",
-      lowStockLeft: "Only",
-      servingUnit: "left",
+      lowStockLeft: (n: number) => `${n} left`,
+      noStockLimit: "No limit",
       leftToast: (n: number, name: string) => `Only ${n} left for ${name}`,
       soldOutToast: (name: string) => `${name} is sold out`,
     };
@@ -871,12 +874,12 @@ export default function PosOrderDetailPage() {
 
   return (
     <div className={`min-h-dvh w-full bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${showCurrentRoundAction ? "pb-24" : "pb-6"}`}>
-      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto">
+      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto">
         <div className="px-4 py-2 sm:px-6 lg:px-8">
           <div className="grid w-full gap-1.5 lg:h-[var(--dashboard-shell-row)] lg:min-h-[var(--dashboard-shell-row)] lg:grid-cols-[2.5rem_minmax(10rem,20rem)_minmax(8rem,10rem)_minmax(0,1fr)_auto] lg:items-center">
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-1.5 lg:contents">
-            <button type="button" onClick={() => router.push("/pos/tables")} aria-label={copy.back} title={copy.back} className="ui-press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white text-gray-600 shadow-(--dashboard-control-shadow) transition-[border-color,background-color] hover:border-[#d6dbe2] hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-[#2c3848] dark:hover:bg-gray-800 lg:order-1">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <button type="button" onClick={() => router.push("/pos/tables")} aria-label={copy.back} title={copy.back} className={`${BACK_CONTROL} lg:order-1`}>
+              <ArrowLeft className={BACK_ICON} aria-hidden="true" />
             </button>
             {order && (
               <div className="flex min-w-0 items-center justify-start gap-1.5 lg:order-5">
@@ -890,24 +893,29 @@ export default function PosOrderDetailPage() {
                   <span className="flex min-w-0 items-center gap-1.5 px-2">
                     <ReceiptText className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
                     <span className="hidden xl:inline">{copy.orderLabel}</span>
-                    <span className="truncate">{order.order_number}</span>
+                    {/* On a phone only the day's running number ("001") fits
+                        beside the table; the full number is one tap away in
+                        the summary this chip opens. */}
+                    <span className="truncate sm:hidden">{order.order_number.split("-").pop()}</span>
+                    <span className="hidden truncate sm:inline">{order.order_number}</span>
                   </span>
                   <span className="h-4 w-px shrink-0 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
                   <span className="flex shrink-0 items-center gap-1.5 px-2">
                     <UtensilsCrossed className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
                     <span className="font-mono tabular-nums">{orderItemCount}</span>
-                    <span>{copy.itemsLabel}</span>
+                    <span className="hidden sm:inline">{copy.itemsLabel}</span>
                   </span>
                 </button>
                 {canCloseTable ? (
-                  <button type="button" disabled={submitting} onClick={() => { void requestCloseEmptyTable(); }} className="ui-press h-10 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 text-[13px] font-semibold text-red-700 shadow-(--dashboard-control-shadow) transition-[border-color,background-color,opacity] hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50">
+                  <button type="button" disabled={submitting} onClick={() => { void requestCloseEmptyTable(); }} className="ui-press ml-auto h-10 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 text-[13px] font-semibold text-red-700 lg:ml-0 shadow-(--dashboard-control-shadow) transition-[border-color,background-color,opacity] hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50">
                     {copy.closeEmptyTable}
                   </button>
                 ) : null}
                 {pendingItemCount === 0 && !isTerminal && activeOrderItems.length > 0 ? (
-                  <button type="button" disabled={submitting} onClick={() => { void loadBill(); }} className="ui-press inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-[background-color,opacity] hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800">
+                  <button type="button" disabled={submitting} onClick={() => { void loadBill(); }} className="ui-press ml-auto inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-[background-color,opacity] lg:ml-0 hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800">
                     <WalletCards className="h-4 w-4" aria-hidden="true" />
-                    {copy.close}
+                    <span className="sm:hidden">{copy.closeShort}</span>
+                    <span className="hidden sm:inline">{copy.close}</span>
                   </button>
                 ) : null}
               </div>
@@ -960,17 +968,16 @@ export default function PosOrderDetailPage() {
                 // remaining_servings === 0 means the queue already claimed the last
                 // portion, so block ordering even before the kitchen cooks it.
                 const soldOut = !item.is_available || item.remaining_servings === 0;
-                const lowStock = !soldOut && typeof item.remaining_servings === "number" && item.remaining_servings > 0 && item.remaining_servings <= 10;
+                // Every dish shows what is left (owner, 2026-09-22); ten or fewer
+                // turns the badge amber. A dish with no recipe is never counted.
+                const remaining = typeof item.remaining_servings === "number" ? item.remaining_servings : null;
+                const lowStock = !soldOut && remaining !== null && remaining <= 10;
 
                 return (
                   <button key={item.ID} type="button" disabled={isTerminal || submitting || soldOut} onClick={() => openMenuPicker(item)} className={`ui-press ${MENU_CARD_SHELL_CLASS} disabled:cursor-not-allowed disabled:opacity-50 sm:hover:-translate-y-0.5`}>
                     {soldOut ? (
                       <span className="absolute left-2 top-2 z-10 rounded-md bg-gray-900/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md dark:bg-gray-100/90 dark:text-gray-900">
                         {copy.soldOut}
-                      </span>
-                    ) : lowStock ? (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-md dark:bg-amber-400 dark:text-gray-950">
-                        {copy.lowStockLeft} {item.remaining_servings} {copy.servingUnit}
                       </span>
                     ) : null}
                     {orderedQuantity > 0 && (
@@ -985,7 +992,14 @@ export default function PosOrderDetailPage() {
                     />
                     <div className="flex min-w-0 flex-1 flex-col p-3">
                       <p className="truncate text-[13px] font-semibold text-gray-900 dark:text-white">{item.name}</p>
-                      <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
+                      <div className="mt-0.5 flex items-center justify-between gap-2">
+                        <p className="font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
+                        {!soldOut ? (
+                          <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${lowStock ? "bg-amber-500 text-white dark:bg-amber-400 dark:text-gray-950" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"}`}>
+                            {remaining !== null ? copy.lowStockLeft(remaining) : copy.noStockLimit}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </button>
                 );
@@ -1029,8 +1043,8 @@ export default function PosOrderDetailPage() {
             </div>
             <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-                <h2 className="min-w-0 text-[15px] font-semibold text-gray-900 dark:text-white">{selectedMenu.name}</h2>
-                <p className="shrink-0 text-right font-mono text-[16px] font-semibold tabular-nums">฿{(selectedMenu.price + selectedOptionsTotal).toLocaleString()}</p>
+                <h2 className="min-w-0 text-[15px] font-semibold text-black dark:text-white">{selectedMenu.name}</h2>
+                <p className="shrink-0 text-right font-mono text-[16px] font-semibold tabular-nums text-black dark:text-white">฿{(selectedMenu.price + selectedOptionsTotal).toLocaleString()}</p>
               </div>
             </div>
             <div data-pos-modal-scroll className="space-y-3 overflow-y-auto p-4">
@@ -1043,7 +1057,7 @@ export default function PosOrderDetailPage() {
                     return (
                       <div key={group.ID}>
                         <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">{group.name}</span>
+                          <span className="text-[12px] font-medium text-black dark:text-gray-300">{group.name}</span>
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                               {optionLimitLabel(selectedCount, minSelect, maxSelect)}
@@ -1056,7 +1070,7 @@ export default function PosOrderDetailPage() {
                             const selected = selectedOptionIds.includes(option.ID);
                             const limitReached = maxSelect > 1 && selectedCount >= maxSelect && !selected;
                             return (
-                              <button key={option.ID} type="button" disabled={limitReached} aria-pressed={selected} onClick={() => toggleOption(options.map((current) => current.ID), option.ID, minSelect, maxSelect)} className={`grid min-h-10 grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 text-left text-[12px] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900" : "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}`}>
+                              <button key={option.ID} type="button" disabled={limitReached} aria-pressed={selected} onClick={() => toggleOption(options.map((current) => current.ID), option.ID, minSelect, maxSelect)} className={`grid min-h-10 grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 text-left text-[12px] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900" : "border-gray-200 text-black hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}`}>
                                 <span>{option.name}</span>
                                 <span className="font-mono tabular-nums">{option.price_delta ? `+฿${option.price_delta.toLocaleString()}` : ""}</span>
                               </button>
@@ -1069,15 +1083,19 @@ export default function PosOrderDetailPage() {
                 </div>
               ) : null}
               <label className="block">
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.quantity}</span>
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{copy.quantity}</span>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">-</button>
-                  <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[13px] dark:border-gray-700 dark:bg-gray-800" />
-                  <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">+</button>
+                  <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold text-black dark:border-gray-800 dark:text-white">-</button>
+                  <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] font-semibold tabular-nums text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                  <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold text-black dark:border-gray-800 dark:text-white">+</button>
                 </div>
               </label>
+              {/* A takeaway order is takeaway through and through: every item
+                  goes home, so there is nothing to choose. selectedFulfillment
+                  already defaults to takeaway for these orders. */}
+              {order?.order_type !== "takeaway" && (
               <div>
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{fulfillmentTitle}</span>
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{fulfillmentTitle}</span>
                 <div className="grid grid-cols-2 gap-2">
                   {(["dine_in", "takeaway"] as const).map((value) => (
                     <button
@@ -1086,7 +1104,7 @@ export default function PosOrderDetailPage() {
                       onClick={() => setSelectedFulfillment(value)}
                       className={`h-10 rounded-md border px-3 text-[12px] font-semibold transition-colors ${selectedFulfillment === value
                           ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900"
-                          : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+                          : "border-gray-200 text-black hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
                         }`}
                     >
                       {value === "takeaway" ? takeawayItemLabel : dineInItemLabel}
@@ -1094,9 +1112,10 @@ export default function PosOrderDetailPage() {
                   ))}
                 </div>
               </div>
+              )}
               <label className="block">
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.note}</span>
-                <textarea value={note} onChange={(event) => setNote(event.target.value)} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{copy.note}</span>
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] text-black outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
               </label>
             </div>
             <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-800">

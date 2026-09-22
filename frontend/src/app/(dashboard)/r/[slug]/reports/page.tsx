@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
@@ -280,9 +281,8 @@ export default function ReportsPage() {
             </span>
           </form>
         </div>
-        <Link href={restaurantPageHref("/home")} className="ui-press inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          {copy.back}
+        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className={BACK_CONTROL}>
+          <ArrowLeft className={BACK_ICON} aria-hidden="true" />
         </Link>
       </div>
 

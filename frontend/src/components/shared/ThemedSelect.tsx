@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import DropdownChevron from "@/src/components/shared/DropdownChevron";
+import { FLAT_FIELD_SURFACE } from "@/src/components/shared/flatField";
 import { useCoarsePointer } from "@/src/hooks/useCoarsePointer";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 
@@ -25,8 +27,10 @@ export type ThemedSelectProps = {
   // trigger it draws behind, so a shadow set there would sit on a
   // differently-rounded shape.
   triggerClassName?: string;
-  // "filled" is the settings pages' field: a flat tinted box with no edge,
-  // 48px tall, measured from the settings layout the owner asked them to match.
+  // "filled" is the settings pages' field: a flat tinted box with no edge, 40px
+  // tall with 16px text. "tinted" is that same edgeless face at the page's own
+  // size and corner radius (the menu page, 2026-09-21): the settings look
+  // without the settings sizes or the 4px corners.
   boundary?: SelectBoundary;
   // The desktop trigger is a button, not a native select, so it has no implicit
   // name. Call sites were already passing aria-label and TypeScript let it
@@ -37,67 +41,187 @@ export type ThemedSelectProps = {
   "aria-labelledby"?: string;
 };
 
-type SelectBoundary = "subtle" | "filled";
+export type SelectBoundary = "subtle" | "filled" | "tinted";
 
-const TRIGGER_BASE =
-  "w-full border text-left text-gray-900 transition-[background-color,border-color,box-shadow,transform,translate,opacity] dark:text-white";
+// border-color is not transitioned: when an attached list closes, the field's
+// bottom edge has to be there at once, not fade in after it.
+export const TRIGGER_BASE =
+  "w-full border text-left text-gray-900 transition-[background-color,box-shadow,transform,translate,opacity] dark:text-white";
 
-function triggerShape(boundary: SelectBoundary) {
+export function triggerShape(boundary: SelectBoundary) {
   return boundary === "filled" ? "rounded px-4 pr-10" : "rounded-md px-3 pr-9";
 }
 
-// --settings-field lives in globals.css, with its own dark value.
-const TRIGGER_CLOSED_FILLED = "border-transparent bg-(--settings-field) hover:bg-(--settings-field-hover)";
-const TRIGGER_OPEN_FILLED = "border-transparent bg-(--settings-field-hover)";
+// The filled face draws its edge inside the box, like the flat text fields
+// (flatField.ts): grey on hover, orange-500 on keyboard focus. The fill no
+// longer darkens on hover - that is what read as too heavy beside them.
+// Open, it keeps its plain fill: the list below continues it without a seam.
+const TRIGGER_CLOSED_FILLED = `border-transparent ${FLAT_FIELD_SURFACE} ring-inset hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-700`;
+// While open, the keyboard focus edge steps aside: it would frame the field
+// alone and cut it off from the list. The highlighted row shows where focus is.
+const TRIGGER_OPEN_FILLED = `border-transparent ${FLAT_FIELD_SURFACE} focus-visible:!ring-0`;
 
-function triggerState(boundary: SelectBoundary, open: boolean) {
+export function triggerState(boundary: SelectBoundary, open: boolean) {
   if (boundary === "filled") return open ? TRIGGER_OPEN_FILLED : TRIGGER_CLOSED_FILLED;
+  if (boundary === "tinted") return open ? TRIGGER_OPEN_TINTED : TRIGGER_CLOSED_TINTED;
   return open ? TRIGGER_OPEN : TRIGGER_CLOSED;
 }
 const TRIGGER_CLOSED =
-  "border-[color:var(--dashboard-shell-border)] bg-white hover:border-[#d6dbe2] hover:bg-gray-50 dark:bg-gray-900 dark:hover:border-[#2c3848] dark:hover:bg-gray-800/60";
+  "border-[color:var(--dashboard-shell-border)] bg-white hover:border-gray-300 hover:bg-gray-100 dark:bg-gray-900 dark:hover:border-[#2c3848] dark:hover:bg-gray-800";
 const TRIGGER_OPEN =
-  "border-[#d6dbe2] bg-gray-50 inset-shadow-[0_0_0_1px_rgba(17,24,39,0.04)] dark:border-[#2c3848] dark:bg-gray-800/60";
+  "border-[#d6dbe2] bg-white focus-visible:!border-[#d6dbe2] dark:border-[#2c3848] dark:bg-gray-900 dark:focus-visible:!border-[#2c3848]";
+// The tinted face wears the filled one's surface and edges; only its size and
+// corners come from the ordinary select.
+const TRIGGER_CLOSED_TINTED = TRIGGER_CLOSED_FILLED;
+const TRIGGER_OPEN_TINTED = TRIGGER_OPEN_FILLED;
+
+/** An attached list's fill and edge: the open trigger's, so the two read as one piece. */
+export const MENU_SURFACE: Record<SelectBoundary, string> = {
+  filled: `border-0 ${FLAT_FIELD_SURFACE}`,
+  subtle: "border border-[#d6dbe2] bg-white dark:border-[#2c3848] dark:bg-gray-900",
+  tinted: `border-0 ${FLAT_FIELD_SURFACE}`,
+};
 
 
-function triggerSize(compact: boolean, boundary: SelectBoundary) {
+export function triggerSize(compact: boolean, boundary: SelectBoundary) {
   // The settings rows keep every control at one height (40px), so a select
   // stands exactly as tall as the text field in the row above it.
   if (boundary === "filled") return "h-10 text-[16px]";
   return compact ? "h-9 text-[12px]" : "h-10 text-[13px]";
 }
 
-/** The menu trigger's own focus edge. The filled one has no `outline-none`
- *  underneath it: in Tailwind 4 that sets the outline style to none, and a
- *  focus-visible width on top would then draw nothing. */
+/** The menu trigger's own focus edge. The flat faces draw it as a 1px inset
+ *  orange-500 edge, the same as a flat text field; the subtle face turns its
+ *  border orange. */
 function menuTriggerFocus(boundary: SelectBoundary) {
-  return boundary === "filled"
-    ? "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 dark:focus-visible:outline-orange-400 disabled:opacity-50"
+  return boundary !== "subtle"
+    ? "outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500 disabled:opacity-50"
     : "outline-none focus-visible:border-orange-500 disabled:opacity-60";
 }
 
 /** The drawn field under the touch version's invisible select. */
-function nativeTriggerFocus(boundary: SelectBoundary) {
-  return boundary === "filled"
-    ? "group-has-[select:focus-visible]:outline-2 group-has-[select:focus-visible]:outline-offset-2 group-has-[select:focus-visible]:outline-orange-700 dark:group-has-[select:focus-visible]:outline-orange-400 group-has-[select:disabled]:opacity-50"
+export function nativeTriggerFocus(boundary: SelectBoundary) {
+  return boundary !== "subtle"
+    ? "group-has-[select:focus-visible]:ring-1 group-has-[select:focus-visible]:ring-inset group-has-[select:focus-visible]:ring-orange-500 group-has-[select:disabled]:opacity-50"
     : "group-has-[select:focus-visible]:border-orange-500 group-has-[select:disabled]:opacity-60";
 }
 
-function SelectChevron({ open = false }: { open?: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
-    >
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
+export function SelectChevron({ open = false }: { open?: boolean }) {
+  return <DropdownChevron open={open} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />;
+}
+
+/**
+ * Where the open list sits and what it copies from its trigger.
+ *
+ * An attached list (the owner's reference, 2026-09-21: "ดูเป็นเนื้อเดียวกันกับ
+ * ข้อมูลข้างใน") continues the field it came from: flush against it, exactly
+ * its width, the same fill and edge, rows a little shorter than the field with the text
+ * on the same left edge. The fill comes from the face (MENU_SURFACE); the corner
+ * radius, text inset, size and row height are read off the trigger, because
+ * callers restyle triggers (rounded-xl toolbar filters) and the list has to
+ * follow them. The trigger's live colour is not copied: hover changes it. A
+ * trigger narrower than MIN_ATTACHED_WIDTH gets the old detached card instead,
+ * so a tiny unit picker can still show readable options.
+ */
+export type MenuPosition = {
+  left: number;
+  width: number;
+  maxHeight: number;
+  /** Distance from the viewport top (below) or bottom (above) edge. */
+  offset: number;
+  above: boolean;
+  attached: boolean;
+  radius: string;
+  paddingLeft: string;
+  fontSize: string;
+  rowHeight: number;
+};
+
+export const INITIAL_MENU_POSITION: MenuPosition = {
+  left: 0,
+  width: 0,
+  maxHeight: 256,
+  offset: 0,
+  above: false,
+  attached: false,
+  radius: "0px",
+  paddingLeft: "12px",
+  fontSize: "13px",
+  rowHeight: 36,
+};
+
+const MIN_ATTACHED_WIDTH = 140;
+// Rows in an attached list sit 8px shorter than the field that opened them:
+// a full field height per row read as padded and cost a row of the list.
+const ATTACHED_ROW_INSET = 8;
+const ATTACHED_ROW_MIN = 32;
+const MENU_MARGIN = 8;
+const DETACHED_GAP = 6;
+
+export function menuPositionFor(rect: DOMRect, trigger: HTMLElement, viewportWidth: number, viewportHeight: number): MenuPosition {
+  const style = window.getComputedStyle(trigger);
+  const attached = rect.width >= MIN_ATTACHED_WIDTH;
+  const gap = attached ? 0 : DETACHED_GAP;
+  const width = attached
+    ? rect.width
+    : Math.min(viewportWidth - MENU_MARGIN * 2, Math.max(rect.width, 224));
+  const left = attached
+    ? rect.left
+    : Math.min(Math.max(MENU_MARGIN, rect.left), Math.max(MENU_MARGIN, viewportWidth - width - MENU_MARGIN));
+  const below = viewportHeight - rect.bottom - MENU_MARGIN;
+  const aboveSpace = rect.top - MENU_MARGIN;
+  const above = below < 176 && aboveSpace > below;
+  const maxHeight = Math.min(256, Math.max(128, (above ? aboveSpace : below) - gap));
+  return {
+    left,
+    width,
+    maxHeight,
+    offset: above ? viewportHeight - rect.top + gap : rect.bottom + gap,
+    above,
+    attached,
+    radius: style.borderTopLeftRadius,
+    paddingLeft: style.paddingLeft,
+    fontSize: style.fontSize,
+    rowHeight: Math.max(ATTACHED_ROW_MIN, rect.height - ATTACHED_ROW_INSET),
+  };
+}
+
+/** The list's own box: a continuation of the trigger, or the detached card. */
+export function menuStyle(position: MenuPosition): CSSProperties {
+  const placement: CSSProperties = position.above ? { bottom: position.offset } : { top: position.offset };
+  const box: CSSProperties = {
+    ...placement,
+    left: position.left,
+    width: position.width,
+    maxHeight: position.maxHeight,
+    zIndex: "calc(var(--z-modal) + 1)",
+  };
+  if (!position.attached) return box;
+  const joined = position.above
+    ? { borderBottomWidth: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+    : { borderTopWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 };
+  return {
+    ...box,
+    borderRadius: position.radius,
+    ...joined,
+    ["--select-pad" as string]: position.paddingLeft,
+    ["--select-font" as string]: position.fontSize,
+    ["--select-row" as string]: `${position.rowHeight}px`,
+  };
+}
+
+/** An attached list unrolls out of the field's edge; it never slides, which would open a gap.
+ *  It has no exit motion: it closes in the same frame the field gets its edge back. */
+export function menuMotion(above: boolean) {
+  return above ? "themed-select-attached-up" : "themed-select-attached";
+}
+
+/** While its list is attached, the trigger drops the edge and corners it shares with it. */
+export function joinedTriggerStyle(position: MenuPosition, open: boolean): CSSProperties | undefined {
+  if (!open || !position.attached) return undefined;
+  return position.above
+    ? { borderTopColor: "transparent", borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+    : { borderBottomColor: "transparent", borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
 }
 
 export function isThemedSelectInteractionTarget(
@@ -108,7 +232,7 @@ export function isThemedSelectInteractionTarget(
   return Boolean(triggerRoot?.contains(target) || menuRoot?.contains(target));
 }
 
-function ThemedSelectPortal({ children }: { children: ReactNode }) {
+export function ThemedSelectPortal({ children }: { children: ReactNode }) {
   if (typeof document === "undefined") return null;
   return createPortal(children, document.body);
 }
@@ -202,7 +326,7 @@ function ThemedSelectMenu({
   const [renderMenu, setRenderMenu] = useState(false);
   const [closing, setClosing] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 256 });
+  const [menuPosition, setMenuPosition] = useState<MenuPosition>(INITIAL_MENU_POSITION);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -225,24 +349,10 @@ function ThemedSelectMenu({
   }, [options]);
 
   const updateMenuPosition = useCallback(() => {
+    const trigger = rootRef.current?.querySelector<HTMLElement>("button");
     const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const margin = 8;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const width = Math.min(viewportWidth - margin * 2, Math.max(rect.width, 224));
-    const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
-    const below = viewportHeight - rect.bottom - margin;
-    const above = rect.top - margin;
-    const opensAbove = below < 176 && above > below;
-    const availableHeight = Math.max(128, opensAbove ? above : below);
-    const maxHeight = Math.min(256, availableHeight);
-    const top = opensAbove
-      ? Math.max(margin, rect.top - maxHeight - 6)
-      : Math.min(rect.bottom + 6, viewportHeight - margin - maxHeight);
-
-    setMenuPosition({ left, top, width, maxHeight });
+    if (!rect || !trigger) return;
+    setMenuPosition(menuPositionFor(rect, trigger, window.innerWidth, window.innerHeight));
   }, []);
 
   const openMenu = useCallback(() => {
@@ -264,18 +374,28 @@ function ThemedSelectMenu({
 
     setOpen(false);
     setActiveIndex(-1);
-    setClosing(true);
 
     if (closeTimerRef.current) {
       window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
     }
 
+    // An attached list goes at once, and the field gets its bottom edge back in
+    // the same frame. Letting it roll up first kept the field open-ended for the
+    // length of the animation, which read as the line arriving late.
+    if (menuPosition.attached) {
+      setRenderMenu(false);
+      setClosing(false);
+      return;
+    }
+
+    setClosing(true);
     closeTimerRef.current = window.setTimeout(() => {
       setRenderMenu(false);
       setClosing(false);
       closeTimerRef.current = null;
     }, 150);
-  }, [closing, renderMenu]);
+  }, [closing, menuPosition.attached, renderMenu]);
 
   const commitOption = useCallback((index: number) => {
     const option = options[index];
@@ -366,6 +486,7 @@ function ThemedSelectMenu({
         aria-controls={renderMenu ? listboxId : undefined}
         aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
         className={`${triggerSize(compact, boundary)} ${TRIGGER_BASE} ${triggerShape(boundary)} ${menuTriggerFocus(boundary)} active:translate-y-px disabled:cursor-not-allowed ${buttonState} ${triggerClassName}`}
+        style={joinedTriggerStyle(menuPosition, renderMenu)}
       >
         <span className={`${selected ? "" : "text-gray-500 dark:text-gray-400"} block truncate`}>
           {selected?.label ?? (placeholder || fallbackPlaceholder)}
@@ -380,18 +501,49 @@ function ThemedSelectMenu({
             id={listboxId}
             role="listbox"
             aria-labelledby={buttonId}
-            className={`${closing ? "themed-select-menu-exit" : "themed-select-menu"} fixed overflow-auto rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white p-1.5 shadow-(--dashboard-control-shadow) dark:bg-gray-900`}
-            style={{
-              left: menuPosition.left,
-              top: menuPosition.top,
-              width: menuPosition.width,
-              maxHeight: menuPosition.maxHeight,
-              zIndex: "calc(var(--z-modal) + 1)",
-            }}
+            className={
+              menuPosition.attached
+                ? `${menuMotion(menuPosition.above)} dropdown-scroll fixed overflow-auto ${MENU_SURFACE[boundary]} ${menuPosition.above ? "shadow-[0_-12px_20px_-10px_rgba(0,0,0,0.25)]" : "shadow-[0_12px_20px_-10px_rgba(0,0,0,0.25)]"} dark:shadow-[0_12px_24px_-8px_rgba(0,0,0,0.7)]`
+                : `${closing ? "themed-select-menu-exit" : "themed-select-menu"} dropdown-scroll fixed overflow-auto rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white p-1.5 shadow-(--dashboard-control-shadow) dark:bg-gray-900`
+            }
+            style={menuStyle(menuPosition)}
           >
             {options.map((option, optionIndex) => {
               const active = option.value === value;
               const highlighted = options[activeIndex]?.value === option.value;
+              if (menuPosition.attached) {
+                return (
+                  <button
+                    key={option.value}
+                    id={`${listboxId}-option-${optionIndex}`}
+                    role="option"
+                    aria-selected={active}
+                    aria-disabled={option.disabled || undefined}
+                    type="button"
+                    disabled={option.disabled}
+                    title={option.label}
+                    onMouseEnter={() => {
+                      if (!option.disabled) setActiveIndex(optionIndex);
+                    }}
+                    onClick={() => {
+                      commitOption(optionIndex);
+                    }}
+                    // Rows as tall as the field and the text on its left edge, so
+                    // the list reads as the field carrying on. The chosen row is a
+                    // darker band of the same fill; the one under the pointer or
+                    // the keyboard, a lighter one.
+                    className={`flex min-h-(--select-row) w-full items-center px-(--select-pad) text-left text-(length:--select-font) text-gray-900 transition-[background-color] disabled:cursor-not-allowed disabled:opacity-50 dark:text-white ${
+                      active
+                        ? "bg-black/[0.07] dark:bg-white/[0.12]"
+                        : highlighted
+                          ? "bg-black/[0.04] dark:bg-white/[0.06]"
+                          : ""
+                    }`}
+                  >
+                    <span className="truncate">{option.label}</span>
+                  </button>
+                );
+              }
               return (
                 <button
                   key={option.value}
