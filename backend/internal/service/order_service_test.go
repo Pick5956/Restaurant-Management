@@ -326,12 +326,20 @@ func TestValidateEmptyTableClose(t *testing.T) {
 			},
 		},
 		{
-			name: "rejects takeaway orders",
+			name: "allows an open takeaway without items",
 			order: &entity.Order{
 				OrderType: entity.OrderTypeTakeaway,
 				Status:    entity.OrderStatusOpen,
 			},
-			wantErr: "only an empty dine-in table can be closed",
+		},
+		{
+			name: "rejects a takeaway that already has items",
+			order: &entity.Order{
+				OrderType: entity.OrderTypeTakeaway,
+				Status:    entity.OrderStatusOpen,
+				Items:     []entity.OrderItem{{}},
+			},
+			wantErr: "table order already has items",
 		},
 		{
 			name: "rejects orders after kitchen send",

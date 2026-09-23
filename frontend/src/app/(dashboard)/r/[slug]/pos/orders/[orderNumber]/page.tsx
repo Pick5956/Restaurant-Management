@@ -182,6 +182,11 @@ export default function PosOrderDetailPage() {
       closeEmptyTableBody: "โต๊ะนี้ยังไม่มีรายการอาหาร ระบบจะไม่บันทึกออเดอร์ว่างนี้ (ไม่ขึ้นในประวัติ) และเปลี่ยนโต๊ะกลับเป็นว่าง",
       keepTableOpen: "เปิดโต๊ะไว้",
       tableClosed: "ปิดโต๊ะแล้ว",
+      closeTakeaway: "ยกเลิกออเดอร์",
+      closeTakeawayTitle: "ยกเลิกออเดอร์กลับบ้านที่เปิดผิด?",
+      closeTakeawayBody: "ออเดอร์นี้ยังไม่มีรายการอาหาร ระบบจะไม่บันทึกออเดอร์ว่างนี้ (ไม่ขึ้นในประวัติ)",
+      keepTakeawayOpen: "เปิดออเดอร์ไว้",
+      takeawayClosed: "ยกเลิกออเดอร์แล้ว",
       remove: "ลบ",
       foodSubtotal: "ยอดอาหาร",
       discount: "ส่วนลด",
@@ -258,6 +263,11 @@ export default function PosOrderDetailPage() {
       closeEmptyTableBody: "This table has no items. The empty order won't be recorded (it won't appear in the archive) and the table becomes available again.",
       keepTableOpen: "Keep table open",
       tableClosed: "Table closed",
+      closeTakeaway: "Discard order",
+      closeTakeawayTitle: "Discard this takeaway order opened by mistake?",
+      closeTakeawayBody: "This order has no items. The empty order won't be recorded (it won't appear in the archive).",
+      keepTakeawayOpen: "Keep order open",
+      takeawayClosed: "Order discarded",
       remove: "Remove",
       foodSubtotal: "Food subtotal",
       discount: "Discount",
@@ -578,11 +588,14 @@ export default function PosOrderDetailPage() {
 
   const requestCloseEmptyTable = async () => {
     if (!order || !canCloseEmptyTableOrder(order)) return;
+    // A takeaway has no table, so it reads as discarding the order, not freeing
+    // a table — same underlying action, different words.
+    const takeaway = order.order_type === "takeaway";
     const confirmed = await confirm({
-      title: copy.closeEmptyTableTitle,
-      message: copy.closeEmptyTableBody,
-      confirmLabel: copy.closeEmptyTable,
-      cancelLabel: copy.keepTableOpen,
+      title: takeaway ? copy.closeTakeawayTitle : copy.closeEmptyTableTitle,
+      message: takeaway ? copy.closeTakeawayBody : copy.closeEmptyTableBody,
+      confirmLabel: takeaway ? copy.closeTakeaway : copy.closeEmptyTable,
+      cancelLabel: takeaway ? copy.keepTakeawayOpen : copy.keepTableOpen,
       tone: "warning",
     });
     if (!confirmed) return;
@@ -592,7 +605,7 @@ export default function PosOrderDetailPage() {
     setError("");
     try {
       await closeEmptyTableOrder(order.ID);
-      showToast({ title: copy.tableClosed });
+      showToast({ title: takeaway ? copy.takeawayClosed : copy.tableClosed });
       router.replace("/pos/tables");
     } catch (error) {
       setError(apiErrorMessage(error) || copy.saveError);
@@ -908,7 +921,7 @@ export default function PosOrderDetailPage() {
                 </button>
                 {canCloseTable ? (
                   <button type="button" disabled={submitting} onClick={() => { void requestCloseEmptyTable(); }} className="ui-press ml-auto h-10 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 text-[13px] font-semibold text-red-700 lg:ml-0 shadow-(--dashboard-control-shadow) transition-[border-color,background-color,opacity] hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50">
-                    {copy.closeEmptyTable}
+                    {order.order_type === "takeaway" ? copy.closeTakeaway : copy.closeEmptyTable}
                   </button>
                 ) : null}
                 {pendingItemCount === 0 && !isTerminal && activeOrderItems.length > 0 ? (

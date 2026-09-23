@@ -910,7 +910,19 @@ func (s *OrderService) CancelOrder(restaurantID, userID, orderID uint, reason st
 }
 
 func validateEmptyTableClose(order *entity.Order) error {
-	if order == nil || order.OrderType != entity.OrderTypeDineIn || order.TableID == nil || *order.TableID == 0 {
+	if order == nil {
+		return errors.New("only an empty dine-in table can be closed")
+	}
+	switch order.OrderType {
+	case entity.OrderTypeDineIn:
+		if order.TableID == nil || *order.TableID == 0 {
+			return errors.New("only an empty dine-in table can be closed")
+		}
+	case entity.OrderTypeTakeaway:
+		// A takeaway holds no table, so there is nothing to free — but an order
+		// opened by mistake still needs a way out, so it can be discarded here
+		// as long as nothing was ordered on it (checked below).
+	default:
 		return errors.New("only an empty dine-in table can be closed")
 	}
 	if order.Status != entity.OrderStatusOpen {
