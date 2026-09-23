@@ -3,6 +3,7 @@ package repository
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -336,13 +337,62 @@ func (r *AIActionPlanRepository) RecordAIActionPlanItem(outcome AIActionPlanItem
 	if !outcome.Succeeded {
 		itemStatus = entity.AIActionItemStatusFailed
 	}
-	return r.db.Model(&entity.AIActionPlanItem{}).
-		Where("id = ?", outcome.ItemID).
-		Updates(map[string]any{
-			"status":     itemStatus,
-			"error_text": aiActionTrimTo(outcome.ErrorText, 400),
-			"updated_at": r.currentTime(),
-		}).Error
+	now := r.currentTime()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// "Not already executed" makes the audit row below happen once per
+		// write, even when a re-claimed plan records the same item again.
+		result := tx.Model(&entity.AIActionPlanItem{}).
+			Where("id = ? AND status <> ?", outcome.ItemID, entity.AIActionItemStatusExecuted).
+			Updates(map[string]any{
+				"status":     itemStatus,
+				"error_text": aiActionTrimTo(outcome.ErrorText, 400),
+				"updated_at": now,
+			})
+		if result.Error != nil || result.RowsAffected == 0 || !outcome.Succeeded {
+			return result.Error
+		}
+		return createAIPlanItemAuditLog(tx, outcome.ItemID, now)
+	})
+}
+
+// createAIPlanItemAuditLog records who changed what when a confirmed plan item
+// has just been written. Only the single-menu preview used to leave an audit
+// row; a stock, cost, minimum, new ingredient, menu or expense changed through
+// the assistant left none, so the activity tab could not say who did it
+// (found 23 ก.ย. 2569).
+func createAIPlanItemAuditLog(tx *gorm.DB, itemID uint, now time.Time) error {
+	var item entity.AIActionPlanItem
+	if err := tx.Preload("Plan").Where("id = ?", itemID).First(&item).Error; err != nil {
+		return err
+	}
+	if item.Plan == nil {
+		return nil
+	}
+	var preview struct {
+		Title  string `json:"title"`
+		Change string `json:"change"`
+	}
+	_ = json.Unmarshal([]byte(item.PreviewJSON), &preview)
+	details, err := marshalAIActionResultJSON(map[string]interface{}{
+		"action_plan_id": item.PlanID,
+		"item_id":        item.ID,
+		"action_type":    item.ActionType,
+		"title":          preview.Title,
+		"change":         preview.Change,
+	})
+	if err != nil {
+		return err
+	}
+	actorID := item.Plan.OwnerUserID
+	auditLog := &entity.RestaurantAuditLog{
+		RestaurantID: item.Plan.RestaurantID,
+		ActorUserID:  &actorID,
+		Action:       entity.AuditActionAIPlanItem,
+		Details:      details,
+	}
+	auditLog.CreatedAt = now
+	auditLog.UpdatedAt = now
+	return tx.Omit("ActorUser", "TargetUser", "Invitation").Create(auditLog).Error
 }
 
 // FinishAIActionPlan records per-item outcomes and the plan's final status:

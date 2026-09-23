@@ -344,6 +344,17 @@ export default function AIOperationsFloatingChat() {
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
     if (pendingActionPreview && !(await discardPendingActionPreview())) return;
+    // The server holds one plan per owner. Leaving a chat with its card still
+    // unanswered left that plan blocking every command in the next chat
+    // ("ยังมีรายการรอยืนยัน") until it expired, with its buttons out of sight
+    // (found 23 ก.ย. 2569). Cancel it on the server and keep the card in the
+    // old chat as cancelled — what the mobile app already does.
+    const plan = pendingActionPlan;
+    if (plan && planCardState === "pending" && conversationId !== activeThread) {
+      cancelAIActionPlan(plan.id).catch(() => undefined);
+      savePendingPlan(threadStorageKey, plan, "cancelled");
+      setPlanCardState("cancelled");
+    }
     setListOpen(false);
     setActiveThread(storageKey, conversationId);
   };

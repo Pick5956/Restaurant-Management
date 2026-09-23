@@ -14,6 +14,10 @@ const (
 	AuditActionRoleDeleted              = "role_deleted"
 	AuditActionRolePermissionsChanged   = "role_permissions_changed"
 	AuditActionAISetMenuAvailability    = "ai_set_menu_availability"
+	// AuditActionAIPlanItem is one change from an assistant plan the owner
+	// confirmed — stock, cost, minimum, a new ingredient or menu, an expense.
+	// Details carry the card's own title and change line.
+	AuditActionAIPlanItem = "ai_action_plan_item"
 )
 
 type RestaurantAuditLog struct {

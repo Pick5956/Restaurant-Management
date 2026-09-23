@@ -396,6 +396,16 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	if cleanUnit == "" {
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ต้องระบุหน่วย เช่น กรัม หรือ ฟอง")
 	}
+	if allowed, ok := ingredientStockUnit(cleanUnit); ok {
+		cleanUnit = allowed
+	} else {
+		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("“%s” ใช้เป็นหน่วยนับในคลังไม่ได้ เลือกจาก %s", cleanUnit, strings.Join(IngredientStockUnits, " / "))
+	}
+	// The card showed "เริ่มที่ -500" and only the save refused it after
+	// confirmation; the same bound the stock-in check uses, here.
+	if stock < 0 || stock > aiActionMaxQuantity {
+		return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
+	}
 	if match := ResolveIngredientName(shelf, cleanName); match.Exact != nil {
 		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("มี “%s” ในคลังอยู่แล้ว", match.Exact.Name)
 	}
@@ -418,6 +428,13 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	if stock > 0 && cost > 0 {
 		preview.SideEffects = append(preview.SideEffects,
 			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(roundBaht(stock*cost))))
+	}
+	if sealedStockUnits[cleanUnit] {
+		preview.SideEffects = append(preview.SideEffects,
+			fmt.Sprintf("นับเป็น%sทั้ง%s · ถ้าเทแบ่งใช้ ให้แก้หน่วยเป็นมิลลิลิตร/กรัม แล้วตั้ง “ซื้อเป็น%s” ที่หน้าคลัง", cleanUnit, cleanUnit, cleanUnit))
+	}
+	if cost <= 0 {
+		preview.SideEffects = append(preview.SideEffects, "ยังไม่มีราคา · ต้นทุนเมนูที่ใช้วัตถุดิบนี้จะเป็น 0 จนกว่าจะตั้งราคา")
 	}
 	return AIActionItemPayload{
 		Name:        cleanName,
@@ -663,10 +680,69 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 	}
 }
 
+// aiPlanShelf is the ingredient port every item of one plan is validated
+// against: the live row, with the items already accepted into the plan applied
+// on top. The items execute in order, so item two runs against the row item
+// one leaves behind — and must be previewed and pinned against that, not
+// against the row as it was before the plan.
+//
+// Validating each item against the untouched row caused two bugs (found
+// 23 ก.ย. 2569): "รับหมูสับ 2 กิโล แล้วปรับเป็น 7000" pinned the adjust's
+// expected stock at 5000, so after item one wrote 7000 item two refused itself
+// as "ข้อมูลเปลี่ยนไประหว่างรอยืนยัน"; and "หมูสับขึ้นเป็นกิโลละ 200 แล้วรับ
+// เข้า 5 กิโล" priced the restock on the card at the old cost (900 บาท) while
+// execution booked it at the new one (1,000 บาท) — an expense that cannot be
+// edited. Everything that writes still goes through the real port.
+type aiPlanShelf struct {
+	AIActionIngredientPort
+	changed map[uint]entity.Ingredient
+}
+
+func (s *aiPlanShelf) FindIngredient(restaurantID, ingredientID uint) (*entity.Ingredient, error) {
+	if row, ok := s.changed[ingredientID]; ok {
+		copied := row
+		return &copied, nil
+	}
+	return s.AIActionIngredientPort.FindIngredient(restaurantID, ingredientID)
+}
+
+// apply records what an accepted item will have done to its row by the time
+// the next item runs.
+func (s *aiPlanShelf) apply(restaurantID uint, actionType string, payload AIActionItemPayload) {
+	if payload.IngredientID == 0 {
+		return
+	}
+	row, err := s.FindIngredient(restaurantID, payload.IngredientID)
+	if err != nil || row == nil {
+		return
+	}
+	switch actionType {
+	case entity.AIActionTypeAdjustIngredientStock:
+		next, err := aiActionNextStock(row.Stock, payload.Kind, payload.Quantity)
+		if err != nil {
+			return
+		}
+		levels := levelsAfterStockChange(next, row.MaxStock, row.MinStock, row.MinPercent)
+		row.Stock, row.MaxStock, row.MinStock = levels.Stock, levels.MaxStock, levels.MinStock
+	case entity.AIActionTypeSetIngredientMinStock:
+		row.MinStock, row.MinPercent = payload.MinStock, 0
+	case entity.AIActionTypeSetIngredientCost:
+		row.CostPerUnit = payload.CostPerUnit
+	default:
+		return
+	}
+	s.changed[payload.IngredientID] = *row
+}
+
 // BuildAdjustStockPlan validates every requested change and returns the draft.
 // Invalid items are reported, not silently dropped.
 func BuildAdjustStockPlan(ports AIActionPorts, restaurantID uint, commands []AIAdjustStockCommand, titles []string) AIActionPlanDraft {
 	draft := AIActionPlanDraft{}
+	var shelf *aiPlanShelf
+	if ports.Ingredients != nil {
+		shelf = &aiPlanShelf{AIActionIngredientPort: ports.Ingredients, changed: map[uint]entity.Ingredient{}}
+		ports.Ingredients = shelf
+	}
 	for index, command := range commands {
 		title := ""
 		if index < len(titles) {
@@ -697,6 +773,9 @@ func BuildAdjustStockPlan(ports AIActionPorts, restaurantID uint, commands []AIA
 			PreviewJSON: string(previewJSON),
 		})
 		draft.Previews = append(draft.Previews, preview)
+		if shelf != nil {
+			shelf.apply(restaurantID, actionType, payload)
+		}
 	}
 	return draft
 }

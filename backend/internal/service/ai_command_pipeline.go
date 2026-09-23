@@ -216,7 +216,12 @@ func aiMatchNames(names []string, name string) (exact int, candidates []int) {
 		switch {
 		case normalized == wanted:
 			exactHits = append(exactHits, index)
-		case strings.Contains(normalized, wanted) || strings.Contains(wanted, normalized):
+		// Only the longer name counts as near: "ต้มยำกุ้ง" said over the
+		// shelf's "ต้มยำกุ้งน้ำข้น" is a shorthand for it. The other way round
+		// is a different thing — "กุ้งแห้ง" said over a shelf that holds only
+		// "กุ้ง" was taken as กุ้ง (a lone near match is accepted without
+		// asking) and a stock-in landed on the wrong item (found 23 ก.ย. 2569).
+		case strings.Contains(normalized, wanted):
 			near = append(near, index)
 		}
 	}
@@ -531,12 +536,8 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 	// Adding a new ingredient is the one command that must not resolve against
 	// the shelf — it is precisely for something the shelf does not have.
 	if kind == "create" {
-		if strings.TrimSpace(draft.Unit) == "" {
-			return AICommandResolution{
-				Kind:     AICommandOutcomeAsk,
-				Title:    title,
-				Question: fmt.Sprintf("“%s” นับเป็นหน่วยอะไรครับ เช่น กรัม / กก. / ฟอง", title),
-			}
+		if question, bad := aiCreateUnitQuestion(title, draft.Unit); bad {
+			return question
 		}
 		if match := ResolveIngredientName(shelf, title); match.Exact != nil {
 			return AICommandResolution{
@@ -552,7 +553,7 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 				Kind:     "create",
 				Quantity: draft.Quantity,
 				Name:     title,
-				Unit:     strings.TrimSpace(draft.Unit),
+				Unit:     aiCreateStockUnit(draft.Unit),
 				Note:     strings.TrimSpace(draft.Note),
 			},
 		}
@@ -600,6 +601,9 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 		// question: the card IS the question, and it shows the name, unit and
 		// opening quantity before anything is written.
 		if unit := strings.TrimSpace(draft.Unit); unit != "" {
+			if question, bad := aiCreateUnitQuestion(title, unit); bad {
+				return question
+			}
 			return AICommandResolution{
 				Kind:  AICommandOutcomeReady,
 				Title: title,
@@ -607,7 +611,7 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 					Kind:     "create",
 					Quantity: draft.Quantity,
 					Name:     title,
-					Unit:     unit,
+					Unit:     aiCreateStockUnit(unit),
 					Note:     strings.TrimSpace(draft.Note),
 				},
 			}
@@ -679,4 +683,41 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 			Note:         strings.TrimSpace(draft.Note),
 		},
 	}
+}
+
+// aiCreateUnitQuestion asks back when a new ingredient's unit is missing or
+// is not one the inventory counts in. The answer chips are the form's own
+// units, so a tap is a unit the next turn can use as it stands.
+func aiCreateUnitQuestion(title, unit string) (AICommandResolution, bool) {
+	said := strings.TrimSpace(unit)
+	if said == "" {
+		return AICommandResolution{
+			Kind:     AICommandOutcomeAsk,
+			Title:    title,
+			Question: fmt.Sprintf("“%s” นับเป็นหน่วยอะไรครับ", title),
+			Options:  append([]string(nil), IngredientStockUnits...),
+		}, true
+	}
+	if _, ok := ingredientStockUnit(said); ok {
+		return AICommandResolution{}, false
+	}
+	// A purchase container ("ลัง", "ถุง", "แพ็ก") or a word the inventory does
+	// not know. It is how the thing is bought, not what a recipe measures it
+	// in — ask for the unit it is used by; the pack is set on the stock page.
+	return AICommandResolution{
+		Kind:  AICommandOutcomeAsk,
+		Title: title,
+		Question: fmt.Sprintf("“%s” ใช้ “%s” เป็นหน่วยนับในคลังไม่ได้ครับ ใช้งานจริงนับเป็นหน่วยอะไร "+
+			"(ซื้อเป็น%sตั้งเพิ่มได้ที่หน้าคลังวัตถุดิบ)", title, said, said),
+		Options: append([]string(nil), IngredientStockUnits...),
+	}, true
+}
+
+// aiCreateStockUnit is the form's spelling of a unit already accepted by
+// aiCreateUnitQuestion ("กก." → "กิโลกรัม").
+func aiCreateStockUnit(unit string) string {
+	if spelled, ok := ingredientStockUnit(unit); ok {
+		return spelled
+	}
+	return strings.TrimSpace(unit)
 }
