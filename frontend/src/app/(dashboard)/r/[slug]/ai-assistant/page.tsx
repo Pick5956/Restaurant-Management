@@ -467,6 +467,13 @@ export default function AIAssistantPage() {
           adoptUnsentThread(storageKey, newThreadId, prev, chatWriteSourceRef.current);
           return prev;
         });
+        // The confirm card too: the switch below re-runs the thread effect,
+        // which clears the pending plan and restores whatever is stored under
+        // the new key — and nothing was, because the save effect only runs
+        // once the new key is hydrated. A first-message command ("เพิ่มหมูสับ
+        // 2 กิโล" in a fresh chat) lost its card that way while the server kept
+        // the plan and refused every next command for a minute (23 ก.ย. 2569).
+        if (data.action_plan) savePendingPlan(threadKey(storageKey, newThreadId), data.action_plan, "pending");
         setActiveThread(storageKey, newThreadId);
       }
       notifyConversationsChanged();
@@ -490,8 +497,13 @@ export default function AIAssistantPage() {
           : "";
       setError(message || copy.error);
     } finally {
-      if (conversationRequests.isCurrent(requestGeneration)) setDraft(null);
-      setLoading(false);
+      // Both gated: a request the chat has moved on from must not switch off
+      // the spinner of the one now in flight, or the send button re-enables
+      // under a half-written answer.
+      if (conversationRequests.isCurrent(requestGeneration)) {
+        setDraft(null);
+        setLoading(false);
+      }
     }
   };
 

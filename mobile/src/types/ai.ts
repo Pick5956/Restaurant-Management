@@ -108,7 +108,9 @@ export type AIChartSeries = {
   tone?: number;
 };
 export type AIChartData = {
-  kind: 'bar' | 'line' | 'pie';
+  kind: 'bar' | 'line' | 'pie' | 'stocklist';
+  /** One unit per category, for a list whose rows do not share one. */
+  units?: string[];
   title: string;
   unit?: string;
   categories: string[];

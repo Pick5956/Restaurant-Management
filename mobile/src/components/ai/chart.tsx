@@ -340,8 +340,53 @@ function legendEntries(data: AIChartData): { colour: string; opacity: number; la
   return [];
 }
 
+// What is running low, as the web draws it since 22 ก.ย. 2569: how many ran
+// out, how many are close, and the names as chips. The backend sends kind
+// "stocklist" with one unit per row; drawn as bars it was three same-coloured
+// bars per ingredient on one axis mixing มล. and กรัม (found 23 ก.ย. 2569).
+function StockList({ data }: { data: AIChartData }) {
+  const rows = data.categories.map((name, index) => ({ name, status: data.status?.[index] ?? '' }));
+  const out = rows.filter((row) => row.status === 'critical');
+  const low = rows.filter((row) => row.status === 'warning');
+  const listed = [...out, ...low];
+  if (listed.length === 0) return null;
+  const count = (label: string, n: number, tone: string) => (
+    <View>
+      <Text style={{ fontSize: 11, color: ai.faint }}>{label}</Text>
+      <Text style={{ fontSize: 20, fontWeight: '700', color: tone, lineHeight: 24 }}>
+        {n} <Text style={{ fontSize: 12.5, fontWeight: '600', color: ai.faint }}>อย่าง</Text>
+      </Text>
+    </View>
+  );
+  return (
+    <View style={{ marginTop: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, backgroundColor: ai.surface, padding: 12, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+        {out.length > 0 ? count('หมดแล้ว', out.length, ai.status.critical) : null}
+        {low.length > 0 ? (
+          <View style={out.length > 0 ? { borderLeftWidth: 1, borderLeftColor: '#e5e7eb', paddingLeft: 12 } : undefined}>
+            {count('ใกล้หมด', low.length, ai.status.warning)}
+          </View>
+        ) : null}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {listed.map((row, index) => {
+          const tone = row.status === 'critical' ? ai.status.critical : ai.status.warning;
+          return (
+            <View key={`${row.name}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, backgroundColor: tone + '1f' }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '500', color: tone }}>{row.name}</Text>
+              <Text style={{ fontSize: 11, color: tone, opacity: 0.7 }}>{row.status === 'critical' ? 'หมด' : 'ใกล้หมด'}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={{ fontSize: 11, color: ai.faint }}>ดูจำนวนที่ต้องสั่งได้ในหน้าคลังวัตถุดิบ</Text>
+    </View>
+  );
+}
+
 export function AIChart({ data }: { data: AIChartData }) {
   const [width, setWidth] = useState(0);
+  if (data.kind === 'stocklist') return <StockList data={data} />;
   const drawn = drawnSeries(data);
   if (drawn.length === 0 || data.categories.length === 0) return null;
   const horizontal = data.kind === 'bar' && data.layout === 'horizontal';

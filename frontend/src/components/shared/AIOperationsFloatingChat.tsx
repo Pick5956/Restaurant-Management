@@ -637,6 +637,10 @@ export default function AIOperationsFloatingChat() {
       });
       if (newThreadId) {
         skipServerLoadRef.current = newThreadId;
+        // Stored under the new key before the switch: the thread effect it
+        // triggers clears the pending plan and restores from storage, and the
+        // save effect would not have written it yet (see the page).
+        if (data.action_plan) savePendingPlan(threadKey(storageKey, newThreadId), data.action_plan, "pending");
         setActiveThread(storageKey, newThreadId);
       }
       notifyConversationsChanged();
@@ -682,8 +686,12 @@ export default function AIOperationsFloatingChat() {
         },
       ]);
     } finally {
-      if (conversationRequests.isCurrent(requestGeneration)) setDraft(null);
-      setLoading(false);
+      // Both gated, as on the page: a stale request must not clear the newer
+      // one's spinner.
+      if (conversationRequests.isCurrent(requestGeneration)) {
+        setDraft(null);
+        setLoading(false);
+      }
     }
   };
 
