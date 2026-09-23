@@ -353,7 +353,7 @@ function StockList({ data }: { data: AIChartData }) {
   const count = (label: string, n: number, tone: string) => (
     <View>
       <Text style={{ fontSize: 11, color: ai.faint }}>{label}</Text>
-      <Text style={{ fontSize: 20, fontWeight: '700', color: tone, lineHeight: 24 }}>
+      <Text style={{ fontSize: 18, fontWeight: '700', color: tone, lineHeight: 22 }}>
         {n} <Text style={{ fontSize: 12.5, fontWeight: '600', color: ai.faint }}>อย่าง</Text>
       </Text>
     </View>
