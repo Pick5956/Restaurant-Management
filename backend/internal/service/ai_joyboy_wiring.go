@@ -233,6 +233,18 @@ func (t *joyboyTools) offerChart(chart *AIChartData) {
 	}
 }
 
+// joyboyRollingStart is where the default "30 วันล่าสุด" window begins: the
+// start of the calendar day 29 days ago, so the window is thirty whole days
+// ending today. It used to be this minute minus 30×24h, which read bills from
+// 14:00 on the first day while the expense ledger on the same sheet started at
+// 00:00 — 31 calendar days of expenses against 30 days of bills, and a
+// breakeven that divided by 30 (found 23 ก.ย. 2569). The expense summary tool
+// already counted from day −29; now all three agree.
+func joyboyRollingStart(now time.Time) time.Time {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return today.AddDate(0, 0, -(int(analysisWindowDays) - 1))
+}
+
 func (t *joyboyTools) readPeriod(question string, history []AIConversationMessage, now time.Time) (datedSalesRequest, bool) {
 	if t.periodReader != nil {
 		return t.periodReader(question, history, now)
@@ -458,7 +470,9 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end = now.AddDate(0, 0, -29), now
+			// The label too: without it the sheet printed "period=" with nothing
+			// after it and the model read the ISO dates aloud.
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		from := start.Format("2006-01-02")
 		// The range is half-open (end is the day after), and the expense list takes
@@ -689,7 +703,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		queryEnd := joyboyQueryEnd(end)
 		metrics, err := t.service.repo.MenuMetricsForRange(t.restaurantID, start, queryEnd)
@@ -832,11 +846,10 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			// No period named: the same rolling window the snapshot uses, read
-			// here rather than from the snapshot so the expense ledger for the
-			// window can ride on the sheet. The snapshot path stays as the
-			// fallback when this read fails.
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			// No period named: the rolling window, read here rather than from
+			// the snapshot so the expense ledger for the window can ride on the
+			// sheet. The snapshot path stays as the fallback when this read fails.
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		metrics, err := t.service.repo.MenuMetricsForRange(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {

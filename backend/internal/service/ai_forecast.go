@@ -135,7 +135,10 @@ func (s *AIService) buildSalesForecastAnswer(restaurantID uint) (*AIAskResponse,
 	cal := buildOperatingCalendar(rules)
 
 	result := buildForecast(points, cal, anchor, forecastHorizonDays, forecastBacktestDays)
-	if staleDays := int(today.Sub(lastData).Hours() / 24); staleDays > 0 {
+	// Measured from yesterday: today is dropped above as unfinished, so on
+	// perfectly fresh data the newest point is yesterday and that is 0 stale
+	// days, not 1 (the sheet printed data_stale_days=1 every time otherwise).
+	if staleDays := int(today.AddDate(0, 0, -1).Sub(lastData).Hours() / 24); staleDays > 0 {
 		result.StaleDays = staleDays
 	}
 

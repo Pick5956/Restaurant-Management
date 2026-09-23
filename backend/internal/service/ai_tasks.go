@@ -248,6 +248,8 @@ func executeReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 
 var (
 	computeSalesTrend      = aitools.ComputeSalesTrend
+	computeSalesTrendAsOf  = aitools.ComputeSalesTrendAsOf
+	snapshotDateKey        = aitools.DateKeyOf
 	computeMenuEngineering = aitools.ComputeMenuEngineering
 	computeReorderForecast = aitools.ComputeReorderForecast
 	computeDeadStock       = aitools.ComputeDeadStock

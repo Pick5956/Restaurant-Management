@@ -93,7 +93,7 @@ func ExecuteReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 			return AIToolResult{Tool: tool}, nil
 		}
-		trend := ComputeSalesTrend(snapshot.SalesDays)
+		trend := ComputeSalesTrendAsOf(snapshot.SalesDays, DateKeyOf(snapshot.GeneratedAt))
 		return AIToolResult{Tool: tool, SalesTrend: &trend}, nil
 	case AIToolGetBestSalesDay:
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
@@ -169,16 +169,24 @@ func ExecuteReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 			return AIToolResult{Tool: tool}, nil
 		}
+		// The summary counts, not the risk list: that list is cut to twelve
+		// rows for the sheet, so a shop with twenty low items read "12". The
+		// list still wins when it is longer — a snapshot built by hand with
+		// risks and no summary.
+		lowStock := snapshot.InventorySummary.LowItems + snapshot.InventorySummary.OutItems
+		if lowStock < len(snapshot.StockRisks) {
+			lowStock = len(snapshot.StockRisks)
+		}
 		sum := AIStoreSummary{
 			Days:          len(snapshot.SalesDays),
-			LowStockCount: len(snapshot.StockRisks),
+			LowStockCount: lowStock,
 			MarginReady:   snapshot.AnalysisReadiness.CanAnalyzeMargin,
 		}
 		for _, day := range snapshot.SalesDays {
 			sum.Orders += day.Orders
 			sum.Revenue += day.Revenue
 		}
-		trend := ComputeSalesTrend(snapshot.SalesDays)
+		trend := ComputeSalesTrendAsOf(snapshot.SalesDays, DateKeyOf(snapshot.GeneratedAt))
 		sum.Trend = &trend
 		top := snapshot.TopMenuItems
 		if len(top) > 3 {
@@ -251,6 +259,25 @@ func ComputeProfitSummary(snapshot AISnapshot) AIProfitSummary {
 
 // ComputeSalesTrend splits the recent sales days into the last 7 days and the
 // prior 7 days (relative to the newest recorded day) and compares revenue.
+// DateKeyOf is the YYYY-MM-DD part of a snapshot's generated_at (RFC 3339 in
+// Bangkok), "" when it is not one — a key that matches no row.
+func DateKeyOf(generatedAt string) string {
+	if len(generatedAt) < 10 {
+		return ""
+	}
+	return generatedAt[:10]
+}
+
+// ComputeSalesTrendAsOf is ComputeSalesTrend with today left out. The shop is
+// still open, so today's row is a fraction of a day; counted as the newest of
+// the "7 วันล่าสุด" it read as a drop of one seventh at every morning question
+// (found 23 ก.ย. 2569, the same flaw the forecast had). Callers pass the
+// Bangkok date key; a key that matches no row changes nothing.
+func ComputeSalesTrendAsOf(days []repository.AISalesSummary, today string) AISalesTrend {
+	finished, _ := FinishedDays(days, "", today)
+	return ComputeSalesTrend(finished)
+}
+
 func ComputeSalesTrend(days []repository.AISalesSummary) AISalesTrend {
 	var trend AISalesTrend
 	if len(days) == 0 {
