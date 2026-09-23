@@ -1,17 +1,17 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Keyboard, Pressable, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { listCategories, listMenuItems } from '@/src/api/menu';
 import { closeEmptyTable, deleteOrderItem, getOrder, updateOrderItem } from '@/src/api/order';
-import { AppIcon } from '@/src/components/app-icon';
+import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen, ScreenHeading } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
 import { OrderItemPanel } from '@/src/components/order-item-editor';
 import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
 import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
-import { Button, Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
+import { Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
 import { itemStatusLabel, money, orderStatusLabel } from '@/src/lib/format';
 import { filterMenuCatalog, groupMenuByCategory, isMenuSoldOut } from '@/src/lib/menu-catalog';
 import { stockFailure, stockFailureMessage } from '@/src/lib/order-item-error';
@@ -153,6 +153,62 @@ function CurrentRoundBasket({
   );
 }
 
+const HEADER_CHIP_ICON = 17;
+/** ActivityIndicator's "small" size, in points, on iOS and Android alike. */
+const SMALL_SPINNER = 20;
+
+/** A chip at the heading's right end: an icon and a short label, or the icon
+ *  alone in a 44pt square of the same material. */
+function HeaderChip({
+  icon,
+  label,
+  accessibilityLabel,
+  onPress,
+  busy = false,
+}: {
+  icon: AppIconName;
+  label?: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  /** Spinner in the icon's place, and no taps, while its write is in flight. */
+  busy?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ busy, disabled: busy }}
+      disabled={busy}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xs,
+        borderWidth: 1,
+        borderColor: palette.border,
+        borderRadius: radius.md,
+        backgroundColor: pressed ? palette.surfaceStrong : palette.surface,
+        ...(label ? { paddingHorizontal: spacing.md } : { width: 44 }),
+        opacity: pressed ? 0.76 : 1,
+      })}
+    >
+      {busy ? (
+        // Scaled into the icon's box, so the chip keeps its width while it turns.
+        <View style={{ width: HEADER_CHIP_ICON, height: HEADER_CHIP_ICON, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={palette.muted} size="small" style={{ transform: [{ scale: HEADER_CHIP_ICON / SMALL_SPINNER }] }} />
+        </View>
+      ) : <AppIcon color={palette.muted} name={icon} size={HEADER_CHIP_ICON} />}
+      {label ? (
+        <Text numberOfLines={1} style={{ color: palette.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+          {label}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function OrderSummaryAction({
   count,
   label,
@@ -165,28 +221,31 @@ function OrderSummaryAction({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <HeaderChip
       accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
+      icon="receipt-outline"
+      label={`${count.toLocaleString()} ${label}`}
       onPress={onPress}
-      style={({ pressed }) => ({
-        height: 44,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-        borderWidth: 1,
-        borderColor: palette.border,
-        borderRadius: radius.md,
-        backgroundColor: pressed ? palette.surfaceStrong : palette.surface,
-        paddingHorizontal: spacing.md,
-        opacity: pressed ? 0.76 : 1,
-      })}
-    >
-      <AppIcon color={palette.muted} name="receipt-outline" size={17} />
-      <Text numberOfLines={1} style={{ color: palette.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
-        {count.toLocaleString()} {label}
-      </Text>
-    </Pressable>
+    />
+  );
+}
+
+function CloseTableAction({
+  accessibilityLabel,
+  busy,
+  onPress,
+}: {
+  accessibilityLabel: string;
+  busy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <HeaderChip
+      accessibilityLabel={accessibilityLabel}
+      busy={busy}
+      icon="close-circle-outline"
+      onPress={onPress}
+    />
   );
 }
 
@@ -209,7 +268,6 @@ export default function OrderDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   // `error` is the order failing to load; a tap's outcome is a toast (14 ก.ย.).
   const { showToast } = useToast();
-  const [confirmEmptyClose, setConfirmEmptyClose] = useState(false);
   const requestGuardRef = useRef(createOrderDetailRequestGuard(createRequestGeneration()));
   const foregroundLoadRef = useRef<number | null>(null);
   const canTakeOrder = can(activeMembership, 'take_order');
@@ -298,6 +356,12 @@ export default function OrderDetailScreen() {
   ), [categories, categoryId, copy, menuItems, search]);
   const locked = order?.status === 'completed' || order?.status === 'cancelled';
   const canCloseEmpty = canTakeOrder && canCloseEmptyOrder(order);
+  // "T4 ริมน้ำ": the table and its zone as one value, so the confirmation names
+  // the table it closes. A missing zone is said, "T4 ไม่มีโซน", never dropped
+  // (owner, 2026-09-17); no table on the answer, ''.
+  const closeTableLabel = order?.table?.display_label?.trim() || order?.table?.table_number?.trim() || '';
+  const closeTableZone = order?.table?.table_zone?.name?.trim() || order?.table?.zone?.trim() || copy('ไม่มีโซน', 'No zone');
+  const closeTablePlace = closeTableLabel ? `${closeTableLabel} ${closeTableZone}` : '';
   // On a tablet a dish opens in a panel beside the grid instead of taking the
   // whole screen. Only while there is a grid to pick from: a closed order, or
   // someone who cannot take orders, gets the summary alone at every width.
@@ -374,11 +438,26 @@ export default function OrderDetailScreen() {
     await mutate(() => updateOrderItem(orderId, item.ID, { quantity, note: item.note }));
   }
 
+  // The native alert is the confirmation, named for the table it closes: a
+  // waiter holding the wrong table's screen finds out before anything happens.
+  function confirmCloseEmpty() {
+    if (!canCloseEmpty || submitting) return;
+    Alert.alert(
+      closeTablePlace
+        ? copy(`ปิดโต๊ะ ${closeTablePlace}?`, `Close table ${closeTablePlace}?`)
+        : copy('ปิดโต๊ะนี้?', 'Close this table?'),
+      undefined,
+      [
+        { text: copy('ยกเลิก', 'Cancel'), style: 'cancel' },
+        { text: copy('ปิดโต๊ะ', 'Close table'), style: 'destructive', onPress: () => { void closeEmpty(); } },
+      ],
+    );
+  }
+
   async function closeEmpty() {
     if (!canCloseEmpty) return;
-    if (!confirmEmptyClose) { setConfirmEmptyClose(true); return; }
     const closed = await mutate(() => closeEmptyTable(orderId));
-    if (closed) router.replace('/tables');
+    if (closed) router.dismissTo('/tables');
   }
 
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
@@ -472,8 +551,8 @@ export default function OrderDetailScreen() {
 
   // Pinned with the heading rather than scrolled with the grid: a filter that
   // has scrolled off screen cannot be changed without scrolling back for it.
-  // One row, not two — the category picker and a magnifier share it, and the
-  // search field takes the picker's place only while it is being used.
+  // One row, not two — the category picker, the layout button and a magnifier
+  // share it, and the search field takes the row only while it is being used.
   const menuFilterBar = order && !locked && canTakeOrder ? (
     <OrderMenuFilterBar
       categories={categories}
@@ -502,21 +581,6 @@ export default function OrderDetailScreen() {
     />
   ) : null;
 
-  function renderDestructiveActions() {
-    const stackActions = width < 520;
-    const actionStyle = stackActions ? { width: '100%' as const } : { flex: 1 };
-    // No heading and no explanation: the control only exists while the order is
-    // empty, which is exactly the moment "I opened the wrong table" happens, and
-    // the confirm step says what it does by changing its own label.
-    if (!canCloseEmpty) return null;
-    return (
-      <View style={{ flexDirection: stackActions ? 'column' : 'row', gap: spacing.sm }}>
-        {confirmEmptyClose ? <Button variant="glass" label={copy('ยกเลิก', 'Cancel')} onPress={() => setConfirmEmptyClose(false)} style={actionStyle} /> : null}
-        <Button variant={confirmEmptyClose ? 'danger' : 'glass'} label={confirmEmptyClose ? copy('ยืนยันปิดโต๊ะ', 'Confirm table close') : copy('ปิดโต๊ะว่าง', 'Close empty table')} onPress={closeEmpty} loading={submitting} style={actionStyle} />
-      </View>
-    );
-  }
-
   if (!canAccessOrder) {
     return <AppScreen title={copy('รายละเอียดออเดอร์', 'Order details')} topLevel={false}><EmptyState title={copy('ไม่มีสิทธิ์ดูออเดอร์', 'No permission to view orders')} detail={copy('ต้องมีสิทธิ์รับออเดอร์ ดูออเดอร์ หรือรับชำระเงิน', 'The take_order, view_orders, or take_payment permission is required.')} /></AppScreen>;
   }
@@ -544,14 +608,29 @@ export default function OrderDetailScreen() {
 
   const title = order?.table?.display_label || (order?.order_type === 'takeaway' ? copy('ซื้อกลับบ้าน', 'Takeaway') : copy(`ออเดอร์ #${orderId}`, `Order #${orderId}`));
   const subtitle = order ? `${order.order_number}, ${orderStatusLabel(order.status, language)}` : copy('กำลังโหลดออเดอร์', 'Loading order');
-  const summaryAction = order ? (
+  // The count is the only way into the bill of an open order, and an empty
+  // table's bill is where a served item is added, so it stays even at "0".
+  const orderSummaryChip = (
     <OrderSummaryAction
       accessibilityLabel={orderSummaryCopy.title}
       count={activeQuantity}
       label={copy('รายการ', 'Items')}
       onPress={openOrderSummary}
     />
-  ) : undefined;
+  );
+  // While the order is empty, the way out of a table opened by mistake is an
+  // icon in the heading beside the count, reached at once, not a full-width
+  // row pushing the menu down (owner, 2026-09-24). The first dish removes it.
+  const summaryAction = !order ? undefined : canCloseEmpty ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+      <CloseTableAction
+        accessibilityLabel={closeTablePlace ? copy(`ปิดโต๊ะ ${closeTablePlace}`, `Close table ${closeTablePlace}`) : copy('ปิดโต๊ะ', 'Close table')}
+        busy={submitting}
+        onPress={confirmCloseEmpty}
+      />
+      {orderSummaryChip}
+    </View>
+  ) : orderSummaryChip;
 
   if (sidePanel) {
     // Keyed by the dish, so a new tap starts the editor over instead of
@@ -587,12 +666,7 @@ export default function OrderDetailScreen() {
           refreshControl={refreshControl}
         >
           {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
-          {order ? (
-            <>
-              {renderDestructiveActions()}
-              {menuWorkspace}
-            </>
-          ) : null}
+          {menuWorkspace}
         </OrderMenuSplit>
       </AppScreen>
     );
@@ -626,11 +700,6 @@ export default function OrderDetailScreen() {
       {order ? (
         <>
           {!canTakeOrder || locked ? <Surface>{orderSummaryContent}</Surface> : null}
-
-          {/* Above the menu, not below it: an order opened by mistake is closed
-              straight away, and burying the control under the whole grid meant
-              scrolling past every dish to undo a two-second error. */}
-          {renderDestructiveActions()}
           {menuWorkspace}
         </>
       ) : null}

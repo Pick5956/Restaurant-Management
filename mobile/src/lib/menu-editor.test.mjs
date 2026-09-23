@@ -573,6 +573,8 @@ test('every mobile menu and order surface consumes the shared image policy', () 
   const rowFiles = [
     '../../app/order/[id].tsx',
     '../../app/order/bill.tsx',
+    // The order screen's one-dish-per-row layout, a thumbnail beside each name.
+    '../components/order-menu/menu-list-row.tsx',
     // The kitchen ticket carries no menu photo - the web KDS shows none
     // either - so the KDS is not an image surface to police here.
   ];

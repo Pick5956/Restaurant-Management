@@ -95,14 +95,40 @@ func (r *TableRepository) FindTableForUpdate(restaurantID, tableID uint) (*entit
 	return &table, nil
 }
 
+// tableReleasingOrderStatuses are the order statuses that no longer hold a
+// table. An order in any other status is still being served at it.
+var tableReleasingOrderStatuses = []string{entity.OrderStatusCompleted, entity.OrderStatusCancelled}
+
 func (r *TableRepository) HasOpenOrderForTable(restaurantID, tableID uint) (bool, error) {
 	var orderID uint
 	result := r.db.Model(&entity.Order{}).
 		Select("id").
-		Where("restaurant_id = ? AND table_id = ? AND status NOT IN ?", restaurantID, tableID, []string{entity.OrderStatusCompleted, entity.OrderStatusCancelled}).
+		Where("restaurant_id = ? AND table_id = ? AND status NOT IN ?", restaurantID, tableID, tableReleasingOrderStatuses).
 		Limit(1).
 		Scan(&orderID)
 	return result.RowsAffected > 0, result.Error
+}
+
+// TablesWithOpenOrder reports which of these tables still have an open order,
+// in one query rather than one per table. It answers the same question as
+// HasOpenOrderForTable, for a whole zone at once.
+func (r *TableRepository) TablesWithOpenOrder(restaurantID uint, tableIDs []uint) (map[uint]bool, error) {
+	withOpenOrder := make(map[uint]bool, len(tableIDs))
+	if len(tableIDs) == 0 {
+		return withOpenOrder, nil
+	}
+	var ids []uint
+	err := r.db.Model(&entity.Order{}).
+		Where("restaurant_id = ? AND table_id IN ? AND status NOT IN ?", restaurantID, tableIDs, tableReleasingOrderStatuses).
+		Distinct().
+		Pluck("table_id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		withOpenOrder[id] = true
+	}
+	return withOpenOrder, nil
 }
 
 func (r *TableRepository) HasAnyOrderForTable(restaurantID, tableID uint) (bool, error) {
@@ -246,11 +272,20 @@ func (r *TableRepository) UpdateZone(zone *entity.TableZone) error {
 	return r.db.Omit(clause.Associations).Save(zone).Error
 }
 
-func (r *TableRepository) ListTablesInZone(restaurantID, zoneID uint) ([]entity.RestaurantTable, error) {
+// ListTablesInZoneForUpdate locks every table in the zone, in id order.
+//
+// A zone edit rewrites each of these rows whole, so without the lock an order
+// opened on one of them between this read and that write had its `occupied`
+// status saved back to `free`. Holding the rows also keeps the "is any of them
+// in service" answer true until the rewrite commits: OpenOrder takes the same
+// row lock before it seats anyone. Id order keeps two zone edits from locking
+// the same rows in opposite orders.
+func (r *TableRepository) ListTablesInZoneForUpdate(restaurantID, zoneID uint) ([]entity.RestaurantTable, error) {
 	var tables []entity.RestaurantTable
 	err := r.db.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("restaurant_id = ? AND zone_id = ?", restaurantID, zoneID).
-		Order("sequence_number asc, id asc").
+		Order("id asc").
 		Find(&tables).Error
 	return tables, err
 }

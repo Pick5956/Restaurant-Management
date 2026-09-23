@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Share, useWindowDimensions, View } from 'react-native';
 
 import { getRoles } from '@/src/api/auth';
@@ -10,7 +10,7 @@ import {
   revokeInvitation,
 } from '@/src/api/restaurant';
 import { AppIcon } from '@/src/components/app-icon';
-import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
+import { AppRefreshControl, AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { HeadingAction } from '@/src/components/heading-action';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
@@ -97,6 +97,7 @@ export default function StaffScreen() {
   const [error, setError] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<number | null>(null);
   const [tab, setTab] = useState<StaffTab>('members');
+  const scrollControlRef = useRef<AppScreenScrollControl | null>(null);
   const tablet = width >= breakpoints.tabletWorkspace;
   const activityCopy = teamActivityCopy(language);
   const hasLoadedTeam = restaurantId != null && loadedRestaurantId === restaurantId;
@@ -209,8 +210,8 @@ export default function StaffScreen() {
   const openRoles = () => router.push('/staff/roles' as never);
   const activeCount = members.filter((member) => member.status === 'active').length;
   const teamSummary = copy(
-    `${members.length} คนในทีม · ใช้งาน ${activeCount}`,
-    `${members.length} in the team · ${activeCount} active`,
+    `${members.length} คนในทีม, ใช้งาน ${activeCount}`,
+    `${members.length} in the team, ${activeCount} active`,
   );
 
   // ---------------------------------------------------------------- members
@@ -311,7 +312,7 @@ export default function StaffScreen() {
               {invitation.email || copy('ลิงก์เชิญทั่วไป', 'General invitation link')}
             </Text>
             <Text selectable numberOfLines={2} style={{ fontSize: 12, lineHeight: 17, color: palette.placeholder }}>
-              {roleLabel(invitation.role, language)} · {invitation.expires_at
+              {roleLabel(invitation.role, language)}, {invitation.expires_at
                 ? copy(`หมดอายุ ${formatDateTime(invitation.expires_at, language)}`, `Expires ${formatDateTime(invitation.expires_at, language)}`)
                 : copy('ไม่หมดอายุ', 'Never expires')}
             </Text>
@@ -393,6 +394,21 @@ export default function StaffScreen() {
   ];
   const shownTab = tabs.some((item) => item.key === tab) ? tab : 'members';
 
+  // The compact bar's row (23 ก.ย. 2569): the same tabs, on the same state, so
+  // a reader deep in the members or the activity can switch without scrolling
+  // back up. A switch from there starts the new tab from the top - the tabs
+  // differ in length, and left where it was, iOS strands the offset past the
+  // end of a shorter one. The tab already shown just glides back to its start.
+  const selectTabFromBar = (key: StaffTab) => {
+    scrollControlRef.current?.scrollTo(0, key === shownTab);
+    setTab(key);
+  };
+  // Phone only, and only while the page shows its own tabs: the tablet lays
+  // every section out at once.
+  const compactTabs = !tablet && hasLoadedTeam && tabs.length > 1
+    ? <StaffTabs<StaffTab> compact tabs={tabs} value={shownTab} onChange={selectTabFromBar} />
+    : undefined;
+
   const skeleton = (
     <SkeletonReveal label={copy('กำลังโหลดทีมงาน', 'Loading team')} style={{ gap: spacing.md }}>
       {tablet ? (
@@ -445,7 +461,10 @@ export default function StaffScreen() {
       centerTitle
       contentMaxWidth={tablet ? 1180 : undefined}
       refreshControl={<AppRefreshControl onRefresh={load} />}
+      // The compact bar repeats this: it is a push, so a second copy is harmless.
       action={canInvite && !tablet ? <HeadingAction compact icon="person-add-outline" label={copy('เชิญพนักงาน', 'Invite staff')} onPress={inviteStaff} /> : undefined}
+      scrollControlRef={scrollControlRef}
+      compactRow={compactTabs}
     >
       {error ? (
         <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete action')} detail={error} tone="danger" />

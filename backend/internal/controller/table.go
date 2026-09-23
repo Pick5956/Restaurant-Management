@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,18 @@ func ProvideTableController(db *gorm.DB) *TableController {
 	return &TableController{
 		tableSvc: service.ProvideTableService(repository.NewTableRepository(db)),
 	}
+}
+
+// tableManagementErrorStatus answers an edit refused because the table is in
+// service with 409 on every management endpoint, so the web and the app can
+// tell it from a bad request by status as well as by its fixed message
+// (service.ErrTableInUse). Every other error keeps the status its endpoint has
+// always used.
+func tableManagementErrorStatus(err error, fallback int) int {
+	if errors.Is(err, service.ErrTableInUse) {
+		return http.StatusConflict
+	}
+	return fallback
 }
 
 func (ctrl *TableController) ListTables(c *gin.Context) {
@@ -90,7 +103,7 @@ func (ctrl *TableController) UpdateTable(c *gin.Context) {
 	}
 	table, err := ctrl.tableSvc.UpdateTable(restaurantID, tableID, &req)
 	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusBadRequest), err)
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -121,7 +134,7 @@ func (ctrl *TableController) UpdateTableStatus(c *gin.Context) {
 	userID, _ := contextUserID(c)
 	table, err := ctrl.tableSvc.UpdateTableStatus(restaurantID, userID, tableID, req.Status, req.ReservationPhone, req.ReservationName)
 	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusBadRequest), err)
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -197,7 +210,7 @@ func (ctrl *TableController) RegenerateCustomerToken(c *gin.Context) {
 	}
 	table, err := ctrl.tableSvc.RegenerateCustomerToken(restaurantID, tableID)
 	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusBadRequest), err)
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -219,7 +232,7 @@ func (ctrl *TableController) MoveTableZone(c *gin.Context) {
 	}
 	table, err := ctrl.tableSvc.MoveTableZone(restaurantID, tableID, &req)
 	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusBadRequest), err)
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -235,7 +248,7 @@ func (ctrl *TableController) DeleteTable(c *gin.Context) {
 		return
 	}
 	if err := ctrl.tableSvc.DeleteTable(restaurantID, tableID); err != nil {
-		respondAPIError(c, http.StatusConflict, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusConflict), err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
@@ -288,7 +301,7 @@ func (ctrl *TableController) UpdateZone(c *gin.Context) {
 	}
 	zone, err := ctrl.tableSvc.UpdateZone(restaurantID, zoneID, &req)
 	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
+		respondAPIError(c, tableManagementErrorStatus(err, http.StatusBadRequest), err)
 		return
 	}
 	c.JSON(http.StatusOK, zone)

@@ -377,3 +377,21 @@ test('editable order taking uses routed review surfaces at every width', async (
   assert.match(detailSource, /footer=\{currentRoundBasket\}/);
   assert.doesNotMatch(detailSource, /\bactionDock\b/);
 });
+
+// Old-UI audit, 2026-09-23: two payment bugs on the order summary.
+test('a bill that loads again clears the stale lock on the pay and send buttons', async () => {
+  const billSource = await readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8');
+  // One failed refresh after a change set billStale, and only another change
+  // cleared it: a plain reload that succeeded left payment greyed out for good.
+  const load = billSource.slice(billSource.indexOf('const load = useCallback('), billSource.indexOf('useFocusEffect(useCallback('));
+  assert.match(load, /setBill\(nextBill\);\s*setBillStale\(false\);/);
+});
+
+test('coming back to the summary keeps the payment method the cashier picked', async () => {
+  const billSource = await readFile(path.join(mobileRoot, 'app', 'order', 'bill.tsx'), 'utf8');
+  // load() runs on every focus. Setting the method there unconditionally put a
+  // chosen PromptPay back to cash after a trip to add a served item.
+  const load = billSource.slice(billSource.indexOf('const load = useCallback('), billSource.indexOf('useFocusEffect(useCallback('));
+  assert.equal(load.split('setMethod(').length - 1, 1, 'load() sets the method in one place only');
+  assert.match(load, /if \(nextBill\.payment_status === 'paid' \|\| !methodSeededRef\.current\) \{\s*setMethod\(/);
+});

@@ -3,7 +3,7 @@
 // four, so the two columns on a tablet come out the same height, each row with
 // a line saying what is inside.
 
-export type MoreGroupKey = 'shop' | 'team';
+export type MoreGroupKey = 'work' | 'shop' | 'team';
 
 /**
  * Shop work on the left, people, numbers and the account on the right. The
@@ -11,6 +11,9 @@ export type MoreGroupKey = 'shop' | 'team';
  * makes both groups four long.
  */
 export const MORE_GROUPS: { key: MoreGroupKey; itemKeys: string[] }[] = [
+  // The four screens the phone dock held, first (owner, 2026-09-23): the dock
+  // is gone, and this hub is where every session opens.
+  { key: 'work', itemKeys: ['home', 'pos', 'kitchen', 'orders'] },
   { key: 'shop', itemKeys: ['menu', 'inventory', 'tables-manage', 'expenses'] },
   // Staff left this list on 15 ก.ย. 2569: it opened the same page as
   // "ทีมและสิทธิ์" in settings, so it lives there alone now.
@@ -39,14 +42,40 @@ export function groupMoreItems<T extends { key: string }>(allowed: readonly T[])
 }
 
 const LEADING_VOWELS = new Set(['เ', 'แ', 'โ', 'ใ', 'ไ']);
+const LETTER = /\p{L}/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/**
+ * An emoji at the start of a name, whole: a flag (a pair of regional
+ * indicators), or a pictograph with its skin tone, presentation selector or
+ * keycap, and any ZWJ sequence it leads ("man" + ZWJ + "cooking").
+ */
+const LEADING_EMOJI = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{So}[\u{1F3FB}-\u{1F3FF}️⃣]*(?:‍\p{So}[\u{1F3FB}-\u{1F3FF}️]*)*)/u;
 
 /**
- * The letter on the shop's mark. Thai writes some vowels before the consonant
- * they follow in speech, so "เจ๊หมวย" is marked "เจ", not a lone "เ".
+ * The first letter of `text` - or letter or digit, with `digits` - past any
+ * emoji, flag, mark or symbol before it; null when there is none. Thai writes
+ * some vowels before the consonant they follow in speech, so a leading one
+ * keeps its consonant: "เจ๊หมวย" gives "เจ", not a lone "เ".
+ */
+export function firstLetter(text: string, options: { digits?: boolean } = {}): string | null {
+  const wanted = options.digits ? LETTER_OR_DIGIT : LETTER;
+  const chars = Array.from(text);
+  const at = chars.findIndex((char) => wanted.test(char));
+  if (at < 0) return null;
+  const letter = chars[at];
+  const next = chars[at + 1];
+  return LEADING_VOWELS.has(letter) && next !== undefined && LETTER.test(next) ? letter + next : letter;
+}
+
+/**
+ * The letter on the shop's mark: the name's first letter or digit, so a name
+ * that opens with a flag, an emoji or "@" is still marked by its first word
+ * (stress test, 2026-09-23). A name with none is marked by its leading emoji,
+ * whole, and failing that by "?".
  */
 export function restaurantMark(name: string): string {
-  const letters = Array.from(name.trim());
-  if (!letters.length) return '?';
-  if (LEADING_VOWELS.has(letters[0]) && letters.length > 1) return letters[0] + letters[1];
-  return letters[0].toLocaleUpperCase();
+  const trimmed = name.trim();
+  const letter = firstLetter(trimmed, { digits: true });
+  if (letter) return letter.toLocaleUpperCase();
+  return LEADING_EMOJI.exec(trimmed)?.[0] || '?';
 }

@@ -6,6 +6,8 @@ import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 're
 import { GlassPanel } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
+import { curvePath } from '@/src/components/hub/day-curve';
+import { Dot } from '@/src/components/hub/value-line';
 import { useTabSwipeExclusionHandlers } from '@/src/components/tab-swipe-context';
 import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import type { HomeDay, HomeRevenueCurve, HomeTableCell } from '@/src/lib/home-dashboard';
@@ -64,18 +66,8 @@ export function HomeHeading({ icon, title, trailing, onPress }: { icon: AppIconN
 
 // ---------------------------------------------------------------- day strip
 
-/**
- * A small round mark drawn as a vector circle. A 4–5 pt View with a half-width
- * corner radius is snapped to whole pixels on Android and comes out as a
- * square there (the owner saw squares under the days, 14 ก.ย. 2569).
- */
-function Dot({ size, color, style }: { size: number; color: string; style?: ViewStyle }) {
-  return (
-    <Svg width={size} height={size} style={style}>
-      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={color} />
-    </Svg>
-  );
-}
+// Dot (a small round mark drawn as a vector circle, because a tiny View circle
+// renders square on Android) is shared from src/components/hub/value-line.tsx.
 
 const WEEKDAYS_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -123,27 +115,8 @@ export function DayStrip({ days, language, onSelect, compact = false }: {
 
 // ---------------------------------------------------------------- sales hero
 
-function curvePath(values: number[], width: number, height: number, pad: number) {
-  if (values.length < 2) return { line: '', area: '', end: null as null | { x: number; y: number } };
-  const max = Math.max(...values, 1);
-  const stepX = (width - pad * 2) / (values.length - 1);
-  const points = values.map((value, index) => ({
-    x: pad + index * stepX,
-    y: pad + (height - pad * 2) * (1 - value / max),
-  }));
-  // Straight runs between points with the corners softened: a smooth-looking
-  // line without a curve-fitting library, and it never overshoots a value.
-  let line = `M ${points[0].x} ${points[0].y}`;
-  for (let index = 1; index < points.length; index += 1) {
-    const prev = points[index - 1];
-    const next = points[index];
-    const cx = (prev.x + next.x) / 2;
-    line += ` C ${cx} ${prev.y}, ${cx} ${next.y}, ${next.x} ${next.y}`;
-  }
-  const last = points[points.length - 1];
-  const area = `${line} L ${last.x} ${height} L ${points[0].x} ${height} Z`;
-  return { line, area, end: last };
-}
+// curvePath lives with the hub's day curve (src/components/hub/day-curve.tsx),
+// which draws the same series; this card still scales it into a fixed viewBox.
 
 /**
  * The one coloured mass on the page: today's takings, big, with the day's

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Switch, View, type KeyboardTypeOptions, type TextInput as NativeTextInput } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
@@ -6,6 +6,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { SheetTitle } from '@/src/components/inventory/parts';
+import { chipRevealOffset } from '@/src/lib/chip-row-reveal';
 import { calendarWeeks, monthTitle } from '@/src/lib/report-view';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
 import { ActionDock, Button } from '@/src/components/ui';
@@ -198,6 +199,23 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
   /** One row that scrolls sideways instead of wrapping. */
   scroll?: boolean;
 }) {
+  // A row that scrolls keeps its chosen chip in view. The menu draws these
+  // chips twice, in its filter bar and in the compact header's row, each
+  // scrolled on its own: a chip picked in one would otherwise sit past the edge
+  // of the other, and that row would read as nothing chosen.
+  const rowRef = useRef<ScrollView>(null);
+  const chipBoxes = useRef(new Map<T, { x: number; width: number }>());
+  const rowBox = useRef({ offset: 0, viewport: 0, content: 0 });
+  const revealChosen = (animated: boolean) => {
+    const target = chipRevealOffset({ chip: chipBoxes.current.get(value), ...rowBox.current });
+    if (target !== null) rowRef.current?.scrollTo({ x: target, animated });
+  };
+  const revealChosenRef = useRef(revealChosen);
+  revealChosenRef.current = revealChosen;
+  useEffect(() => {
+    if (scroll) revealChosenRef.current(true);
+  }, [scroll, value]);
+
   const chips = options.map((option) => {
     const on = option.key === value;
     return (
@@ -206,6 +224,11 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
         accessibilityRole="button"
         accessibilityState={{ selected: on }}
         onPress={() => onChange(option.key)}
+        onLayout={scroll ? (event) => {
+          const { x, width } = event.nativeEvent.layout;
+          chipBoxes.current.set(option.key, { x, width });
+          if (on) revealChosenRef.current(false);
+        } : undefined}
         hitSlop={4}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: on ? palette.textStrong : palette.divider, backgroundColor: on ? palette.textStrong : palette.surface, opacity: pressed ? 0.7 : 1 })}
       >
@@ -216,7 +239,28 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
   });
   if (scroll) {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, flexShrink: 0, maxWidth: '100%' }} contentContainerStyle={{ gap: 7 }}>
+      <ScrollView
+        ref={rowRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={{ flexGrow: 0, flexShrink: 0, maxWidth: '100%' }}
+        contentContainerStyle={{ gap: 7 }}
+        // Whichever of the row, its content and the chosen chip is measured
+        // last reveals the chip; each call is a no-op until all three are known.
+        onLayout={(event) => {
+          rowBox.current = { ...rowBox.current, viewport: event.nativeEvent.layout.width };
+          revealChosenRef.current(false);
+        }}
+        onContentSizeChange={(contentWidth) => {
+          rowBox.current = { ...rowBox.current, content: contentWidth };
+          revealChosenRef.current(false);
+        }}
+        onScroll={(event) => {
+          rowBox.current = { ...rowBox.current, offset: event.nativeEvent.contentOffset.x };
+        }}
+        scrollEventThrottle={16}
+      >
         {chips}
       </ScrollView>
     );
@@ -266,7 +310,7 @@ export function Note({ icon = 'information-circle-outline', text, tone = 'accent
  * entry. A tap turns it into the question with two buttons; nothing happens
  * until the red one is tapped.
  */
-export function DangerAction({ icon, label, confirmLabel, message, error, onConfirm, onCancel, cancelLabel, loading, open, onOpen }: {
+export function DangerAction({ icon, label, confirmLabel, message, error, onConfirm, onCancel, cancelLabel, loading, open, onOpen, confirmVariant = 'danger', confirmIcon }: {
   icon: AppIconName;
   label: string;
   confirmLabel: string;
@@ -278,6 +322,13 @@ export function DangerAction({ icon, label, confirmLabel, message, error, onConf
   loading?: boolean;
   open: boolean;
   onOpen: () => void;
+  /**
+   * The confirm button's look. 'secondary' is for a question whose answer is
+   * not the destructive act itself - a zone that still has tables leads on to
+   * choosing them rather than deleting anything.
+   */
+  confirmVariant?: 'danger' | 'secondary';
+  confirmIcon?: AppIconName;
 }) {
   if (!open) {
     return (
@@ -296,7 +347,7 @@ export function DangerAction({ icon, label, confirmLabel, message, error, onConf
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button variant="secondary" label={cancelLabel} onPress={onCancel} disabled={loading} style={{ flex: 1 }} />
-          <Button variant="danger" icon={icon} label={confirmLabel} onPress={onConfirm} loading={loading} style={{ flex: 1 }} />
+          <Button variant={confirmVariant} icon={confirmIcon ?? icon} label={confirmLabel} onPress={onConfirm} loading={loading} style={{ flex: 1 }} />
         </View>
       </View>
     </ReportCard>

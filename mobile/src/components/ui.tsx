@@ -1,6 +1,6 @@
 import { GlassView } from 'expo-glass-effect';
-import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+import { useState, type Ref } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInput as NativeTextInput, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
@@ -716,6 +716,7 @@ export function SearchField({
   clearLabel = 'Clear search',
   autoFocus,
   glass = false,
+  inputRef,
 }: {
   value: string;
   onChangeText: (value: string) => void;
@@ -728,11 +729,15 @@ export function SearchField({
   /** The assistant screen's material on iOS 26. Everywhere else the field stays
    *  the flat control, so the material never has to be faked. */
   glass?: boolean;
+  /** The field itself, for a control elsewhere that puts the caret in it - the
+   *  round search button in a compact header, once the page is back at the top. */
+  inputRef?: Ref<NativeTextInput>;
 }) {
   const [focused, setFocused] = useState(false);
   const onGlass = glass && LIQUID_GLASS;
   const input = (
     <TextInput
+      ref={inputRef}
       accessibilityLabel={accessibilityLabel}
       autoCapitalize="none"
       autoCorrect={false}

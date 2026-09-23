@@ -1040,6 +1040,18 @@ export default function PosTablesPage() {
         open={reservationsOpen}
         onClose={() => setReservationsOpen(false)}
         onChanged={() => void load(false)}
+        onSeatHold={async (reservation) => {
+          const res = await createOrder({
+            table_id: reservation.table_id,
+            order_type: "dine_in",
+            customer_count: Math.max(1, reservation.guest_count ?? 1),
+            customer_name: reservation.name,
+            customer_phone: reservation.phone,
+            seat_reservation: true,
+          });
+          setReservationsOpen(false);
+          navigateToOrder(res.data);
+        }}
         canResolve={canTake}
         language={language}
       />

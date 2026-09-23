@@ -32,8 +32,17 @@ function avatarTint(seed: number) {
   return AVATAR_TINTS[Math.abs(seed) % AVATAR_TINTS.length];
 }
 
-/** Three views of the team on a phone: members, invitations, activity. */
-export function StaffTabs<T extends string>({ tabs, value, onChange }: { tabs: { key: T; label: string }[]; value: T; onChange: (key: T) => void }) {
+/** A tab's height in the page, and in the compact bar's one row of controls (38 with the track's padding and edge). */
+const TAB_HEIGHT = 34;
+const COMPACT_TAB_HEIGHT = 30;
+
+/**
+ * Three views of the team on a phone: members, invitations, activity.
+ * `compact` is the same control a step shorter, for the row under the compact
+ * bar's title once the page's own tabs have scrolled away.
+ */
+export function StaffTabs<T extends string>({ tabs, value, onChange, compact = false }: { tabs: { key: T; label: string }[]; value: T; onChange: (key: T) => void; compact?: boolean }) {
+  const height = compact ? COMPACT_TAB_HEIGHT : TAB_HEIGHT;
   return (
     <View accessibilityRole="tablist" style={{ flexDirection: 'row', padding: 3, borderRadius: 999, backgroundColor: palette.surfaceSubtle, borderWidth: 1, borderColor: palette.divider }}>
       {tabs.map((tab) => {
@@ -44,7 +53,7 @@ export function StaffTabs<T extends string>({ tabs, value, onChange }: { tabs: {
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             onPress={() => onChange(tab.key)}
-            style={({ pressed }) => ({ flex: 1, alignItems: 'center', justifyContent: 'center', height: 34, borderRadius: 999, backgroundColor: on ? palette.surface : 'transparent', opacity: pressed && !on ? 0.6 : 1, ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}) })}
+            style={({ pressed }) => ({ flex: 1, alignItems: 'center', justifyContent: 'center', height, borderRadius: 999, backgroundColor: on ? palette.surface : 'transparent', opacity: pressed && !on ? 0.6 : 1, ...(on ? { shadowColor: '#21130C', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 } : {}) })}
           >
             <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: on ? '700' : '600', color: on ? palette.textStrong : palette.muted }}>{tab.label}</Text>
           </Pressable>

@@ -112,28 +112,7 @@ test('mobile chrome does not retain dark neutral background islands', async () =
   assert.doesNotMatch(orderDetailSource, retiredDarkNeutrals);
   assert.doesNotMatch(cropperSource, retiredDarkNeutrals);
   assert.match(appShellSource, /backgroundColor:\s*palette\.navigationSurface/);
-  // The dock's selection capsule is translucent glass now, not the rail's cream.
-  assert.match(appShellSource, /backgroundColor:\s*palette\.navigationDockIndicator/);
   assert.match(cropperSource, /aspectBadge:[\s\S]{0,260}backgroundColor:\s*palette\.navigationBorder/);
-});
-
-test('the held dock capsule compresses its real height and radius, not a scale', async () => {
-  // A scaleY on a pill keeps the corner's full horizontal radius while it
-  // loses height, so the ends bulge into ellipses; the reference's ends stay
-  // round and its top and bottom run straight. That needs the HEIGHT and the
-  // RADIUS to animate, which the pager's native-driven value cannot do - so
-  // the shape is an inner view driven on the JS side off mirrored values.
-  const source = await readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8');
-  assert.match(source, /const PHONE_ACTIVE_INDICATOR_HELD_HEIGHT = 0\.8[0-9]/);
-  assert.match(source, /const PHONE_ACTIVE_INDICATOR_HELD_WIDTH = 1\.0[0-9]/);
-  assert.match(source, /height:\s*capsuleShape\.height/);
-  assert.match(source, /width:\s*capsuleShape\.width/);
-  assert.match(source, /borderRadius:\s*capsuleShape\.radius/);
-  assert.match(source, /\[markerPosition, mirror\.marker\]/);
-  assert.match(source, /source\.addListener\(/);
-  // Only the settled travel is a transform; the held pose is no longer a scale.
-  assert.doesNotMatch(source, /squash: u\.interpolate/);
-  assert.doesNotMatch(source, /stretch: u\.interpolate/);
 });
 
 test('mobile form controls use orange boundaries at rest and focus', async () => {
@@ -278,7 +257,7 @@ test('mobile role-name surfaces consume the restaurant override contract', async
     readFile(path.join(mobileRoot, 'src', 'types', 'restaurant.ts'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'restaurants.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'invite', '[token].tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'home.tsx'), 'utf8'),
   ]);
 
   assert.match(typesSource, /display_name_override\?: string/);
@@ -312,80 +291,13 @@ test('restaurant identity is rendered only on Home while detail headings retain 
   assert.deepEqual(identityConsumers, []);
 });
 
-test('the primary tab navigator is the sole owner of the phone bottom dock', async () => {
-  const [appShellSource, primaryLayoutSource] = await Promise.all([
-    readFile(
-      path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'),
-      'utf8',
-    ),
-    readFile(path.join(mobileRoot, 'app', '(primary)', '_layout.tsx'), 'utf8'),
-  ]);
-
-  assert.equal(
-    (appShellSource.match(/<PrimaryPhoneNavigation\b/g) || []).length,
-    0,
-    'standalone AppScreen routes must never render the primary phone dock',
-  );
-  assert.equal(
-    (primaryLayoutSource.match(/<PrimaryPhoneNavigation\b/g) || []).length,
-    1,
-    'the primary tab layout must keep exactly one phone dock',
-  );
-  assert.doesNotMatch(
-    appShellSource,
-    /tabSwipeResponder\.panHandlers/,
-    'standalone AppScreen routes must leave horizontal navigation gestures to the native stack',
-  );
-  assert.match(
-    primaryLayoutSource,
-    /onSelect=\{jumpToTab\}/,
-    'bottom dock presses must use the direct, non-animated tab path',
-  );
-  const jumpStart = primaryLayoutSource.indexOf('const jumpToTab = useCallback');
-  const gestureStart = primaryLayoutSource.indexOf('const finishGesture = useCallback');
-  assert.ok(jumpStart >= 0 && gestureStart > jumpStart);
-  const jumpSource = primaryLayoutSource.slice(jumpStart, gestureStart);
-  assert.match(jumpSource, /writePagerPosition\(plan\.position\)/);
-  assert.doesNotMatch(
-    jumpSource,
-    /animatePagerTo|Animated\.timing/,
-    'direct dock selection must never enter a pager timing animation',
-  );
-  assert.doesNotMatch(
-    primaryLayoutSource,
-    /isTablet\s*\|\|\s*transitionActiveRef\.current\s*\|\|/,
-    'the 500ms visual settle must not block the next swipe',
-  );
-  assert.doesNotMatch(
-    primaryLayoutSource,
-    /isTablet\s*\|\|\s*pendingRouteIndexRef\.current !== null\s*\|\|/,
-    'route acknowledgement must not block the next swipe either',
-  );
-  assert.match(
-    primaryLayoutSource,
-    /resolvePagerGestureStartPlan\(/,
-    'a consecutive swipe must start from the latest pending tab target',
-  );
-  assert.match(
-    primaryLayoutSource,
-    /if \(!settlement\.completed\) \{\s*restoreCommittedPager\(transitionId\);\s*return;/,
-    'an owned native cancellation must clear pending route state before late reconciliation',
-  );
-  assert.match(
-    primaryLayoutSource,
-    /routeSyncTimer\.current = setTimeout\(\(\) => \{\s*if \(pagerGestureActiveRef\.current\) return;\s*restoreCommittedPager\(transitionId\);/,
-    'the route watchdog must not reset the pager while a deliberate drag is still held',
-  );
-});
-
 test('the tablet rail stays outside native stack screen transitions', async () => {
-  const [rootLayoutSource, appShellSource, primaryLayoutSource] = await Promise.all([
+  const [rootLayoutSource, appShellSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'app', '_layout.tsx'), 'utf8'),
     readFile(
       path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'),
       'utf8',
     ),
-    readFile(path.join(mobileRoot, 'app', '(primary)', '_layout.tsx'), 'utf8'),
   ]);
 
   const stackLayoutStart = rootLayoutSource.indexOf('function TabletWorkspaceStackLayout(');
@@ -415,7 +327,7 @@ test('the tablet rail stays outside native stack screen transitions', async () =
   );
 
   const frameStart = appShellSource.indexOf('export function TabletWorkspaceFrame(');
-  const frameEnd = appShellSource.indexOf('const PHONE_DOCK_HEIGHT', frameStart);
+  const frameEnd = appShellSource.indexOf('export function AppRefreshControl(', frameStart);
   assert.ok(frameStart >= 0 && frameEnd > frameStart, 'TabletWorkspaceFrame must exist');
   const frameSource = appShellSource.slice(frameStart, frameEnd);
   assert.equal(
@@ -444,11 +356,6 @@ test('the tablet rail stays outside native stack screen transitions', async () =
     appShellSource.slice(appScreenStart),
     /<PrimaryTabletRail\b/,
     'individual stack screens must not recreate the tablet rail',
-  );
-  assert.doesNotMatch(
-    primaryLayoutSource,
-    /<PrimaryTabletRail\b/,
-    'the primary tab host must use the same persistent tablet rail',
   );
 });
 
@@ -521,32 +428,36 @@ test('every destination opened from More is a detail screen without primary chro
   }
 });
 
-test('primary tab-zone screens stay top-level and do not add a back control', async () => {
-  const primaryScreenFiles = [
-    'home.tsx',
-    'tables.tsx',
-    'kitchen.tsx',
-    'orders.tsx',
-    'more.tsx',
-  ];
-
-  for (const relativeFile of primaryScreenFiles) {
-    const source = await readFile(
-      path.join(mobileRoot, 'app', '(primary)', relativeFile),
-      'utf8',
-    );
-    const screenCount = (source.match(/<AppScreen\b/g) || []).length;
-    const topLevelScreenCount = (
-      source.match(/\btopLevel(?=\s|>)/g) || []
-    ).length + (source.match(/\btopLevel=\{true\}/g) || []).length;
-
-    assert.ok(screenCount > 0, `${relativeFile} must render AppScreen`);
-    assert.equal(
-      topLevelScreenCount,
-      screenCount,
-      `${relativeFile} belongs to the bottom-dock zone and must not show Back`,
-    );
+// Owner, 2026-09-23: no phone dock. The hub is the one top-level screen; the
+// four screens the dock used to hold are pushed from it and carry Back like
+// every other page.
+test('the hub is the only top-level screen, and the former tab screens show Back', async () => {
+  // The hub draws its screen inside its layout (B "เวที"; A was deleted 2026-09-24).
+  for (const layout of ['hub-stage.tsx']) {
+    const hub = await readFile(path.join(mobileRoot, 'src', 'components', 'hub', layout), 'utf8');
+    // Props sit one per line; the tag ends on a line holding only ">". A prop
+    // value can contain ">" itself (refreshControl={<AppRefreshControl ... />}).
+    const tag = hub.slice(hub.indexOf('<AppScreen'), hub.search(/\n\s*>\r?\n/));
+    assert.match(tag, /\n\s*topLevel\r?$/m, `${layout} must render a top-level AppScreen`);
   }
+
+  for (const relativeFile of ['home.tsx', 'tables.tsx', 'kitchen.tsx', 'orders.tsx']) {
+    const source = await readFile(path.join(mobileRoot, 'app', relativeFile), 'utf8');
+    assert.ok(/<AppScreen\b/.test(source), `${relativeFile} must render AppScreen`);
+    assert.doesNotMatch(source, /\btopLevel\b/, `${relativeFile} is pushed from the hub and must show Back`);
+  }
+
+  const root = await readFile(path.join(mobileRoot, 'app', '_layout.tsx'), 'utf8');
+  assert.match(root, /<Stack\.Screen name="more" options=\{topLevelScreenOptions\} \/>/);
+  assert.doesNotMatch(root, /name="\(primary\)"/);
+  const shell = await readFile(path.join(mobileRoot, 'src', 'components', 'app-shell.tsx'), 'utf8');
+  assert.doesNotMatch(shell, /PrimaryPhoneNavigation/, 'the phone dock is gone');
+  // With no dock to clear, the last row still has to clear the system bar:
+  // Android's navigation bar (48dp) sat over the hub's last row at a flat 32.
+  // A footer already pays the inset itself, so it is added only without one.
+  assert.match(shell, /paddingBottom: spacing\.xxxl \+ \(footer \? 0 : insets\.bottom\)/);
+  // The kitchen wears the web sidebar's chef hat; the flame means "cooking".
+  assert.match(shell, /key: 'kitchen',[^\n]*icon: 'chef-hat', activeIcon: 'chef-hat'/);
 });
 
 test('native stack keeps edge-swipe Back on pushed screens but disables it for the tab host', async () => {
@@ -626,9 +537,9 @@ test('app routes use the manual refresh control instead of binding native refres
 
 test('warm primary scenes clear busy state when focus cleanup invalidates a foreground load', async () => {
   const [homeSource, tablesSource, ordersSource] = await Promise.all([
-    readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8'),
-    readFile(path.join(mobileRoot, 'app', '(primary)', 'orders.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'home.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'orders.tsx'), 'utf8'),
   ]);
 
   assert.match(
@@ -785,7 +696,7 @@ test('the shell leaves the keyboard inset to iOS and reveals a covered field by 
 });
 
 test('the overview keeps its fourteen-day report when an earlier day is picked', async () => {
-  const home = await readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8');
+  const home = await readFile(path.join(mobileRoot, 'app', 'home.tsx'), 'utf8');
 
   // Clearing it on a past day took the sales dots off every day in the strip
   // and the "vs last week" line off the sales card, until today was tapped
@@ -796,7 +707,7 @@ test('the overview keeps its fourteen-day report when an earlier day is picked',
 
 test('loading shows the shape of the screen, not a one-line loading box', async () => {
   const [home, chat, skeleton] = await Promise.all([
-    readFile(path.join(mobileRoot, 'app', '(primary)', 'home.tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'home.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'ai-assistant.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'src', 'components', 'skeleton.tsx'), 'utf8'),
   ]);
@@ -813,3 +724,4 @@ test('loading shows the shape of the screen, not a one-line loading box', async 
   assert.match(skeleton, /useSharedShimmer\(!reducedMotion\)/);
   assert.match(skeleton, /delay: 120/);
 });
+

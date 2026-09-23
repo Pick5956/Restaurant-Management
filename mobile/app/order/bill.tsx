@@ -1,6 +1,7 @@
+import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Image, Pressable, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
 import { listMenuItems } from '@/src/api/menu';
@@ -10,9 +11,13 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { GlassMorphMenu } from '@/src/components/ai/chrome';
 import { MenuImage } from '@/src/components/menu-image';
+import { PaymentBlockLine } from '@/src/components/payment/payment-block-line';
+import { PaymentForm, type PaymentFormProps } from '@/src/components/payment/payment-form';
+import { PaymentSheet } from '@/src/components/payment/payment-sheet';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
-import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, RadioGroup, SectionHeader, StatusBadge } from '@/src/components/ui';
+import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { billDiscountLines } from '@/src/lib/bill-promotions';
+import { cashReceivedToSend, formatTender, paidPaymentLine, repricedPaymentLine } from '@/src/lib/cash-tender';
 import { money } from '@/src/lib/format';
 import {
   currentRoundPresentation,
@@ -24,12 +29,13 @@ import {
   billExitRoute,
   billPaymentStage,
   canTakeOrderPayment,
-  paymentReceivedAmount,
   SERVED_REMOVAL_REASONS,
   undeliveredOrderItems,
   validateKitchenCancelReason,
 } from '@/src/lib/order-workflow';
 import { resetRouteStack } from '@/src/lib/navigation-runtime';
+import { billActionFailureMessage } from '@/src/lib/bill-failure';
+import { paymentBlock, paymentBlockText, paymentFailureCode, paymentFailureMessage } from '@/src/lib/payment-failure';
 import { can } from '@/src/lib/rbac';
 import { describePrinterFailure } from '@/src/lib/printer';
 import { ReceiptSlip } from '@/src/components/receipt-slip';
@@ -73,13 +79,24 @@ export default function BillScreen() {
   const canAccessBill = canViewOrders || canTakeOrder || canPay;
   const [bill, setBill] = useState<Bill | null>(null);
   // Set when a post-mutation re-read fails, so the totals on screen are known to
-  // be behind the server. `pay()` sends `bill.grand_total` as the amount received
-  // for a cash payment, so paying from a stale bill records money that was never
-  // taken and change that was never given.
+  // be behind the server. The payment sheet's amount due, its `พอดี` and the
+  // change it works out all come from `bill.grand_total`, so paying from a stale
+  // bill records money that was never taken and change that was never given.
   const [billStale, setBillStale] = useState(false);
   // Only for the row photos, when an order line carries no image of its own.
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [method, setMethod] = useState<'cash' | 'promptpay_qr'>('cash');
+  // Seeded from the bill once; after that the cashier's pick stands. load()
+  // runs on every focus, and re-seeding there put a chosen PromptPay back to
+  // cash after a trip to add a served item (audit, 2026-09-23). A paid bill
+  // still shows the method it was paid with.
+  const methodSeededRef = useRef(false);
+  // The phone's payment sheet. The footer button only opens it; nothing is
+  // recorded until the cashier has seen the method and, for cash, said what
+  // was handed over (2026-09-23: one tap on the footer paid a whole bill in cash).
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  // `saving` is state, so two taps inside one frame both read it as false.
+  const payingRef = useRef(false);
   // No edit MODE. The screen used to hide removal behind a `แก้รายการ` toggle
   // and then switch the toggle on by itself whenever the order had undelivered
   // items - which, since the basket started landing here, is every arrival
@@ -124,17 +141,23 @@ export default function BillScreen() {
     try {
       const nextBill = await getBill(orderId);
       setBill(nextBill);
-      setMethod(nextBill.payments.at(-1)?.method || 'cash');
+      setBillStale(false);
+      if (nextBill.payment_status === 'paid' || !methodSeededRef.current) {
+        setMethod(nextBill.payments.at(-1)?.method || 'cash');
+        methodSeededRef.current = true;
+      }
       if (nextBill.payment_status !== 'paid' && canTakeOrder) {
         const menuResponse = await listMenuItems();
         setMenuItems(menuResponse.menu_items || []);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill'));
+      // The panel's title names the failure; the detail is only a reason staff
+      // can act on, never the server's wording, and empty when there is none.
+      setError(billActionFailureMessage(err, language) ?? '');
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [canAccessBill, canTakeOrder, copy, orderId, validOrderId]);
+  }, [canAccessBill, canTakeOrder, copy, language, orderId, validOrderId]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -197,9 +220,9 @@ export default function BillScreen() {
     } catch (err) {
       setBillStale(true);
       const done = successMessage ?? copy('ทำรายการแล้ว', 'Done');
-      actionFailed(err instanceof Error
-        ? copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ: ${err.message}`, `${done}, but the latest bill could not be loaded: ${err.message}`)
-        : copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${done}, but the latest bill could not be loaded`));
+      const reason = billActionFailureMessage(err, language);
+      const base = copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${done}, but the latest bill could not be loaded`);
+      actionFailed(reason ? `${base}, ${reason}` : base);
     }
   }
 
@@ -222,7 +245,7 @@ export default function BillScreen() {
     } catch (err) {
       // Pick's go-back on success (14 ก.ย. merge) with this branch's toast on
       // failure. `saving` is released only here: on success the screen leaves.
-      actionFailed(err instanceof Error ? err.message : copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
+      actionFailed(billActionFailureMessage(err, language) ?? copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
       setSaving(false);
     }
   }
@@ -254,7 +277,7 @@ export default function BillScreen() {
         copy(`ลบ ${item.menu_name} แล้ว`, `${item.menu_name} deleted`),
       );
     } catch (err) {
-      actionFailed(err instanceof Error ? err.message : copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
+      actionFailed(billActionFailureMessage(err, language) ?? copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
     } finally {
       setSaving(false);
     }
@@ -277,14 +300,27 @@ export default function BillScreen() {
       setCancelTarget(null);
       await refreshBillAfterMutation(copy('นำรายการออกจากบิลแล้ว', 'Item removed from the bill'));
     } catch (err) {
-      actionFailed(err instanceof Error ? err.message : copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
+      actionFailed(billActionFailureMessage(err, language) ?? copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
     } finally {
       setSaving(false);
     }
   }
 
-  async function pay() {
-    if (!bill || !canPay || !paymentReady) return;
+  // Opens the payment step; it never pays. An open delete rail is closed first
+  // so the stack's back gesture comes back and nothing is left open under the
+  // sheet.
+  function openPayment() {
+    if (!paymentReady || billStale) return;
+    setOpenRowId(null);
+    setMenuOpen(false);
+    setPaymentOpen(true);
+  }
+
+  // `received` is the cash handed over, from the payment step; null for
+  // PromptPay. Cash sends it as the received amount, so the server records the
+  // real change instead of 0 on every payment.
+  async function pay(received: number | null = null) {
+    if (!bill || !canPay || !paymentReady || saving || billStale || payingRef.current) return;
     if (method === 'promptpay_qr' && !bill.promptpay_qr_image) {
       actionFailed(copy(
         'ร้านยังไม่ได้ตั้งค่า QR PromptPay จึงยังรับเงินด้วยวิธีนี้ไม่ได้',
@@ -292,12 +328,13 @@ export default function BillScreen() {
       ));
       return;
     }
+    payingRef.current = true;
     setSaving(true);
     setError(null);
     try {
-      await payOrder(orderId, {
+      const paid = await payOrder(orderId, {
         method,
-        received_amount: paymentReceivedAmount(method, bill.grand_total),
+        received_amount: cashReceivedToSend(method, bill.grand_total, received),
       });
       // Match the web: once payment succeeds, leave the bill instead of
       // re-reading it. The web never refetches here - confirmPayment goes
@@ -306,10 +343,35 @@ export default function BillScreen() {
       // still offers a Pay button. The receipt stays reachable from the order
       // archive, the same place the web sends people for a reprint.
       setCancelTarget(null);
-      showToast({ title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
+      // A success toast is only spoken; the haptic is what the hand feels as
+      // the screen leaves.
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      // The server prices the order once more as it records the payment. When
+      // that lands on another total, the change the sheet worked out is wrong,
+      // so the cashier is shown what was actually recorded - as a warning,
+      // because a success toast is only spoken and never drawn.
+      const repriced = repricedPaymentLine(bill.grand_total, paid?.payments?.at(-1), language);
+      showToast(repriced
+        ? { tone: 'warning', title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded'), message: repriced }
+        : { title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
       resetRouteStack(router, billExitRoute(canTakeOrder, canViewOrders));
     } catch (err) {
-      actionFailed(err instanceof Error ? err.message : copy('บันทึกการชำระเงินไม่สำเร็จ', 'Could not record the payment'));
+      // Released only on failure: after a success the screen is leaving, and a
+      // tap on the still-mounted sheet must not send the payment again.
+      payingRef.current = false;
+      // The server's own English never reaches the cashier: it is mapped onto
+      // the outcomes they can act on.
+      const code = paymentFailureCode(err instanceof Error ? err.message : '');
+      showToast({
+        tone: 'error',
+        title: copy('รับเงินไม่สำเร็จ', 'Could not take payment'),
+        message: paymentFailureMessage(code, language) ?? undefined,
+      });
+      // The kitchen is not done after all: close the sheet so the reason shows
+      // at the footer. A re-priced total: re-read it, and the sheet starts over
+      // on the new figure.
+      if (code === 'kitchen_not_done') setPaymentOpen(false);
+      if (code === 'kitchen_not_done' || code === 'total_changed') void load(true);
     } finally {
       setSaving(false);
     }
@@ -368,8 +430,8 @@ export default function BillScreen() {
         subtitle={loading ? copy('กำลังโหลดบิล', 'Loading bill') : copy('ไม่พบบิล', 'Bill unavailable')}
         topLevel={false}
       >
-        {error ? (
-          <Feedback title={copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill')} detail={error} tone="danger" />
+        {error !== null ? (
+          <Feedback title={copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill')} detail={error || undefined} tone="danger" />
         ) : loading ? (
           <Panel>
             <EmptyState
@@ -426,15 +488,40 @@ export default function BillScreen() {
     ]);
   }
 
-  const confirmPaymentAction = (
+  // Opens the payment step and nothing else. It used to be the confirm itself,
+  // live with `cash` preselected, so one tap recorded a payment whose method
+  // nobody had seen.
+  const payAction = (
     <Button
-      icon={method === 'cash' ? 'cash-outline' : 'qr-code-outline'}
-      label={copy('ยืนยันรับชำระเงิน', 'Confirm payment')}
-      onPress={pay}
+      icon="wallet-outline"
+      label={copy('รับเงิน', 'Take payment')}
+      onPress={openPayment}
       loading={saving}
-      disabled={!paymentReady || billStale || (method === 'promptpay_qr' && !bill.promptpay_qr_image)}
+      disabled={!paymentReady || billStale}
     />
   );
+  // What is holding payment back, said where the action is rather than in a
+  // panel under every dish.
+  const block = paymentBlock(undelivered, billStale);
+  const paymentBlockLine = block ? (
+    <PaymentBlockLine
+      text={paymentBlockText(block, language)}
+      onRetry={block.kind === 'stale' ? () => load(true) : undefined}
+    />
+  ) : null;
+  const paymentFormProps: PaymentFormProps = {
+    total: bill.grand_total,
+    method,
+    // The seed rule lives in load(); a pick here stands until the bill is paid.
+    onMethodChange: setMethod,
+    qrUri: bill.promptpay_qr_image ? resolveImage(bill.promptpay_qr_image) : '',
+    promptpayName: bill.promptpay_name,
+    ready: paymentReady && !billStale,
+    notice: paymentBlockLine,
+    saving,
+    onConfirm: (received) => { void pay(received); },
+  };
+  const paidLine = paymentStage === 'paid' ? paidPaymentLine(bill.payments.at(-1), language) : null;
   const exitAction = <Button icon="arrow-back" label={exitLabel} onPress={exitBill} />;
   const sendRoundAction = canSendRound ? (
     <Button
@@ -665,58 +752,26 @@ export default function BillScreen() {
     </Panel>
   ) : null;
 
+  // On a phone the payment step is a sheet over the bill (PaymentSheet below),
+  // opened from the footer: under an 18-dish bill the method and the QR sat
+  // where nobody scrolled to. The tablet has the room to keep it beside the
+  // items, so the same form sits inline there, amount due included.
   const paymentPanel = paymentStage === 'due' && canPay ? (
-    <Panel>
-      <SectionHeader title={copy('วิธีชำระเงิน', 'Payment method')} />
-      {undelivered.length > 0 ? (
-        <Feedback
-          title={copy('ยังมีรายการที่ครัวทำไม่เสร็จ', 'Some items are still being prepared')}
-          detail={copy('นำรายการที่ส่งมอบไม่ได้ออกจากบิล หรือรอให้ครัวทำเสร็จก่อนรับเงิน', 'Remove unfulfilled items from the bill or wait until the kitchen finishes before taking payment.')}
-          tone="warning"
-        />
-      ) : null}
-      <RadioGroup
-        value={method}
-        onChange={setMethod}
-        options={[
-          { label: copy('เงินสด', 'Cash'), value: 'cash' },
-          // Says why it cannot be picked on the row itself. Previously the
-          // option looked available and the reason only appeared after choosing
-          // it, which is late: the restaurant has to go and set the QR up.
-          bill.promptpay_qr_image
-            ? { label: 'PromptPay QR', value: 'promptpay_qr' as const }
-            : { label: copy('PromptPay QR — ไม่พร้อมใช้งาน', 'PromptPay QR — unavailable'), value: 'promptpay_qr' as const, disabled: true },
-        ]}
-      />
-      {method === 'cash' ? null : (
-        <View style={{ alignItems: 'center', gap: spacing.md }}>
-          {bill.promptpay_qr_image ? (
-            <Image
-              accessibilityLabel={copy('คิวอาร์โค้ดพร้อมเพย์ของร้าน', 'Restaurant PromptPay QR code')}
-              source={{ uri: resolveImage(bill.promptpay_qr_image) }}
-              resizeMode="contain"
-              style={{
-                width: splitWorkspace ? 200 : Math.min(240, width - (spacing.lg * 4)),
-                height: splitWorkspace ? 200 : Math.min(240, width - (spacing.lg * 4)),
-                borderRadius: radius.md,
-                backgroundColor: palette.surfaceSubtle,
-              }}
-            />
-          ) : (
-            <Feedback title={copy('ร้านยังไม่ได้ตั้งค่า QR PromptPay', 'PromptPay QR is not configured for this restaurant')} tone="warning" />
-          )}
-          <Text selectable style={typeScale.cardTitle}>{bill.promptpay_name || 'PromptPay'}</Text>
-        </View>
-      )}
-      {splitWorkspace ? confirmPaymentAction : null}
-    </Panel>
+    splitWorkspace ? (
+      <Panel>
+        <SectionHeader title={copy('รับเงิน', 'Take payment')} />
+        <PaymentForm key={String(bill.grand_total)} layout="inline" {...paymentFormProps} />
+      </Panel>
+    ) : null
   ) : paymentStage === 'paid' ? (
     <Panel>
       <SectionHeader
         title={copy('ชำระเงินเรียบร้อย', 'Payment complete')}
-        detail={copy('ออเดอร์ปิดแล้ว พิมพ์ใบเสร็จให้ลูกค้า หรือกลับไปทำรายการถัดไป', 'The order is closed. Print the receipt or continue to the next task.')}
-        action={<StatusBadge label={copy('ชำระแล้ว', 'Paid')} tone="success" />}
+        action={<StatusBadge emphasis="strong" label={copy('ชำระแล้ว', 'Paid')} tone="success" />}
       />
+      {paidLine ? (
+        <Text selectable style={[typeScale.body, { color: palette.textStrong, fontVariant: ['tabular-nums'] }]}>{paidLine}</Text>
+      ) : null}
       {printerSupported ? (
         <Button
           icon="print-outline"
@@ -793,13 +848,19 @@ export default function BillScreen() {
   // stays the whole bill in both states, so the number does not change meaning
   // the moment the round is sent.
   const footerPrimaryAction = sendRoundAction
-    ?? (paymentStage === 'due' && canPay ? confirmPaymentAction : null);
+    ?? (paymentStage === 'due' && canPay ? payAction : null);
+  // The reason sits between the total and the button it holds back. Only while
+  // payment is the footer's action: the send-round footer stays as it was.
+  const footerBlockLine = !sendRoundAction && paymentStage === 'due' && canPay ? paymentBlockLine : null;
   const phoneFooter = !splitWorkspace && footerPrimaryAction ? (
     <View style={{ gap: spacing.md, backgroundColor: palette.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md }}>
         <Text selectable style={[typeScale.body, { color: palette.text, fontWeight: '400' }]}>{copy('รวมทั้งหมด', 'Total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
+        {/* formatTender, not money(): a total with satang has to read the same
+            here as in the payment sheet, not rounded to the baht. */}
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{formatTender(bill.grand_total, language)}</Text>
       </View>
+      {footerBlockLine}
       {footerPrimaryAction}
     </View>
   ) : !splitWorkspace && paymentStage === 'paid' ? (
@@ -851,7 +912,7 @@ export default function BillScreen() {
         />
       ) : undefined}
     >
-      {error ? <Feedback title={copy('โหลดบิลล่าสุดไม่สำเร็จ', 'Could not load the latest bill')} detail={error} tone="danger" /> : null}
+      {error !== null ? <Feedback title={copy('โหลดบิลล่าสุดไม่สำเร็จ', 'Could not load the latest bill')} detail={error || undefined} tone="danger" /> : null}
 
       {/*
         The printable slip is laid out off-screen rather than conditionally
@@ -882,10 +943,20 @@ export default function BillScreen() {
           {billItemsPanel}
           {billSummaryPanel}
         </View>
-        <View style={{ width: splitWorkspace ? undefined : '100%', minWidth: 0, flex: splitWorkspace ? 1 : undefined }}>
-          {paymentPanel}
-        </View>
+        {/* Only when there is a panel: an empty column still took the row's
+            gap, a blank band under the summary on a phone. */}
+        {paymentPanel ? (
+          <View style={{ width: splitWorkspace ? undefined : '100%', minWidth: 0, flex: splitWorkspace ? 1 : undefined }}>
+            {paymentPanel}
+          </View>
+        ) : null}
       </View>
+
+      <PaymentSheet
+        open={paymentOpen && !splitWorkspace && paymentStage === 'due' && canPay}
+        onClose={() => setPaymentOpen(false)}
+        {...paymentFormProps}
+      />
 
       {/* Taking a made dish off the bill asks one question, and the answer is
           the whole action: the reason goes on the day's cancellation record,

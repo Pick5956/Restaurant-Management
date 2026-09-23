@@ -1,30 +1,20 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { resolveWorkspaceRoute } from './workspace-route.ts';
+import { WORKSPACE_HUB_ROUTE } from './workspace-route.ts';
 
-function route(roleName, permissions = []) {
-  const allowed = new Set(permissions);
-  return resolveWorkspaceRoute(roleName, (permission) => allowed.has(permission));
-}
-
-test('opens the role-specific workspace after restaurant selection', () => {
-  assert.equal(route('chef', ['view_kitchen']), '/kitchen');
-  assert.equal(route('waiter', ['take_order']), '/tables');
-  assert.equal(route('cashier', ['view_orders']), '/orders');
-  assert.equal(route('owner'), '/home');
-  assert.equal(route('manager'), '/home');
+test('every role lands on the hub after choosing a restaurant', () => {
+  assert.equal(WORKSPACE_HUB_ROUTE, '/more');
 });
 
-test('custom roles use their most relevant operational permission', () => {
-  assert.equal(route('custom', ['view_kitchen']), '/kitchen');
-  assert.equal(route('custom', ['take_order']), '/tables');
-  assert.equal(route('custom', ['view_orders']), '/orders');
-  assert.equal(route('custom', ['view_dashboard']), '/home');
-  assert.equal(route('custom', ['view_menu']), '/menu');
-  assert.equal(route('custom', ['manage_menu']), '/menu');
-});
-
-test('a chef role without view_kitchen is not routed into a queue the backend will reject', () => {
-  assert.equal(route('chef', ['update_order_status']), '/home');
+// The constant is only half of it: the three places a session is sent after a
+// restaurant is chosen all have to read it.
+test('restaurant selection, the index redirect and invite acceptance all use the hub route', async () => {
+  const workMode = await readFile(new URL('./work-mode.ts', import.meta.url), 'utf8');
+  assert.match(workMode, /return WORKSPACE_HUB_ROUTE;/);
+  for (const file of ['../providers/auth-provider.tsx', '../../app/index.tsx', '../../app/invite/[token].tsx']) {
+    const source = await readFile(new URL(file, import.meta.url), 'utf8');
+    assert.match(source, /getDefaultWorkspaceRoute\(/, `${file} must route through getDefaultWorkspaceRoute`);
+  }
 });

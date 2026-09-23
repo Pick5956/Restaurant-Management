@@ -30,6 +30,26 @@ export function isMenuSoldOut(item: StockItem): boolean {
   return !item.is_available || (typeof item.remaining_servings === 'number' && item.remaining_servings <= 0);
 }
 
+/** Portions left at or below which the stock badge turns amber. */
+export const LOW_STOCK_SERVINGS = 10;
+
+export type MenuStockBadge =
+  | { kind: 'low' | 'plenty'; count: number }
+  | { kind: 'unlimited' };
+
+/**
+ * The badge beside a dish's price on the order grid: how many portions are
+ * left, amber at ten or fewer, or "not limited" for a dish with no recipe. Every
+ * orderable dish carries one (owner, 2026-09-22, the same rule as the web POS
+ * tile); a sold-out dish gets none, since its sold-out word already answers.
+ */
+export function menuStockBadge(item: StockItem): MenuStockBadge | null {
+  if (isMenuSoldOut(item)) return null;
+  if (typeof item.remaining_servings !== 'number') return { kind: 'unlimited' };
+  const count = item.remaining_servings;
+  return { kind: count <= LOW_STOCK_SERVINGS ? 'low' : 'plenty', count };
+}
+
 /**
  * How many dish tiles fit across a grid `width` wide, and how wide each one is
  * so the row runs edge to edge. On a tablet the grid shares the screen with the
@@ -76,8 +96,14 @@ export function filterMenuCatalog<T extends CatalogItem>(
  * Buckets dishes under their main category, in the order the menu lists them.
  * Grouped the way the table map groups by zone: a flat run of dishes gives no
  * clue where one part of the menu ends and the next begins.
+ *
+ * Inside each category the dishes that can be ordered come first and the sold
+ * out ones (`isMenuSoldOut`) sink to the bottom, each part keeping the menu's
+ * order (owner, 2026-09-24). Only the dishes move: a category keeps its place
+ * even when everything in it is sold out, so the menu's shape stays the same
+ * through the day.
  */
-export function groupMenuByCategory<T extends CatalogItem>(
+export function groupMenuByCategory<T extends CatalogItem & StockItem>(
   items: readonly T[],
   categories: readonly CatalogCategory[],
   uncategorisedLabel: string,
@@ -93,7 +119,15 @@ export function groupMenuByCategory<T extends CatalogItem>(
     }
     groups.set(key, { key, label: nameById.get(item.category_id) || uncategorisedLabel, items: [item] });
   });
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({ ...group, items: soldOutLast(group.items) }));
+}
+
+/** Orderable dishes, then sold-out ones, each in the order they came in. */
+function soldOutLast<T extends StockItem>(items: readonly T[]): T[] {
+  const orderable: T[] = [];
+  const soldOut: T[] = [];
+  items.forEach((item) => (isMenuSoldOut(item) ? soldOut : orderable).push(item));
+  return [...orderable, ...soldOut];
 }
 
 /**

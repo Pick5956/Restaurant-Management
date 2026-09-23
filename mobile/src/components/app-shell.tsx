@@ -2,33 +2,30 @@ import { Redirect, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  Easing,
-  PanResponder,
+  Keyboard,
   Platform,
-  StyleSheet,
   Pressable,
   RefreshControl,
   ScrollView,
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { GlassView } from 'expo-glass-effect';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassButton } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
-import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
 import { AppText as Text } from '@/src/components/app-text';
 import { BrandMark } from '@/src/components/brand-mark';
+import { CompactHeader } from '@/src/components/compact-header';
 import { MotionReveal, useReducedMotion } from '@/src/components/motion';
 import {
   useIsPrimaryTabsHost,
   usePrimaryTabSceneStatus,
-  usePrimaryTabStageDismiss,
   usePublishPrimaryTabStage,
 } from '@/src/components/primary-tabs-runtime';
 import {
@@ -37,19 +34,18 @@ import {
 } from '@/src/components/tab-swipe-context';
 import { canUseAIAssistant } from '@/src/lib/ai-actions';
 import {
-  getAdjacentNavigationTarget,
-  isPagerSwipeCooldownActive,
-  notePagerVerticalScrollActivity,
-  resolvePagerSwipeSettlement,
-  resolvePhoneNavigationIndicatorMetrics,
-  shouldStartPagerHorizontalSwipe,
-} from '@/src/lib/navigation-runtime';
-import {
   runManualRefresh,
   shouldShowTabletWorkspaceRail,
 } from '@/src/lib/app-shell-runtime';
+import {
+  COMPACT_HEADER_BAND,
+  compactHeaderProgress,
+  compactHeaderRange,
+  nextCompactShown,
+} from '@/src/lib/compact-header';
 import { orderRoutePermissions } from '@/src/lib/permission-parity';
 import { can } from '@/src/lib/rbac';
+import { restingMaxOffset, strandedScrollTarget } from '@/src/lib/scroll-bounds';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
@@ -73,7 +69,7 @@ export type NavItem = {
 export const primaryNavigation: NavItem[] = [
   { key: 'home', label: 'ภาพรวม', labelEn: 'Overview', shortLabel: 'ภาพรวม', shortLabelEn: 'Home', href: '/home', icon: 'home-outline', activeIcon: 'home', permission: 'view_dashboard' },
   { key: 'pos', label: 'รับออเดอร์', labelEn: 'Take orders', shortLabel: 'รับออเดอร์', shortLabelEn: 'Take order', href: '/tables', icon: 'restaurant-outline', activeIcon: 'restaurant', permission: 'take_order' },
-  { key: 'kitchen', label: 'ครัว', labelEn: 'Kitchen', shortLabel: 'ครัว', shortLabelEn: 'Kitchen', href: '/kitchen', icon: 'flame-outline', activeIcon: 'flame', permission: 'view_kitchen' },
+  { key: 'kitchen', label: 'ครัว', labelEn: 'Kitchen', shortLabel: 'ครัว', shortLabelEn: 'Kitchen', href: '/kitchen', icon: 'chef-hat', activeIcon: 'chef-hat', permission: 'view_kitchen' },
   { key: 'orders', label: 'ออเดอร์', labelEn: 'Orders', shortLabel: 'ออเดอร์', shortLabelEn: 'Orders', href: '/orders', icon: 'receipt-outline', activeIcon: 'receipt', permissions: orderRoutePermissions },
   { key: 'more', label: 'ระบบทั้งหมด', labelEn: 'All tools', shortLabel: 'เพิ่มเติม', shortLabelEn: 'More', href: '/more', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
 ];
@@ -131,6 +127,15 @@ export type AppScreenScrollControl = {
    *  fresh offset overshoots. Reading both at the same instant and sending an
    *  absolute target cannot drift, whatever else is scrolling at the time. */
   getOffset: () => number;
+  /** The furthest the page can legitimately rest, with no keyboard up. For a
+   *  caller driving the scroll itself, so it never takes an offset iOS left
+   *  past the end for a real bound. Optional because a panel that scrolls
+   *  itself hands out a control of the same shape. */
+  getMaxOffset?: () => number;
+  /** How much of the scroll view's top edge the compact header covers right
+   *  now, in points below the status bar; 0 while it is hidden. Anything that
+   *  scrolls when a finger nears the top edge has to start that far down. */
+  getTopCover?: () => number;
 };
 
 type NavigationMode = 'rail' | 'expanded';
@@ -272,711 +277,6 @@ export function TabletWorkspaceFrame({ children }: { children: React.ReactNode }
   );
 }
 
-/**
- * The phone dock is the iOS 26 tab bar, rebuilt: clear dark glass with a
- * hairline rim, white glyphs, and a pale
- * translucent capsule for the selection. Copied from a screen recording and
- * a run of screenshots of that bar on 2026-09-10, at the owner's request.
- *
- * Layers, bottom to top, all iOS-only: a dim (`DOCK_DIM`) that darkens what is
- * behind the bar, and Liquid Glass (`clear`, dark scheme, untinted) that bends
- * it. No sheen: see the note where it used to be. There is no blur: a
- * real `UIBlurEffect` layer was tried at 100, 45, 25 and 12 and the owner asked
- * for none - the bar shows what is behind it sharp, tinted, glinting.
- *
- * Nothing is painted on the glass itself. Every tinted version of the material
- * read as "a bar that has a colour"; the colour lives in the dim beneath it.
- */
-// The translucent stack - dim, lens - is iOS-only. Android keeps the
-// opaque fill it has today: a translucent plate over a list with no material
-// behind it reads as a bug there, and the app has never been run on Android.
-const DOCK_GLASS_STACK = Platform.OS === 'ios';
-// The darkness, and the ONLY thing between the page and the glass: a blur layer
-// sat under this and was removed at the owner's "no blur", so what is behind
-// the bar shows through sharp, tinted by this and nothing else.
-//
-// 0.68. Darkness is not the opposite of transparency here: a black overlay at
-// 0.68 still passes a third of the light, so shapes and even text behind the
-// bar stay readable - the reference shows a date legible through its bar - it
-// is only dimmer. 0.35 left the bar too bright over a white page for white
-// glyphs to stand out; the reference over a pale green poster reads roughly
-// two-thirds darkened, estimated by eye because that screenshot was never
-// written to disk. The lens sits ABOVE this, so raising it costs no gloss.
-// Move this alone for darkness.
-const DOCK_DIM = 'rgba(0, 0, 0, 0.26)';
-// The colour the GLASS ITSELF is made of, which is where nearly all of the
-// darkness lives now. Found on 2026-09-12 from the owner's own observation:
-// iOS draws an app WITHOUT live glass in the app switcher, and the reference
-// bar's stand-in there is a pale grey wash - so its darkness cannot be coming
-// from a layer underneath the material, it is IN the material.
-//
-// That is the difference that made ours look flat. A tint is composited into
-// the glass, so the system computes the lensing, the speculars and the edge
-// treatment ON TOP of it; a black veil underneath gives the glass a flat sheet
-// to look at and there is nothing left for it to do. Tinted film in a car
-// window against clear glass laid on black paper: the same darkness, one of
-// them still alive.
-//
-// Neutral, near-black, and NOT the brand orange - that was tried and a
-// translucent brown tint goes mauve over a white page.
-const DOCK_TINT = 'rgba(16, 16, 18, 0.62)';
-// There is NO sheen. A white-to-nothing gradient down the top of the pill
-// (0.30 at the edge, 0.10 at mid-height) was the gloss for a day, and over a
-// busy page it read as light on glass. Over the plain white tables page it was
-// a lighter top half fading into a darker bottom half - reported as "white
-// showing at the top" and as a bug, and it survived a slope change, a corner
-// fix, the shadow removal and a lens-scheme change because it was the sheen
-// itself, not its shape. The bar is one flat tone now; the gloss is the lens's
-// refraction and the rim, which is also all the reference bar has.
-
-/**
- * How far the selection capsule stretches at the midpoint between two slots.
- * Read off the recording: mid-travel it spans roughly 1.7 slot widths, then
- * snaps back to one. It scales about its own centre, and the centre moves
- * linearly, so at the halfway point the stretched body covers both glyphs -
- * which is the frame that reads as a drop.
- */
-// 1.02. Measured on a mid-swipe screenshot the reference capsule is 1.01
-// slots wide, and at 1.06 it was still reported as stretching far too much
-// and as "leaping" to the next slot the moment a swipe starts - a scaleX about
-// the centre pushes the leading edge ahead of the travel. This is close enough
-// to nothing that the capsule reads as sliding, not stretching.
-const PHONE_ACTIVE_INDICATOR_STRETCH = 1.16;
-// What it gives up in height at the same moment. Roughly volume-conserving:
-// 1 / 1.16 is 0.86, and a little less squash than that keeps the capsule from
-// looking thin as it crosses.
-const PHONE_ACTIVE_INDICATOR_SQUASH = 0.92;
-// The HELD pose - a finger on the pager, one full slot into the drag. These
-// are real dimensions, not scales: the capsule loses 14% of its height from
-// the top and the bottom alike, gains 5% of width, and stays a true pill at
-// every frame, so its corner radius falls WITH its height. That is what makes
-// the corners read as compressed. A scaleY could not do it - it keeps the
-// corner's full horizontal radius while taking the height away, so the ends
-// bulged into ellipses and the whole thing read as a round blob however the
-// numbers were tuned. Measured against the reference held at the same point.
-const PHONE_ACTIVE_INDICATOR_HELD_HEIGHT = 0.86;
-const PHONE_ACTIVE_INDICATOR_HELD_WIDTH = 1.05;
-// How far the whole body leans toward the target at the same point, in slots.
-const PHONE_ACTIVE_INDICATOR_HELD_LEAN = 0.18;
-// How far into the drag, in slots, the compression is FULLY reached. It used
-// to be the whole slot, which meant the pose above was only ever seen with the
-// finger at the far edge; at 0.55 it arrives a little past half way, with a
-// faster-than-linear start so it is felt as soon as the drag moves.
-const PHONE_ACTIVE_INDICATOR_HELD_REACH = 0.55;
-
-// Every other dimension of the dock derives from this one - the pill radius, the
-// active indicator's radius, each tab's minimum height, and the clearance
-// `AppScreen` leaves at the bottom of a scrolling page - so this is the only
-// number to change to resize the bar.
-// Measured off the owner's Instagram screenshots at 3.28 px/pt: the reference
-// bar is ~55pt tall with ~20pt side margins and ~20pt to the screen bottom.
-// Ours was 53 / 16 / 23.5. Height rounds to 56 so the capsule radius stays an
-// integer.
-// 60. Against the reference at the same crop scale ours measured ~6% shorter at
-// 56 and was reported as visibly smaller; 60 closes that.
-const PHONE_DOCK_HEIGHT = 59;
-const PHONE_DOCK_RADIUS = PHONE_DOCK_HEIGHT / 2;
-const PHONE_DOCK_SIDE_MARGIN = spacing.xl;
-// The capsule fills its slot sideways - the reference measures 1.02 slots wide,
-// ours 0.90 with the old 4pt inset - and keeps a 5pt breath top and bottom, so
-// the two insets are separate numbers. The metrics helper takes the horizontal
-// one, because that is the one that sets width and travel.
-const PHONE_ACTIVE_INDICATOR_INSET = 0;
-// 6, and it has to stay equal to the gap the capsule leaves at the ends of the
-// pill: PHONE_DOCK_END_PADDING minus PHONE_ACTIVE_INDICATOR_OVERHANG. The
-// capsule sits in a groove, and a groove with a different width on one side
-// reads as the capsule having slipped rather than as a measurement.
-const PHONE_ACTIVE_INDICATOR_VERTICAL_INSET = 4;
-// How far the selection capsule runs past its slot on each side. The metrics
-// helper cannot express this - it takes an INSET and refuses a negative one -
-// so the overhang is added here, symmetrically, which leaves the capsule
-// 0: the capsule is exactly one slot wide. It ran 6pt past its slot on each
-// side for a while and the shape came back as too LONG next to the reference,
-// which is fatter for its height - and the capsule's height is fixed by the
-// bar, so the only way to fatten it is to take the width off. The end padding
-// minus this is the gap left at the first and last tab, and the two are chosen
-// together to land on the vertical inset: 8 - 4 = 4.
-//
-// 4, up from 2, and the end padding went up by the same two points so the end
-// groove did not change. Two points longer at rest so that, when a drag leans
-// it toward the target, its trailing end is still over the icon it started
-// on for longer - at one slot wide the tail was reported as leaving its
-// starting point too soon.
-const PHONE_ACTIVE_INDICATOR_OVERHANG = 4;
-// The bar's own end padding, and the fix for the capsule sinking into the left
-// end on the first tab. On the reference the capsule sits ~8pt in from the
-// bar's end, because the slots do not start at the edge: the row is padded and
-// five slots divide what is left. The measured width handed to the metrics
-// helper subtracts this on both sides, so slot width, capsule width and capsule
-// travel all agree with where the glyphs actually are.
-//
-// The capsule's `left` adds this padding EXPLICITLY. An earlier version assumed
-// Yoga offsets an absolutely positioned child by its parent's padding and set
-// `left: inset`; on device the capsule sat 8pt left of every glyph. It does
-// not - like CSS, `left` is measured from the parent's border edge.
-const PHONE_DOCK_END_PADDING = 8;
-// Exactly half the capsule's height, which is the pill's radius minus the
-// groove - and that equality is not a style choice, it is the only way the gap
-// can be the same width the whole way round. Two rounded rectangles hold an
-// even gap only when they are concentric AND their radii differ by exactly
-// that gap; the bar is a full pill, so anything inside it with a smaller
-// corner opens a wider gap at the diagonals than it has along the edges -
-// which is the odd curve that showed at the corners when this was 0.46.
-//
-// It still is not a plain capsule: it and the bar are both drawn on
-// `continuous`, Apple's squircle, where the corner eases into the side rather
-// than meeting it at a tangent. The same curve on both is the other half of
-// keeping the gap even.
-const PHONE_ACTIVE_INDICATOR_RADIUS = (
-  PHONE_DOCK_HEIGHT - PHONE_ACTIVE_INDICATOR_VERTICAL_INSET * 2
-) / 2;
-const PHONE_DOCK_TOP_GUTTER = 22;
-const PHONE_DOCK_BOTTOM_GAP_SCALE = 0.8;
-// 13, up from 10: three more points of drop brings the measured 23.5pt bottom
-// gap to the reference's ~20.
-const PHONE_DOCK_ADDITIONAL_DROP = 13;
-const TAB_MOTION_EASING = Easing.bezier(0.16, 1, 0.3, 1);
-
-function phoneDockBottomGap(bottomInset: number) {
-  return Math.max(
-    0,
-    Math.round((spacing.sm + bottomInset) * PHONE_DOCK_BOTTOM_GAP_SCALE)
-      - PHONE_DOCK_ADDITIONAL_DROP,
-  );
-}
-
-export function PrimaryPhoneNavigation({
-  accessibilitySelectedIndex,
-  items,
-  selectedIndex,
-  markerGesture,
-  markerOrigin,
-  markerPosition,
-  onSelect,
-}: {
-  accessibilitySelectedIndex?: number;
-  items: NavItem[];
-  selectedIndex: number;
-  markerPosition: Animated.Value;
-  /** 1 while a finger is on the pager, eased to 0 after it lets go. */
-  markerGesture?: Animated.Value;
-  /** The tab a drag started on, as the pager wrote it at grant. */
-  markerOrigin?: Animated.Value;
-  onSelect: (index: number) => void;
-}) {
-  const { copy, language } = useDisplayPreferences();
-  const insets = useSafeAreaInsets();
-  // Measured off the FIRST TAB, not computed from the pill's width and the end
-  // padding. Every tab is `flex: 1`, so tab zero's frame IS the slot - its `x`
-  // already carries whatever padding the row is using and its width is the step
-  // between tabs. Deriving those two numbers instead meant the capsule and the
-  // tabs were each laid out against a separate copy of the same geometry, and
-  // any edit that moved one without the other put the capsule off its icon.
-  // There is nothing left to keep in step.
-  const [slotFrame, setSlotFrame] = useState<{ x: number; width: number } | null>(null);
-  const indicatorMetrics = resolvePhoneNavigationIndicatorMetrics(
-    slotFrame ? slotFrame.width * items.length : 0,
-    items.length,
-    PHONE_ACTIVE_INDICATOR_INSET,
-  );
-  const slotWidth = indicatorMetrics?.slotWidth ?? 0;
-  // Two motions, blended by whether a finger is down.
-  //
-  // HELD is what a drag gets: the capsule stays on the tab it started from,
-  // leans a little toward the target, and compresses - see `capsuleShape`
-  // below for the compression, which is real geometry and not a transform. It
-  // deliberately does not arrive: arriving is the release's job, and a drag
-  // held at 99% has still not arrived. Anchored on `markerOrigin`, which the
-  // pager writes at grant and never clears.
-  //
-  // SETTLED is the plain thing: capsule exactly on the marker, one slot wide,
-  // with a stretch-and-squash as it crosses between two. A tap uses it
-  // outright; a release blends into it over 240ms while the pager springs, and
-  // that blend is the snap into place.
-  //
-  // At rest both give the same centre and a scale of 1, so the moment a drag
-  // starts nothing jumps.
-  const markerLastIndex = Math.max(items.length - 1, 1);
-  const markerSawtooth = useCallback((rest: number, peak: number) => {
-    const count = items.length;
-    if (count < 2) return rest;
-    const inputRange: number[] = [];
-    const outputRange: number[] = [];
-    for (let index = 0; index < count; index += 1) {
-      inputRange.push(index);
-      outputRange.push(rest);
-      if (index < count - 1) {
-        inputRange.push(index + 0.5);
-        outputRange.push(peak);
-      }
-    }
-    return markerPosition.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
-  }, [items.length, markerPosition]);
-  const markerMotion = useMemo(() => {
-    const settled = {
-      translate: markerPosition.interpolate({
-        inputRange: [0, markerLastIndex],
-        outputRange: [0, markerLastIndex * slotWidth],
-        extrapolate: 'clamp',
-      }),
-      stretch: markerSawtooth(1, PHONE_ACTIVE_INDICATOR_STRETCH),
-      squash: markerSawtooth(1, PHONE_ACTIVE_INDICATOR_SQUASH),
-    };
-    if (!markerGesture || !markerOrigin) return settled;
-
-    // While held the capsule only LEANS toward the target - the whole body,
-    // trailing edge included, by up to PHONE_ACTIVE_INDICATOR_HELD_LEAN of a
-    // slot. Its compression is not a transform at all any more; see
-    // `capsuleShape` below, which animates the real height, width and radius.
-    // Stretch and squash are pinned to 1 here so the two never stack.
-    //
-    // Everything is a function of `u = marker - origin`, computed on the
-    // animation graph from two values the pager writes in the same instant,
-    // so there is no render in between for them to disagree across.
-    const u = Animated.subtract(markerPosition, markerOrigin);
-    const lean = PHONE_ACTIVE_INDICATOR_HELD_LEAN * slotWidth;
-    const held = {
-      translate: Animated.add(
-        Animated.multiply(markerOrigin, slotWidth),
-        u.interpolate({ inputRange: [-1, 0, 1], outputRange: [-lean, 0, lean], extrapolate: 'clamp' }),
-      ),
-      stretch: 1,
-      squash: 1,
-    };
-    const gesture = markerGesture;
-    const released = Animated.subtract(1, gesture);
-    const asNode = (value: Animated.AnimatedInterpolation<number> | number) => (
-      typeof value === 'number' ? new Animated.Value(value) : value
-    );
-    const blend = (
-      during: Animated.AnimatedInterpolation<number> | number,
-      after: Animated.AnimatedInterpolation<number> | number,
-    ) => Animated.add(
-      Animated.multiply(asNode(during), gesture),
-      Animated.multiply(asNode(after), released),
-    );
-    return {
-      translate: blend(held.translate, settled.translate),
-      stretch: blend(held.stretch, settled.stretch),
-      squash: blend(held.squash, settled.squash),
-    };
-  }, [markerGesture, markerLastIndex, markerOrigin, markerPosition, markerSawtooth, slotWidth]);
-  // The capsule's SHAPE while held: real height, width and corner radius.
-  //
-  // The pager drives `markerPosition` on the native driver, which carries
-  // transforms and nothing else - `height` and `borderRadius` cannot hang off
-  // it. So the three values it needs are mirrored onto plain JS-side values
-  // through listeners (a native-driven value still reports every frame to
-  // its JS listeners) and the shape is computed from the mirrors. Only this
-  // small inner view runs on the JS side; the pager, the outer capsule's
-  // travel and its settle stretch stay native, so a swipe is as smooth as it
-  // was.
-  //
-  // It is an INNER view for a reason: an Animated.View whose style holds a
-  // native-driven transform has its whole style claimed by the native
-  // module, and a JS-driven `height` in the same style throws. Nesting keeps
-  // the two drivers on two nodes.
-  //
-  //   pull = |marker - origin| x gesture      0 at rest, 1 a full slot into a
-  //                                          held drag, fading with the release
-  //   height = H -> 0.86 H
-  //   width  = W -> 1.05 W
-  //   radius = H/2 -> 0.86 H/2               always half the height: a pill
-  const mirror = useRef({
-    marker: new Animated.Value(Math.max(selectedIndex, 0)),
-    origin: new Animated.Value(Math.max(selectedIndex, 0)),
-    gesture: new Animated.Value(0),
-  }).current;
-  useEffect(() => {
-    if (!markerGesture || !markerOrigin) return undefined;
-    const pairs: Array<[Animated.Value, Animated.Value]> = [
-      [markerPosition, mirror.marker],
-      [markerOrigin, mirror.origin],
-      [markerGesture, mirror.gesture],
-    ];
-    const subscriptions = pairs.map(([source, target]) => (
-      [source, source.addListener(({ value }) => target.setValue(value))] as const
-    ));
-    return () => {
-      subscriptions.forEach(([source, id]) => source.removeListener(id));
-    };
-  }, [markerGesture, markerOrigin, markerPosition, mirror]);
-  const capsuleShape = useMemo(() => {
-    const height = PHONE_DOCK_HEIGHT - PHONE_ACTIVE_INDICATOR_VERTICAL_INSET * 2;
-    const width = (indicatorMetrics?.indicatorWidth ?? 0) + PHONE_ACTIVE_INDICATOR_OVERHANG * 2;
-    const rest = { height, width, radius: PHONE_ACTIVE_INDICATOR_RADIUS };
-    if (!markerGesture || !markerOrigin) return rest;
-    // Ease-out into the full pose by PHONE_ACTIVE_INDICATOR_HELD_REACH of a
-    // slot, then flat: 60% of the compression is there at a third of the reach.
-    const reach = PHONE_ACTIVE_INDICATOR_HELD_REACH;
-    const pull = Animated.multiply(
-      Animated.subtract(mirror.marker, mirror.origin).interpolate({
-        inputRange: [-1, -reach, -reach / 3, 0, reach / 3, reach, 1],
-        outputRange: [1, 1, 0.6, 0, 0.6, 1, 1],
-        extrapolate: 'clamp',
-      }),
-      mirror.gesture,
-    );
-    const between = (from: number, to: number) => pull.interpolate({
-      inputRange: [0, 1],
-      outputRange: [from, to],
-      extrapolate: 'clamp',
-    });
-    const heldHeight = height * PHONE_ACTIVE_INDICATOR_HELD_HEIGHT;
-    return {
-      height: between(height, heldHeight),
-      width: between(width, width * PHONE_ACTIVE_INDICATOR_HELD_WIDTH),
-      radius: between(PHONE_ACTIVE_INDICATOR_RADIUS, heldHeight / 2),
-    };
-  }, [indicatorMetrics?.indicatorWidth, markerGesture, markerOrigin, mirror]);
-  const onSlotLayout = useCallback((event: LayoutChangeEvent) => {
-    const { x, width: slot } = event.nativeEvent.layout;
-    setSlotFrame((current) => (
-      current && Math.abs(current.x - x) < 0.5 && Math.abs(current.width - slot) < 0.5
-        ? current
-        : { x, width: slot }
-    ));
-  }, []);
-  // Press feedback belongs to the WHOLE plate, not to the glyph under the
-  // thumb. Dimming one icon reads as that icon being a different colour from
-  // its four neighbours - it was reported exactly that way - and the material
-  // is a property of the sheet, so the sheet is what should answer a touch.
-  //
-  // It rides on the outer wrapper deliberately: the pill below it carries
-  // `overflow: hidden`, so a scale applied inside would be clipped back to the
-  // bar's own bounds and nothing would appear to move at all.
-  const reducedMotion = useReducedMotion();
-  const pressLift = useRef(new Animated.Value(0)).current;
-  // The compact table tile's press curve, copied because it is the one in this
-  // app that is actually visible - see its comment at compact-table-tile.tsx:103.
-  //
-  // The release is the whole trick and it is not obvious: springing straight
-  // back from a pressed scale overshoots by well under one percent, which reads
-  // as nothing happening at all. Several rounds here were spent raising the
-  // scale - 1.035, then 1.06 - when the problem was never the size, it was the
-  // curve. Dipping to a small NEGATIVE first sends the return through a value
-  // past rest, and that is what the eye catches.
-  //
-  // An earlier comment here claimed `onPressIn` cannot fire inside an
-  // interactive glass and drove this from `onPress` instead. That was wrong: it
-  // rested on a log line that never appeared, from a build never confirmed to be
-  // on the device. `compact-table-tile.tsx:234` ships Pressable -> GlassView
-  // (isInteractive) -> content with a working `onPressIn`, and
-  // RCTSurfaceTouchHandler sets `delaysTouchesBegan = NO` with its recogniser on
-  // the surface root, so touch-begin arrives whatever the hit view is.
-  const animateDock = useCallback((toValue: number) => {
-    if (reducedMotion) {
-      pressLift.setValue(toValue);
-      return;
-    }
-    if (toValue === 1) {
-      Animated.spring(pressLift, {
-        toValue: 1,
-        damping: 18,
-        stiffness: 320,
-        mass: 0.7,
-        useNativeDriver: Platform.OS !== 'web',
-      }).start();
-      return;
-    }
-    Animated.sequence([
-      Animated.timing(pressLift, {
-        toValue: -0.4,
-        duration: 90,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-      Animated.spring(pressLift, {
-        toValue: 0,
-        damping: 14,
-        stiffness: 260,
-        mass: 0.7,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    ]).start();
-  }, [pressLift, reducedMotion]);
-  const stageDismiss = usePrimaryTabStageDismiss();
-
-  return (
-    <SafeAreaView
-      edges={['left', 'right']}
-      pointerEvents="box-none"
-      style={{
-        position: 'absolute',
-        right: 0,
-        bottom: 0,
-        left: 0,
-        zIndex: 20,
-        backgroundColor: 'transparent',
-      }}
-    >
-      <View
-        pointerEvents="box-none"
-        style={{
-          paddingTop: PHONE_DOCK_TOP_GUTTER,
-          paddingBottom: phoneDockBottomGap(insets.bottom),
-        }}
-      >
-        <Animated.View
-          style={{
-            height: PHONE_DOCK_HEIGHT,
-            marginHorizontal: PHONE_DOCK_SIDE_MARGIN,
-            borderRadius: PHONE_DOCK_RADIUS,
-            borderCurve: 'continuous',
-            // Transparent under the material, or the glass refracts a solid
-            // plate and nothing behind the dock is ever visible. Android keeps
-            // the fill: there is no material there, so the fill IS the dock, and
-            // `elevation` needs a background to draw a shadow against at all.
-            backgroundColor: DOCK_GLASS_STACK ? 'transparent' : palette.navigationDockSurface,
-            // No drop shadow under the translucent stack. UIKit paints a layer's
-            // shadow BEHIND its content, and this plate's content is a 0.68 dim
-            // that passes a third of the light - so the shadow, offset 10pt down
-            // and blurred 16, showed THROUGH the bar: the bottom of the pill sat
-            // on its own shadow and read darker, the top 10-20pt had no shadow
-            // behind it and read lighter, and the hairline rim along the bottom
-            // edge lit up against the darkened interior. Over a white page, with
-            // nothing behind the bar to break it up, that was a hard light band
-            // across the top and a bright line along the bottom - reported as a
-            // bug twice, and untouched by the sheen and corner fixes because it
-            // was never those layers. The opaque plate never showed it because an
-            // opaque layer hides its own shadow. Android keeps `elevation`: the
-            // fill there is opaque, so the shadow stays underneath it.
-            ...(DOCK_GLASS_STACK ? {} : {
-              shadowColor: palette.shadow,
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.2,
-              shadowRadius: 16,
-              elevation: 12,
-            }),
-            // Three points, not two, because the release runs to -0.4 and that
-            // leg is the one that can be seen: on the way back the plate passes
-            // through a slight squish at 0.994 before it settles. Two points
-            // would clamp that leg away and take the whole rebound with it.
-            //
-            // 1.02 held, down from 1.05. A dock is 350pt wide, so a percent of
-            // scale is 3.5pt at each end - the same number that is nearly
-            // invisible on a 100pt tile is loud here, and 1.05 was reported as
-            // too much. The rebound does the work; the held state only needs to
-            // be felt.
-            transform: [{
-              scale: pressLift.interpolate({
-                inputRange: [-0.4, 0, 1],
-                outputRange: [0.994, 1, 1.02],
-              }),
-            }],
-          }}
-        >
-          <View
-            accessibilityLabel={copy('แถบนำทางหลัก ปัดหน้าจอซ้ายหรือขวาเพื่อเปลี่ยนแท็บ', 'Main navigation. Swipe the screen left or right to change tabs.')}
-            accessibilityRole="tablist"
-            style={{
-              height: PHONE_DOCK_HEIGHT,
-              flexDirection: 'row',
-              overflow: 'hidden',
-              borderRadius: PHONE_DOCK_RADIUS,
-              borderCurve: 'continuous',
-              paddingHorizontal: PHONE_DOCK_END_PADDING,
-              backgroundColor: DOCK_GLASS_STACK ? 'transparent' : palette.navigationDockSurface,
-              // The hairline rim the reference bar carries: a lighter edge that
-              // is what separates dark glass from the dark content behind it.
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: palette.navigationDockRim,
-              // The top lip catches the most light on a real edge, so it is the
-              // brightest line on the bar rather than one quarter of an even
-              // outline.
-              borderTopColor: palette.navigationDockRimLit,
-            }}
-          >
-            {/* The dim. See DOCK_DIM.
-
-                Every fill layer in here bleeds 1pt past the pill and carries NO
-                radius of its own; the pill's `overflow: hidden` is the one and
-                only curve. The pill has a hairline border, and RN lays an
-                absolute child INSIDE that border, so a layer that fills exactly
-                to 0 with its own radius-30 corner is 0.33pt smaller than the
-                clip and its arc no longer coincides with the clip's - a sliver
-                of the white page showed at all four corners. Overshooting and
-                letting the clip cut removes the second curve entirely. */}
-            {DOCK_GLASS_STACK ? (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  top: -1,
-                  right: -1,
-                  bottom: -1,
-                  left: -1,
-                  backgroundColor: DOCK_DIM,
-                  zIndex: 0,
-                }}
-              />
-            ) : null}
-            {/* The lens, untinted, on top. `clear`, NOT `regular` - regular is
-                a frost, and it turned the bar into a flat grey slab.
-                `clear` bends light and glints and frosts nothing.
-
-                Tinted with DOCK_TINT - see its comment for why the darkness
-                lives in the material. `isInteractive` is what makes
-                it render as glass at all - without it the surface goes flat -
-                and it does not interfere with the tabs: RN's touch handler is a
-                recogniser on the surface root with `delaysTouchesBegan = NO`,
-                so the tabs above still get press-in and press-out
-                (compact-table-tile.tsx ships the same arrangement). Its own
-                `borderRadius`, because a GlassView draws its own shape and a
-                square one reads as a slab inside the pill. */}
-            {/* The edge lights. A real piece of glass is brightest where its
-                face turns over into its edge, and that lip is most of what reads
-                as wet. This is NOT the sheen that was deleted: that was white
-                0.30 falling across the whole height, which over a plain white
-                page turned into a lighter top half with a seam through it. These
-                are 5pt and 3pt of light ON the lip, at the top and the bottom,
-                with the middle of the bar untouched - the reference bar has
-                exactly this and nothing across its face.
-
-                Under the lens on purpose, so the glass refracts them instead of
-                laying them flat on top. */}
-            {DOCK_GLASS_STACK ? (
-              <>
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0)']}
-                  end={{ x: 0.5, y: 1 }}
-                  pointerEvents="none"
-                  start={{ x: 0.5, y: 0 }}
-                  style={{ position: 'absolute', top: -1, right: -1, left: -1, height: 6, zIndex: 0 }}
-                />
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.22)']}
-                  end={{ x: 0.5, y: 1 }}
-                  pointerEvents="none"
-                  start={{ x: 0.5, y: 0 }}
-                  style={{ position: 'absolute', bottom: -1, right: -1, left: -1, height: 4, zIndex: 0 }}
-                />
-              </>
-            ) : null}
-            {LIQUID_GLASS ? (
-              <GlassView
-                // LIGHT scheme, over a dark dim, for the gloss. The light
-                // scheme's speculars are white and pronounced where the dark
-                // scheme's are grey and faint, and the specular IS the shine -
-                // asked for "as glossy as theirs" on 2026-09-12. It was on dark
-                // while a white band was being hunted; the band turned out to be
-                // a sheen gradient that has since been deleted, so the scheme was
-                // never the cause. If a band ever comes back over a plain white
-                // page, this is the first thing to put back to `dark`.
-                colorScheme="light"
-                glassEffectStyle="clear"
-                isInteractive
-                tintColor={DOCK_TINT}
-                // Bleeds 1pt like the layers under it, and keeps a radius only
-                // because a GlassView draws its own outline: one point larger
-                // than the pill's so the two arcs stay concentric, the clip
-                // trimming the overshoot.
-                style={{
-                  position: 'absolute',
-                  top: -1,
-                  right: -1,
-                  bottom: -1,
-                  left: -1,
-                  borderRadius: PHONE_DOCK_RADIUS + 1,
-                  borderCurve: 'continuous',
-                  zIndex: 0,
-                }}
-              />
-            ) : null}
-            {indicatorMetrics && selectedIndex >= 0 && selectedIndex < items.length ? (
-              <Animated.View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  top: PHONE_ACTIVE_INDICATOR_VERTICAL_INSET,
-                  bottom: PHONE_ACTIVE_INDICATOR_VERTICAL_INSET,
-                  left: (slotFrame?.x ?? 0) + indicatorMetrics.indicatorInset - PHONE_ACTIVE_INDICATOR_OVERHANG,
-                  width: indicatorMetrics.indicatorWidth + PHONE_ACTIVE_INDICATOR_OVERHANG * 2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transform: [
-                    { translateX: markerMotion.translate },
-                    { scaleX: markerMotion.stretch },
-                    { scaleY: markerMotion.squash },
-                  ],
-                  zIndex: 0,
-                }}
-              >
-                <Animated.View
-                  style={{
-                    height: capsuleShape.height,
-                    width: capsuleShape.width,
-                    borderRadius: capsuleShape.radius,
-                    // iOS only; Android draws the plain circular corner.
-                    borderCurve: 'continuous',
-                    // Translucent white, not a solid fill: on the reference it
-                    // is a paler patch of the same glass, so the content
-                    // behind the dock shows through the capsule too.
-                    backgroundColor: palette.navigationDockIndicator,
-                  }}
-                />
-              </Animated.View>
-            ) : null}
-            {items.map((item, index) => {
-              const active = index === selectedIndex;
-              const accessibilitySelected = index === (
-                accessibilitySelectedIndex ?? selectedIndex
-              );
-              const label = language === 'th' ? item.label : item.labelEn;
-              return (
-                <Pressable
-                  accessibilityLabel={label}
-                  accessibilityRole="tab"
-                  onLayout={index === 0 ? onSlotLayout : undefined}
-                  accessibilityState={{ selected: accessibilitySelected }}
-                  aria-selected={accessibilitySelected}
-                  key={item.key}
-                  // Still no per-tab opacity: the tab reports the tap and the
-                  // whole plate answers it. See `animateDock`.
-                  onPress={() => onSelect(index)}
-                  onPressIn={() => animateDock(1)}
-                  onPressOut={() => animateDock(0)}
-                  style={{
-                    minWidth: 48,
-                    minHeight: PHONE_DOCK_HEIGHT,
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingHorizontal: 2,
-                    zIndex: 1,
-                  }}
-                >
-                  <View style={{ width: 34, height: 34, alignItems: 'center', justifyContent: 'center' }}>
-                    <AppIcon
-                      color={palette.navigationDockIcon}
-                      name={active ? item.activeIcon : item.icon}
-                      size={26}
-                    />
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Animated.View>
-      </View>
-      {stageDismiss ? (
-        // Filling this root rather than being wrapped around it: the root is
-        // `position: absolute` with no `top`, so its box IS the dock's
-        // footprint, and an absolute-fill child covers exactly that and nothing
-        // else. A Pressable wrapped AROUND the dock would become the parent its
-        // absolute positioning resolves against, and drop it out of the corner.
-        //
-        // Last child, so it is over the buttons without needing a zIndex; the
-        // root is `box-none`, which passes touches to children like this one.
-        <Pressable
-          accessible={false}
-          onPressIn={stageDismiss}
-          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
-        />
-      ) : null}
-    </SafeAreaView>
-  );
-}
-
 // Android renders a scroll view's refreshControl as the OUTER element, cloning it
 // with the scroll view injected as children:
 //   cloneElement(refreshControl, { style }, <ScrollView>...</ScrollView>)
@@ -1105,6 +405,9 @@ export function AppScreen({
   floatingLeading,
   floatingTrailing,
   scrollControlRef,
+  compactHeader = true,
+  compactRow,
+  compactAction,
 }: {
   title: string;
   titleContent?: React.ReactNode;
@@ -1180,12 +483,27 @@ export function AppScreen({
   /** Filled with a handle on the scroll view so the screen can move it itself.
    *  See AppScreenScrollControl for the one thing that needs this. */
   scrollControlRef?: React.MutableRefObject<AppScreenScrollControl | null>;
+  /** The collapsing header: once the heading has scrolled away, a compact bar
+   *  pinned at the top carries the back button, the title on one line and the
+   *  action. On by default for every screen that scrolls and has a heading and
+   *  is neither `stickyHeading` nor `immersive`. Pass `false` only with the
+   *  reason beside it. */
+  compactHeader?: boolean;
+  /** ONE row of controls shown under the compact title, only while the compact
+   *  bar is up - the filters a long list is read through (Grab's filter row).
+   *  The page keeps its own full controls in the content. It fades in with the
+   *  bar, so it must not hold Liquid Glass (GlassButton, GlassPanel): glass
+   *  under a fading parent renders flat. A control here that filters the list
+   *  scrolls it back to the top itself (`scrollControlRef`). */
+  compactRow?: React.ReactNode;
+  /** What the compact bar shows in place of `action`; `null` shows nothing.
+   *  Left undefined, the bar repeats `action`, which is only safe when a second
+   *  press of it is harmless - a push, an idempotent open, a plain chip. */
+  compactAction?: React.ReactNode;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { status, user, activeMembership } = useAuth();
-  const pathname = usePathname();
-  const reducedMotion = useReducedMotion();
   const embeddedInPrimaryTabs = useIsPrimaryTabsHost();
   const primaryTabSceneStatus = usePrimaryTabSceneStatus();
   const reportParentVerticalScrollActivity = useTabSwipeVerticalScrollActivityReporter();
@@ -1193,10 +511,6 @@ export function AppScreen({
   const screenBackground = isTablet ? palette.canvas : palette.surface;
   const horizontalPadding = isTablet ? spacing.xxl : spacing.lg;
   const maxWidth = contentMaxWidth || (isTablet ? 1180 : 720);
-  const phoneDockClearance = PHONE_DOCK_HEIGHT
-    + PHONE_DOCK_TOP_GUTTER
-    + phoneDockBottomGap(insets.bottom)
-    + spacing.lg;
   // Lets the dock go inert too - it is mounted a level up, beside the pager.
   usePublishPrimaryTabStage(onTouchOutsideStickyContent ?? null);
   const scrollRef = useRef<ScrollView>(null);
@@ -1205,102 +519,63 @@ export function AppScreen({
   // and every alternative for "move this field up by exactly its overlap" needs
   // the number anyway.
   const contentOffsetRef = useRef(0);
-  const phoneNavigationItems = useMemo(
-    () => primaryNavigation.filter((item) => isAllowed(item, activeMembership)),
-    [activeMembership],
-  );
-  const activeTabIndex = phoneNavigationItems.findIndex((item) =>
-    isActivePath(pathname, item.href),
-  );
-  const markerPosition = useRef(
-    new Animated.Value(Math.max(activeTabIndex, 0)),
-  ).current;
-  const contentTranslateX = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(1)).current;
-  const navigationLocked = useRef(false);
   const nestedHorizontalGestureActive = useRef(false);
-  const pagerSwipeBlockedUntilRef = useRef(0);
-  const pagerSwipeTouchBlockedRef = useRef(false);
-  const navigationFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [selectedTabIndex, setSelectedTabIndex] = useState(activeTabIndex);
-  const useNativeDriver = Platform.OS !== 'web';
+  // What a page's resting range is measured from. Filled from the scroll
+  // view's own layout and content size; 0 means not measured yet.
+  const contentHeightRef = useRef(0);
+  const viewportHeightRef = useRef(0);
+  const draggingRef = useRef(false);
+  const momentumRef = useRef(false);
+  // A scroll view that runs to the bottom of the display is inset by the home
+  // indicator on iOS (contentInsetAdjustmentBehavior "automatic"), and a page
+  // may rest in that inset. With a footer the scroll view stops above it.
+  const restingSlack = Platform.OS === 'ios' && !footer ? insets.bottom : 0;
+  const restingSlackRef = useRef(restingSlack);
+  restingSlackRef.current = restingSlack;
 
-  useEffect(() => {
-    if (navigationFallbackTimer.current) {
-      clearTimeout(navigationFallbackTimer.current);
-      navigationFallbackTimer.current = null;
-    }
-    navigationLocked.current = false;
-    nestedHorizontalGestureActive.current = false;
-    pagerSwipeBlockedUntilRef.current = 0;
-    pagerSwipeTouchBlockedRef.current = false;
-    contentTranslateX.setValue(0);
-    contentOpacity.setValue(1);
-    setSelectedTabIndex(activeTabIndex);
-    if (activeTabIndex >= 0) markerPosition.setValue(activeTabIndex);
-  }, [activeTabIndex, contentOpacity, contentTranslateX, markerPosition, pathname]);
-
-  useEffect(
-    () => () => {
-      if (navigationFallbackTimer.current) {
-        clearTimeout(navigationFallbackTimer.current);
-        navigationFallbackTimer.current = null;
-      }
-      markerPosition.stopAnimation();
-      contentTranslateX.stopAnimation();
-      contentOpacity.stopAnimation();
-    },
-    [contentOpacity, contentTranslateX, markerPosition],
-  );
-
-  const resetTabDrag = useCallback(() => {
-    if (navigationFallbackTimer.current) {
-      clearTimeout(navigationFallbackTimer.current);
-      navigationFallbackTimer.current = null;
-    }
-    setSelectedTabIndex(activeTabIndex);
-    if (reducedMotion) {
-      contentTranslateX.setValue(0);
-      contentOpacity.setValue(1);
-      if (activeTabIndex >= 0) markerPosition.setValue(activeTabIndex);
-      navigationLocked.current = false;
-      return;
-    }
-
-    Animated.parallel([
-      Animated.timing(contentTranslateX, {
-        toValue: 0,
-        duration: 170,
-        easing: TAB_MOTION_EASING,
-        useNativeDriver,
-      }),
-      Animated.timing(contentOpacity, {
-        toValue: 1,
-        duration: 140,
-        easing: TAB_MOTION_EASING,
-        useNativeDriver,
-      }),
-      ...(activeTabIndex >= 0
-        ? [Animated.timing(markerPosition, {
-          toValue: activeTabIndex,
-          duration: 170,
-          easing: TAB_MOTION_EASING,
-          useNativeDriver,
-        })]
-        : []),
-    ]).start(() => {
-      navigationLocked.current = false;
-    });
-  }, [activeTabIndex, contentOpacity, contentTranslateX, markerPosition, reducedMotion, useNativeDriver]);
+  // The collapsing header. Default on; a pinned heading, an immersive screen, a
+  // screen with no heading or no scroll keep exactly what they had.
+  const collapsing = scroll && !stickyHeading && !immersive && !hideTitle && compactHeader;
+  const collapsingRef = useRef(collapsing);
+  collapsingRef.current = collapsing;
+  const reducedMotion = useReducedMotion();
+  // One scroll value, fed on the native thread, drives everything the bar
+  // does with the offset.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  // The content offset at which the expanded heading's bottom edge reaches the
+  // top of the scroll view: its title has gone. Measured, because a subtitle
+  // or `beforeHeading` changes it; MotionReveal's slide does not.
+  const [collapseAt, setCollapseAt] = useState<number | null>(null);
+  const collapseAtRef = useRef<number | null>(null);
+  const contentTopRef = useRef(0);
+  const headingBoxRef = useRef<{ y: number; height: number } | null>(null);
+  // Touches and the accessibility tree cannot follow a native animation, so the
+  // bar is switched on and off from JS as the offset crosses the band.
+  const [compactShown, setCompactShown] = useState(false);
+  const compactShownRef = useRef(false);
+  const compactCoverRef = useRef(0);
 
   useEffect(() => {
     if (!scrollControlRef) return undefined;
     const scrollTo = (y: number, animated = true) => {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y), animated });
+      const target = Math.max(0, y);
+      // A jump is where the page is from here on. Its scroll event reaches JS
+      // only after the main thread has run it, but a list changed in the same
+      // tick (a compact-row filter) lays out during the commit and reports its
+      // new size first; judged against the old deep offset, the shorter list
+      // would look stranded and be sent to its end instead of its top.
+      if (!animated) contentOffsetRef.current = target;
+      scrollRef.current?.scrollTo({ y: target, animated });
     };
     scrollControlRef.current = {
       scrollTo,
       getOffset: () => contentOffsetRef.current,
+      // Unmeasured is "no known bound", not 0: a caller must not pull a page
+      // it cannot see the end of back to the top.
+      getMaxOffset: () => (contentHeightRef.current > 0 && viewportHeightRef.current > 0
+        ? restingMaxOffset({ contentHeight: contentHeightRef.current, viewportHeight: viewportHeightRef.current, slack: restingSlackRef.current })
+        : Number.POSITIVE_INFINITY),
+      getTopCover: () => (collapsingRef.current && compactShownRef.current ? compactCoverRef.current : 0),
     };
     return () => {
       scrollControlRef.current = null;
@@ -1312,10 +587,6 @@ export function AppScreen({
   }, []);
 
   const reportVerticalScrollActivity = useCallback((activityTimeMs: number) => {
-    pagerSwipeBlockedUntilRef.current = notePagerVerticalScrollActivity(
-      pagerSwipeBlockedUntilRef.current,
-      activityTimeMs,
-    );
     if (primaryTabSceneStatus === null || primaryTabSceneStatus === 'active') {
       reportParentVerticalScrollActivity(activityTimeMs);
     }
@@ -1325,142 +596,128 @@ export function AppScreen({
     reportVerticalScrollActivity(Date.now());
   }, [reportVerticalScrollActivity]);
 
-  const navigateToTab = useCallback((targetIndex: number, fromSwipe = false) => {
-    const target = phoneNavigationItems[targetIndex];
-    if (!target || navigationLocked.current) return;
+  const updateCompactShown = useCallback((offset: number) => {
+    const at = collapseAtRef.current;
+    if (!collapsingRef.current || at === null) return;
+    const next = nextCompactShown(compactShownRef.current, compactHeaderProgress(offset, at));
+    if (next === compactShownRef.current) return;
+    compactShownRef.current = next;
+    setCompactShown(next);
+  }, []);
 
-    if (targetIndex === activeTabIndex) {
-      if (pathname !== target.href) router.replace(target.href as never);
-      return;
-    }
+  const measureCollapse = useCallback(() => {
+    const box = headingBoxRef.current;
+    if (!box) return;
+    const next = Math.round(contentTopRef.current + box.y + box.height);
+    if (next === collapseAtRef.current) return;
+    collapseAtRef.current = next;
+    setCollapseAt(next);
+    updateCompactShown(contentOffsetRef.current);
+  }, [updateCompactShown]);
 
-    if (activeTabIndex < 0 || reducedMotion) {
-      setSelectedTabIndex(targetIndex);
-      markerPosition.setValue(targetIndex);
-      contentTranslateX.setValue(0);
-      contentOpacity.setValue(1);
-      router.replace(target.href as never);
-      return;
-    }
+  const onContentLayout = useCallback((event: LayoutChangeEvent) => {
+    contentTopRef.current = event.nativeEvent.layout.y;
+    measureCollapse();
+  }, [measureCollapse]);
 
-    navigationLocked.current = true;
-    setSelectedTabIndex(targetIndex);
-    const direction = targetIndex > activeTabIndex ? 1 : -1;
-    const exitDistance = fromSwipe ? width * 0.5 : Math.min(width * 0.42, 168);
+  const onHeadingLayout = useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    headingBoxRef.current = { y, height };
+    measureCollapse();
+  }, [measureCollapse]);
 
-    Animated.parallel([
-      Animated.timing(markerPosition, {
-        toValue: targetIndex,
-        duration: 220,
-        easing: TAB_MOTION_EASING,
-        useNativeDriver,
-      }),
-      Animated.timing(contentTranslateX, {
-        toValue: -direction * exitDistance,
-        duration: 200,
-        easing: TAB_MOTION_EASING,
-        useNativeDriver,
-      }),
-      Animated.timing(contentOpacity, {
-        toValue: 0.92,
-        duration: 160,
-        easing: TAB_MOTION_EASING,
-        useNativeDriver,
-      }),
-    ]).start(({ finished }) => {
-      if (!finished) {
-        resetTabDrag();
-        return;
-      }
-      navigationFallbackTimer.current = setTimeout(() => {
-        navigationFallbackTimer.current = null;
-        resetTabDrag();
-      }, 450);
-      router.replace(target.href as never);
+  // A new scroll view starts at the top. The value the last one left behind
+  // would otherwise hold the bar up until the first scroll event. The offset
+  // too: `collapsing` only changes when the scroll view is swapped (or goes),
+  // and a stale deep offset would switch the bar on, invisible and taking the
+  // heading's touches, the moment the new heading is measured.
+  useEffect(() => {
+    scrollY.setValue(0);
+    contentOffsetRef.current = 0;
+    compactShownRef.current = false;
+    setCompactShown(false);
+    draggingRef.current = false;
+    momentumRef.current = false;
+  }, [collapsing, scrollY]);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    contentOffsetRef.current = event.nativeEvent.contentOffset.y;
+    reportVerticalScrollNow();
+    updateCompactShown(event.nativeEvent.contentOffset.y);
+  };
+  const handleScrollRef = useRef(handleScroll);
+  handleScrollRef.current = handleScroll;
+  // Created once: a new event object every render would detach and re-attach
+  // the native listener each time the screen re-rendered. The JS listener keeps
+  // every bookkeeping step the plain handler has.
+  const nativeScroll = useMemo(() => Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: true,
+      listener: (event: NativeSyntheticEvent<NativeScrollEvent>) => handleScrollRef.current(event),
+    },
+  ), [scrollY]);
+
+  const compactProgress = useMemo(() => {
+    if (collapseAt === null) return 0;
+    return scrollY.interpolate({
+      inputRange: compactHeaderRange(collapseAt, COMPACT_HEADER_BAND),
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
     });
-  }, [activeTabIndex, contentOpacity, contentTranslateX, markerPosition, pathname, phoneNavigationItems, reducedMotion, resetTabDrag, useNativeDriver, width]);
+  }, [collapseAt, scrollY]);
 
-  const tabSwipeResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponderCapture: () => {
-      pagerSwipeTouchBlockedRef.current = isPagerSwipeCooldownActive(
-        pagerSwipeBlockedUntilRef.current,
-        Date.now(),
-      );
-      return false;
-    },
-    onMoveShouldSetPanResponder: (_, gesture) => {
-      if (isPagerSwipeCooldownActive(
-        pagerSwipeBlockedUntilRef.current,
-        Date.now(),
-      )) {
-        pagerSwipeTouchBlockedRef.current = true;
-      }
-      if (
-        embeddedInPrimaryTabs ||
-        !topLevel ||
-        isTablet ||
-        navigationLocked.current ||
-        nestedHorizontalGestureActive.current ||
-        activeTabIndex < 0 ||
-        phoneNavigationItems.length < 2 ||
-        gesture.numberActiveTouches !== 1
-      ) {
-        return false;
-      }
-      return shouldStartPagerHorizontalSwipe({
-        deltaX: gesture.dx,
-        deltaY: gesture.dy,
-      }, pagerSwipeTouchBlockedRef.current);
-    },
-    onPanResponderGrant: () => {
-      contentTranslateX.stopAnimation();
-      contentOpacity.stopAnimation();
-      markerPosition.stopAnimation();
-    },
-    onPanResponderMove: (_, gesture) => {
-      if (reducedMotion || activeTabIndex < 0) return;
-      const direction = gesture.dx < 0 ? 1 : -1;
-      const adjacent = getAdjacentNavigationTarget(
-        phoneNavigationItems,
-        activeTabIndex,
-        direction,
-      );
-      const resistance = adjacent ? 1 : 0.18;
-      const maxDrag = width * 0.5;
-      const resistedDrag = gesture.dx * resistance;
-      const drag = Math.max(-maxDrag, Math.min(maxDrag, resistedDrag));
-      const markerProgress = activeTabIndex - drag / Math.max(width, 1);
-      const boundedMarker = Math.max(
-        0,
-        Math.min(phoneNavigationItems.length - 1, markerProgress),
-      );
+  // UIScrollView springs an out-of-range offset back only while a drag or a
+  // bounce is running. Switching scrolling off in the middle of one (a lifted
+  // category row does) freezes the page where it is, and switching it back on
+  // does not re-clamp: the page rests past its end, heading gone, until it is
+  // touched. The same happens when the content gets shorter under the reader.
+  // This is the spring-back UIKit skipped, and a no-op unless the offset really
+  // is outside the range. Android clamps both itself and has no rubber band.
+  // Never on a pinned heading: the bill's rail uses onScrollBlocked, and the
+  // bill stays exactly as it is.
+  const settleStrandedOffset = (clampTop: boolean) => {
+    if (Platform.OS !== 'ios' || stickyHeading || Keyboard.isVisible()) return;
+    const contentHeight = contentHeightRef.current;
+    const viewportHeight = viewportHeightRef.current;
+    if (!(contentHeight > 0) || !(viewportHeight > 0)) return;
+    const target = strandedScrollTarget({
+      offset: contentOffsetRef.current,
+      contentHeight,
+      viewportHeight,
+      slack: restingSlack,
+      // A refresh in progress holds the offset negative to show its spinner.
+      clampTop: clampTop && !refreshControl,
+    });
+    if (target === null) return;
+    contentOffsetRef.current = target;
+    scrollRef.current?.scrollTo({ y: target, animated: true });
+  };
+  const settleStrandedOffsetRef = useRef(settleStrandedOffset);
+  settleStrandedOffsetRef.current = settleStrandedOffset;
 
-      contentTranslateX.setValue(drag);
-      contentOpacity.setValue(1 - Math.min(Math.abs(drag) / Math.max(width * 8, 1), 0.05));
-      markerPosition.setValue(boundedMarker);
-    },
-    onPanResponderRelease: (_, gesture) => {
-      const settlement = resolvePagerSwipeSettlement(
-        phoneNavigationItems,
-        activeTabIndex,
-        {
-          deltaX: gesture.dx,
-          deltaY: gesture.dy,
-          velocityX: gesture.vx * 1000,
-        },
-        width,
-      );
+  // Keyed on whether it is blocked, not on the function: the bill hands over a
+  // new closure every render.
+  const scrollBlocked = Boolean(onScrollBlocked);
+  const wasScrollBlockedRef = useRef(scrollBlocked);
+  useEffect(() => {
+    const wasBlocked = wasScrollBlockedRef.current;
+    wasScrollBlockedRef.current = scrollBlocked;
+    if (!wasBlocked || scrollBlocked) return;
+    // A pan cancelled by the block may never have reported its end.
+    draggingRef.current = false;
+    momentumRef.current = false;
+    settleStrandedOffsetRef.current(true);
+  }, [scrollBlocked]);
 
-      if (!settlement?.shouldNavigate) {
-        resetTabDrag();
-        return;
-      }
-      navigateToTab(settlement.targetIndex, true);
-    },
-    onPanResponderTerminate: resetTabDrag,
-    onPanResponderTerminationRequest: () => true,
-    onShouldBlockNativeResponder: () => false,
-  }), [activeTabIndex, contentOpacity, contentTranslateX, embeddedInPrimaryTabs, isTablet, markerPosition, navigateToTab, phoneNavigationItems, reducedMotion, resetTabDrag, topLevel, width]);
+  const handleContentSizeChange = (_width: number, height: number) => {
+    contentHeightRef.current = height;
+    // A filter in the compact row, a deleted row: the page got shorter under
+    // the reader. Only the bottom - a shrink never strands the top.
+    if (collapsing && !onScrollBlocked && !draggingRef.current && !momentumRef.current) {
+      settleStrandedOffset(false);
+    }
+  };
 
   if (status === 'loading') return <View style={{ flex: 1, backgroundColor: screenBackground }} />;
   if (!user) return <Redirect href="/login" />;
@@ -1528,8 +785,15 @@ export function AppScreen({
       </View>
     </View>
   ) : null;
+  // The collapsing header reads the offset on the native thread, which only an
+  // Animated scroll view can feed. Every other screen keeps the plain one it
+  // had, props and all; the type only changes when `collapsing` does, and then
+  // the scroll view is new anyway. No `style` on either: on Android an Animated
+  // scroll view with a refreshControl and a style takes the path that clones
+  // the refresh control around itself a second time.
+  const ShellScrollView = collapsing ? Animated.ScrollView : ScrollView;
   const main = scroll ? (
-    <ScrollView
+    <ShellScrollView
       // `automatic` lets iOS inset the scroll content by the safe area on its
       // own — which is right everywhere else, and is exactly what leaves a band
       // of empty canvas above an immersive screen's first element. The whole
@@ -1562,7 +826,7 @@ export function AppScreen({
       // to the reader's thumb.
       bounces={!immersive}
       overScrollMode={immersive ? 'never' : 'auto'}
-      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: immersive ? 0 : spacing.lg, paddingBottom: topLevel && !isTablet ? phoneDockClearance : spacing.xxxl }}
+      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: immersive ? 0 : spacing.lg, paddingBottom: spacing.xxxl + (footer ? 0 : insets.bottom) }}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       // No scroll bar. It is drawn OVER the content at the right edge, which is
@@ -1570,17 +834,30 @@ export function AppScreen({
       // rail is the bar winning an argument with the screen. Every list long
       // enough to need one already says where it is by what is in it.
       showsVerticalScrollIndicator={false}
-      onMomentumScrollBegin={reportVerticalScrollNow}
-      onMomentumScrollEnd={reportVerticalScrollNow}
-      onScroll={(event) => {
-        contentOffsetRef.current = event.nativeEvent.contentOffset.y;
+      onMomentumScrollBegin={() => {
+        momentumRef.current = true;
         reportVerticalScrollNow();
       }}
+      onMomentumScrollEnd={() => {
+        momentumRef.current = false;
+        reportVerticalScrollNow();
+      }}
+      onScroll={collapsing ? nativeScroll : handleScroll}
       onScrollBeginDrag={() => {
+        draggingRef.current = true;
         reportVerticalScrollNow();
         onScrollStart?.();
       }}
-      onScrollEndDrag={reportVerticalScrollNow}
+      onScrollEndDrag={() => {
+        draggingRef.current = false;
+        reportVerticalScrollNow();
+      }}
+      // What a stranded offset is measured against. Not on a pinned heading,
+      // which keeps the scroll view it had.
+      onLayout={stickyHeading ? undefined : (event: LayoutChangeEvent) => {
+        viewportHeightRef.current = event.nativeEvent.layout.height;
+      }}
+      onContentSizeChange={stickyHeading ? undefined : handleContentSizeChange}
       ref={scrollRef}
       refreshControl={refreshControl}
       scrollEnabled={!onScrollBlocked}
@@ -1597,15 +874,19 @@ export function AppScreen({
         blockedTouchStart.current = null;
         onScrollBlocked();
       } : undefined}
-      scrollEventThrottle={32}
+      // iOS sends the native-animation scroll event through the same throttle
+      // gate as onScroll: at 32 the bar would step at about 30fps.
+      scrollEventThrottle={collapsing ? 16 : 32}
     >
-      <View style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle]}>
-        {stickyHeading || immersive ? null : heading}
+      <View onLayout={collapsing ? onContentLayout : undefined} style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle]}>
+        {stickyHeading || immersive ? null : collapsing ? (
+          <View onLayout={onHeadingLayout}>{heading}</View>
+        ) : heading}
         {children}
       </View>
-    </ScrollView>
+    </ShellScrollView>
   ) : (
-    <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: spacing.lg, paddingBottom: topLevel && !isTablet ? phoneDockClearance : 0 }}>
+    <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: spacing.lg, paddingBottom: 0 }}>
       <View style={[{ width: '100%', maxWidth, flex: 1, gap: spacing.lg }, contentStyle]}>
         {heading}
         <View style={{ minHeight: 0, flex: 1 }}>{children}</View>
@@ -1614,13 +895,11 @@ export function AppScreen({
   );
 
   const animatedContent = (
-    <Animated.View
+    <View
       style={{
         minHeight: 0,
         flex: 1,
         backgroundColor: screenBackground,
-        opacity: contentOpacity,
-        transform: [{ translateX: contentTranslateX }],
       }}
     >
       {immersive || headerOwnsTopInset ? null : (
@@ -1631,6 +910,30 @@ export function AppScreen({
       )}
       {pinnedHeading}
       {main}
+      {collapsing && collapseAt !== null ? (
+        // Laid out inside this view's bounds from its top edge, never above it:
+        // a view outside its parent's bounds stops receiving touches on Android.
+        <CompactHeader
+          action={compactAction === undefined ? action : compactAction}
+          background={screenBackground}
+          centerTitle={centerTitle}
+          horizontalPadding={horizontalPadding}
+          maxWidth={maxWidth}
+          onLayout={(event) => {
+            compactCoverRef.current = Math.max(0, event.nativeEvent.layout.height - insets.top);
+          }}
+          // Reduced motion is a plain switch, on the same JS threshold that
+          // decides touches, so what shows and what is live never disagree.
+          progress={reducedMotion ? (compactShown ? 1 : 0) : compactProgress}
+          row={compactRow}
+          showBack={!topLevel}
+          shown={compactShown}
+          // The plain string: `titleContent` can be a field (a role's name edited
+          // in place) or a whole strip (the tablet home's days).
+          title={title}
+          topInset={insets.top}
+        />
+      ) : null}
       {onTouchOutsideStickyContent ? (
         // A sibling covering the whole shell rather than a child of the header
         // reaching past its own edges: a view laid out outside its parent's
@@ -1679,7 +982,7 @@ export function AppScreen({
           {floatingTrailing}
         </View>
       ) : null}
-    </Animated.View>
+    </View>
   );
 
   const content = (

@@ -15,7 +15,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { BrandMark } from '@/src/components/brand-mark';
 import { MotionReveal } from '@/src/components/motion';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, palette, radius, spacing } from '@/src/theme';
+import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
 
 function LanguageControl() {
   const { copy, language, setLanguage } = useDisplayPreferences();
@@ -94,17 +94,6 @@ function AuthArtwork() {
           />
           <View
             style={{
-              position: 'absolute',
-              top: 52,
-              right: 84,
-              width: 14,
-              height: 14,
-              borderRadius: radius.full,
-              backgroundColor: palette.navigationActive,
-            }}
-          />
-          <View
-            style={{
               width: 104,
               height: 104,
               alignItems: 'center',
@@ -119,11 +108,10 @@ function AuthArtwork() {
           </View>
         </View>
       </MotionReveal>
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        <View style={{ width: 36, height: 3, borderRadius: radius.full, backgroundColor: palette.navigationActive }} />
-        <View style={{ width: 12, height: 3, borderRadius: radius.full, backgroundColor: palette.navigationMuted }} />
-        <View style={{ width: 12, height: 3, borderRadius: radius.full, backgroundColor: palette.navigationMuted }} />
-      </View>
+      {/* A pager's bars and a dot on the ring used to sit here, for a carousel
+          that never existed; the owner allows no round dots. This keeps the
+          disc where the space-between layout put it. */}
+      <View style={{ height: 3 }} />
     </View>
   );
 }
@@ -142,6 +130,19 @@ export function AuthScreen({
   const { width } = useWindowDimensions();
   const tablet = width >= breakpoints.tablet;
 
+  // typeScale.hero (20/600) is the app's ceiling, the same title every other
+  // screen draws. This one was 29-31pt at weight 800, louder than anything the
+  // owner allows (16 ก.ย. 2569), and the type test could not see it behind a
+  // ternary. No gap between the two lines: their leading already parts them.
+  const heading = (
+    <View style={{ minWidth: 0, flex: showBack ? 1 : undefined }}>
+      <Text accessibilityRole="header" numberOfLines={showBack ? 2 : undefined} selectable style={typeScale.hero}>
+        {title}
+      </Text>
+      {subtitle ? <Text selectable style={[typeScale.body, { color: palette.muted }]}>{subtitle}</Text> : null}
+    </View>
+  );
+
   const form = (
     <View
       style={{
@@ -156,31 +157,23 @@ export function AuthScreen({
     >
       <MotionReveal style={{ width: '100%', maxWidth: 440 }}>
         <View style={{ gap: tablet ? 28 : spacing.xxl }}>
-          <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
-            {showBack ? <BackButton /> : tablet ? <View /> : <BrandMark size={40} />}
-            <LanguageControl />
-          </View>
-
-          <View style={{ gap: subtitle ? spacing.sm : 0 }}>
-            <Text
-              accessibilityRole="header"
-              selectable
-              style={{
-                color: palette.textStrong,
-                fontSize: tablet ? 31 : 29,
-                lineHeight: tablet ? 39 : 36,
-                fontWeight: '800',
-                letterSpacing: -0.65,
-              }}
-            >
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text selectable style={{ color: palette.muted, fontSize: 14, lineHeight: 21 }}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
+          {showBack ? (
+            // A pushed step reads like every other pushed screen (ScreenHeading):
+            // the title beside the round back button, not a row below it.
+            <View style={{ minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <BackButton />
+              {heading}
+              <LanguageControl />
+            </View>
+          ) : (
+            <>
+              <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
+                {tablet ? <View /> : <BrandMark size={40} />}
+                <LanguageControl />
+              </View>
+              {heading}
+            </>
+          )}
 
           {children}
         </View>

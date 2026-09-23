@@ -1,10 +1,11 @@
 import { can } from '@/src/lib/rbac';
-import { resolveWorkspaceRoute } from '@/src/lib/workspace-route';
+import { WORKSPACE_HUB_ROUTE } from '@/src/lib/workspace-route';
 import type { Membership } from '@/src/types/restaurant';
 
-export function getDefaultWorkspaceRoute(membership: Membership | null | undefined) {
-  const roleName = membership?.role?.name ?? '';
-  return resolveWorkspaceRoute(roleName, (permission) => can(membership, permission));
+// The membership stays in the signature so every caller keeps passing it: the
+// landing screen was per role until 2026-09-23 and may be again.
+export function getDefaultWorkspaceRoute(_membership: Membership | null | undefined) {
+  return WORKSPACE_HUB_ROUTE;
 }
 
 export function getWorkModeCopy(membership: Membership | null | undefined) {

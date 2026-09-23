@@ -342,6 +342,8 @@ export default function RoleEditorScreen() {
           <HeadingAction compact={false} icon="checkmark" label={saveLabel} onPress={save} />
         </View>
       ) : nameAction}
+      // Not the pencil: it edits the title in place and focuses a field that has scrolled out of view.
+      compactAction={tablet ? <HeadingAction compact={false} icon="checkmark" label={saveLabel} onPress={save} /> : null}
       contentMaxWidth={tablet ? 1180 : undefined}
       footer={!tablet && !confirmDelete ? <SaveDock label={saveLabel} onPress={save} loading={saving} /> : undefined}
     >
