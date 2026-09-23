@@ -41,6 +41,64 @@ type TableZoneRequest struct {
 	IsActive     *bool  `json:"is_active"`
 }
 
+// ErrTableInUse is the one refusal every table-management edit gives a table
+// that is in service. The web and the app match its text to show their own
+// wording, so the text is part of the API contract: do not reword it.
+var ErrTableInUse = errors.New("table is in use")
+
+// tableInService is the single definition of a table that table management may
+// not touch: no seats, no zone move, no open/closed switch, no delete, no new
+// QR. A table is in service while an order on it is still open (anything but
+// completed or cancelled), or while the floor holds it as occupied or reserved.
+// It leaves service only through the service steps - paying or closing the
+// bill, cancelling or seating the booking - never through an edit.
+//
+// `inactive` is deliberately not in service: a table the owner switched off has
+// to stay editable, or it could never be switched back on. A booking for later
+// does not hold its table either. It holds a time, and the floor keeps selling
+// the table until the guests arrive; DeleteTable still refuses it on its own.
+func tableInService(status string, hasOpenOrder bool) bool {
+	return hasOpenOrder || status == entity.TableStatusOccupied || status == entity.TableStatusReserved
+}
+
+// ensureTableEditable refuses a table that is in service.
+//
+// The caller must hold the table's row lock (FindTableForUpdate). OpenOrder
+// takes that same lock before it seats anyone, so the answer cannot go stale
+// between this check and the write that follows it.
+//
+// Only the management entry points call this, plus UpdateTableStatus for a
+// switch to `inactive` alone, which is the open/closed switch by another road.
+// Every other status change, the booking paths and the whole order flow
+// (OrderService, on its own repository) move a table in and out of service and
+// must never be refused by it.
+func ensureTableEditable(tx *repository.TableRepository, restaurantID uint, table *entity.RestaurantTable) error {
+	return ensureTablesEditable(tx, restaurantID, []entity.RestaurantTable{*table})
+}
+
+// ensureTablesEditable is ensureTableEditable for a set of tables at once, as a
+// zone edit needs. The caller must hold every row's lock.
+func ensureTablesEditable(tx *repository.TableRepository, restaurantID uint, tables []entity.RestaurantTable) error {
+	ids := make([]uint, 0, len(tables))
+	for _, table := range tables {
+		// The status alone decides most refusals, without a query.
+		if tableInService(table.Status, false) {
+			return ErrTableInUse
+		}
+		ids = append(ids, table.ID)
+	}
+	withOpenOrder, err := tx.TablesWithOpenOrder(restaurantID, ids)
+	if err != nil {
+		return err
+	}
+	for _, table := range tables {
+		if tableInService(table.Status, withOpenOrder[table.ID]) {
+			return ErrTableInUse
+		}
+	}
+	return nil
+}
+
 func (s *TableService) ListTables(restaurantID uint) ([]entity.RestaurantTable, error) {
 	tables, err := s.repo.ListTables(restaurantID)
 	if err != nil {
@@ -93,6 +151,13 @@ func (s *TableService) UpdateTable(restaurantID, tableID uint, req *TableRequest
 		if err != nil {
 			return err
 		}
+		// Refused before the body is even read: a table in service takes no
+		// edit at all, so what the edit would have been does not matter. This
+		// also covers the old "table has an open order" refusal, since an open
+		// order is one of the things that puts a table in service.
+		if err := ensureTableEditable(tx, restaurantID, table); err != nil {
+			return err
+		}
 		next, err := tableFromRequest(tx, restaurantID, req)
 		if err != nil {
 			return err
@@ -100,14 +165,7 @@ func (s *TableService) UpdateTable(restaurantID, tableID uint, req *TableRequest
 		if err := validateMetadataTableStatus(table.Status, next.Status); err != nil {
 			return err
 		}
-		hasOpenOrder, err := tx.HasOpenOrderForTable(restaurantID, tableID)
-		if err != nil {
-			return err
-		}
 		applyTableMetadataUpdate(table, next)
-		if hasOpenOrder && table.Status != entity.TableStatusOccupied {
-			return errors.New("table has an open order")
-		}
 		if err := tx.UpdateTable(table); err != nil {
 			return err
 		}
@@ -135,6 +193,15 @@ func (s *TableService) UpdateTableStatus(restaurantID, userID, tableID uint, sta
 		table, err := tx.FindTableForUpdate(restaurantID, tableID)
 		if err != nil {
 			return err
+		}
+		// Switching a table off is the open/closed switch of table management,
+		// reachable here too. A table in service is closed through the service
+		// steps first, never switched off over its guests or its booking. Every
+		// other status on this endpoint is a service step and stays unguarded.
+		if status == entity.TableStatusInactive {
+			if err := ensureTableEditable(tx, restaurantID, table); err != nil {
+				return err
+			}
 		}
 		hasOpenOrder, err := tx.HasOpenOrderForTable(restaurantID, tableID)
 		if err != nil {
@@ -468,6 +535,10 @@ func (s *TableService) RegenerateCustomerToken(restaurantID, tableID uint) (*ent
 		if err != nil {
 			return err
 		}
+		// A new token kills the QR the guests at this table are ordering from.
+		if err := ensureTableEditable(tx, restaurantID, table); err != nil {
+			return err
+		}
 		customerToken, err := GenerateCustomerTableToken()
 		if err != nil {
 			return err
@@ -491,11 +562,17 @@ func (s *TableService) DeleteTable(restaurantID, tableID uint) error {
 		if err != nil {
 			return err
 		}
+		if err := ensureTableEditable(tx, restaurantID, table); err != nil {
+			return err
+		}
+		// Past the check above only a booking for later can still be active: a
+		// free table the floor keeps selling until the guests arrive, which is
+		// still somebody's booking and so still not deletable.
 		hasActiveReservation, err := tx.HasActiveReservation(restaurantID, tableID)
 		if err != nil {
 			return err
 		}
-		if table.Status == entity.TableStatusReserved || hasActiveReservation {
+		if hasActiveReservation {
 			return errors.New("table has an active reservation; cancel it first")
 		}
 		referenced, err := tx.HasAnyOrderForTable(restaurantID, tableID)
@@ -595,7 +672,9 @@ func (s *TableService) BulkCreateTables(restaurantID uint, req *BulkCreateTables
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.ListTables(restaurantID)
+	// The whole floor, as GET /tables answers it: the web and the app replace
+	// their list with this, so it carries the bookings for later too.
+	return s.ListTables(restaurantID)
 }
 
 func (s *TableService) MoveTableZone(restaurantID, tableID uint, req *MoveTableZoneRequest) (*entity.RestaurantTable, error) {
@@ -603,6 +682,11 @@ func (s *TableService) MoveTableZone(restaurantID, tableID uint, req *MoveTableZ
 	err := s.repo.Transaction(func(tx *repository.TableRepository) error {
 		table, err := tx.FindTableForUpdate(restaurantID, tableID)
 		if err != nil {
+			return err
+		}
+		// A move relabels the table, so the bill and the kitchen tickets of the
+		// guests sitting at it would name a table that no longer exists.
+		if err := ensureTableEditable(tx, restaurantID, table); err != nil {
 			return err
 		}
 		zone, zoneID, err := zoneContext(tx, restaurantID, req.ZoneID)
@@ -659,6 +743,22 @@ func (s *TableService) UpdateZone(restaurantID, zoneID uint, req *TableZoneReque
 		}
 		prefixChanged := strings.TrimSpace(zone.Prefix) != strings.TrimSpace(next.Prefix)
 		nameChanged := zone.Name != next.Name
+		var tables []entity.RestaurantTable
+		if prefixChanged || nameChanged {
+			tables, err = tx.ListTablesInZoneForUpdate(restaurantID, zone.ID)
+			if err != nil {
+				return err
+			}
+		}
+		// A new prefix relabels every table in the zone (A03 becomes B03), which
+		// is an edit to each of those tables, so one table in service refuses the
+		// whole change. A rename, a reorder or a new display order leaves every
+		// table's label alone and stays open while the floor is busy.
+		if prefixChanged {
+			if err := ensureTablesEditable(tx, restaurantID, tables); err != nil {
+				return err
+			}
+		}
 		zone.Name = next.Name
 		zone.Prefix = next.Prefix
 		zone.DisplayOrder = next.DisplayOrder
@@ -666,21 +766,16 @@ func (s *TableService) UpdateZone(restaurantID, zoneID uint, req *TableZoneReque
 		if err := tx.UpdateZone(zone); err != nil {
 			return err
 		}
-		if prefixChanged || nameChanged {
-			tables, err := tx.ListTablesInZone(restaurantID, zone.ID)
-			if err != nil {
-				return err
+		// Empty unless the name or the prefix changed.
+		for i := range tables {
+			tables[i].Zone = zone.Name
+			if prefixChanged {
+				label := tableLabel(zone, tables[i].SequenceNumber)
+				tables[i].TableNumber = label
+				tables[i].DisplayLabel = label
 			}
-			for i := range tables {
-				tables[i].Zone = zone.Name
-				if prefixChanged {
-					label := tableLabel(zone, tables[i].SequenceNumber)
-					tables[i].TableNumber = label
-					tables[i].DisplayLabel = label
-				}
-				if err := tx.UpdateTable(&tables[i]); err != nil {
-					return err
-				}
+			if err := tx.UpdateTable(&tables[i]); err != nil {
+				return err
 			}
 		}
 		updated = zone

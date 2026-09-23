@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   tableTileStatus,
+  sharedTileLabelSize,
   tableTileTones,
   tileIsMuted,
   tileToneFor,
@@ -200,17 +201,19 @@ test('the booking chip is a clock and a time, with no word', async () => {
   assert.doesNotMatch(source, /bookedLabel|'จอง'/);
 });
 
-test('a long table label shrinks instead of truncating', async () => {
+test('every label is one size, and a long one is cut in the middle', async () => {
   const source = await readFile(
     path.join(mobileRoot, 'src', 'components', 'compact-table-tile.tsx'),
     'utf8',
   );
 
-  // Zone prefixes produce real labels like `ZONE-11`. At a fixed size five of
-  // those truncate to an identical `ZONE...`, which is a row of tables nobody
-  // can tell apart - it shipped that way and was visible on the floor.
-  assert.match(source, /adjustsFontSizeToFit/);
-  assert.match(source, /minimumFontScale=/);
+  // Shrinking to fit made a grid of mixed sizes - T1 at 20pt beside a shrunken
+  // GARDENXY01 (owner, 2026-09-22). One size for all.
+  assert.doesNotMatch(source, /adjustsFontSizeToFit/);
+  // Zone prefixes produce labels like `ZONE-11`. Cut at the end, five of them
+  // read as an identical `ZONE...`; cut in the middle, the number that tells
+  // them apart survives (`ZON...-11`).
+  assert.match(source, /ellipsizeMode="middle"/);
 });
 
 test('the compact tile drops the round status dot and the inert press', async () => {
@@ -260,13 +263,14 @@ test('the compact tile can grow when the reader enlarges their text', async () =
   // top of APP_FONT_SCALE. A fixed height would crop Thai tone marks silently;
   // the height also has to be built from scaleFont or it drifts the moment that
   // constant is retuned.
-  assert.match(source, /minHeight: TILE_MIN_HEIGHT/);
-  assert.match(source, /const TILE_MIN_HEIGHT =[\s\S]*?scaleFont\(/);
-  assert.doesNotMatch(source, /\n\s+height: TILE_MIN_HEIGHT/);
+  // The height follows the grid's shared label size, so it is a function now.
+  assert.match(source, /minHeight: tileMinHeight\(labelLine\)/);
+  assert.match(source, /function tileMinHeight\([\s\S]*?scaleFont\(/);
+  assert.doesNotMatch(source, /\n\s+height: tileMinHeight/);
 });
 
 test('the compact branch of the table grid renders the tile component', async () => {
-  const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
 
   // A call-site guard: the tone map and the component can both be perfect while
   // the grid quietly goes on drawing its own inline tile.
@@ -279,8 +283,43 @@ test('the compact branch of the table grid renders the tile component', async ()
 });
 
 test('a booked table announces the booking to a screen reader', async () => {
-  const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
 
   // The tag is visual only; without this the booking is announced nowhere.
   assert.match(source, /accessibilityLabel = copy\([\s\S]*?\$\{reminder \? `, \$\{reminder\}` : ''\}/);
+});
+
+test('the grid picks one label size that fits its widest table label', () => {
+  // Measured at 20pt: the widest label needs 150, a tile leaves 100 -> 13.
+  assert.equal(sharedTileLabelSize(150, 100), 13);
+  // Short labels everywhere keep the full 20pt; the size never grows past it.
+  assert.equal(sharedTileLabelSize(40, 100), 20);
+  // Rounded down to half points, so the widest label still fits.
+  assert.equal(sharedTileLabelSize(130, 100), 15);
+  // Never smaller than 12pt - past that the tile is unreadable anyway.
+  assert.equal(sharedTileLabelSize(1000, 100), 12);
+  // Nothing measured yet: the full size, not a flash of tiny labels.
+  assert.equal(sharedTileLabelSize(0, 100), 20);
+  assert.equal(sharedTileLabelSize(150, 0), 20);
+});
+
+test('another grid can share the rule at its own base and floor size', () => {
+  // The table-management plan measures at 18pt (under the 19-20 band) and
+  // stops at 12, the same rule over a different starting size.
+  assert.equal(sharedTileLabelSize(150, 100, 18, 12), 12);
+  assert.equal(sharedTileLabelSize(120, 100, 18, 12), 15);
+  assert.equal(sharedTileLabelSize(40, 100, 18, 12), 18);
+  assert.equal(sharedTileLabelSize(1000, 100, 18, 12), 12);
+  assert.equal(sharedTileLabelSize(0, 100, 18, 12), 18);
+  // Leaving the two out is the compact floor's own 20 and 12.
+  assert.equal(sharedTileLabelSize(40, 100), sharedTileLabelSize(40, 100, 20, 12));
+});
+
+test('the table map hands every compact tile the one shared label size', async () => {
+  // A tile left on its own default would sit at 20pt beside the shrunken rest.
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
+  const tiles = source.match(/<CompactTableTile\b[^>]*>/g) ?? [];
+  assert.equal(tiles.length, 2, 'a table tile and a takeaway tile');
+  for (const tile of tiles) assert.match(tile, /labelFontSize=\{labelFontSize\}/);
+  assert.match(source, /sharedTileLabelSize\(widestLabel, tileLabelRoom\)/);
 });

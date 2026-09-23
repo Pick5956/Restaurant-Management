@@ -46,7 +46,7 @@ test('the toast is out of the app until the owner designs its replacement', asyn
 
 test('screens report what a tap did through the feedback seam, not a banner that pushes the page down', async () => {
   const screens = [
-    ['app', '(primary)', 'kitchen.tsx'],
+    ['app', 'kitchen.tsx'],
     ['app', 'inventory.tsx'],
     ['app', 'order', 'bill.tsx'],
     ['app', 'order', '[id].tsx'],
@@ -65,7 +65,7 @@ test('screens report what a tap did through the feedback seam, not a banner that
 });
 
 test('the kitchen keeps its states inline and still routes outcomes through the seam', async () => {
-  const kitchen = await read('app', '(primary)', 'kitchen.tsx');
+  const kitchen = await read('app', 'kitchen.tsx');
 
   // A dropped live feed and a view-only account are true until they are not,
   // so they are not toasts.

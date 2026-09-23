@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { collectDayOrders, DAY_ORDERS_PAGE_LIMIT } from '@/src/lib/day-orders';
 import { buildOrderListPath } from '@/src/lib/order-query';
 import type { Bill, Order, OrderItemStatus, OrderStatus, OrderType } from '@/src/types/order';
 
@@ -33,6 +34,16 @@ export function listOrders(params?: {
   limit?: number;
 }) {
   return apiRequest<OrderListResponse>(buildOrderListPath(params));
+}
+
+/**
+ * Every order of one Bangkok day (YYYY-MM-DD), paging on has_more instead of
+ * stopping at the first 200. Resolves to `{ orders }` like listOrders, so a
+ * screen can swap one call for the other. Needs view_orders, as listOrders
+ * with a date does.
+ */
+export async function loadDayOrders(date: string): Promise<{ orders: Order[]; complete: boolean }> {
+  return collectDayOrders((page) => listOrders({ date, page, limit: DAY_ORDERS_PAGE_LIMIT }));
 }
 
 export function kitchenQueue() {

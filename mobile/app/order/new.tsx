@@ -1,14 +1,25 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
 
 import { createOrder } from '@/src/api/order';
 import { reserveTable } from '@/src/api/reservation';
 import { listTables } from '@/src/api/table';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
-import { AppTextInput as TextInput } from '@/src/components/app-text-input';
-import { ActionDock, Button, ChipGroup, EmptyState, Feedback, IconButton, Select, Surface, TextField } from '@/src/components/ui';
+import { FORM_MAX_WIDTH, PillTabs } from '@/src/components/form/parts';
+import { GuestCountPicker } from '@/src/components/open-table/guest-count-picker';
+import { TableLoadIssue } from '@/src/components/open-table/table-load-issue';
+import { Button, EmptyState, Select, Surface, TextField } from '@/src/components/ui';
+import { clampGuestCount, digitsOnly, parseGuestCount, seedGuestCount } from '@/src/lib/guest-count';
+import {
+  openTableFailure,
+  openTableFailureCode,
+  openTableIssueLine,
+  openTableIssueRetries,
+  type OpenTableFailureCode,
+  type OpenTableIssue,
+} from '@/src/lib/open-table-error';
 import { can } from '@/src/lib/rbac';
 import {
   defaultReservationSlot,
@@ -19,15 +30,20 @@ import {
 import { canOpenDineInOrder } from '@/src/lib/table-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { breakpoints, controlShadow, palette, radius, spacing, typeScale } from '@/src/theme';
+import { useToast } from '@/src/providers/toast-provider';
+import { palette, spacing, typeScale } from '@/src/theme';
 import type { RestaurantTable } from '@/src/types/table';
 
+type TableLoad = 'idle' | 'loading' | 'ready' | 'missing' | 'failed';
+type EntryMode = 'dine_in' | 'reservation';
+
+const FIELD_LABEL = { color: palette.text, fontSize: 13, fontWeight: '600' } as const;
+
 export default function NewOrderScreen() {
-  const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
+  const { showToast } = useToast();
   const canTakeOrder = can(activeMembership, 'take_order');
-  const tabletWorkspace = width >= breakpoints.tabletWorkspace;
   const params = useLocalSearchParams<{
     tableId?: string;
     type?: string;
@@ -37,19 +53,29 @@ export default function NewOrderScreen() {
   }>();
   const tableId = Number(params.tableId || 0);
   const [table, setTable] = useState<RestaurantTable | null>(null);
-  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway'>(params.type === 'takeaway' ? 'takeaway' : 'dine_in');
+  // Where the table stands, and why a load failed as a code rather than words,
+  // so switching the language re-words the line instead of leaving it behind.
+  const [tableLoad, setTableLoad] = useState<TableLoad>(() => (tableId ? 'loading' : 'idle'));
+  const [loadFailure, setLoadFailure] = useState<OpenTableFailureCode | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [orderType] = useState<'dine_in' | 'takeaway'>(params.type === 'takeaway' ? 'takeaway' : 'dine_in');
   const [customerCount, setCustomerCount] = useState(params.customerCount || '1');
   const [customerName, setCustomerName] = useState(params.customerName || '');
   const [customerPhone, setCustomerPhone] = useState(params.customerPhone || '');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // The field stays a string so the input can be empty mid-edit; every read
   // clamps it back to a valid count.
-  const guestCount = Math.max(1, Number.parseInt(customerCount || '1', 10) || 1);
-  const setGuestCount = (next: number) => setCustomerCount(String(Math.max(1, Math.min(9999, next))));
-  // The mode the chips select, not a modal flag: the reservation form lives on
-  // this page next to the table it belongs to.
+  const guestCount = parseGuestCount(customerCount);
+  // Set once the waiter has chosen a count, so a table answer that lands late
+  // does not put the seats-based guess back over their choice.
+  const guestTouched = useRef(false);
+  const setGuestCount = (next: number) => {
+    guestTouched.current = true;
+    setCustomerCount(String(clampGuestCount(next)));
+  };
+  // The mode the switch selects, not a modal flag: the reservation form lives
+  // on this page next to the table it belongs to.
   const [reserveMode, setReserveMode] = useState(false);
   const [reserveName, setReserveName] = useState('');
   const [reservePhone, setReservePhone] = useState('');
@@ -60,108 +86,78 @@ export default function NewOrderScreen() {
   // booking at a time earlier today.
   const [reserveSlot, setReserveSlot] = useState(() => defaultReservationSlot('today', new Date()));
   const [reserving, setReserving] = useState(false);
-  const [reserveError, setReserveError] = useState<string | null>(null);
+  // A booking's problems belong to a field: the phone, or the time.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [timeError, setTimeError] = useState<string | null>(null);
   const reserveSlots = reservationTimeSlots(reserveDay, new Date());
+
   useEffect(() => {
-    if (!canTakeOrder || !tableId) return;
+    if (!canTakeOrder || !tableId) return undefined;
+    let active = true;
+    setTableLoad('loading');
     listTables()
       .then((response) => {
+        if (!active) return;
         const next = response.tables.find((item) => item.ID === tableId) || null;
         setTable(next);
-        if (!next) {
-          setError(copy('ไม่พบโต๊ะที่เลือก กรุณากลับไปเลือกโต๊ะใหม่', 'The selected table was not found. Go back and choose a table again.'));
-        }
-        if (next && !params.customerCount) {
-          setCustomerCount(String(Math.max(1, Math.min(next.capacity || 1, 6))));
+        setLoadFailure(null);
+        setTableLoad(next ? 'ready' : 'missing');
+        if (next && !params.customerCount && !guestTouched.current) {
+          setCustomerCount(String(seedGuestCount(next.capacity)));
         }
       })
-      .catch((err) => {
-        setError(
-          err instanceof Error
-            ? err.message
-            : copy('โหลดข้อมูลโต๊ะไม่สำเร็จ', 'Could not load table details'),
-        );
+      .catch((err: unknown) => {
+        if (!active) return;
+        setLoadFailure(openTableFailureCode(err, 'load'));
+        setTableLoad('failed');
       });
-  }, [canTakeOrder, copy, params.customerCount, tableId]);
-  // One field, both modes. A booking is for a number of people just as much as
-  // an order is, and the party size is the thing the guest said on the phone.
+    return () => {
+      active = false;
+    };
+  }, [canTakeOrder, params.customerCount, tableId, reloadKey]);
+
+  const reloadTable = () => setReloadKey((key) => key + 1);
+
+  // One control, both modes. A booking is for a number of people just as much
+  // as an order is, and the party size is the thing the guest said on the phone.
   const guestCountField = (
-    <View style={{ gap: spacing.sm }}>
-      <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '600' }}>{copy('จำนวนลูกค้า', 'Guest count')}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <IconButton
-          accessibilityLabel={copy('ลดจำนวนลูกค้า', 'Decrease guest count')}
-          disabled={guestCount <= 1}
-          icon="remove"
-          onPress={() => setGuestCount(guestCount - 1)}
-          size={52}
-          variant="glass"
-        />
-        {/* Shadow on the wrapper: Android drops a box shadow set on a
-            TextInput, and this field sits between two lifted buttons. */}
-        <View style={{ flex: 1, minWidth: 0, borderRadius: radius.md, ...controlShadow }}>
-          <TextInput
-            accessibilityLabel={copy('จำนวนลูกค้า', 'Guest count')}
-            keyboardType="number-pad"
-            maxLength={4}
-            onBlur={() => setGuestCount(guestCount)}
-            onChangeText={(text) => setCustomerCount(text.replace(/[^0-9]/g, ''))}
-            selectTextOnFocus
-            style={[typeScale.number, {
-              width: '100%',
-              height: 52,
-              borderWidth: 1,
-              borderColor: palette.controlBorder,
-              borderRadius: radius.md,
-              backgroundColor: palette.surfaceSubtle,
-              fontSize: 20,
-              // Same weight as the total on the bill footer. typeScale.number is
-              // 800, which is heavier than anything else on the screen and made
-              // the count read as the loudest thing on a form.
-              fontWeight: '700',
-              textAlign: 'center',
-            }]}
-            value={customerCount}
-          />
-        </View>
-        <IconButton
-          accessibilityLabel={copy('เพิ่มจำนวนลูกค้า', 'Increase guest count')}
-          disabled={guestCount >= 9999}
-          icon="add"
-          onPress={() => setGuestCount(guestCount + 1)}
-          size={52}
-          variant="glass"
-        />
-      </View>
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        {/* Up and down rather than two sizes of up: overshooting is as common as
-            undershooting, and getting back down took ten taps of the stepper. */}
-        <Button compact label="+5" onPress={() => setGuestCount(guestCount + 5)} style={{ flex: 1 }} variant="glass" />
-        <Button compact label="−5" onPress={() => setGuestCount(guestCount - 5)} style={{ flex: 1 }} variant="glass" />
-      </View>
-    </View>
+    <GuestCountPicker
+      count={guestCount}
+      decreaseLabel={copy('ลดจำนวนลูกค้า', 'Decrease guest count')}
+      increaseLabel={copy('เพิ่มจำนวนลูกค้า', 'Increase guest count')}
+      label={copy('จำนวนลูกค้า', 'Guest count')}
+      onBlur={() => setCustomerCount(String(guestCount))}
+      onChange={setGuestCount}
+      onChangeText={(text) => {
+        guestTouched.current = true;
+        setCustomerCount(digitsOnly(text));
+      }}
+      quickLabel={(count) => copy(`${count} คน`, count === 1 ? '1 guest' : `${count} guests`)}
+      text={customerCount}
+    />
   );
 
   async function submitReservation() {
     if (!tableId) return;
+    setPhoneError(null);
+    setTimeError(null);
     // Same floor the reservation screen enforces, so a number the backend would
-    // reject never leaves this sheet.
+    // reject never leaves this form.
     if (reservePhone.replace(/\D/g, '').length < 9) {
-      setReserveError(copy('กรอกเบอร์โทรอย่างน้อย 9 หลัก', 'Enter a phone number with at least 9 digits.'));
+      setPhoneError(copy('กรอกเบอร์โทรอย่างน้อย 9 หลัก', 'Enter a phone number with at least 9 digits.'));
       return;
     }
     // The list is recomputed from the clock on every render, so a slot chosen a
-    // few minutes ago can drop out of it while this sheet is open — and
+    // few minutes ago can drop out of it while this form is open — and
     // `defaultReservationSlot` itself falls back to '19:00' once the day has no
     // bookable time left. Refusing here is the difference between saying so and
     // silently filing a booking in the past.
     if (reserveDay !== 'now' && !reserveSlots.includes(reserveSlot)) {
-      setReserveError(copy('เวลาที่เลือกผ่านไปแล้ว เลือกเวลาใหม่', 'That time has already passed. Choose another.'));
+      setTimeError(copy('เวลาที่เลือกผ่านไปแล้ว เลือกเวลาใหม่', 'That time has already passed. Choose another.'));
       return;
     }
     const instant = reservationInstant(reserveDay, reserveSlot, new Date());
     setReserving(true);
-    setReserveError(null);
     try {
       await reserveTable(tableId, {
         reservation_phone: reservePhone.trim(),
@@ -171,9 +167,15 @@ export default function NewOrderScreen() {
         // out of service now instead of filing a booking for later.
         ...(instant ? { reserved_for: instant.toISOString() } : null),
       });
+      showToast({ title: copy('จองโต๊ะแล้ว', 'Table reserved') });
       router.back();
     } catch (err) {
-      setReserveError(err instanceof Error ? err.message : copy('จองโต๊ะไม่สำเร็จ', 'Could not reserve the table'));
+      const failure = openTableFailure(err, 'reserve', language);
+      const words = failure.message ?? failure.title;
+      if (failure.field === 'phone') setPhoneError(words);
+      else if (failure.field === 'time') setTimeError(words);
+      else showToast({ tone: 'error', title: failure.title, message: failure.message });
+      if (failure.stale) reloadTable();
     } finally {
       setReserving(false);
     }
@@ -182,16 +184,20 @@ export default function NewOrderScreen() {
   async function submit() {
     if (!canTakeOrder) return;
     if (orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))) {
-      setError(copy('เลือกโต๊ะที่ใช้งานได้ก่อนเปิดออเดอร์', 'Choose a valid table before opening the order.'));
+      showToast({
+        tone: 'error',
+        title: copy('เปิดออเดอร์ไม่สำเร็จ', 'Could not open the order'),
+        message: copy('เลือกโต๊ะที่ใช้งานได้ก่อนเปิดออเดอร์', 'Choose a valid table before opening the order.'),
+      });
       return;
     }
-    setSaving(true); setError(null);
+    const takeaway = orderType === 'takeaway';
+    setSaving(true);
     try {
-      const takeaway = orderType === 'takeaway';
       const order = await createOrder({
         table_id: takeaway ? null : tableId,
         order_type: orderType,
-        customer_count: Math.max(1, Number.parseInt(customerCount || '1', 10) || 1),
+        customer_count: guestCount,
         // Guest name and phone belong to takeaway only: a dine-in order is
         // identified by its table, and web POS sends neither field for dine-in.
         customer_name: takeaway ? customerName.trim() : '',
@@ -199,88 +205,161 @@ export default function NewOrderScreen() {
         note: note.trim(),
       });
       router.replace({ pathname: '/order/[id]', params: { id: String(order.ID) } });
-    } catch (err) { setError(err instanceof Error ? err.message : copy('เปิดออเดอร์ไม่สำเร็จ', 'Could not open the order')); }
-    finally { setSaving(false); }
+    } catch (err) {
+      const failure = openTableFailure(err, takeaway ? 'takeaway' : 'open', language);
+      showToast({ tone: 'error', title: failure.title, message: failure.message });
+      // Someone else opened, booked, switched off or removed this table
+      // meanwhile: read it again, so a table that is gone shows as missing and
+      // the action goes dim instead of failing the same way twice.
+      if (failure.stale && !takeaway) reloadTable();
+    } finally {
+      setSaving(false);
+    }
   }
+
   if (!canTakeOrder) return <AppScreen title={copy('เปิดออเดอร์', 'Open order')} topLevel={false}><EmptyState title={copy('ไม่มีสิทธิ์รับออเดอร์', 'No order-taking permission')} /></AppScreen>;
+
+  const takeaway = orderType === 'takeaway';
+  const tableLabel = table?.display_label;
+  const title = takeaway
+    ? copy('ออเดอร์ซื้อกลับบ้าน', 'Takeaway order')
+    : tableLabel
+      ? copy(`เปิด ${tableLabel}`, `Open ${tableLabel}`)
+      : copy('เปิดโต๊ะ', 'Open table');
+  // A dine-in form with no table to open says so, instead of leaving the
+  // button dimmed for no stated reason.
+  const tableIssue: OpenTableIssue | null = takeaway
+    ? null
+    : !tableId
+      ? 'no_table'
+      : tableLoad === 'missing'
+        ? 'missing'
+        : tableLoad === 'failed'
+          ? 'failed'
+          : null;
+
+  // One primary action, and it follows the mode: a reservation form under a
+  // button that says "Open order" is the lie the old chips told.
+  // A day with no bookable time left cannot be confirmed: the time field already
+  // says so, and the refusal inside submitReservation would only say "choose
+  // another" when there is none to choose.
+  const noSlotsLeft = reserveDay !== 'now' && !reserveSlots.length;
+  const primaryAction = reserveMode ? (
+    <Button
+      disabled={!tableId || noSlotsLeft}
+      label={copy('ยืนยันจอง', 'Confirm reservation')}
+      loading={reserving}
+      onPress={submitReservation}
+      pill
+    />
+  ) : (
+    <Button
+      disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))}
+      label={copy('เปิดออเดอร์', 'Open order')}
+      loading={saving || (orderType === 'dine_in' && tableLoad === 'loading')}
+      onPress={submit}
+      pill
+    />
+  );
+
   return (
-    <AppScreen
-      title={orderType === 'takeaway' ? copy('ออเดอร์ซื้อกลับบ้าน', 'Takeaway order') : copy(`เปิด ${table?.display_label || 'โต๊ะ'}`, `Open ${table?.display_label || 'table'}`)}
-      topLevel={false}
-      // The footer follows the mode too. A screen showing a reservation form
-      // under a button that says "Open order" is the same lie the chips told.
-      footer={tabletWorkspace ? undefined : reserveMode ? (
-        <ActionDock><Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} pill variant="glass" /></ActionDock>
-      ) : (
-        <ActionDock><Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} pill variant="glass" /></ActionDock>
-      )}
-    >
-      {error ? <Feedback title={copy('เปิดออเดอร์ไม่ได้', 'Could not open the order')} detail={error} tone="danger" /> : null}
-      <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
+    // No footer dock: the form is short, and a dock pinned to the bottom of a
+    // tall phone left a third of the screen blank between the last field and
+    // the button. The action sits right under the form instead, on every width.
+    <AppScreen title={title} topLevel={false} contentMaxWidth={FORM_MAX_WIDTH}>
+      <View style={{ gap: spacing.lg }}>
+        {tableIssue ? (
+          <TableLoadIssue
+            icon={tableIssue === 'failed' && loadFailure === 'offline' ? 'cloud-offline-outline' : 'alert-circle-outline'}
+            onRetry={openTableIssueRetries(tableIssue, loadFailure) ? reloadTable : undefined}
+            retryLabel={copy('ลองอีกครั้ง', 'Try again')}
+            text={openTableIssueLine(tableIssue, loadFailure, language)}
+          />
+        ) : null}
         {/* Only for the table entry. Arriving from the takeaway shortcut there
-            is no table and nothing to choose, so the row is not rendered at all
-            rather than shown with a dead option.
-            These chips pick a mode and the form below follows them. They used to
-            open a sheet for "Reserve" while staying selected on "Dine-in", which
-            left the screen claiming one thing and doing another. */}
-        {orderType === 'takeaway' ? null : (
-          <View style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 0.8 : undefined }}>
-            <ChipGroup
-              glass
-              fill
-              value={reserveMode ? 'reservation' : 'dine_in'}
-              onChange={(next) => {
-                setReserveError(null);
-                setReserveMode(next === 'reservation');
-              }}
-              options={[
-                { label: copy('ทานที่ร้าน', 'Dine-in'), value: 'dine_in' },
-                { label: copy('จองโต๊ะ', 'Reserve'), value: 'reservation' },
-              ]}
-            />
-          </View>
+            is no table and nothing to choose, so the switch is not rendered at
+            all rather than shown with a dead option. One track with one thumb:
+            the form below follows it. */}
+        {takeaway ? null : (
+          <PillTabs<EntryMode>
+            onChange={(next) => {
+              setPhoneError(null);
+              setTimeError(null);
+              setReserveMode(next === 'reservation');
+            }}
+            tabs={[
+              { key: 'dine_in', label: copy('ทานที่ร้าน', 'Dine-in') },
+              { key: 'reservation', label: copy('จองโต๊ะ', 'Reserve') },
+            ]}
+            value={reserveMode ? 'reservation' : 'dine_in'}
+          />
         )}
         {reserveMode ? (
-        <Surface style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.2 : undefined }}>
-          {reserveError ? <Feedback title={copy('จองโต๊ะไม่สำเร็จ', 'Could not reserve the table')} detail={reserveError} tone="danger" /> : null}
-          <TextField icon="person-outline" label={copy('ชื่อลูกค้า', 'Customer name')} value={reserveName} onChangeText={setReserveName} maxLength={80} />
-          <TextField icon="call-outline" label={copy('เบอร์โทร', 'Phone')} value={reservePhone} onChangeText={setReservePhone} keyboardType="phone-pad" maxLength={32} />
-          {guestCountField}
-          <ChipGroup
-            glass
-            fill
-            label={copy('เวลา', 'Time')}
-            value={reserveDay}
-            onChange={(next) => {
-              setReserveDay(next);
-              if (next !== 'now') setReserveSlot(defaultReservationSlot(next, new Date()));
-            }}
-            options={[
-              { label: copy('ตอนนี้', 'Now'), value: 'now' },
-              { label: copy('วันนี้', 'Today'), value: 'today' },
-              { label: copy('พรุ่งนี้', 'Tomorrow'), value: 'tomorrow' },
-            ]}
-          />
-          {reserveDay === 'now' ? null : (
-            <Select value={reserveSlot} onChange={setReserveSlot} options={reserveSlots.map((slot) => ({ label: slot, value: slot }))} />
-          )}
-          {tabletWorkspace ? <Button label={copy('ยืนยันจอง', 'Confirm reservation')} onPress={submitReservation} loading={reserving} pill variant="glass" /> : null}
-        </Surface>
+          <Surface>
+            <TextField icon="person-outline" label={copy('ชื่อลูกค้า', 'Customer name')} value={reserveName} onChangeText={setReserveName} maxLength={80} />
+            <TextField
+              error={phoneError}
+              icon="call-outline"
+              keyboardType="phone-pad"
+              label={copy('เบอร์โทร', 'Phone')}
+              maxLength={32}
+              onChangeText={(text) => {
+                setPhoneError(null);
+                setReservePhone(text);
+              }}
+              value={reservePhone}
+            />
+            {guestCountField}
+            <View style={{ gap: spacing.sm }}>
+              <Text style={FIELD_LABEL}>{copy('เวลา', 'Time')}</Text>
+              <PillTabs<ReservationDay>
+                onChange={(next) => {
+                  setTimeError(null);
+                  setReserveDay(next);
+                  if (next !== 'now') setReserveSlot(defaultReservationSlot(next, new Date()));
+                }}
+                role="radiogroup"
+                tabs={[
+                  { key: 'now', label: copy('ตอนนี้', 'Now') },
+                  { key: 'today', label: copy('วันนี้', 'Today') },
+                  { key: 'tomorrow', label: copy('พรุ่งนี้', 'Tomorrow') },
+                ]}
+                value={reserveDay}
+              />
+              {reserveDay === 'now' ? null : (
+                <Select
+                  disabled={!reserveSlots.length}
+                  onChange={(slot) => {
+                    setTimeError(null);
+                    setReserveSlot(slot);
+                  }}
+                  options={reserveSlots.map((slot) => ({ label: slot, value: slot }))}
+                  // A time that has dropped off the list, or a day with none
+                  // left, is said in the field rather than left blank.
+                  placeholder={reserveSlots.length ? copy('เลือกเวลา', 'Choose a time') : copy('วันนี้ไม่มีเวลาให้จองแล้ว', 'No times left today')}
+                  value={reserveSlot}
+                />
+              )}
+              {timeError ? (
+                <Text accessibilityLiveRegion="polite" style={[typeScale.caption, { color: palette.danger }]}>{timeError}</Text>
+              ) : null}
+            </View>
+          </Surface>
         ) : (
-        <Surface style={{ width: tabletWorkspace ? undefined : '100%', minWidth: 0, flex: tabletWorkspace ? 1.2 : undefined }}>
-          {guestCountField}
-          {orderType === 'takeaway' ? (
-            <>
-              <TextField icon="person-outline" label={copy('ชื่อลูกค้า (ไม่บังคับ)', 'Customer name (optional)')} placeholder={copy('เช่น คุณแนน', 'For example, Nan')} value={customerName} onChangeText={setCustomerName} maxLength={80} />
-              <TextField icon="call-outline" label={copy('เบอร์ลูกค้า (ไม่บังคับ)', 'Customer phone (optional)')} placeholder={copy('เช่น 081-234-5678', 'For example, 081-234-5678')} value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" maxLength={32} />
-            </>
-          ) : null}
-          {/* Two lines, not three. A table note is "แพ้กุ้ง" or "ขอโต๊ะริมหน้าต่าง",
-              and the box grows as it is typed into anyway. */}
-          <TextField label={copy('หมายเหตุโต๊ะ', 'Table note')} value={note} onChangeText={setNote} multiline minHeight={72} maxLength={1000} />
-          {tabletWorkspace ? <Button label={copy('เปิดออเดอร์', 'Open order')} onPress={submit} loading={saving} disabled={orderType === 'dine_in' && !canOpenDineInOrder(tableId, Boolean(table))} pill variant="glass" /> : null}
-        </Surface>
+          <Surface>
+            {guestCountField}
+            {takeaway ? (
+              <>
+                <TextField icon="person-outline" label={copy('ชื่อลูกค้า', 'Customer name')} value={customerName} onChangeText={setCustomerName} maxLength={80} />
+                <TextField icon="call-outline" label={copy('เบอร์ลูกค้า', 'Customer phone')} value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" maxLength={32} />
+              </>
+            ) : null}
+            {/* One line, not a block. A table note is "แพ้กุ้ง" or "ขอโต๊ะริม
+                หน้าต่าง"; a takeaway has no table, so there it is just a note. */}
+            <TextField label={takeaway ? copy('หมายเหตุ', 'Note') : copy('หมายเหตุโต๊ะ', 'Table note')} value={note} onChangeText={setNote} maxLength={1000} />
+          </Surface>
         )}
+        {primaryAction}
       </View>
     </AppScreen>
   );

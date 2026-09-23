@@ -8,7 +8,7 @@ import { useReducedMotion } from '@/src/components/motion';
 import { scaleFont } from '@/src/lib/app-font';
 import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
 import { reservationClock } from '@/src/lib/reservation-schedule';
-import { tileIsMuted, tileToneFor, type TableTileStatus } from '@/src/lib/table-tile-tone';
+import { TILE_LABEL_FONT, tileIsMuted, tileToneFor, type TableTileStatus } from '@/src/lib/table-tile-tone';
 import { palette, radius, spacing } from '@/src/theme';
 
 /**
@@ -47,7 +47,19 @@ const TILE_RADIUS = radius.md;
  * further out: AppText does not set `allowFontScaling={false}`, so the reader's
  * own OS text size stacks on top of ours and the tile has to be free to grow.
  */
-const TILE_MIN_HEIGHT = spacing.sm + scaleFont(30) + scaleFont(20) + spacing.sm;
+function tileMinHeight(labelLine: number) {
+  return spacing.xs + scaleFont(labelLine) + scaleFont(20) + spacing.sm;
+}
+
+/**
+ * The label's line box, kept at the 20pt label's 34 (1.7x) whatever size the
+ * grid picks. A fixed 34 under a smaller label left it floating in the middle
+ * of a line built for a bigger one, so it read as dropped from the top edge
+ * (owner, 2026-09-22); 1.7x is also what the stacked Thai marks in "ชื่อ" need.
+ */
+function labelLineHeight(fontSize: number) {
+  return Math.round(fontSize * 1.7);
+}
 
 export function CompactTableTile({
   label,
@@ -57,11 +69,13 @@ export function CompactTableTile({
   language,
   accessibilityLabel,
   onPress,
+  onLongPress,
   width,
   minWidth,
   maxWidth,
   flexGrow,
   flexBasis,
+  labelFontSize = TILE_LABEL_FONT,
 }: {
   label: string;
   statusLabel: string;
@@ -70,13 +84,18 @@ export function CompactTableTile({
   language: 'th' | 'en';
   accessibilityLabel: string;
   onPress: () => void;
+  /** The manager's shortcut into table management; left out, a long press does nothing new. */
+  onLongPress?: () => void;
   width?: number | `${number}%`;
   minWidth: number;
   maxWidth?: number;
   flexGrow: number;
   flexBasis: number | 'auto';
+  /** One size for the whole grid, from sharedTileLabelSize; the widest table label fits at it. */
+  labelFontSize?: number;
 }) {
   const tone = tileToneFor(status);
+  const labelLine = labelLineHeight(labelFontSize);
   const muted = tileIsMuted(status);
   const reducedMotion = useReducedMotion();
   const press = useRef(new Animated.Value(0)).current;
@@ -129,7 +148,7 @@ export function CompactTableTile({
   });
 
   const surface = {
-    minHeight: TILE_MIN_HEIGHT,
+    minHeight: tileMinHeight(labelLine),
     borderRadius: TILE_RADIUS,
     // Clips the wash into the corner radius. The shadow lives on the Pressable
     // one level out, because putting a shadow and an overflow clip on the same
@@ -154,30 +173,30 @@ export function CompactTableTile({
           opacity: washOpacity,
         }}
       />
-      <View style={{ paddingHorizontal: 9, paddingTop: spacing.sm, paddingBottom: 9 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.xs, minHeight: scaleFont(30) }}>
+      <View style={{ paddingHorizontal: 9, paddingTop: spacing.xs, paddingBottom: 9 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.xs, minHeight: scaleFont(labelLine) }}>
           {/* One ink on every live tile, never the status colour: scanning a
               mixed grid for "T12" must not depend on knowing its state first.
               Colour answers what state, ink answers which table.
 
-              adjustsFontSizeToFit rather than a length rule, because zone
-              prefixes make real labels like `ZONE-11`, and at a fixed 20pt
-              five of those truncate to an identical `ZONE…` — a row of tables
-              nobody can tell apart. The label shrinks into whatever width the
-              chip leaves it instead of being cut. No letterSpacing anywhere near
-              a Thai run: values small enough to be safe are too small to read,
-              and larger ones detach sara and tone marks from their consonant. */}
+              One size on every tile (owner, 2026-09-22): shrinking to fit
+              made T1 and a shrunken GARDENXY01 sit side by side at different
+              sizes. A label too long for the tile is cut in the middle, so
+              zone-prefixed labels like `ZONE-11` keep the number that tells
+              them apart (`ZON…-11`) instead of all reading `ZONE…`. Not
+              `selectable`: Android drops the ellipsis on selectable text. No
+              letterSpacing anywhere near a Thai run: values small enough to be
+              safe are too small to read, and larger ones detach sara and tone
+              marks from their consonant. */}
           <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.55}
+            ellipsizeMode="middle"
             numberOfLines={1}
-            selectable
             style={{
               minWidth: 0,
               flexShrink: 1,
               color: muted ? palette.muted : palette.textStrong,
-              fontSize: 20,
-              lineHeight: 30,
+              fontSize: labelFontSize,
+              lineHeight: labelLine,
               fontWeight: '700',
               fontVariant: ['tabular-nums'],
               textDecorationLine: muted ? 'line-through' : 'none',
@@ -235,6 +254,7 @@ export function CompactTableTile({
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         onPress={onPress}
+        onLongPress={onLongPress}
         onPressIn={() => animate(1)}
         onPressOut={() => animate(0)}
         // The same lift the assistant's glass controls carry. Whatever is behind

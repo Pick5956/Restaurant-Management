@@ -153,6 +153,35 @@ func TestApplyTableMetadataUpdateKeepsReservationWhileChangingCapacity(t *testin
 	}
 }
 
+func TestTableInServiceIsAnOpenOrderOrAnOccupiedOrReservedTable(t *testing.T) {
+	for _, testCase := range []struct {
+		status       string
+		hasOpenOrder bool
+		want         bool
+	}{
+		{status: entity.TableStatusFree, hasOpenOrder: false, want: false},
+		{status: entity.TableStatusInactive, hasOpenOrder: false, want: false},
+		{status: entity.TableStatusOccupied, hasOpenOrder: false, want: true},
+		{status: entity.TableStatusReserved, hasOpenOrder: false, want: true},
+		// The order decides even when the status column has drifted from it.
+		{status: entity.TableStatusFree, hasOpenOrder: true, want: true},
+		{status: entity.TableStatusOccupied, hasOpenOrder: true, want: true},
+		{status: entity.TableStatusReserved, hasOpenOrder: true, want: true},
+		{status: entity.TableStatusInactive, hasOpenOrder: true, want: true},
+	} {
+		if got := tableInService(testCase.status, testCase.hasOpenOrder); got != testCase.want {
+			t.Fatalf("tableInService(%q, %v) = %v, want %v", testCase.status, testCase.hasOpenOrder, got, testCase.want)
+		}
+	}
+}
+
+// Clients match this text to show their own wording for a locked table.
+func TestTableInUseRefusalTextIsStable(t *testing.T) {
+	if ErrTableInUse.Error() != "table is in use" {
+		t.Fatalf("ErrTableInUse = %q, want %q", ErrTableInUse.Error(), "table is in use")
+	}
+}
+
 func TestCustomerTableTokenIsStrongAndStrictlyValidated(t *testing.T) {
 	token, err := GenerateCustomerTableToken()
 	if err != nil {

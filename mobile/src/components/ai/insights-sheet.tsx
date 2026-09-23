@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
+import { insightKey } from '@/src/lib/ai-insight-key';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import type { AIInsight } from '@/src/types/ai';
 
@@ -16,9 +17,9 @@ import { ai } from './theme';
 // opens to list them, exactly as it does on the web. Tapping a card does
 // nothing else: it never sends a question on the owner's behalf.
 
-export function insightKey(insight: AIInsight): string {
-  return `${insight.kind}|${insight.title}|${insight.metric}`;
-}
+// Moved to src/lib/ai-insight-key.ts so the hub can count unseen insights
+// without this module; re-exported for the assistant screen.
+export { insightKey };
 
 function toneFor(severity: AIInsight['severity'], kind: string) {
   if (severity === 'critical') return { ...ai.rose, label: 'ด่วน', labelEn: 'Urgent' };

@@ -5,7 +5,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
-import { Platform, StatusBar as SystemStatusBar, View, useWindowDimensions } from 'react-native';
+import { LogBox, Platform, StatusBar as SystemStatusBar, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { TabletWorkspaceFrame } from '@/src/components/app-shell';
@@ -32,6 +32,15 @@ const topLevelScreenOptions = {
   animation: 'none' as const,
   gestureEnabled: false,
 };
+
+// Development only: Expo warns whenever the phone's live-reload socket to Metro
+// drops, which a locked screen, a switch to another app or a Wi-Fi blip all do.
+// The app itself is fine and a release build never shows it; the owner found
+// the banner popping up constantly (2026-09-23). A real bundling or runtime
+// error still shows.
+if (__DEV__) {
+  LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'Disconnected from Metro']);
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -116,7 +125,14 @@ function AppNavigator() {
           <Stack.Screen name="create-restaurant" />
           <Stack.Screen name="invite/manual" />
           <Stack.Screen name="invite/[token]" />
-          <Stack.Screen name="(primary)" options={topLevelScreenOptions} />
+          {/* The hub every signed-in session lands on (owner, 2026-09-23): the
+              phone dock is gone, and overview, tables, kitchen and orders are
+              rows on this screen that push like any other page. */}
+          <Stack.Screen name="more" options={topLevelScreenOptions} />
+          <Stack.Screen name="home" />
+          <Stack.Screen name="tables" />
+          <Stack.Screen name="kitchen" />
+          <Stack.Screen name="orders" />
           {/*
             Reservation history is reached from the table screens rather than
             from a menu entry of its own. It used to carry `presentation: 'modal'`
@@ -129,8 +145,6 @@ function AppNavigator() {
           <Stack.Screen name="reservations" />
           <Stack.Screen name="table-reservation" />
           <Stack.Screen name="table-management" />
-          <Stack.Screen name="table-management/table" />
-          <Stack.Screen name="table-management/zones" />
           <Stack.Screen name="order/[id]" />
           <Stack.Screen name="order/new" />
           <Stack.Screen name="menu" />

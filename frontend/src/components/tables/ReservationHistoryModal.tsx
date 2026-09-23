@@ -34,6 +34,7 @@ export default function ReservationHistoryModal({
   open,
   onClose,
   onChanged,
+  onSeatHold,
   canResolve = false,
   language,
 }: {
@@ -41,6 +42,12 @@ export default function ReservationHistoryModal({
   onClose: () => void;
   /** Called after a booking is closed here, so the floor behind can refresh. */
   onChanged?: () => void;
+  /**
+   * Seats a booking that is holding its table now by opening the order on it,
+   * as the table sheet does. Resolving such a booking as seated freed the table
+   * under the guests who had just sat down (audit, 2026-09-23).
+   */
+  onSeatHold?: (reservation: Reservation) => Promise<void>;
   canResolve?: boolean;
   language: "th" | "en";
 }) {
@@ -154,6 +161,17 @@ export default function ReservationHistoryModal({
     setResolvingId(reservation.ID);
     setConfirmCancelId(null);
     setError("");
+    if (status === "seated" && !reservation.reserved_for) {
+      try {
+        if (!onSeatHold) throw new Error(copy.resolveError);
+        await onSeatHold(reservation);
+      } catch (err) {
+        setError(reservationErrorMessage(apiErrorMessage(err), language, copy.resolveError));
+      } finally {
+        setResolvingId(null);
+      }
+      return;
+    }
     try {
       await resolveReservation(reservation.ID, status);
       await load();

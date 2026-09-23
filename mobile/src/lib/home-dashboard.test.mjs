@@ -315,6 +315,20 @@ test('an empty finished day has no curve', () => {
   assert.equal(homeRevenueCurve([], null), null);
 });
 
+test('before opening with nothing above ฿0 taken, the axis starts at the current hour, never after it', () => {
+  const zeroBill = { status: 'completed', order_type: 'dine_in', payment_status: 'paid', grand_total: 0, closed_at: '2026-09-11T01:10:00Z' }; // 08:10
+  const early = homeRevenueCurve([zeroBill], 8);
+  assert.equal(early.startHour, 8);
+  assert.equal(early.endHour, 8);
+  assert.deepEqual(early.cumulative, [0]);
+  const quiet = homeRevenueCurve([], 8);
+  assert.ok(quiet.startHour <= quiet.endHour);
+  assert.equal(quiet.startHour, 8);
+  // After opening the old rule holds: the axis still starts at 10:00.
+  assert.equal(homeRevenueCurve([zeroBill], 15).startHour, 10);
+  assert.equal(homeRevenueCurve([], 15).startHour, 10);
+});
+
 test("bangkokHour reads the hour in the shop's timezone", () => {
   assert.equal(bangkokHour('2026-09-11T17:00:00Z'), 0, 'midnight in Bangkok is hour 0, not 24');
   assert.equal(bangkokHour('2026-09-11T04:30:00Z'), 11);

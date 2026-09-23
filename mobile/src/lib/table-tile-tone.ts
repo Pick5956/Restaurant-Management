@@ -43,7 +43,8 @@ export type TableTileTone = {
   press: string;
 };
 
-export type TableTileStatus = 'free' | 'occupied' | 'reserved' | 'inactive';
+/** `takeaway` is not a table state: it paints the open takeaway orders the map lists in their own section. */
+export type TableTileStatus = 'free' | 'occupied' | 'reserved' | 'inactive' | 'takeaway';
 
 /**
  * White, not the status ink.
@@ -67,6 +68,9 @@ export const tableTileTones: Record<TableTileStatus, TableTileTone> = {
   // The palette's own warm dead grey, not a cool slate, so an out-of-service
   // table looks faded rather than imported from another app.
   inactive: { tint: 'rgba(235, 227, 219, 0.85)', fill: '#EBE3DB', ink: '#6B4636', chip: CHIP, press: '#9C8878' },
+  // Periwinkle, the web POS's takeaway blue (2026-09-22). Deeper and bluer than
+  // the reserved porcelain so a takeaway never reads as a booked table.
+  takeaway: { tint: 'rgba(191, 204, 242, 0.90)', fill: '#BFCCF2', ink: '#1E3A8A', chip: CHIP, press: '#1D4ED8' },
 };
 
 /**
@@ -94,4 +98,29 @@ export function tileToneFor(status: TableTileStatus): TableTileTone {
  */
 export function tileIsMuted(status: TableTileStatus): boolean {
   return status === 'inactive';
+}
+
+/** The compact tile's label size when every label fits, and the floor below which it stops shrinking. */
+export const TILE_LABEL_FONT = 20;
+export const TILE_LABEL_MIN_FONT = 12;
+
+/**
+ * One label size for the whole compact grid: the largest, in half points, at
+ * which the widest table label still fits the tile (owner, 2026-09-22 - every
+ * table name whole, and every name the same size). `widestAtBase` is that label
+ * measured at TILE_LABEL_FONT; `available` is the width a tile gives its label.
+ * Until both are known the grid shows the full size rather than a flash of
+ * tiny labels.
+ */
+export function sharedTileLabelSize(
+  widestAtBase: number,
+  available: number,
+  // Another grid can share the rule at its own sizes: the table-management
+  // plan measures at 18 (under the 19-20 band) and stops at 12.
+  base: number = TILE_LABEL_FONT,
+  min: number = TILE_LABEL_MIN_FONT,
+): number {
+  if (!(widestAtBase > 0) || !(available > 0)) return base;
+  const fitting = Math.floor(((base * available) / widestAtBase) * 2) / 2;
+  return Math.max(min, Math.min(base, fitting));
 }
