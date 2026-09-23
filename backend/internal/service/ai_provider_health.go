@@ -36,6 +36,9 @@ import (
 // provider. Rotating keys cannot fix it — the configuration has to change.
 var errModelUnavailable = errors.New("model unavailable at provider")
 
+// errKeyRejected is the sentinel for a key the provider refused (401/403).
+var errKeyRejected = errors.New("api key rejected by provider")
+
 // modelUnavailableError carries what the operator needs in order to fix it.
 type modelUnavailableError struct {
 	Provider string
@@ -65,8 +68,35 @@ func (e *rateLimitedError) Error() string {
 
 func (e *rateLimitedError) Is(target error) bool { return target == errRateLimit }
 
+// keyRejectedError is a 401 or 403: the provider refused the key itself —
+// revoked, a wrong project, the API not enabled for it. Every call with that key
+// fails the same way, so the rotation parks it like a rate limit, only for an
+// hour rather than a minute: nothing but a change in .env brings it back.
+//
+// Before this it was a plain HTTP error, "rotated" and forgotten, and the next
+// rotation cycle tried it again: on 23 ก.ย. 2569 key 1 of 5 answered 403 on
+// every question, one wasted round trip per cycle, logged as a warning nobody
+// acted on because the answer still came from key 2.
+type keyRejectedError struct {
+	Provider string
+	Status   int
+}
+
+func (e *keyRejectedError) Error() string {
+	return fmt.Sprintf("%s key rejected (HTTP %d) — revoked or not allowed for this API; check the key list in .env", e.Provider, e.Status)
+}
+
+func (e *keyRejectedError) Is(target error) bool { return target == errKeyRejected }
+
+// rejectedKeyCooldown is how long a refused key stays out of rotation.
+const rejectedKeyCooldown = time.Hour
+
 // retryAfterOf reports the wait a rate-limit error asked for.
 func retryAfterOf(err error) time.Duration {
+	var rejected *keyRejectedError
+	if errors.As(err, &rejected) {
+		return rejectedKeyCooldown
+	}
 	var limited *rateLimitedError
 	if errors.As(err, &limited) && limited.RetryAfter > 0 {
 		return limited.RetryAfter
@@ -286,6 +316,8 @@ func classifyProviderResponse(provider, operation, model string, resp *http.Resp
 		// The endpoint is fixed and correct, so a 404 here means the model name
 		// was not recognised — every key will answer the same way.
 		return newModelUnavailableError(provider, model)
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return &keyRejectedError{Provider: provider, Status: resp.StatusCode}
 	}
 	return newAIProviderHTTPError(provider, operation, resp.StatusCode)
 }

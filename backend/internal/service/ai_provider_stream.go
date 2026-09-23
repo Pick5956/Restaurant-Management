@@ -70,10 +70,10 @@ func (s *AIService) askSecondRoundGeminiStreamWithRotation(prompt string, overri
 			aiStage("error", "Gemini second-round (stream): %v — skipping remaining keys", err)
 			return "", "", err
 		}
-		if errors.Is(err, errRateLimit) {
+		if errors.Is(err, errRateLimit) || errors.Is(err, errKeyRejected) {
 			wait := retryAfterOf(err)
 			s.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
-			aiStage("warn", "Gemini second-round (stream) key %s rate limited → parked for %s", attempt.Label(), wait.Round(time.Second))
+			aiStage("warn", "Gemini second-round (stream) key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
 		aiStage("warn", "Gemini second-round (stream) key %s failed: %v → rotating", attempt.Label(), err)
@@ -191,10 +191,10 @@ func (s *AIService) askSecondRoundGroqStreamWithRotation(prompt string, opts aiP
 			aiStage("error", "Groq second-round (stream): %v — skipping remaining keys", err)
 			return "", "", err
 		}
-		if errors.Is(err, errRateLimit) {
+		if errors.Is(err, errRateLimit) || errors.Is(err, errKeyRejected) {
 			wait := retryAfterOf(err)
 			s.keyHealth.park("groq", attempt.Index, time.Now().Add(wait))
-			aiStage("warn", "Groq second-round (stream) key %s rate limited → parked for %s", attempt.Label(), wait.Round(time.Second))
+			aiStage("warn", "Groq second-round (stream) key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
 		aiStage("warn", "Groq second-round (stream) key %s failed: %v → rotating", attempt.Label(), err)

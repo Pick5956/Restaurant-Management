@@ -212,7 +212,7 @@ func (s *AIService) extractReceiptWithRotation(imageBase64, mimeType string) (*R
 			aiStage("error", "Gemini receipt: %v — skipping remaining keys", err)
 			return nil, err
 		}
-		if errors.Is(err, errRateLimit) {
+		if errors.Is(err, errRateLimit) || errors.Is(err, errKeyRejected) {
 			wait := retryAfterOf(err)
 			s.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Gemini receipt key %d/%d rate limited → parked for %s", attempt.Position, attempt.Total, wait.Round(time.Second))

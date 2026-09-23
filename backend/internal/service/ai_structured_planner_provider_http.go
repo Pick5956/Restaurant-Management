@@ -550,6 +550,9 @@ func (e *structuredPlannerProviderHTTPError) Unwrap() error { return e.Cause }
 // 429 never reaches here - runPlannerKeyRotation handles errRateLimit first and
 // parks the key - but it stays listed so the predicate is correct on its own.
 func structuredPlannerShouldTryNextKey(err error) bool {
+	if errors.Is(err, errKeyRejected) {
+		return true
+	}
 	var plannerErr *structuredPlannerProviderHTTPError
 	if errors.As(err, &plannerErr) {
 		return keyScopedProviderStatus(plannerErr.StatusCode)
@@ -709,6 +712,16 @@ func runPlannerKeyRotation(ctx context.Context, rotation plannerRotation) (Struc
 			if attempt.Position < attempt.Total {
 				stats.KeyFallbacks++
 			}
+			continue
+		}
+		// A refused key (401/403) is parked for an hour and counts as a
+		// fallback, not a rate limit: the next key is what answers, and nothing
+		// but a change in .env brings this one back.
+		if errors.Is(callErr, errKeyRejected) {
+			health.park(rotation.provider, attempt.Index, time.Now().Add(rejectedKeyCooldown))
+			aiStage("warn", "%s key %d/%d parked for %s: %v",
+				rotation.label, attempt.Position, attempt.Total, rejectedKeyCooldown, callErr)
+			stats.KeyFallbacks++
 			continue
 		}
 		if !structuredPlannerShouldTryNextKey(callErr) {
