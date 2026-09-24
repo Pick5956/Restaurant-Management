@@ -223,3 +223,27 @@ test('no hub style both casts a shadow and clips (Android drops the shadow)', ()
     }
   }
 });
+
+// Owner, 2026-09-25: ตั้งค่า, alone on the shelf's last row, stood wider than
+// the chips above it. A flex item's padding sits on top of its zero basis, so
+// the padded chip beside a bare spacer took 12pt more than its share. Every
+// chip now sits in a padding-free cell, spacer included, and fills it by
+// growing rather than by a zero basis, so a two-line title still sizes it.
+test('the shelf keeps a lone last chip the width of the chips above it', () => {
+  const shelf = hubCode('stage-shelf.tsx');
+  assert.match(shelf, /const GRID_CELL = \{ flex: 1, minWidth: 0 \} as const;/);
+  const grid = fnText(shelf, 'ChipGrid');
+  assert.match(grid, /\{row\.map\(\(item\) => <View key=\{item\.key\} style=\{GRID_CELL\}>\{render\(item\)\}<\/View>\)\}/);
+  assert.match(grid, /<View key=\{`pad-\$\{index\}`\} style=\{GRID_CELL\} \/>/);
+  const chip = fnText(shelf, 'ShelfChip');
+  assert.match(chip, /style=\{\(\{ pressed \}\) => \(\{\s*flexGrow: 1,\s*minHeight: height,/);
+  assert.doesNotMatch(chip, /flex: 1,\s*minWidth: 0,\s*minHeight: height/);
+});
+
+// Kanit leaves room under digits for Thai marks, so a count centred by its line
+// box sat high in the badge's ring (owner, 2026-09-25).
+test('the shelf badge nudges its digits down into the middle of the ring', () => {
+  const shelf = hubCode('stage-shelf.tsx');
+  assert.match(shelf, /const BADGE_DIGIT_DROP = 1;/);
+  assert.match(fnText(shelf, 'ChipBadge'), /transform: \[\{ translateY: BADGE_DIGIT_DROP \}\]/);
+});

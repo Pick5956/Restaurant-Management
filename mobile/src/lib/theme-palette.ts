@@ -8,6 +8,12 @@ export const palette = {
   // is a real orange and turns a plain list into a set of boxes. This is the
   // canvas warmth desaturated until it only separates.
   divider: '#EFE7DF',
+  // Every box a person types into or picks from, in every form (owner,
+  // 2026-09-25): the account form's white field with the `divider` hairline
+  // and no glow, in place of the cream fill and orange-brown edge. A focused
+  // field still takes the brand orange edge; an error the danger red.
+  fieldFill: '#FFFFFF',
+  fieldBorder: '#EFE7DF',
   borderStrong: '#B96E3F',
   controlBorder: '#C77948',
   text: '#3F2A20',

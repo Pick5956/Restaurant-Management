@@ -119,11 +119,17 @@ const reservationErrors: Record<string, { th: string; en: string }> = {
     th: "ไม่พบรายการจองนี้",
     en: "This reservation could not be found.",
   },
+  "table is not reserved": {
+    th: "โต๊ะนี้ไม่มีการจองแล้ว",
+    en: "This table is no longer reserved.",
+  },
 };
 
-/** The backend's reservation errors in the staff member's language. */
+/**
+ * The backend's reservation errors in the staff member's language. Anything
+ * unmapped gets the caller's own copy: the API's English is never shown.
+ */
 export function reservationErrorMessage(raw: string, language: "th" | "en", fallback = ""): string {
   const known = reservationErrors[raw.trim().toLowerCase()];
-  if (known) return known[language];
-  return raw.trim() || fallback;
+  return known ? known[language] : fallback;
 }

@@ -52,6 +52,10 @@ type IngredientRequest struct {
 	PackSize *float64 `json:"pack_size"`
 	CaseUnit *string  `json:"case_unit" binding:"omitempty,max=40"`
 	CaseSize *float64 `json:"case_size"`
+	// SkipExpense is set by the controller for a member without
+	// manage_expenses: the opening stock still comes in, but nothing is booked.
+	// The zero value books, so the owner-only AI path keeps its ledger rows.
+	SkipExpense bool `json:"-"`
 }
 
 type IngredientCategoryRequest struct {
@@ -75,6 +79,10 @@ type AdjustStockRequest struct {
 	// ExpiresAt dates the lot a stock-in creates (YYYY-MM-DD). Ignored for
 	// "out" and "adjust", which never create a dated lot.
 	ExpiresAt string `json:"expires_at" binding:"max=10"`
+	// SkipExpense is set by the controller for a member without
+	// manage_expenses: the stock still moves, but nothing is booked. The zero
+	// value books, so the owner-only AI path keeps its ledger rows.
+	SkipExpense bool `json:"-"`
 }
 
 const (
@@ -257,6 +265,12 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 		if initialTx == nil {
 			return nil
 		}
+		// The controller only refuses a typed amount; the valuation built into
+		// the opening movement would still write the ledger row the member
+		// may not write.
+		if req.SkipExpense {
+			initialTx.Amount = 0
+		}
 		if openingNote != "" {
 			initialTx.Note += " · " + openingNote
 		}
@@ -277,6 +291,13 @@ func (s *IngredientService) Create(restaurantID, userID uint, req *IngredientReq
 	}
 	return attachUnitFamily(ingredient, nil)
 }
+
+// ErrIngredientUnitLocked refuses a stock-unit change on an ingredient a menu
+// recipe uses, since the recipe's amounts are in the old unit. Staff can act
+// on it, so the API answers it with its own code (ingredient_unit_locked)
+// rather than the generic invalid_request every other 400 carries. The text is
+// kept as it was: the web inventory form still matches it.
+var ErrIngredientUnitLocked = errors.New("cannot change stock units while ingredient is used by a menu recipe")
 
 func (s *IngredientService) Update(restaurantID, ingredientID uint, req *IngredientRequest) (*entity.Ingredient, error) {
 	name, unit, storageType, categoryID, err := s.normalizeIngredientFields(restaurantID, req)
@@ -302,7 +323,7 @@ func (s *IngredientService) Update(restaurantID, ingredientID uint, req *Ingredi
 			return nil, err
 		}
 		if referenced {
-			return nil, errors.New("cannot change stock units while ingredient is used by a menu recipe")
+			return nil, ErrIngredientUnitLocked
 		}
 	}
 	packs, err := resolvePackFields(req, unit, packFieldsOf(ingredient))
@@ -390,8 +411,8 @@ func (s *IngredientService) AdjustStock(restaurantID, ingredientID, userID uint,
 		}
 		// Nobody said what this restock cost, so value it at the ingredient's
 		// cost per unit. Only inside the transaction is that rate known.
-		if amount == 0 && kind == "in" {
-			amount = referenceRestockAmount(ingredient.CostPerUnit, quantity)
+		if kind == "in" {
+			amount = bookedRestockAmount(req.SkipExpense, amount, ingredient.CostPerUnit, quantity)
 		}
 		stockTransaction := &entity.IngredientTransaction{
 			RestaurantID: restaurantID,
@@ -600,6 +621,20 @@ func referenceRestockAmount(costPerUnit, quantity float64) float64 {
 		return maxIngredientCost
 	}
 	return rounded
+}
+
+// bookedRestockAmount is what a stock-in puts on the ledger: the typed amount,
+// or the ingredient's own rate when nobody typed one. A member who may not
+// write expenses books nothing, so no Expense row can follow — the ledger
+// write downstream is gated on a positive amount.
+func bookedRestockAmount(skipExpense bool, amount, costPerUnit, quantity float64) float64 {
+	if skipExpense {
+		return 0
+	}
+	if amount > 0 {
+		return amount
+	}
+	return referenceRestockAmount(costPerUnit, quantity)
 }
 
 // buildRestockExpense mirrors a stock-in into the expense ledger. Callers must

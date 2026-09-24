@@ -28,10 +28,11 @@ export type StageTileRow =
 
 /**
  * The floor tile runs full width, kitchen and orders pair up under it, and the
- * order is the same for every role. Orders pairs only when it has a value: a
- * member with take_order but not view_orders may open the archive but cannot
- * count it, and a tile with nothing under its title would stretch to the
- * kitchen's height as an empty box. It drops to a compact wide tile instead.
+ * order is the same for every role. Orders pairs only when it has a value. The
+ * orders row and its paid count share one gate now (view_orders), so a member
+ * who sees the row can count it; the check stays because a tile with nothing
+ * under its title would stretch to the kitchen's height as an empty box. It
+ * drops to a compact wide tile instead.
  */
 export function stageTileRows(keys: readonly HubRowKey[], ordersHasValue: boolean): StageTileRow[] {
   const has = (key: StageTileKey) => keys.includes(key);

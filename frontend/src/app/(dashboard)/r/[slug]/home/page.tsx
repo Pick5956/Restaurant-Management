@@ -45,7 +45,7 @@ import {
 } from "@/src/lib/homeDashboard";
 import { listExpenses, type Expense, type ExpenseCategory, type ExpenseDailyTotal } from "@/src/lib/expense";
 import { listIngredients } from "@/src/lib/ingredient";
-import { getOrderBill, kitchenQueue, listOrders } from "@/src/lib/order";
+import { getOrderBill, kitchenQueue, listAllOrders } from "@/src/lib/order";
 import { orderPosHref } from "@/src/lib/orderNavigation";
 import {
   getManagerReport,
@@ -925,6 +925,13 @@ export default function Home() {
   const { activeMembership } = useAuth();
   const restaurantId = activeMembership?.restaurant_id ?? null;
   const canViewDashboard = can(activeMembership, "view_dashboard");
+  // Each live endpoint has its own gate on the server: the order list needs
+  // view_orders, the floor any table permission, the queue view_kitchen. A
+  // request the member cannot make is not sent, so the cards they can see
+  // still load instead of one 403 blanking the page.
+  const canViewOrders = can(activeMembership, "view_orders");
+  const canViewTables = can(activeMembership, "take_order") || can(activeMembership, "view_tables") || can(activeMembership, "manage_table");
+  const canViewKitchen = can(activeMembership, "view_kitchen");
   const canViewExpenses = can(activeMembership, "manage_expenses") || can(activeMembership, "view_reports");
   const canViewReports = can(activeMembership, "view_reports");
   const { language } = useLanguage();
@@ -1220,28 +1227,28 @@ export default function Home() {
     setError("");
 
     try {
-      const [orderRes, liveData] = await Promise.all([
-        listOrders({ date: selectedDate, limit: 200 }),
+      const [orderRows, liveData] = await Promise.all([
+        canViewOrders ? listAllOrders({ date: selectedDate }) : Promise.resolve([]),
         isToday
           ? Promise.all([
-              listTables(),
-              kitchenQueue(),
-              listIngredients().catch(() => ({ data: { ingredients: [] as Ingredient[] } })),
+              canViewTables ? listTables().then((res) => res.data.tables ?? []) : Promise.resolve([]),
+              canViewKitchen ? kitchenQueue().then((res) => res.data.orders ?? []) : Promise.resolve([]),
+              listIngredients().then((res) => res.data.ingredients ?? []).catch(() => [] as Ingredient[]),
             ])
           : Promise.resolve(null),
       ]);
       if (requestId !== requestIdRef.current) return;
 
-      const nextOrders = uniqueOrdersById(orderRes.data.orders ?? []);
+      const nextOrders = uniqueOrdersById(orderRows);
       setOrders(nextOrders);
       if (liveData) {
-        const [tableRes, kitchenRes, ingredientRes] = liveData;
+        const [floorTables, queueOrders, ingredientRows] = liveData;
         // Deduped by ticket, not by order: the queue sends one ticket per
         // round, so a table's second round shares its order's ID and would be
         // dropped by `uniqueOrdersById`.
-        setKitchenOrders(uniqueKitchenTickets(kitchenRes.data.orders ?? []));
-        setTables(toDashboardFloorTables(tableRes.data.tables ?? [], nextOrders, new Date()));
-        setIngredients(ingredientRes.data.ingredients ?? []);
+        setKitchenOrders(uniqueKitchenTickets(queueOrders));
+        setTables(toDashboardFloorTables(floorTables, nextOrders, new Date()));
+        setIngredients(ingredientRows);
       } else {
         setKitchenOrders([]);
         setTables([]);
@@ -1258,7 +1265,7 @@ export default function Home() {
         setRefreshing(false);
       }
     }
-  }, [activeMembership?.restaurant_id, canViewDashboard, copy.loadError, isToday, selectedDate]);
+  }, [activeMembership?.restaurant_id, canViewDashboard, canViewKitchen, canViewOrders, canViewTables, copy.loadError, isToday, selectedDate]);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void loadOperations(), 0);
@@ -2313,7 +2320,8 @@ export default function Home() {
                       <table className="w-full text-left text-[12px]">
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                           {monthTopItems.slice(0, 8).map((item, index) => (
-                            <tr key={item.menu_id}>
+                            // Grouped by id and the name sold under: a renamed dish is two rows.
+                            <tr key={`${item.menu_id}-${item.menu_name}`}>
                               <td className="py-1.5 pr-3 font-mono text-gray-500">{index + 1}</td>
                               <td className="py-1.5 pr-3 text-gray-600 dark:text-gray-300">{item.menu_name}</td>
                               <td className="py-1.5 pl-3 text-right font-mono font-semibold tabular-nums text-gray-950 dark:text-white">{formatNumber(item.quantity, language, 0)} {copy.dishes}</td>

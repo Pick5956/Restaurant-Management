@@ -1,5 +1,5 @@
-import { Redirect, router, usePathname } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Redirect, router, useNavigationContainerRef, usePathname } from 'expo-router';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Keyboard,
@@ -13,6 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type StyleProp,
+  type ViewProps,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,13 +40,19 @@ import {
 } from '@/src/lib/app-shell-runtime';
 import {
   COMPACT_HEADER_BAND,
+  COMPACT_ROW_BAND,
   compactHeaderProgress,
   compactHeaderRange,
+  compactRowHandoff,
+  compactRowProgress,
+  compactRowRange,
   nextCompactShown,
 } from '@/src/lib/compact-header';
+import { goBackOr, leaveForWorkspaceRoute, rootStackRouteNames } from '@/src/lib/navigation-runtime';
 import { orderRoutePermissions } from '@/src/lib/permission-parity';
 import { can } from '@/src/lib/rbac';
 import { restingMaxOffset, strandedScrollTarget } from '@/src/lib/scroll-bounds';
+import { WORKSPACE_HUB_ROUTE } from '@/src/lib/workspace-route';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
@@ -136,20 +143,81 @@ export type AppScreenScrollControl = {
    *  now, in points below the status bar; 0 while it is hidden. Anything that
    *  scrolls when a finger nears the top edge has to start that far down. */
   getTopCover?: () => number;
+  /** Scroll to the compact row's hand-off: the bar and its row fully in, the
+   *  page's own controls just under them, and the content starting right
+   *  below. For a control in the bar's row that replaces the list - a search
+   *  typed from deep in it - so the new list is read from its top without the
+   *  page going back to its heading. A no-op until the hand-off is measured. */
+  scrollToCompactRow?: (animated?: boolean) => void;
 };
+
+/**
+ * Where a page's own copy of its compact-row controls is, for the bar to hand
+ * off at. The content view the position is measured against, and the shell's
+ * setters, handed down to `CompactRowAnchor` inside the content.
+ */
+type CompactRowAnchorHost = {
+  contentRef: React.RefObject<View | null>;
+  /** Registers the anchor's own measure, for the shell to run again when the
+   *  content changes size; returns the detach, which clears the anchor. */
+  attach: (measure: () => void) => () => void;
+  report: (box: { y: number; height: number } | null) => void;
+};
+
+const CompactRowAnchorContext = createContext<CompactRowAnchorHost | null>(null);
+
+/**
+ * Wraps the page's own copy of the controls its `compactRow` carries. The
+ * shell measures where it is and hands the compact row over exactly as this
+ * reaches the bar's row slot, so the controls are never drawn twice. Outside
+ * a collapsing AppScreen it is a plain View.
+ */
+export function CompactRowAnchor({ children, onLayout, ...rest }: ViewProps) {
+  const host = useContext(CompactRowAnchorContext);
+  const ref = useRef<View>(null);
+  const hostRef = useRef(host);
+  hostRef.current = host;
+  const measure = useCallback(() => {
+    const current = hostRef.current;
+    const node = ref.current;
+    const content = current?.contentRef.current;
+    if (!current || !node || !content) return;
+    // Against the content view, not the window: a window measurement would
+    // have to be paired with the offset at the same instant, and the page
+    // moves under the keyboard.
+    node.measureLayout(content, (_x, y, _width, height) => current.report({ y, height }), () => undefined);
+  }, []);
+  useEffect(() => {
+    if (!host) return undefined;
+    return host.attach(measure);
+  }, [host, measure]);
+  return (
+    // A wrapper around a primitive forwards what it does not use; the one
+    // prop it shares, onLayout, runs the caller's and then its own.
+    <View
+      {...rest}
+      onLayout={(event) => {
+        onLayout?.(event);
+        if (host) measure();
+      }}
+      ref={ref}
+    >
+      {children}
+    </View>
+  );
+}
 
 type NavigationMode = 'rail' | 'expanded';
 
 function NavigationButton({
   item,
   mode,
-  onSelect,
 }: {
   item: NavItem;
   mode: NavigationMode;
-  onSelect?: () => void;
 }) {
   const pathname = usePathname();
+  const navigationRef = useNavigationContainerRef();
   const { language } = useDisplayPreferences();
   const active = isActivePath(pathname, item.href);
   const label = language === 'th' ? item.label : item.labelEn;
@@ -161,13 +229,15 @@ function NavigationButton({
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
-      onPress={() => {
-        if (onSelect) {
-          onSelect();
-          return;
-        }
-        if (pathname !== item.href) router.replace(item.href as never);
-      }}
+      // A rail item is a switch between workspace screens, each standing on
+      // the hub: a replace from the hub dropped the hub (the wide rail has no
+      // hub item to get it back), and a push from one screen to the next grew
+      // the stack without end. The one already open is popped back to.
+      onPress={() => leaveForWorkspaceRoute(
+        router,
+        rootStackRouteNames(navigationRef.getRootState()),
+        item.href as never,
+      )}
       style={({ pressed }) => ({
         position: 'relative',
         minHeight: expanded ? 44 : 58,
@@ -205,13 +275,7 @@ function BrandBlock({ expanded }: { expanded: boolean }) {
   );
 }
 
-export function PrimaryTabletRail({
-  expanded,
-  onSelectPrimary,
-}: {
-  expanded: boolean;
-  onSelectPrimary?: (item: NavItem) => void;
-}) {
+export function PrimaryTabletRail({ expanded }: { expanded: boolean }) {
   const { activeMembership } = useAuth();
   const primary = primaryNavigation.filter((item) => (!expanded || item.key !== 'more') && isAllowed(item, activeMembership));
   const management = managementNavigation.filter((item) => item.key !== 'settings' && item.key !== 'staff' && isAllowed(item, activeMembership));
@@ -221,12 +285,7 @@ export function PrimaryTabletRail({
       <BrandBlock expanded={expanded} />
       <ScrollView contentContainerStyle={{ gap: spacing.xs, paddingVertical: spacing.sm }} showsVerticalScrollIndicator={false}>
         {primary.map((item) => (
-          <NavigationButton
-            item={item}
-            key={item.key}
-            mode={expanded ? 'expanded' : 'rail'}
-            onSelect={onSelectPrimary ? () => onSelectPrimary(item) : undefined}
-          />
+          <NavigationButton item={item} key={item.key} mode={expanded ? 'expanded' : 'rail'} />
         ))}
         {expanded ? (
           <>
@@ -243,10 +302,6 @@ export function TabletWorkspaceFrame({ children }: { children: React.ReactNode }
   const { width } = useWindowDimensions();
   const pathname = usePathname();
   const { activeMembership, status, user } = useAuth();
-  const isOnPrimaryRoot = primaryNavigation.some((item) => pathname === item.href);
-  const navigateToPrimaryRoot = useCallback((item: NavItem) => {
-    if (pathname !== item.href) router.navigate(item.href as never);
-  }, [pathname]);
   const showRail = shouldShowTabletWorkspaceRail({
     activeMembership: Boolean(activeMembership),
     authStatus: status,
@@ -265,10 +320,7 @@ export function TabletWorkspaceFrame({ children }: { children: React.ReactNode }
       }}
     >
       {showRail ? (
-        <PrimaryTabletRail
-          expanded={width >= breakpoints.expandedRail}
-          onSelectPrimary={isOnPrimaryRoot ? navigateToPrimaryRoot : undefined}
-        />
+        <PrimaryTabletRail expanded={width >= breakpoints.expandedRail} />
       ) : null}
       <View key="workspace-content" style={{ minWidth: 0, flex: 1 }}>
         {children}
@@ -350,7 +402,7 @@ export function ScreenHeading({
       {/* The assistant's round glass back button on every screen (15 ก.ย. 2569):
           real Liquid Glass on iOS 26, a white disc with a hairline elsewhere. */}
       {showBack ? (
-        <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />
+        <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => goBackOr(router, WORKSPACE_HUB_ROUTE)} />
       ) : null}
       {/* A single-line title against 44pt action buttons has to centre on them.
           Top-aligning it leaves the text sitting in the corner while the buttons
@@ -408,6 +460,7 @@ export function AppScreen({
   compactHeader = true,
   compactRow,
   compactAction,
+  pinCompactRow = false,
 }: {
   title: string;
   titleContent?: React.ReactNode;
@@ -500,6 +553,12 @@ export function AppScreen({
    *  Left undefined, the bar repeats `action`, which is only safe when a second
    *  press of it is harmless - a push, an idempotent open, a plain chip. */
   compactAction?: React.ReactNode;
+  /** Keep the bar and its row pinned even when the page is shorter than the
+   *  hand-off needs: the content is given the height that lets the page rest
+   *  there. For a stage run from the bar's row - a search typed into it -
+   *  whose results may be a few rows, or none; without it a short answer would
+   *  pull the heading back and take the field being typed into with it. */
+  pinCompactRow?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -554,6 +613,25 @@ export function AppScreen({
   const [compactShown, setCompactShown] = useState(false);
   const compactShownRef = useRef(false);
   const compactCoverRef = useRef(0);
+  // The bar's row hands off from the page's own row (`CompactRowAnchor`): the
+  // offset at which the two meet, from the anchor's box, the slot's box and
+  // the title's own collapse point. Null until all three are measured, when
+  // the row simply comes in with the title.
+  const [rowHandoffAt, setRowHandoffAt] = useState<number | null>(null);
+  const rowHandoffAtRef = useRef<number | null>(null);
+  const rowAnchorRef = useRef<{ y: number; height: number } | null>(null);
+  const rowSlotRef = useRef<{ y: number; height: number } | null>(null);
+  const rowMeasureRef = useRef<(() => void) | null>(null);
+  const [compactRowShown, setCompactRowShown] = useState(false);
+  const compactRowShownRef = useRef(false);
+  // The scroll view's own height, for the content a pinned row needs. While
+  // the row is pinned it only ever grows: on Android the window shrinks
+  // under the keyboard, and a content height cut to the shrunken viewport
+  // could no longer hold the hand-off offset the moment the keyboard went
+  // away - the page snapped back to its heading with the field still open.
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const pinCompactRowRef = useRef(pinCompactRow);
+  pinCompactRowRef.current = pinCompactRow;
 
   useEffect(() => {
     if (!scrollControlRef) return undefined;
@@ -576,6 +654,11 @@ export function AppScreen({
         ? restingMaxOffset({ contentHeight: contentHeightRef.current, viewportHeight: viewportHeightRef.current, slack: restingSlackRef.current })
         : Number.POSITIVE_INFINITY),
       getTopCover: () => (collapsingRef.current && compactShownRef.current ? compactCoverRef.current : 0),
+      scrollToCompactRow: (animated = false) => {
+        const at = rowHandoffAtRef.current;
+        if (!collapsingRef.current || at === null) return;
+        scrollTo(at, animated);
+      },
     };
     return () => {
       scrollControlRef.current = null;
@@ -600,10 +683,32 @@ export function AppScreen({
     const at = collapseAtRef.current;
     if (!collapsingRef.current || at === null) return;
     const next = nextCompactShown(compactShownRef.current, compactHeaderProgress(offset, at));
-    if (next === compactShownRef.current) return;
-    compactShownRef.current = next;
-    setCompactShown(next);
+    if (next !== compactShownRef.current) {
+      compactShownRef.current = next;
+      setCompactShown(next);
+    }
+    // The row's switch, on the same two thresholds. With no hand-off measured
+    // the row is up whenever the bar is.
+    const handoff = rowHandoffAtRef.current;
+    const nextRow = handoff === null ? next : nextCompactShown(compactRowShownRef.current, compactRowProgress(offset, handoff));
+    if (nextRow !== compactRowShownRef.current) {
+      compactRowShownRef.current = nextRow;
+      setCompactRowShown(nextRow);
+    }
   }, []);
+
+  const measureHandoff = useCallback(() => {
+    const anchor = rowAnchorRef.current;
+    const slot = rowSlotRef.current;
+    const collapse = collapseAtRef.current;
+    const next = anchor && slot && collapse !== null
+      ? compactRowHandoff({ contentTop: contentTopRef.current, anchor, slot, collapseAt: collapse })
+      : null;
+    if (next === rowHandoffAtRef.current) return;
+    rowHandoffAtRef.current = next;
+    setRowHandoffAt(next);
+    updateCompactShown(contentOffsetRef.current);
+  }, [updateCompactShown]);
 
   const measureCollapse = useCallback(() => {
     const box = headingBoxRef.current;
@@ -613,12 +718,42 @@ export function AppScreen({
     collapseAtRef.current = next;
     setCollapseAt(next);
     updateCompactShown(contentOffsetRef.current);
-  }, [updateCompactShown]);
+    measureHandoff();
+  }, [measureHandoff, updateCompactShown]);
 
+  const contentRef = useRef<View>(null);
   const onContentLayout = useCallback((event: LayoutChangeEvent) => {
     contentTopRef.current = event.nativeEvent.layout.y;
     measureCollapse();
-  }, [measureCollapse]);
+    measureHandoff();
+  }, [measureCollapse, measureHandoff]);
+
+  // Created once: the anchor attaches in an effect, and a new host object each
+  // render would detach and re-attach it every time the screen re-rendered.
+  const rowAnchorHost = useMemo<CompactRowAnchorHost>(() => ({
+    contentRef,
+    attach: (measure) => {
+      rowMeasureRef.current = measure;
+      return () => {
+        if (rowMeasureRef.current === measure) rowMeasureRef.current = null;
+        rowAnchorRef.current = null;
+        measureHandoff();
+      };
+    },
+    report: (box) => {
+      const current = rowAnchorRef.current;
+      if (box && current && current.y === box.y && current.height === box.height) return;
+      rowAnchorRef.current = box;
+      measureHandoff();
+    },
+  }), [measureHandoff]);
+
+  const onRowSlotLayout = useCallback((slot: { y: number; height: number }) => {
+    const current = rowSlotRef.current;
+    if (current && current.y === slot.y && current.height === slot.height) return;
+    rowSlotRef.current = slot;
+    measureHandoff();
+  }, [measureHandoff]);
 
   const onHeadingLayout = useCallback((event: LayoutChangeEvent) => {
     const { y, height } = event.nativeEvent.layout;
@@ -636,9 +771,19 @@ export function AppScreen({
     contentOffsetRef.current = 0;
     compactShownRef.current = false;
     setCompactShown(false);
+    compactRowShownRef.current = false;
+    setCompactRowShown(false);
     draggingRef.current = false;
     momentumRef.current = false;
   }, [collapsing, scrollY]);
+
+  // A pinned row that hands back - the reader dragged the page down past the
+  // hand-off - takes its controls out of sight and out of reach, but a field
+  // in it would keep the keyboard, and the next key would throw the page back
+  // down. The keyboard goes with the row; the stage itself stays as it is.
+  useEffect(() => {
+    if (pinCompactRow && !compactRowShown) Keyboard.dismiss();
+  }, [compactRowShown, pinCompactRow]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     contentOffsetRef.current = event.nativeEvent.contentOffset.y;
@@ -666,6 +811,16 @@ export function AppScreen({
       extrapolate: 'clamp',
     });
   }, [collapseAt, scrollY]);
+  // The row's own: a short step at the hand-off, or the bar's progress while
+  // there is no hand-off to wait for.
+  const compactRowProgressValue = useMemo(() => {
+    if (rowHandoffAt === null) return compactProgress;
+    return scrollY.interpolate({
+      inputRange: compactRowRange(rowHandoffAt, COMPACT_ROW_BAND),
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+  }, [compactProgress, rowHandoffAt, scrollY]);
 
   // UIScrollView springs an out-of-range offset back only while a drag or a
   // bounce is running. Switching scrolling off in the middle of one (a lifted
@@ -712,12 +867,24 @@ export function AppScreen({
 
   const handleContentSizeChange = (_width: number, height: number) => {
     contentHeightRef.current = height;
+    // Something above the page's row may have grown or gone; the anchor's own
+    // layout only fires when its box changes against its parent.
+    rowMeasureRef.current?.();
     // A filter in the compact row, a deleted row: the page got shorter under
     // the reader. Only the bottom - a shrink never strands the top.
     if (collapsing && !onScrollBlocked && !draggingRef.current && !momentumRef.current) {
       settleStrandedOffset(false);
     }
   };
+
+  // The content a pinned row needs: enough that the page can rest at the
+  // hand-off with the row's controls in and the results under them, however
+  // few. Spelled out from the same paddings the scroll content carries.
+  const contentPaddingTop = immersive ? 0 : spacing.lg;
+  const contentPaddingBottom = spacing.xxxl + (footer ? 0 : insets.bottom);
+  const pinnedMinHeight = collapsing && pinCompactRow && rowHandoffAt !== null && viewportHeight > 0
+    ? Math.max(0, viewportHeight + rowHandoffAt - contentPaddingTop - contentPaddingBottom)
+    : null;
 
   if (status === 'loading') return <View style={{ flex: 1, backgroundColor: screenBackground }} />;
   if (!user) return <Redirect href="/login" />;
@@ -826,7 +993,7 @@ export function AppScreen({
       // to the reader's thumb.
       bounces={!immersive}
       overScrollMode={immersive ? 'never' : 'auto'}
-      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: immersive ? 0 : spacing.lg, paddingBottom: spacing.xxxl + (footer ? 0 : insets.bottom) }}
+      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingHorizontal: horizontalPadding, paddingTop: contentPaddingTop, paddingBottom: contentPaddingBottom }}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       // No scroll bar. It is drawn OVER the content at the right edge, which is
@@ -855,7 +1022,9 @@ export function AppScreen({
       // What a stranded offset is measured against. Not on a pinned heading,
       // which keeps the scroll view it had.
       onLayout={stickyHeading ? undefined : (event: LayoutChangeEvent) => {
-        viewportHeightRef.current = event.nativeEvent.layout.height;
+        const { height } = event.nativeEvent.layout;
+        viewportHeightRef.current = height;
+        setViewportHeight((current) => (pinCompactRowRef.current ? Math.max(current, height) : height));
       }}
       onContentSizeChange={stickyHeading ? undefined : handleContentSizeChange}
       ref={scrollRef}
@@ -878,11 +1047,13 @@ export function AppScreen({
       // gate as onScroll: at 32 the bar would step at about 30fps.
       scrollEventThrottle={collapsing ? 16 : 32}
     >
-      <View onLayout={collapsing ? onContentLayout : undefined} style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle]}>
+      <View onLayout={collapsing ? onContentLayout : undefined} ref={contentRef} style={[{ width: '100%', maxWidth, gap: spacing.xl }, contentStyle, pinnedMinHeight !== null ? { minHeight: pinnedMinHeight } : null]}>
         {stickyHeading || immersive ? null : collapsing ? (
           <View onLayout={onHeadingLayout}>{heading}</View>
         ) : heading}
-        {children}
+        {collapsing ? (
+          <CompactRowAnchorContext.Provider value={rowAnchorHost}>{children}</CompactRowAnchorContext.Provider>
+        ) : children}
       </View>
     </ShellScrollView>
   ) : (
@@ -926,6 +1097,9 @@ export function AppScreen({
           // decides touches, so what shows and what is live never disagree.
           progress={reducedMotion ? (compactShown ? 1 : 0) : compactProgress}
           row={compactRow}
+          rowProgress={reducedMotion ? (compactRowShown ? 1 : 0) : compactRowProgressValue}
+          rowShown={compactRowShown}
+          onRowLayout={onRowSlotLayout}
           showBack={!topLevel}
           shown={compactShown}
           // The plain string: `titleContent` can be a field (a role's name edited

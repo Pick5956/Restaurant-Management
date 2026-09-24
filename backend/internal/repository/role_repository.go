@@ -97,10 +97,19 @@ func (r *RoleRepository) Delete(role *entity.Role) error {
 	return r.db.Delete(role).Error
 }
 
+// roleHoldingMemberStatuses are the memberships that still hold their role: an
+// active member works under it and a suspended one returns to it. A removed
+// member's role_id is only a record of what they held - they come back through
+// an invitation, which sets a new role - so it never keeps a role alive. The
+// row it points at survives the delete either way: a custom role is
+// soft-deleted and a default role is only hidden, so the foreign key holds.
+var roleHoldingMemberStatuses = []string{"active", "suspended"}
+
+// CountMembersForRestaurant counts the members that stop a role being deleted.
 func (r *RoleRepository) CountMembersForRestaurant(roleID uint, restaurantID uint) (int64, error) {
 	var count int64
 	err := r.db.Model(&entity.RestaurantMember{}).
-		Where("role_id = ? AND restaurant_id = ?", roleID, restaurantID).
+		Where("role_id = ? AND restaurant_id = ? AND status IN ?", roleID, restaurantID, roleHoldingMemberStatuses).
 		Count(&count).Error
 	return count, err
 }

@@ -10,6 +10,7 @@ import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, PercentSlider, ReorderPreview, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureCode, apiFailureDetail, apiFailureSays } from '@/src/lib/api-failure';
 import {
   buildIngredientCreateInput,
   buildIngredientMetadataInput,
@@ -22,8 +23,18 @@ import { can } from '@/src/lib/rbac';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { palette } from '@/src/theme';
+import { palette, typeScale } from '@/src/theme';
 import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
+
+/**
+ * The server refuses a new stock unit while a menu recipe still measures the
+ * ingredient in the old one: code `ingredient_unit_locked`, or, from a backend
+ * without that code, only this wording. Read to classify, never shown.
+ */
+function unitLocked(err: unknown): boolean {
+  return apiFailureCode(err) === 'ingredient_unit_locked'
+    || apiFailureSays(err, 'cannot change stock units while ingredient is used by a menu recipe');
+}
 
 /**
  * The ingredient's own facts — name, category, unit, cost, reorder level,
@@ -64,7 +75,10 @@ export default function InventoryItemScreen() {
   const [yieldPercent, setYieldPercent] = useState('100');
   const [storageType, setStorageType] = useState('room_temp');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The step that failed, and the app's line under it when there is one.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  // Said under the stock unit row, not in the panel above the form.
+  const [unitProblem, setUnitProblem] = useState<string | null>(null);
   const [loading, setLoading] = useState(editing);
   const [itemExists, setItemExists] = useState<boolean | null>(editing ? null : true);
   const [picker, setPicker] = useState<'none' | 'category' | 'unit' | 'storage'>('none');
@@ -110,9 +124,9 @@ export default function InventoryItemScreen() {
         if (item) fill(item);
         setItemExists(true);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t('โหลดข้อมูลวัตถุดิบไม่สำเร็จ', 'Could not load ingredient data.')))
+      .catch((err) => setError({ title: t('โหลดข้อมูลวัตถุดิบไม่สำเร็จ', 'Could not load ingredient data'), detail: apiFailureDetail(err, language) }))
       .finally(() => setLoading(false));
-  }, [access, t, editing, invalidRoute, itemId]);
+  }, [access, t, language, editing, invalidRoute, itemId]);
 
   function fill(item: Ingredient) {
     const values = ingredientToFormValues(item);
@@ -140,15 +154,18 @@ export default function InventoryItemScreen() {
   async function save() {
     if (!canManage || invalidRoute || saving) return;
     if (editing && (itemId === null || itemExists !== true)) return;
-    if (!name.trim() || !unit.trim()) { setError(t('กรอกชื่อและหน่วยให้ครบ', 'Enter both an ingredient name and unit.')); return; }
-    setSaving(true); setError(null);
+    if (!name.trim() || !unit.trim()) { setError({ title: t('ทำรายการไม่ได้', 'Unable to complete the action'), detail: t('กรอกชื่อและหน่วยให้ครบ', 'Enter both an ingredient name and unit.') }); return; }
+    setSaving(true); setError(null); setUnitProblem(null);
     try {
       const values = { name, sku, categoryId, imageUrl, unit, stock, minStock, minPercent: String(minPercent), cost, yieldPercent, storageType };
       if (editing) await updateIngredient(itemId!, buildIngredientMetadataInput(values));
       else await createIngredient(buildIngredientCreateInput(values));
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save the ingredient.'));
+      // A new unit refused because a recipe still counts in the old one is the
+      // unit field's problem, so it is said under that field.
+      if (unitLocked(err)) setUnitProblem(t('ยังมีเมนูที่ใช้หน่วยนี้อยู่', 'A menu recipe still uses this unit.'));
+      else setError({ title: t('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save the ingredient'), detail: apiFailureDetail(err, language) });
     } finally {
       setSaving(false);
     }
@@ -172,7 +189,12 @@ export default function InventoryItemScreen() {
               // an ingredient that no longer exists.
               router.dismissTo('/inventory' as never);
             } catch (err) {
-              setError(err instanceof Error ? err.message : t('ลบวัตถุดิบไม่สำเร็จ', 'Could not delete the ingredient.'));
+              // Every refusal here is a 409, an ingredient already deleted too:
+              // only this wording is the ingredient still in a menu recipe.
+              setError({
+                title: t('ลบวัตถุดิบไม่สำเร็จ', 'Could not delete the ingredient'),
+                detail: apiFailureSays(err, 'used by a menu recipe') ? t('ยังมีเมนูที่ใช้วัตถุดิบนี้', 'A menu recipe still uses it.') : apiFailureDetail(err, language),
+              });
               setSaving(false);
             }
           },
@@ -193,7 +215,7 @@ export default function InventoryItemScreen() {
         ? t('อาจถูกลบไปแล้ว', 'It may have been deleted.')
         : access === 'denied'
           ? t('บัญชีนี้ต้องมีสิทธิ์จัดการคลังวัตถุดิบ', 'This account needs permission to manage inventory.')
-          : error ?? undefined;
+          : error?.detail;
     return (
       <AppScreen title={title} topLevel={false}>
         <EmptyState title={heading} detail={detail} action={<Button variant="secondary" label={t('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />} />
@@ -229,7 +251,7 @@ export default function InventoryItemScreen() {
           keyboardDismissMode="on-drag"
           contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}
         >
-          {error ? <View style={{ marginBottom: 12 }}><Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /></View> : null}
+          {error ? <View style={{ marginBottom: 12 }}><Feedback title={error.title} detail={error.detail} tone="danger" /></View> : null}
           {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
 
           {!loading ? (
@@ -243,6 +265,9 @@ export default function InventoryItemScreen() {
               <FormGroup title={t('หมวดและหน่วย', 'Category and unit')}>
                 <FormPickRow label={t('หมวด', 'Category')} value={categoryName} first onPress={readOnly ? undefined : () => setPicker('category')} />
                 <FormPickRow label={t('หน่วยสต็อก', 'Stock unit')} value={unit} onPress={readOnly ? undefined : () => setPicker('unit')} />
+                {unitProblem ? (
+                  <Text accessibilityLiveRegion="polite" style={[typeScale.caption, { color: palette.danger, paddingHorizontal: 16, paddingBottom: 10 }]}>{unitProblem}</Text>
+                ) : null}
               </FormGroup>
 
               <FormGroup
@@ -347,7 +372,7 @@ export default function InventoryItemScreen() {
         <SheetTitle title={t('หน่วยสต็อก', 'Stock unit')} subtitle={t('หน่วยที่ใช้นับในคลังและในสูตร', 'What the shelf and the recipes count in')} />
         <SheetSection title={t('เลือกหนึ่งหน่วย', 'Pick one')}>
           {unitOptions.map((option) => (
-            <ChoiceChip key={option} label={option} on={option === unit} onPress={() => { setUnit(option); setPicker('none'); }} />
+            <ChoiceChip key={option} label={option} on={option === unit} onPress={() => { setUnit(option); setUnitProblem(null); setPicker('none'); }} />
           ))}
         </SheetSection>
       </BottomSheet>

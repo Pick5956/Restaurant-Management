@@ -489,7 +489,7 @@ func TestServiceStepsStillMoveTablesInAndOutOfService(t *testing.T) {
 	if err := seatSeats(heldTable.ID); !errors.Is(err, ErrTableInUse) {
 		t.Fatalf("edit of a seated table error = %v, want %v", err, ErrTableInUse)
 	}
-	if _, err := scenario.orderSvc.CancelOrder(scenario.restaurant.ID, scenario.user.ID, seated.ID, "guests left"); err != nil {
+	if _, err := scenario.orderSvc.CancelOrder(scenario.restaurant.ID, scenario.user.ID, seated.ID, "guests left", true); err != nil {
 		t.Fatalf("cancel seated order: %v", err)
 	}
 	if got := scenario.reloadTable(t, heldTable.ID); got.Status != entity.TableStatusFree {

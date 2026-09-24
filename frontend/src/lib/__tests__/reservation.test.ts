@@ -92,8 +92,31 @@ describe("reservationErrorMessage", () => {
     expect(reservationErrorMessage("table has an open order", "en")).toMatch(/later/);
   });
 
-  it("keeps an unknown server message, and falls back when there is none", () => {
-    expect(reservationErrorMessage("something unexpected", "th", "fallback")).toBe("something unexpected");
+  it("never shows the API's own wording for an unmapped error", () => {
+    expect(reservationErrorMessage("missing reservation permission", "th", "จองโต๊ะไม่สำเร็จ")).toBe("จองโต๊ะไม่สำเร็จ");
+    expect(reservationErrorMessage("something unexpected", "en", "Could not reserve the table.")).toBe(
+      "Could not reserve the table.",
+    );
     expect(reservationErrorMessage("", "th", "fallback")).toBe("fallback");
+    expect(reservationErrorMessage("internal server error", "th")).toBe("");
+  });
+
+  it("maps a known error regardless of case and surrounding space", () => {
+    expect(reservationErrorMessage("  Table Is Not Reserved ", "th", "fallback")).toBe("โต๊ะนี้ไม่มีการจองแล้ว");
+  });
+
+  // An unmapped failure says only the caller's words, so a call without them
+  // would show an empty banner.
+  it("every call site hands over the step's own words to fall back on", () => {
+    const sources = [
+      read("src/app/(dashboard)/r/[slug]/pos/tables/page.tsx"),
+      read("src/components/tables/ReservationHistoryModal.tsx"),
+    ];
+    const calls = sources.flatMap((source) => source.match(/reservationErrorMessage\([^;]*;/g) ?? []);
+    expect(calls).toHaveLength(4);
+    for (const call of calls) {
+      // The step's words, directly or behind the shared failure line (offline, 403, 5xx).
+      expect(call).toMatch(/reservationErrorMessage\(apiErrorMessage\((\w+)\), language, (copy\.\w+Error|apiFailureText\(\1, language, copy\.\w+Error\))\)/);
+    }
   });
 });

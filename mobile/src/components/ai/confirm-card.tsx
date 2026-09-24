@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { formatCountdown } from '@/src/lib/ai-chat';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import {
   confirmDestination,
   confirmKicker,
@@ -33,6 +34,27 @@ import { ai } from './theme';
 // what was done.
 
 export type { ConfirmItem, ConfirmState };
+
+/**
+ * The one failure whose text the card prints: a line `onConfirm` built on the
+ * phone - a refusal mapped from the status ("this is already being saved", "the
+ * confirmation expired") or a plan's outcome said from its counts. Anything
+ * else thrown is a failed request whose message is the server's, and gets the
+ * shared line instead.
+ *
+ * The card does draw text the server composed: the plan itself - summary, item
+ * titles and changes, warnings - written in Thai for the owner to confirm.
+ * That is the command's content, not a failure, and the card only lays it out.
+ */
+export class ConfirmRefusal extends Error {
+  readonly line: string;
+
+  constructor(line: string) {
+    super(line);
+    this.name = 'ConfirmRefusal';
+    this.line = line;
+  }
+}
 
 const WASH = '#fff7ed';
 const HAIR = '#eef0f2';
@@ -185,7 +207,7 @@ export function ConfirmCard({
       setState('done');
       onResolved?.('done');
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : (th ? 'ยืนยันไม่สำเร็จ ลองอีกครั้ง' : 'Could not confirm, try again'));
+      setError(err instanceof ConfirmRefusal ? err.line : apiFailureDetail(err, language) ?? (th ? 'ยืนยันไม่สำเร็จ ลองอีกครั้ง' : 'Could not confirm, try again'));
       setState('pending');
     }
   };

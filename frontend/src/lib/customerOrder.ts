@@ -1,4 +1,7 @@
 import { publicApiClient } from "./apiClient";
+import { apiFailureKind, apiFailureText } from "./apiFailure";
+import { apiErrorMessage } from "./apiErrors";
+import { customerOrderRefusal } from "./knownApiErrors";
 import type {
   OrderItemFulfillmentType,
   OrderItemStatus,
@@ -169,3 +172,87 @@ export const submitCustomerTableOrder = (
     data,
     { headers: { "Idempotency-Key": requestKey } },
   );
+
+/**
+ * What one QR submit may carry, mirrored from validateCustomerSubmitRequest
+ * (backend customer_order_service.go). The menu page keeps the cart inside
+ * these, so a guest never builds an order the server turns down on every
+ * try. apiWording.test.ts fails when the two drift apart.
+ */
+export const CUSTOMER_ORDER_LIMITS = {
+  /** Cart lines in one submit (customerOrderMaxItems). */
+  maxLines: 50,
+  /** Portions on one line (customerOrderMaxItemQuantity). */
+  maxLineQuantity: 20,
+  /** Portions across the whole submit (customerOrderMaxTotalQuantity). */
+  maxTotalQuantity: 100,
+  /** Characters in a line's note (customerOrderMaxItemNoteRunes). */
+  maxItemNoteLength: 250,
+  /** Characters in the order's note (customerOrderMaxOrderNoteRunes). */
+  maxOrderNoteLength: 500,
+} as const;
+
+type CartLineQuantity = { quantity: number };
+
+const cartPortions = (cart: ReadonlyArray<CartLineQuantity>) =>
+  cart.reduce((sum, line) => sum + line.quantity, 0);
+
+/** Portions a new cart line may hold; 0 when the cart can take no new line. */
+export function customerNewLineRoom(cart: ReadonlyArray<CartLineQuantity>): number {
+  if (cart.length >= CUSTOMER_ORDER_LIMITS.maxLines) return 0;
+  const left = CUSTOMER_ORDER_LIMITS.maxTotalQuantity - cartPortions(cart);
+  return Math.max(0, Math.min(CUSTOMER_ORDER_LIMITS.maxLineQuantity, left));
+}
+
+/** Whether one more portion fits on a line already in the cart. */
+export function customerLineCanGrow(cart: ReadonlyArray<CartLineQuantity>, line: CartLineQuantity): boolean {
+  return line.quantity < CUSTOMER_ORDER_LIMITS.maxLineQuantity
+    && cartPortions(cart) < CUSTOMER_ORDER_LIMITS.maxTotalQuantity;
+}
+
+/** A submit the server refused for its size, which the limits above keep from happening. */
+export type CustomerOrderLimitRefusal = "too_much" | "note_too_long";
+
+// knownApiErrors.ts is where server wording is normally read; these sit
+// beside the limits they belong to, and are matched here only.
+const LIMIT_REFUSALS: ReadonlyMap<string, CustomerOrderLimitRefusal> = new Map<string, CustomerOrderLimitRefusal>([
+  ["order can include up to 50 items", "too_much"],
+  ["item quantity must be between 1 and 20", "too_much"],
+  ["order quantity is too large", "too_much"],
+  ["item note is too long", "note_too_long"],
+  ["order note is too long", "note_too_long"],
+]);
+
+export function customerOrderLimitRefusal(error: unknown): CustomerOrderLimitRefusal | null {
+  return LIMIT_REFUSALS.get(apiErrorMessage(error).trim()) ?? null;
+}
+
+/**
+ * A failed request on a guest's QR page: the shared lines for a lost
+ * connection, a busy server or too many tries, and `fallback` for anything
+ * else. The other shared lines speak to signed-in staff ("this account",
+ * "no longer exists") and mean nothing to a guest.
+ */
+export function customerFailureText(error: unknown, language: "th" | "en", fallback: string): string {
+  switch (apiFailureKind(error)) {
+    case "offline":
+    case "server_busy":
+    case "rate_limited":
+      return apiFailureText(error, language, fallback);
+    default:
+      return fallback;
+  }
+}
+
+/**
+ * The line a guest reads when a table page does not load: a dead QR code in
+ * the page's words, otherwise what customerFailureText says for the page.
+ */
+export function customerTableLoadText(
+  error: unknown,
+  language: "th" | "en",
+  copy: { qrInvalid: string; loadError: string },
+): string {
+  if (customerOrderRefusal(error)?.kind === "qr_invalid") return copy.qrInvalid;
+  return customerFailureText(error, language, copy.loadError);
+}

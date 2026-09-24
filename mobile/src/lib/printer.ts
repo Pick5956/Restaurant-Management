@@ -35,10 +35,12 @@ export interface ScannedDevice {
  * tomorrow.
  */
 export function normalizeMacAddress(value: string | null | undefined): string | null {
-  const compact = String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^0-9A-F]/g, '');
+  const upper = String(value || '').trim().toUpperCase();
+  // Hex digits and the separators platforms write, nothing else. Stripping
+  // every other character first let anything with twelve hex letters left in
+  // it pass: "lan:192.0.2.10:9100" read as A1:92:02:10:91:00.
+  if (!/^[0-9A-F:.\- ]+$/.test(upper)) return null;
+  const compact = upper.replace(/[^0-9A-F]/g, '');
   if (compact.length !== 12) return null;
 
   const mac = compact.match(/.{2}/g)?.join(':') || '';
@@ -271,7 +273,7 @@ const FAILURE_COPY: Record<PrinterFailureCode, { th: string; en: string }> = {
   },
   WRITE_FAILED: {
     th: 'ส่งข้อมูลไปเครื่องพิมพ์ไม่สำเร็จ',
-    en: 'Could not send the receipt to the printer.',
+    en: 'Could not send it to the printer.',
   },
   PERMISSION_DENIED: {
     th: 'ยังไม่ได้อนุญาตให้ใช้บลูทูธ เปิดสิทธิ์ในการตั้งค่าแอป',
@@ -294,8 +296,8 @@ const FAILURE_COPY: Record<PrinterFailureCode, { th: string; en: string }> = {
     en: 'No printer selected yet. Go to Settings > Printer.',
   },
   CAPTURE_FAILED: {
-    th: 'สร้างภาพใบเสร็จไม่สำเร็จ',
-    en: 'Could not render the receipt image.',
+    th: 'สร้างภาพสำหรับพิมพ์ไม่สำเร็จ',
+    en: 'Could not render the image to print.',
   },
   UNSUPPORTED_PLATFORM: {
     th: 'พิมพ์ผ่านบลูทูธรองรับเฉพาะ Android เท่านั้น',
@@ -303,23 +305,64 @@ const FAILURE_COPY: Record<PrinterFailureCode, { th: string; en: string }> = {
   },
 };
 
+// The Bluetooth state manager in @finan-me/react-native-thermal-printer rejects
+// with its own codes, not ours. Cancelling the system "turn on Bluetooth"
+// prompt, or the prompt failing to open, still means Bluetooth is off; no
+// adapter means the phone has none. ERROR_UNKNOWN, ERROR_NO_ACTIVITY and
+// SCAN_ERROR say nothing a waiter can act on, so they stay unmapped.
+const NATIVE_CODE_ALIASES: Readonly<Record<string, PrinterFailureCode>> = {
+  // BluetoothStateManager (enabling Bluetooth, scanning).
+  ERROR_CANCELLED: 'BLUETOOTH_NOT_ENABLED',
+  ERROR_ENABLE: 'BLUETOOTH_NOT_ENABLED',
+  ERROR_NO_ADAPTER: 'BLUETOOTH_NOT_SUPPORTED',
+  // PrintErrorCode, the library's E-codes (printing/shared/errors.ts): every
+  // Bluetooth Classic test connection and print failure comes back as one.
+  // The network codes and E9xxx have nothing a waiter can act on and stay out.
+  E1001: 'DEVICE_NOT_FOUND',
+  E1002: 'TIMEOUT',
+  E1003: 'CONNECTION_FAILED',
+  E1004: 'CONNECTION_FAILED',
+  E2001: 'BLUETOOTH_NOT_ENABLED',
+  // Its copy already says to pair the printer again.
+  E2002: 'CONNECTION_FAILED',
+  E2003: 'PERMISSION_DENIED',
+  E2004: 'BLUETOOTH_NOT_SUPPORTED',
+  E4001: 'WRITE_FAILED',
+  E5001: 'INVALID_ADDRESS',
+};
+
 /**
- * Maps a native error code onto something a waiter can act on. Unknown codes
- * fall back to the raw message so a new firmware error never becomes a silent
- * "something went wrong".
+ * Maps a native error code onto something a waiter can act on, or null for a
+ * code the app does not know. The native module's own message is never the
+ * answer: it is the library's English or a firmware string, not the app's
+ * words, so an unknown code leaves the caller's title to say what failed.
+ * Every caller that is not printing a receipt - enabling Bluetooth, scanning,
+ * testing a printer, printing a QR slip - uses this and omits the detail line
+ * when it is null.
+ */
+export function printerFailureReason(
+  code: string | null | undefined,
+  language: DisplayLanguage = 'th',
+): string | null {
+  const raw = String(code || '');
+  const own = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
+  const resolved = own(NATIVE_CODE_ALIASES, raw) ? NATIVE_CODE_ALIASES[raw] : raw;
+  const known = own(FAILURE_COPY, resolved) ? FAILURE_COPY[resolved as PrinterFailureCode] : null;
+  if (!known) return null;
+  return language === 'th' ? known.th : known.en;
+}
+
+/**
+ * Always a line, for the receipt print only: the reason when the code is
+ * known, otherwise that the receipt did not print. That fallback names the
+ * receipt, so anything else - enabling Bluetooth, a scan, a test connection,
+ * a QR slip - uses printerFailureReason and says nothing extra when it is null.
  */
 export function describePrinterFailure(
   code: string | null | undefined,
   language: DisplayLanguage = 'th',
-  fallbackMessage?: string | null,
 ): string {
-  const known = FAILURE_COPY[String(code || '') as PrinterFailureCode];
-  if (known) return language === 'th' ? known.th : known.en;
-
-  const fallback = String(fallbackMessage || '').trim();
-  if (fallback) return fallback;
-
-  return language === 'th'
+  return printerFailureReason(code, language) ?? (language === 'th'
     ? 'พิมพ์ใบเสร็จไม่สำเร็จ'
-    : 'Could not print the receipt.';
+    : 'Could not print the receipt.');
 }

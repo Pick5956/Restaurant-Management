@@ -1,8 +1,8 @@
-import type { Ref } from 'react';
-import { Pressable, View, type TextInput } from 'react-native';
+import { Pressable, View } from 'react-native';
 
+import { CompactRowAnchor } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { ChoiceChips } from '@/src/components/form/parts';
+import { ChoiceChips, type ChipRowSync } from '@/src/components/form/parts';
 import { SearchField } from '@/src/components/ui';
 import { palette, spacing } from '@/src/theme';
 
@@ -14,17 +14,23 @@ import { palette, spacing } from '@/src/theme';
 // the brand ink, not another box.
 //
 // Once this bar has scrolled away, MenuCompactRow carries the chips and a
-// search button in the compact header; that button puts the caret back in the
-// field here through `searchRef`.
+// search button in the compact header. The chips row here is the anchor the
+// shell hands that row over at: the bar's chips appear exactly as these slide
+// up under them, so the chips are never on screen twice.
 
-export function MenuFilterBar({ search, onSearch, searchRef, category, onCategory, options, onManageCategories, t }: {
+export function MenuFilterBar({ search, onSearch, onFocusSearch, category, onCategory, options, chipSync, onManageCategories, t }: {
   search: string;
   onSearch: (text: string) => void;
-  searchRef?: Ref<TextInput>;
+  /** Touching the field opens the bar's search stage and hands the typing to
+   *  it, so the page has one search, and it closes the way the order screen's
+   *  does (owner, 2026-09-25). */
+  onFocusSearch?: () => void;
   category: string;
   onCategory: (value: string) => void;
   /** "ทุกหมวด" first, then the active categories. */
   options: { label: string; value: string }[];
+  /** Shared with the compact row's chips, so the two scroll sideways as one. */
+  chipSync?: ChipRowSync;
   /** Absent without manage rights. */
   onManageCategories?: () => void;
   t: (th: string, en: string) => string;
@@ -34,15 +40,16 @@ export function MenuFilterBar({ search, onSearch, searchRef, category, onCategor
       <SearchField
         accessibilityLabel={t('ค้นหาชื่อเมนู', 'Search menu items')}
         clearLabel={t('ล้างคำค้นหา', 'Clear search')}
-        inputRef={searchRef}
         value={search}
         onChangeText={onSearch}
+        onFocus={onFocusSearch}
         placeholder={t('ค้นหาเมนู', 'Search menu')}
       />
-      <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      <CompactRowAnchor style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
         <View style={{ minWidth: 0, flex: 1 }}>
           <ChoiceChips
             scroll
+            sync={chipSync}
             options={options.map((option) => ({ key: option.value, label: option.label }))}
             value={category}
             onChange={onCategory}
@@ -61,7 +68,7 @@ export function MenuFilterBar({ search, onSearch, searchRef, category, onCategor
             </Text>
           </Pressable>
         ) : null}
-      </View>
+      </CompactRowAnchor>
     </View>
   );
 }

@@ -8,9 +8,10 @@ import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { CATEGORY_LOOK } from '@/src/components/expenses/parts';
-import { ChoiceChips, DangerAction, DayPickerSheet, Field, FORM_MAX_WIDTH, FormBody, FormCard, Note, SaveDock } from '@/src/components/form/parts';
+import { ActionRow, ChoiceChips, DangerAction, DayPickerSheet, Field, FORM_MAX_WIDTH, FormBody, FormCard, Note, SaveDock } from '@/src/components/form/parts';
 import { StateMessage } from '@/src/components/mobile-screen';
 import { Button, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { expenseCategoryLabel, expenseDayLabel } from '@/src/lib/expense-view';
 import { formatBangkokDate } from '@/src/lib/order-query';
 import { can } from '@/src/lib/rbac';
@@ -24,8 +25,10 @@ import { expenseCategories, type ExpenseCategory } from '@/src/types/expense';
 // box to type "ปปปป-ดด-วว" into. Now the amount is the orange block at the
 // top with the number keyboard up at once, the category chips carry the
 // list's icons, the date is today / yesterday / a calendar, and deleting is
-// the quiet red line at the foot. An entry the stock intake wrote keeps its
-// amount: that number is what was paid for the delivery.
+// the quiet red line at the foot. An entry the stock intake wrote is only
+// shown: the server refuses to change or delete it (ensureExpenseEditable),
+// since that number is what was paid for the delivery, so it gets no save and
+// no delete to fail on.
 
 function normalizeDate(value: string | undefined, today: string) {
   if (!value) return today;
@@ -58,9 +61,12 @@ export default function ExpenseItemScreen() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pickingDay, setPickingDay] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The step that failed, and the app's line under it when there is one.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
 
-  const title = editing ? copy('แก้ไขค่าใช้จ่าย', 'Edit expense') : copy('เพิ่มค่าใช้จ่าย', 'Add expense');
+  const title = fromStock
+    ? copy('รายละเอียดค่าใช้จ่าย', 'Expense details')
+    : editing ? copy('แก้ไขค่าใช้จ่าย', 'Edit expense') : copy('เพิ่มค่าใช้จ่าย', 'Add expense');
 
   if (!canEdit) {
     return (
@@ -74,9 +80,10 @@ export default function ExpenseItemScreen() {
   }
 
   async function save() {
+    if (fromStock) return;
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) {
-      setError(copy('กรอกจำนวนเงินให้มากกว่า 0', 'Enter an amount greater than zero.'));
+      setError({ title: copy('ทำรายการไม่ได้', 'Unable to complete the action'), detail: copy('กรอกจำนวนเงินให้มากกว่า 0', 'Enter an amount greater than zero.') });
       return;
     }
     setSaving(true);
@@ -90,21 +97,21 @@ export default function ExpenseItemScreen() {
       }
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('บันทึกค่าใช้จ่ายไม่สำเร็จ', 'Could not save the expense.'));
+      setError({ title: copy('บันทึกค่าใช้จ่ายไม่สำเร็จ', 'Could not save the expense'), detail: apiFailureDetail(err, language) });
     } finally {
       setSaving(false);
     }
   }
 
   async function remove() {
-    if (!editing || editingId === null) return;
+    if (!editing || editingId === null || fromStock) return;
     setSaving(true);
     setError(null);
     try {
       await deleteExpense(editingId);
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('ลบค่าใช้จ่ายไม่สำเร็จ', 'Could not delete the expense.'));
+      setError({ title: copy('ลบค่าใช้จ่ายไม่สำเร็จ', 'Could not delete the expense'), detail: apiFailureDetail(err, language) });
       setSaving(false);
     }
   }
@@ -124,9 +131,9 @@ export default function ExpenseItemScreen() {
       topLevel={false}
       centerTitle
       contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}
-      footer={!confirmDelete ? <SaveDock label={saveLabel} onPress={save} loading={saving} /> : undefined}
+      footer={!fromStock && !confirmDelete ? <SaveDock label={saveLabel} onPress={save} loading={saving} /> : undefined}
     >
-      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
       <View style={{ gap: spacing.md }}>
         <LinearGradient colors={['#B93A0D', '#D9581F', '#EF7A35']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 20, borderCurve: 'continuous', paddingVertical: 14, paddingHorizontal: 16, opacity: amountFocused ? 1 : 0.97 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -155,49 +162,58 @@ export default function ExpenseItemScreen() {
               value={amount}
             />
           </View>
-          {fromStock ? <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 4 }}>{copy('ยอดมาจากการรับของเข้าคลัง แก้ได้ที่คลังวัตถุดิบ', 'This amount came from a stock intake; change it in inventory')}</Text> : null}
         </LinearGradient>
 
-        <FormCard title={copy('หมวด', 'Category')}>
-          <FormBody>
-            <ChoiceChips
-              options={expenseCategories.map((value) => ({ key: value, label: expenseCategoryLabel(value, language), icon: CATEGORY_LOOK[value].icon, tint: CATEGORY_LOOK[value] }))}
-              value={category}
-              onChange={setCategory}
-            />
-          </FormBody>
-        </FormCard>
+        {fromStock ? (
+          <FormCard>
+            <ActionRow first icon={CATEGORY_LOOK[category].icon} title={expenseCategoryLabel(category, language)} />
+            <ActionRow icon="calendar-outline" title={expenseDayLabel(spentAt, today, language)} />
+            <ActionRow icon="document-text-outline" title={note.trim() || copy('ไม่มีหมายเหตุ', 'No note')} />
+          </FormCard>
+        ) : (
+          <>
+            <FormCard title={copy('หมวด', 'Category')}>
+              <FormBody>
+                <ChoiceChips
+                  options={expenseCategories.map((value) => ({ key: value, label: expenseCategoryLabel(value, language), icon: CATEGORY_LOOK[value].icon, tint: CATEGORY_LOOK[value] }))}
+                  value={category}
+                  onChange={setCategory}
+                />
+              </FormBody>
+            </FormCard>
 
-        <FormCard title={copy('วันที่', 'Date')}>
-          <FormBody>
-            <ChoiceChips
-              options={dayOptions}
-              value={dayKey}
-              onChange={(key) => {
-                if (key === 'today') setSpentAt(today);
-                else if (key === 'yesterday') setSpentAt(yesterday);
-                else setPickingDay(true);
-              }}
-            />
-          </FormBody>
-        </FormCard>
+            <FormCard title={copy('วันที่', 'Date')}>
+              <FormBody>
+                <ChoiceChips
+                  options={dayOptions}
+                  value={dayKey}
+                  onChange={(key) => {
+                    if (key === 'today') setSpentAt(today);
+                    else if (key === 'yesterday') setSpentAt(yesterday);
+                    else setPickingDay(true);
+                  }}
+                />
+              </FormBody>
+            </FormCard>
 
-        <FormCard title={copy('หมายเหตุ', 'Note')} detail={copy('ไม่บังคับ · ขึ้นเป็นชื่อรายการ', 'Optional · shown as the entry name')}>
-          <FormBody>
-            <Field value={note} onChangeText={setNote} icon="document-text-outline" placeholder={copy('เช่น ซื้อพริกป่น 2 กก. ตลาดเช้า', 'e.g. 2 kg chilli from the morning market')} maxLength={500} multiline />
-          </FormBody>
-        </FormCard>
+            <FormCard title={copy('หมายเหตุ', 'Note')} detail={copy('ไม่บังคับ · ขึ้นเป็นชื่อรายการ', 'Optional · shown as the entry name')}>
+              <FormBody>
+                <Field value={note} onChangeText={setNote} icon="document-text-outline" placeholder={copy('เช่น ซื้อพริกป่น 2 กก. ตลาดเช้า', 'e.g. 2 kg chilli from the morning market')} maxLength={500} multiline />
+              </FormBody>
+            </FormCard>
+          </>
+        )}
 
         {!editing ? <Note text={copy('รายการที่รับของเข้าคลังจะถูกบันทึกให้เองในหมวดวัตถุดิบ ไม่ต้องเพิ่มซ้ำตรงนี้', 'Stock intakes are recorded here automatically under Ingredients; no need to add them again')} /> : null}
 
-        {editing ? (
+        {editing && !fromStock ? (
           <View style={{ paddingTop: spacing.sm }}>
             <DangerAction
               icon="trash-outline"
               label={copy('ลบรายการนี้', 'Delete this entry')}
               confirmLabel={copy('ยืนยันลบ', 'Confirm delete')}
               cancelLabel={copy('เก็บไว้', 'Keep it')}
-              message={fromStock ? copy('ลบแล้วรายจ่ายหมวดวัตถุดิบของวันนั้นจะหายไป แต่ของในคลังยังอยู่เท่าเดิม', 'Deleting removes that day’s ingredient expense; the stock itself stays as it is') : copy('ลบแล้วเอากลับไม่ได้ รายจ่ายรวมของวันนั้นจะลดลงตามยอดนี้', 'This cannot be undone; the day’s total drops by this amount')}
+              message={copy('ลบแล้วเอากลับไม่ได้ รายจ่ายรวมของวันนั้นจะลดลงตามยอดนี้', 'This cannot be undone; the day’s total drops by this amount')}
               open={confirmDelete}
               onOpen={() => setConfirmDelete(true)}
               onCancel={() => setConfirmDelete(false)}

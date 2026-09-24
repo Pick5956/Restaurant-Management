@@ -20,6 +20,10 @@ import (
 // promise" view: it lets the ordering UIs show a dish as sold out the moment the
 // pending queue has claimed the last portion, without waiting for the kitchen to cook.
 //
+// Only orders still in service commit anything. A cancelled order's unsent lines
+// will never be cooked, so counting them kept a dish sold out for as long as the
+// row existed; a completed order has nothing left to cook either.
+//
 // Menu items without any recipe are NOT included in the map (they are not limited by
 // stock). Returned counts are clamped to >= 0.
 func MenuRemainingServings(db *gorm.DB, restaurantID uint) (map[uint]int, error) {
@@ -31,7 +35,7 @@ func MenuRemainingServings(db *gorm.DB, restaurantID uint) (map[uint]int, error)
 	if err := db.Raw(`
 SELECT mii.ingredient_id AS ingredient_id, COALESCE(SUM(mii.quantity * oi.quantity), 0) AS committed
 FROM order_items oi
-JOIN orders o ON o.id = oi.order_id AND o.deleted_at IS NULL
+JOIN orders o ON o.id = oi.order_id AND o.deleted_at IS NULL AND o.status NOT IN ('completed','cancelled')
 JOIN menu_item_ingredients mii ON mii.menu_item_id = oi.menu_id AND mii.deleted_at IS NULL AND mii.restaurant_id = ?
 WHERE oi.restaurant_id = ? AND oi.deleted_at IS NULL AND oi.status IN ('pending','cooking')
 GROUP BY mii.ingredient_id`, restaurantID, restaurantID).Scan(&usage).Error; err != nil {

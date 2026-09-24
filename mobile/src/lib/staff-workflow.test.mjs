@@ -388,18 +388,25 @@ test('role-name editing cannot finish with an empty draft', () => {
   assert.equal(canFinishRoleNameEdit('  หัวหน้ากะ  '), true);
 });
 
+// The title above this line is already "บันทึกบทบาทไม่สำเร็จ", so the line
+// never repeats it: it carries the app's detail, says the name went through,
+// or is absent.
 test('role save errors disclose when only the name was already saved', () => {
+  const denied = 'บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้';
+  assert.equal(roleSaveFailureMessage(false, denied, 'th'), denied);
+  assert.equal(roleSaveFailureMessage(false, undefined, 'th'), undefined);
+  assert.equal(roleSaveFailureMessage(false, '  ', 'en'), undefined);
   assert.equal(
-    roleSaveFailureMessage(false, 'permission denied', 'th'),
-    'permission denied',
+    roleSaveFailureMessage(true, denied, 'th'),
+    'บันทึกชื่อบทบาทแล้ว แต่บันทึกสิทธิ์ไม่สำเร็จ: บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้',
   );
   assert.equal(
-    roleSaveFailureMessage(true, 'permission denied', 'th'),
-    'บันทึกชื่อบทบาทแล้ว แต่บันทึกสิทธิ์ไม่สำเร็จ: permission denied',
+    roleSaveFailureMessage(true, undefined, 'th'),
+    'บันทึกชื่อบทบาทแล้ว แต่บันทึกสิทธิ์ไม่สำเร็จ',
   );
   assert.equal(
     roleSaveFailureMessage(true, '', 'en'),
-    'Role name saved, but permissions could not be saved: Unable to save role',
+    'Role name saved, but permissions could not be saved',
   );
 });
 
@@ -447,7 +454,7 @@ test('role, status, invitation expiry, permission, and audit labels support Engl
 });
 
 test('audit actor names prefer nickname, then full name, email, and system fallback', () => {
-  assert.equal(userDisplayName({ nickname: 'โม', first_name: '', last_name: '', email: 'm@example.com' }), 'โม');
+  assert.equal(userDisplayName({ nickname: 'เอ', first_name: '', last_name: '', email: 'm@example.com' }), 'เอ');
   assert.equal(userDisplayName({ nickname: '', first_name: 'Mali', last_name: 'Dee', email: 'm@example.com' }), 'Mali Dee');
   assert.equal(userDisplayName({ nickname: '', first_name: '', last_name: '', email: 'm@example.com' }), 'm@example.com');
   assert.equal(userDisplayName(undefined), 'ระบบ');

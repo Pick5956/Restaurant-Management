@@ -1,6 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { AxiosError, type AxiosAdapter } from "axios";
 import { describe, expect, it } from "vitest";
+import { restaurantRepository } from "../../app/repositories/restaurantRepository";
+import { apiClient, isStaleRestaurantBindingError } from "../apiClient";
 import { RESTAURANT_PAGE_ROOTS } from "../restaurantPath";
 
 // Every restaurant page lives under /r/<slug>. A bare "/menu" link or push
@@ -86,5 +89,47 @@ describe("restaurant-scoped navigation", () => {
     // restaurant picker.
     const guard = readFileSync(join(root, "src", "components", "shared", "DashboardRestaurantGuard.tsx"), "utf8");
     expect(guard).toMatch(/restaurantRepository\.refreshRememberedSlug\(routeRestaurantId, canonicalSlug\)/);
+  });
+});
+
+// The response interceptor unpins the tab when the server says the binding
+// itself is dead. It used to unpin on any 400/403 whose message named a
+// restaurant, so a cashier refused manage_restaurant_settings, or an owner
+// whose new slug was taken, was left on a live page sending no restaurant.
+describe("restaurant binding after a refused request", () => {
+  const failWith = (status: number, error: string): AxiosAdapter => async (config) => {
+    throw new AxiosError(error, "ERR_BAD_REQUEST", config, null, {
+      status,
+      statusText: "",
+      headers: {},
+      config,
+      data: { error },
+    });
+  };
+
+  const bindingAfter = async (status: number, error: string) => {
+    restaurantRepository.bindTab(7);
+    await expect(apiClient.get("/api/v1/orders", { adapter: failWith(status, error) })).rejects.toBeInstanceOf(AxiosError);
+    return restaurantRepository.getActiveId();
+  };
+
+  it("keeps the tab bound when the refusal is about the request, not the membership", async () => {
+    expect(await bindingAfter(403, "missing manage_restaurant_settings permission")).toBe(7);
+    expect(await bindingAfter(403, "AI operations are available to the restaurant owner only")).toBe(7);
+    expect(await bindingAfter(403, "restaurant path does not match restaurant context")).toBe(7);
+    expect(await bindingAfter(400, "restaurant slug is already taken")).toBe(7);
+    expect(await bindingAfter(400, "restaurant name is required")).toBe(7);
+  });
+
+  it("unpins the tab when the server no longer accepts its restaurant", async () => {
+    expect(await bindingAfter(403, "not a member of this restaurant")).toBeNull();
+    expect(await bindingAfter(400, "invalid X-Restaurant-ID")).toBeNull();
+    expect(await bindingAfter(403, "not an active member of this restaurant")).toBeNull();
+  });
+
+  it("reads only a 400 or 403 as a dead binding", () => {
+    expect(isStaleRestaurantBindingError(500, "not a member of this restaurant")).toBe(false);
+    expect(isStaleRestaurantBindingError(403, " Not a member of this restaurant ")).toBe(true);
+    expect(isStaleRestaurantBindingError(403, undefined)).toBe(false);
   });
 });

@@ -121,7 +121,9 @@ test('creating a shop sends the same request and lands on the hub', async () => 
   }
   // 2026-09-23: a new shop opens on the hub, not on /home.
   assert.doesNotMatch(source, /router\.replace\('\/home'\)/);
-  assert.match(source, /router\.replace\(getDefaultWorkspaceRoute\(/);
+  // The hub alone, with nothing under it for Android's back to walk into.
+  assert.match(source, /resetRouteStack\(router, getDefaultWorkspaceRoute\(membership\)\);/);
+  assert.doesNotMatch(source, /router\.replace\(getDefaultWorkspaceRoute\(/);
   // Signed out goes to sign-in before anything is checked.
   assert.ok(source.indexOf("router.replace('/login')") < source.indexOf('setupFieldProblems('));
   assert.match(source, /loading=\{saving\}/);

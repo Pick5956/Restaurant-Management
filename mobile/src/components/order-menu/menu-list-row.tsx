@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText as Text } from '@/src/components/app-text';
 import { MenuImage } from '@/src/components/menu-image';
 import { CountBadge, StockMark } from '@/src/components/order-menu/menu-tile-parts';
-import { money } from '@/src/lib/format';
+import { formatTender } from '@/src/lib/cash-tender';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette, spacing, typeScale } from '@/src/theme';
 import type { MenuItem } from '@/src/types/menu';
@@ -78,7 +78,7 @@ export function MenuListRow({ item, count, soldOut, onPress, accessibilityLabel,
               far edge: on a tablet-wide row that would put it a hand's width
               from the number it qualifies. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-            <Text style={[typeScale.number, { flexShrink: 0, fontSize: 15, fontWeight: '600' }]}>{money(item.price, language)}</Text>
+            <Text style={[typeScale.number, { flexShrink: 0, fontSize: 15, fontWeight: '600' }]}>{formatTender(item.price, language)}</Text>
             <StockMark item={item} soldOut={soldOut} />
           </View>
         </View>

@@ -18,7 +18,7 @@ func priceOrder(tx *repository.OrderRepository, order *entity.Order) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	before := [4]float64{order.Subtotal, order.DiscountAmount, order.TotalAmount, order.GrandTotal}
+	before := orderMoney(order)
 	subtotal := orderSubtotalFromItems(items)
 	order.Subtotal = subtotal
 	promotionsChanged := false
@@ -40,9 +40,30 @@ func priceOrder(tx *repository.OrderRepository, order *entity.Order) (bool, erro
 	if order.TotalAmount < 0 {
 		order.TotalAmount = 0
 	}
-	order.GrandTotal = order.TotalAmount + order.ServiceChargeAmount + order.VATAmount
-	after := [4]float64{order.Subtotal, order.DiscountAmount, order.TotalAmount, order.GrandTotal}
-	return promotionsChanged || !sameMoney(before[:], after[:]), nil
+	if order.PaymentStatus != entity.PaymentStatusPaid {
+		// The stored charges follow the restaurant's current settings while the
+		// bill is open, so grand_total is what the bill shows, not the total
+		// before service charge and VAT. Priced from the bill's own rounded
+		// total, so the two never differ by a satang.
+		restaurant, err := tx.FindRestaurant(order.RestaurantID)
+		if err != nil {
+			return false, err
+		}
+		_, _, billTotal := billAmounts(order.Subtotal, order.DiscountAmount)
+		order.ServiceChargeAmount, order.VATAmount = unpaidCharges(billTotal, restaurant)
+		order.GrandTotal = roundMoney(billTotal + order.ServiceChargeAmount + order.VATAmount)
+	} else {
+		order.GrandTotal = roundMoney(order.TotalAmount + order.ServiceChargeAmount + order.VATAmount)
+	}
+	return promotionsChanged || !sameMoney(before, orderMoney(order)), nil
+}
+
+// orderMoney is every amount priceOrder may move, for the changed report.
+func orderMoney(order *entity.Order) []float64 {
+	return []float64{
+		order.Subtotal, order.DiscountAmount, order.TotalAmount,
+		order.ServiceChargeAmount, order.VATAmount, order.GrandTotal,
+	}
 }
 
 // applyOrderPromotions works out what the order earns from the restaurant's

@@ -7,8 +7,9 @@ import { CalendarClock, MapPin, ReceiptText, Search, ShoppingBag, Users } from "
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
 import { can } from "@/src/lib/rbac";
-import { createOrder, listOrders } from "@/src/lib/order";
+import { createOrder, listAllOrders, listOrders } from "@/src/lib/order";
 import { orderPosHref } from "@/src/lib/orderNavigation";
 import { createPosTableNavigationGuard } from "@/src/lib/posTableNavigation";
 import { listTables } from "@/src/lib/table";
@@ -66,6 +67,27 @@ const COUNT_STEP_GLYPH = "inline-block transition-transform duration-100 ease-ou
 const PHONE_MAX_DIGITS = 10;
 const normalizePhone = (value: string) => value.replace(/\D/g, "").slice(0, PHONE_MAX_DIGITS);
 const hasValidPhone = (value: string) => value.replace(/\D/g, "").length >= 9;
+
+// What opening a table can be refused for that staff can act on, matched on the
+// server's own wording (OrderService.OpenOrder). That wording never reaches the
+// screen: anything else is the shared failure line or the action's own.
+const OPEN_ORDER_REFUSALS: ReadonlyArray<{ needles: readonly string[]; th: string; en: string }> = [
+  { needles: ["table already has an open order"], th: "โต๊ะนี้มีออเดอร์เปิดอยู่แล้ว", en: "This table already has an open order." },
+  { needles: ["table has no active reservation"], th: "โต๊ะนี้ไม่มีการจองแล้ว", en: "This table is no longer reserved." },
+  { needles: ["table is reserved"], th: "โต๊ะนี้ถูกจองไว้", en: "This table is reserved." },
+  { needles: ["table is inactive"], th: "โต๊ะนี้ปิดใช้งานอยู่", en: "This table is inactive." },
+  { needles: ["table not found"], th: "ไม่พบโต๊ะนี้แล้ว", en: "This table no longer exists." },
+];
+
+/** The server's refusal, lower-cased for matching. Never shown. */
+const refusalOf = (error: unknown) => apiErrorMessage(error).trim().toLowerCase();
+const tableHasOpenOrder = (error: unknown) => refusalOf(error).includes("table already has an open order");
+
+function openOrderFailureText(error: unknown, language: "th" | "en", fallback: string): string {
+  const refusal = refusalOf(error);
+  const known = refusal ? OPEN_ORDER_REFUSALS.find((entry) => entry.needles.some((needle) => refusal.includes(needle))) : undefined;
+  return known ? known[language] : apiFailureText(error, language, fallback);
+}
 
 function tableAccentClass(status: TableStatus) {
   if (status === "inactive") return "bg-gray-400";
@@ -365,9 +387,11 @@ export default function PosTablesPage() {
     if (showLoading) setLoading(true);
     setError("");
     try {
-      const [tableRes, orderRes] = await Promise.all([listTables(), listOrders({ status: "active" })]);
+      // Every live order, not the newest page: a table is taken by whichever
+      // one sits on it, and the oldest are the ones a single page drops.
+      const [tableRes, activeOrders] = await Promise.all([listTables(), listAllOrders({ status: "active" })]);
       setTables(tableRes.data.tables);
-      setOrders(orderRes.data.orders);
+      setOrders(activeOrders);
     } catch {
       setError(copy.loadError);
     } finally {
@@ -416,6 +440,22 @@ export default function PosTablesPage() {
     resetReservationDraft();
   };
 
+  /**
+   * The live order already on a table, looked up after opening one was refused
+   * because of it. A failed lookup finds nothing: the caller then reports the
+   * refusal itself instead of the second failure escaping with no message.
+   */
+  const findOpenTableOrder = async (tableID: number): Promise<Order | null> => {
+    try {
+      const orderRes = await listOrders({ status: "active", table_id: tableID });
+      return orderRes.data.orders.find(
+        (order) => order.table_id === tableID && activeOrderStatuses.includes(order.status)
+      ) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const openOrder = async () => {
     if (isNavigating || (!selectedTable && !takeawayOpen)) return;
     // Capture at call time to prevent race if sheet state changes mid-flight
@@ -424,6 +464,7 @@ export default function PosTablesPage() {
     if (!takeawayOpen && !tableID) return;
     setSubmitting(true);
     setError("");
+    setSheetError("");
     try {
       const res = await createOrder(takeawayOpen
         ? {
@@ -441,19 +482,16 @@ export default function PosTablesPage() {
           });
       navigateToOrder(res.data);
     } catch (error) {
-      const message = apiErrorMessage(error);
-      if (capturedTable && tableID && message.includes("table already has an open order")) {
-        // Fetch with table_id filter to get the precise active order for this table
-        const orderRes = await listOrders({ status: "active", table_id: tableID });
-        const activeOrder = orderRes.data.orders.find(
-          (order) => order.table_id === tableID && activeOrderStatuses.includes(order.status)
-        );
+      if (capturedTable && tableID && tableHasOpenOrder(error)) {
+        const activeOrder = await findOpenTableOrder(tableID);
         if (activeOrder) {
           navigateToOrder(activeOrder);
           return;
         }
       }
-      setError(message || copy.saveError);
+      // The sheet is still open over the page banner, so the refusal goes in
+      // the sheet, in the app's own words.
+      setSheetError(openOrderFailureText(error, language, copy.saveError));
     } finally {
       setSubmitting(false);
     }
@@ -580,7 +618,7 @@ export default function PosTablesPage() {
       // as its reminder, which comes from the table list.
       void load(false);
     } catch (error) {
-      setSheetError(reservationErrorMessage(apiErrorMessage(error), language, copy.reserveError));
+      setSheetError(reservationErrorMessage(apiErrorMessage(error), language, apiFailureText(error, language, copy.reserveError)));
     } finally {
       setSubmitting(false);
     }
@@ -606,18 +644,14 @@ export default function PosTablesPage() {
       });
       navigateToOrder(res.data);
     } catch (error) {
-      const message = apiErrorMessage(error);
-      if (message.includes("table already has an open order")) {
-        const orderRes = await listOrders({ status: "active", table_id: tableID });
-        const activeOrder = orderRes.data.orders.find(
-          (order) => order.table_id === tableID && activeOrderStatuses.includes(order.status)
-        );
+      if (tableHasOpenOrder(error)) {
+        const activeOrder = await findOpenTableOrder(tableID);
         if (activeOrder) {
           navigateToOrder(activeOrder);
           return;
         }
       }
-      setSheetError(message || copy.saveError);
+      setSheetError(openOrderFailureText(error, language, copy.saveError));
     } finally {
       setSubmitting(false);
     }
@@ -642,7 +676,7 @@ export default function PosTablesPage() {
       finishReservationSheet();
     } catch (error) {
       setConfirmCancel(false);
-      setSheetError(reservationErrorMessage(apiErrorMessage(error), language, copy.cancelError));
+      setSheetError(reservationErrorMessage(apiErrorMessage(error), language, apiFailureText(error, language, copy.cancelError)));
     } finally {
       setSubmitting(false);
     }

@@ -52,3 +52,26 @@ export const groupOrderItems = (items: OrderItem[] = []) => {
 
   return Array.from(groups.values());
 };
+
+const orderedAt = (item: OrderItem) => {
+  const time = Date.parse(item.CreatedAt ?? "");
+  return Number.isNaN(time) ? null : time;
+};
+
+/** Taken after `than`: by the time it was ordered, then by id when that says nothing. */
+const takenAfter = (item: OrderItem, than: OrderItem) => {
+  const itemAt = orderedAt(item);
+  const thanAt = orderedAt(than);
+  if (itemAt !== null && thanAt !== null && itemAt !== thanAt) return itemAt > thanAt;
+  return item.ID > than.ID;
+};
+
+/**
+ * The pending line a group's "-" takes a unit off: the newest. The group key
+ * has no time in it, so one group can hold a beer taken in happy hour and one
+ * taken after it, and the server prices each line at the time it was taken.
+ * Taking the unit off the oldest line removed the discounted beer, and the
+ * bill went up.
+ */
+export const newestPendingItem = (group: Pick<OrderItemGroup, "pendingItems">): OrderItem | undefined =>
+  group.pendingItems.reduce<OrderItem | undefined>((newest, item) => (!newest || takenAfter(item, newest) ? item : newest), undefined);

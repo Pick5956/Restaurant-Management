@@ -54,3 +54,25 @@ func TestManagerFallbackIncludesPromotionManagement(t *testing.T) {
 		t.Fatal("a cashier must not set prices by default")
 	}
 }
+
+// Refusing a typed amount is only half the gate: with no amount the service
+// values the stock-in itself and books it. The flag it reads has to say so.
+func TestStockMovesWithoutBookingForMemberWithoutExpensePermission(t *testing.T) {
+	withoutExpensePermission, _ := orderPermissionContext("manage_inventory")
+	if !skipStockExpense(withoutExpensePermission) {
+		t.Fatal("manage_inventory alone must move stock without an expense row")
+	}
+
+	withExpensePermission, _ := orderPermissionContext("manage_inventory", "manage_expenses")
+	if skipStockExpense(withExpensePermission) {
+		t.Fatal("manage_expenses must keep booking the stock-in")
+	}
+
+	manager, _ := orderPermissionContext()
+	member, _ := contextMember(manager)
+	member.Role.Name = "manager"
+	member.Role.Permissions = ""
+	if skipStockExpense(manager) {
+		t.Fatal("legacy manager fallback must keep booking the stock-in")
+	}
+}

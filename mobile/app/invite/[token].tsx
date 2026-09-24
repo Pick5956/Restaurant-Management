@@ -19,6 +19,8 @@ import {
   roleLabel,
   userDisplayName,
 } from '@/src/lib/staff-workflow';
+import { inviteFailureMessage } from '@/src/lib/invite-error';
+import { resetRouteStack } from '@/src/lib/navigation-runtime';
 import { getDefaultWorkspaceRoute } from '@/src/lib/work-mode';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -100,16 +102,15 @@ export default function InviteTokenScreen() {
     } catch (err) {
       setInvitation(null);
       setUsable(false);
-      setError(err instanceof Error
-        ? err.message
-        : copy(
-          'ไม่พบคำเชิญหรือคำเชิญถูกลบแล้ว',
-          'The invitation was not found or has been deleted',
-        ));
+      // The app's own words, never the server's.
+      setError(inviteFailureMessage(err, language === 'en' ? 'en' : 'th', copy(
+        'ไม่พบคำเชิญหรือคำเชิญถูกลบแล้ว',
+        'The invitation was not found or has been deleted',
+      )));
     } finally {
       setLoading(false);
     }
-  }, [copy, token]);
+  }, [copy, language, token]);
 
   useEffect(() => {
     void load();
@@ -133,14 +134,13 @@ export default function InviteTokenScreen() {
       const response = await acceptInvitation(token);
       await setActiveRestaurantFromMembership(response.membership);
       await refreshMemberships().catch(() => undefined);
-      router.replace(getDefaultWorkspaceRoute(response.membership));
+      // The hub alone, as a new shop and a restaurant switch land.
+      resetRouteStack(router, getDefaultWorkspaceRoute(response.membership));
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy(
-          'รับคำเชิญไม่สำเร็จ กรุณาตรวจบัญชีหรือขอลิงก์ใหม่',
-          'Could not accept the invitation. Check your account or request a new link.',
-        ));
+      setError(inviteFailureMessage(err, language === 'en' ? 'en' : 'th', copy(
+        'รับคำเชิญไม่สำเร็จ กรุณาตรวจบัญชีหรือขอลิงก์ใหม่',
+        'Could not accept the invitation. Check your account or request a new link.',
+      )));
     } finally {
       acceptingRef.current = false;
       setAccepting(false);

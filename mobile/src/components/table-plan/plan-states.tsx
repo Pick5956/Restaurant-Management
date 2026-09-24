@@ -10,6 +10,13 @@ import { palette } from '@/src/theme';
 // The floor's other faces: nothing yet, nothing matching, a failed first load,
 // no permission, and loading. One line each and no detail line under it - the
 // line is the state's name, never a sentence about the screen.
+//
+// The line stretches to the row and centres its text inside, rather than
+// shrinking to the text: Android measures a Thai line a fraction narrower
+// than it draws it, and a box cut to that measure wrapped "เมนู" onto a second
+// line that the box then clipped - the menu's no-match state read "ไม่พบ"
+// (seen on the Pixel 6 emulator, 24 ก.ย. 2569).
+const LINE = { alignSelf: 'stretch', fontSize: 15, lineHeight: 22, fontWeight: '700', color: palette.textStrong, textAlign: 'center' } as const;
 
 function IconTile({ icon }: { icon: AppIconName }) {
   return (
@@ -42,7 +49,7 @@ export function PlanState({ icon, line, action, children }: {
   return (
     <View style={{ alignItems: 'center', gap: 10, paddingTop: 48 }}>
       <IconTile icon={icon} />
-      <Text style={{ fontSize: 15, lineHeight: 22, fontWeight: '700', color: palette.textStrong, textAlign: 'center' }}>{line}</Text>
+      <Text style={LINE}>{line}</Text>
       {action ? <OutlinePill icon={action.icon} label={action.label} onPress={action.onPress} /> : null}
       {children}
     </View>
@@ -53,7 +60,7 @@ export function PlanFailed({ line, onRetry }: { line: string; onRetry: () => voi
   return (
     <View style={{ alignItems: 'center', gap: 10, paddingTop: 48 }}>
       <IconTile icon="cloud-offline-outline" />
-      <Text style={{ fontSize: 15, lineHeight: 22, fontWeight: '700', color: palette.textStrong, textAlign: 'center' }}>{line}</Text>
+      <Text style={LINE}>{line}</Text>
       <RetryPill onPress={onRetry} style={{ alignSelf: 'center' }} />
     </View>
   );

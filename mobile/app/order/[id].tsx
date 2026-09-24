@@ -1,4 +1,4 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Pressable, useWindowDimensions, View } from 'react-native';
 
@@ -12,8 +12,12 @@ import { OrderItemPanel } from '@/src/components/order-item-editor';
 import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
 import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
 import { Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
-import { itemStatusLabel, money, orderStatusLabel } from '@/src/lib/format';
+import { apiFailureDetail } from '@/src/lib/api-failure';
+import { billActionFailureMessage } from '@/src/lib/bill-failure';
+import { formatTender } from '@/src/lib/cash-tender';
+import { itemStatusLabel, orderStatusLabel } from '@/src/lib/format';
 import { filterMenuCatalog, groupMenuByCategory, isMenuSoldOut } from '@/src/lib/menu-catalog';
+import { leaveForWorkspaceRoute } from '@/src/lib/navigation-runtime';
 import { stockFailure, stockFailureMessage } from '@/src/lib/order-item-error';
 import {
   createOrderDetailRequestGuard,
@@ -252,6 +256,7 @@ function CloseTableAction({
 export default function OrderDetailScreen() {
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const navigation = useNavigation();
   const orderId = Number(id);
   const validOrderId = Number.isInteger(orderId) && orderId > 0;
   const { activeMembership } = useAuth();
@@ -311,14 +316,17 @@ export default function OrderDetailScreen() {
       }
     } catch (err) {
       if (requestGuardRef.current.canApplyLoad(request)) {
-        setError(err instanceof Error ? err.message : copy('โหลดออเดอร์ไม่สำเร็จ', 'Could not load the order'));
+        // The panel's title names the failure; the detail is a reason staff can
+        // act on in the app's words, never the server's, and empty when there
+        // is none.
+        setError(apiFailureDetail(err, language) ?? '');
       }
     } finally {
       if (!quiet && foregroundLoadRef.current === request) {
         foregroundLoadRef.current = null;
       }
     }
-  }, [canAccessOrder, canTakeOrder, copy, orderId, validOrderId]);
+  }, [canAccessOrder, canTakeOrder, language, orderId, validOrderId]);
   // Loaded when the screen opens or comes back into view, and then left alone:
   // no timer. The owner, 2026-09-19: an order screen is not the kitchen board,
   // and a dish that sells out while it sits open is caught by the add itself,
@@ -362,6 +370,10 @@ export default function OrderDetailScreen() {
   const closeTableLabel = order?.table?.display_label?.trim() || order?.table?.table_number?.trim() || '';
   const closeTableZone = order?.table?.table_zone?.name?.trim() || order?.table?.zone?.trim() || copy('ไม่มีโซน', 'No zone');
   const closeTablePlace = closeTableLabel ? `${closeTableLabel} ${closeTableZone}` : '';
+  // A takeaway holds no table, so the same close reads as discarding the order,
+  // named for the customer when there is one.
+  const closingTakeaway = order?.order_type === 'takeaway';
+  const takeawayName = order?.customer_name?.trim() || '';
   // On a tablet a dish opens in a panel beside the grid instead of taking the
   // whole screen. Only while there is a grid to pick from: a closed order, or
   // someone who cannot take orders, gets the summary alone at every width.
@@ -416,13 +428,18 @@ export default function OrderDetailScreen() {
       if (success) showToast({ title: success });
       return true;
     } catch (err) {
-      // Only the stock refusal gets a line of its own, in the app's words; any
-      // other failure keeps the title and nothing vague after it.
+      // The stock refusal first, then the refusals the bill shares with this
+      // screen (a line already sent, a closed order), then the ones every
+      // screen shares, all in the app's words; anything else keeps the title
+      // and nothing vague after it.
       const failure = stockFailure(err instanceof Error ? err.message : '');
+      const reason = failure
+        ? stockFailureMessage(failure, language)
+        : billActionFailureMessage(err, language) ?? apiFailureDetail(err, language);
       showToast({
         tone: 'error',
         title: copy('ทำรายการไม่สำเร็จ', 'Could not complete this action'),
-        ...(failure ? { message: stockFailureMessage(failure, language) } : {}),
+        ...(reason ? { message: reason } : {}),
       });
       return false;
     }
@@ -442,6 +459,19 @@ export default function OrderDetailScreen() {
   // waiter holding the wrong table's screen finds out before anything happens.
   function confirmCloseEmpty() {
     if (!canCloseEmpty || submitting) return;
+    if (closingTakeaway) {
+      Alert.alert(
+        takeawayName
+          ? copy(`ยกเลิกออเดอร์กลับบ้านของ ${takeawayName}?`, `Discard ${takeawayName}'s takeaway order?`)
+          : copy('ยกเลิกออเดอร์กลับบ้านนี้?', 'Discard this takeaway order?'),
+        undefined,
+        [
+          { text: copy('เปิดออเดอร์ไว้', 'Keep order'), style: 'cancel' },
+          { text: copy('ยกเลิกออเดอร์', 'Discard order'), style: 'destructive', onPress: () => { void closeEmpty(); } },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       closeTablePlace
         ? copy(`ปิดโต๊ะ ${closeTablePlace}?`, `Close table ${closeTablePlace}?`)
@@ -457,7 +487,10 @@ export default function OrderDetailScreen() {
   async function closeEmpty() {
     if (!canCloseEmpty) return;
     const closed = await mutate(() => closeEmptyTable(orderId));
-    if (closed) router.dismissTo('/tables');
+    // Onto the floor with the hub beneath it. A bare dismissTo('/tables') from
+    // an order opened on the overview replaced only this screen, and left the
+    // overview under a floor the waiter never opened.
+    if (closed) leaveForWorkspaceRoute(router, navigation.getState()?.routes.map((route) => route.name) ?? [], '/tables');
   }
 
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
@@ -503,7 +536,7 @@ export default function OrderDetailScreen() {
                   {item.note ? <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('หมายเหตุ', 'Note')}: {item.note}</Text> : null}
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-                  <Text selectable style={typeScale.number}>{money(item.subtotal, language)}</Text>
+                  <Text selectable style={typeScale.number}>{formatTender(item.subtotal, language)}</Text>
                   <StatusBadge label={itemStatusLabel(item.status, language)} tone={itemTone(item.status)} />
                 </View>
               </View>
@@ -530,11 +563,13 @@ export default function OrderDetailScreen() {
       })}
       {!activeItems.length ? <EmptyState title={copy('ยังไม่มีรายการอาหาร', 'No items yet')} detail={copy('เลือกเมนูเพื่อเริ่มออเดอร์', 'Choose a menu item to start the order.')} /> : null}
       {/* Always shown now. This used to be hidden whenever the bottom bar was
-          carrying the total; that bar is gone, so nothing else states it here. */}
+          carrying the total; that bar is gone, so nothing else states it here.
+          Satang kept, as the bill writes it: rounded to the baht, the same
+          order read ฿108 here and ฿107.54 on its bill. */}
       <Divider />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.xs }}>
         <Text selectable style={[typeScale.body, { color: palette.muted }]}>{copy('ยอดรวมออเดอร์', 'Order total')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{money(order.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, fontWeight: '600' }]}>{formatTender(order.grand_total, language)}</Text>
       </View>
     </>
   ) : null;
@@ -601,7 +636,7 @@ export default function OrderDetailScreen() {
       disabled={submitting}
       inline={sidePanel}
       label={currentRoundCopy.basketLabel}
-      value={money(currentRoundSummary.subtotal, language)}
+      value={formatTender(currentRoundSummary.subtotal, language)}
       onPress={openOrderSummary}
     />
   ) : null;
@@ -624,7 +659,9 @@ export default function OrderDetailScreen() {
   const summaryAction = !order ? undefined : canCloseEmpty ? (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
       <CloseTableAction
-        accessibilityLabel={closeTablePlace ? copy(`ปิดโต๊ะ ${closeTablePlace}`, `Close table ${closeTablePlace}`) : copy('ปิดโต๊ะ', 'Close table')}
+        accessibilityLabel={closingTakeaway
+          ? copy('ยกเลิกออเดอร์กลับบ้าน', 'Discard takeaway order')
+          : closeTablePlace ? copy(`ปิดโต๊ะ ${closeTablePlace}`, `Close table ${closeTablePlace}`) : copy('ปิดโต๊ะ', 'Close table')}
         busy={submitting}
         onPress={confirmCloseEmpty}
       />
@@ -665,7 +702,7 @@ export default function OrderDetailScreen() {
           panel={dishPanel}
           refreshControl={refreshControl}
         >
-          {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
+          {error !== null ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error || undefined} tone="danger" /> : null}
           {menuWorkspace}
         </OrderMenuSplit>
       </AppScreen>
@@ -695,7 +732,7 @@ export default function OrderDetailScreen() {
       footer={currentRoundBasket}
       action={summaryAction}
     >
-      {error ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error} tone="danger" /> : null}
+      {error !== null ? <Feedback title={copy('โหลดออเดอร์ล่าสุดไม่สำเร็จ', 'Could not load the latest order')} detail={error || undefined} tone="danger" /> : null}
 
       {order ? (
         <>

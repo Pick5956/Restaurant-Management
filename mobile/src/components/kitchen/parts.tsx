@@ -27,12 +27,12 @@ export const LANE_WIDTH = 300;
 export const LANE_GAP = 12;
 
 /**
- * A ticket that has not reached five minutes. Not green: most tickets on the
- * board are in this state, and a wall of green would drown the amber and red
- * that matter. The same ink as the selected day on the overview's day strip,
- * so "the dark block is the one that is current" reads the same on both.
+ * A ticket that has not reached five minutes: green, so the board reads green,
+ * amber, red as the wait grows. The owner did not like the dark brown it used
+ * to be, tried a deeper green, then asked for the done button's own colour
+ * (25 ก.ย. 2569), so it is `success` itself rather than a copy of its value.
  */
-const FRESH_HEADER = '#2B1A12';
+const FRESH_HEADER = palette.success;
 
 function headerColor(urgency: KitchenUrgency) {
   return urgency === 'overdue' ? palette.danger : urgency === 'warning' ? palette.warning : FRESH_HEADER;
@@ -227,7 +227,9 @@ export function Ticket({ title, titleIcon, meta, minutes, urgency, urgencyLabel,
             {titleIcon ? <AppIcon name={titleIcon} size={20} color="rgba(255,255,255,0.8)" /> : null}
             <Text selectable numberOfLines={1} style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: '#fff', fontVariant: ['tabular-nums'], flexShrink: 1 }}>{title}</Text>
           </View>
-          <Text selectable numberOfLines={1} style={{ fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.82)', marginTop: 3, fontVariant: ['tabular-nums'] }}>{meta}</Text>
+          {/* 0.92, not 0.82: at 12pt this line needs 4.5:1, and 0.82 fell to
+              4.3 on the green header and 3.9 on amber. */}
+          <Text selectable numberOfLines={1} style={{ fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.92)', marginTop: 3, fontVariant: ['tabular-nums'] }}>{meta}</Text>
         </View>
         <View style={{ alignItems: 'flex-end', gap: 3 }}>
           <View

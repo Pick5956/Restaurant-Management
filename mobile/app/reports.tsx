@@ -27,6 +27,7 @@ import {
 } from '@/src/components/reports/parts';
 import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { money } from '@/src/lib/format';
 import { loadFilteredReplacement } from '@/src/lib/filter-reload';
 import { formatBangkokDate } from '@/src/lib/order-query';
@@ -86,7 +87,8 @@ export default function ReportsScreen() {
   const [report, setReport] = useState<ManagerReport | null>(null);
   const [hours, setHours] = useState<SalesByHourReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the panel's title names it, `detail` is the app's line under it when there is one.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const request = useRef(createRequestGeneration());
   const singleDay = range.from === range.to;
 
@@ -108,10 +110,10 @@ export default function ReportsScreen() {
       setHours(result.data[1]);
       setToday(formatBangkokDate());
     } else {
-      setError(result.error instanceof Error ? result.error.message : copy('โหลดรายงานไม่สำเร็จ', 'Could not load reports.'));
+      setError({ detail: apiFailureDetail(result.error, language) });
     }
     setLoading(false);
-  }, [canView, copy, range.from, range.to, singleDay]);
+  }, [canView, language, range.from, range.to, singleDay]);
 
   useEffect(() => {
     void load();
@@ -247,8 +249,10 @@ export default function ReportsScreen() {
         { key: 'profit', label: copy('กำไร', 'Profit'), flex: 0.85, align: 'right' },
         { key: 'margin', label: copy('มาร์จิน', 'Margin'), flex: 0.6, align: 'right' },
       ];
+  // The server groups by menu id AND the name the dish was sold under, so a
+  // renamed dish is two rows with one id: the id alone repeated a key.
   const profitRows: TableRow[] = margins.map((item) => ({
-    key: String(item.menu_id),
+    key: `${item.menu_id}-${item.menu_name}`,
     cells: tablet
       ? [
           <Cell key="menu" strong>{item.menu_name}</Cell>,
@@ -435,7 +439,7 @@ export default function ReportsScreen() {
     >
       <View style={{ flex: 1, minHeight: 0, gap: spacing.md, paddingBottom: tablet ? spacing.lg : spacing.sm }}>
         {tablet ? null : periodButton}
-        {error ? <Feedback title={copy('โหลดรายงานไม่ได้', 'Could not load reports')} detail={error} tone="danger" /> : null}
+        {error ? <Feedback title={copy('โหลดรายงานไม่ได้', 'Could not load reports')} detail={error.detail} tone="danger" /> : null}
         {loading && !report ? skeleton : report ? (
           <View style={{ flex: 1, minHeight: 0, gap: spacing.md, opacity: loading ? 0.55 : 1 }}>
             <ReportFigures figures={figures} tablet={tablet} />

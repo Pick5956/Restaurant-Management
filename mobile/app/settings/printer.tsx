@@ -8,8 +8,8 @@ import { ActionRow, FORM_MAX_WIDTH, FormCard, Note } from '@/src/components/form
 import { GhostButton } from '@/src/components/staff/parts';
 import { Button } from '@/src/components/ui';
 import {
-  describePrinterFailure,
   looksLikeReceiptPrinter,
+  printerFailureReason,
   type DiscoveredPrinter,
 } from '@/src/lib/printer';
 import { usePrinter } from '@/src/providers/printer-provider';
@@ -46,7 +46,14 @@ export default function PrinterSettingsScreen() {
   // Scan, test, choose and forget are all taps; each reports through a toast
   // (14 ก.ย.). The two info panels about the platform stay in the page.
   const { showToast } = useToast();
-  const setError = (detail: string) => showToast({ tone: 'error', title: copy('เชื่อมต่อไม่สำเร็จ', 'Connection failed'), message: detail });
+  // No receipt prints on this screen (the test only connects), so the
+  // receipt's "did not print" line is never the detail: a code with no reason
+  // staff can act on leaves the title alone, as the bill does.
+  const setError = (detail: string | null) => showToast({
+    tone: 'error',
+    title: copy('เชื่อมต่อไม่สำเร็จ', 'Connection failed'),
+    ...(detail ? { message: detail } : {}),
+  });
   const setNotice = (detail: string) => showToast({ title: detail });
 
   useEffect(() => {
@@ -61,7 +68,7 @@ export default function PrinterSettingsScreen() {
       if (state === 'PoweredOff') {
         const enabled = await enableBluetooth();
         if (!enabled.ok) {
-          setError(describePrinterFailure(enabled.code, language, enabled.message));
+          setError(printerFailureReason(enabled.code, language));
           return;
         }
       }
@@ -72,7 +79,7 @@ export default function PrinterSettingsScreen() {
       setPrinters([]);
       const result = await scanPrinters(setPrinters);
       if (!result.ok) {
-        setError(describePrinterFailure(result.code, language, result.message));
+        setError(printerFailureReason(result.code, language));
         return;
       }
       setPrinters(result.printers);
@@ -92,7 +99,7 @@ export default function PrinterSettingsScreen() {
     try {
       const result = await testPrinter(printer.address);
       if (!result.ok) {
-        setError(describePrinterFailure(result.code, language, result.message));
+        setError(printerFailureReason(result.code, language));
         return;
       }
       await selectPrinter({ address: printer.address, name: printer.name });
@@ -111,7 +118,7 @@ export default function PrinterSettingsScreen() {
     try {
       const result = await testPrinter(selectedPrinter.address);
       if (result.ok) setNotice(copy('เชื่อมต่อเครื่องพิมพ์ได้', 'The printer responded.'));
-      else setError(describePrinterFailure(result.code, language, result.message));
+      else setError(printerFailureReason(result.code, language));
     } finally {
       setTestingAddress(null);
     }

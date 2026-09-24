@@ -107,3 +107,13 @@ describe("home dashboard helpers", () => {
     expect(toDashboardDate(new Date("2026-07-13T00:30:00+07:00"))).toBe("2026-07-13");
   });
 });
+
+// TopMenuItemsByMonth groups by menu id AND the name the dish was sold under,
+// so a renamed dish comes back as two rows with one id. Keyed by the id alone,
+// React saw a repeated key (the phone's profit table crashed the same way).
+describe("month top items", () => {
+  it("key each row by the menu id and the name it was sold under", () => {
+    expect(homePageSource).toContain("<tr key={`${item.menu_id}-${item.menu_name}`}>");
+    expect(homePageSource).not.toMatch(/monthTopItems[\s\S]{0,120}<tr key=\{item\.menu_id\}>/);
+  });
+});

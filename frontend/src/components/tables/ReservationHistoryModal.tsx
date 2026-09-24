@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
 import {
@@ -12,8 +12,13 @@ import {
 } from "@/src/lib/reservation";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
+import { createRequestGeneration } from "@/src/lib/requestGeneration";
 
 type StatusFilter = "all" | ReservationStatus;
+
+// The server's largest page. Left unset it hands back 20 rows, and the
+// history runs to every booking the restaurant has ever taken.
+const RESERVATION_PAGE_SIZE = 100;
 
 const statusBadgeClass: Record<ReservationStatus, string> = {
   active: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300",
@@ -55,6 +60,17 @@ export default function ReservationHistoryModal({
   const [counts, setCounts] = useState<Partial<Record<ReservationStatus, number>>>({});
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  // The first page and the ones after it share one generation: a reload that
+  // starts meanwhile (a filter switch, a closed booking) wins, and the page
+  // still in flight is dropped instead of landing in the wrong list.
+  const [listRequests] = useState(createRequestGeneration);
+  // A first page in flight, known before the next render; and which filter
+  // the rows on screen belong to.
+  const loadingRef = useRef(false);
+  const rowsFilterRef = useRef<StatusFilter | null>(null);
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
@@ -63,7 +79,6 @@ export default function ReservationHistoryModal({
   const copy = language === "th"
     ? {
         title: "ประวัติการจอง",
-        subtitle: "ดูการจองโต๊ะทั้งหมด ทั้งที่รับลูกค้าแล้วและที่ยกเลิก/ไม่มา",
         close: "ปิด",
         all: "ทั้งหมด",
         active: "กำลังจอง",
@@ -81,13 +96,18 @@ export default function ReservationHistoryModal({
         cancel: "ยกเลิก",
         confirmCancel: "ยืนยันยกเลิก",
         empty: "ยังไม่มีประวัติการจอง",
+        loadMore: "โหลดการจองเพิ่มเติม",
         loadError: "โหลดประวัติการจองไม่สำเร็จ",
+        loadMoreError: "โหลดการจองเพิ่มเติมไม่สำเร็จ",
         resolveError: "ปิดรายการจองไม่สำเร็จ",
         noName: "ไม่ระบุชื่อ",
+        noPhone: "ไม่ระบุเบอร์",
+        noTable: "ไม่ระบุโต๊ะ",
+        noTime: "ไม่ระบุเวลา",
+        notClosed: "ยังไม่ปิด",
       }
     : {
         title: "Reservation history",
-        subtitle: "All table bookings — seated guests and cancellations / no-shows.",
         close: "Close",
         all: "All",
         active: "Active",
@@ -105,16 +125,23 @@ export default function ReservationHistoryModal({
         cancel: "Cancel",
         confirmCancel: "Confirm cancel",
         empty: "No reservations yet.",
+        loadMore: "Load more bookings",
         loadError: "Could not load reservation history.",
+        loadMoreError: "Could not load more bookings.",
         resolveError: "Could not close the reservation.",
         noName: "No name",
+        noPhone: "No phone",
+        noTable: "No table",
+        noTime: "No time",
+        notClosed: "Not closed",
       };
 
   const statusText = (status: ReservationStatus) => copy[status];
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return "-";
+  // A missing value is said, never a bare "-".
+  const formatDateTime = (value: string | null | undefined, missing: string) => {
+    if (!value) return missing;
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "-";
+    if (Number.isNaN(date.getTime())) return missing;
     return date.toLocaleString(language === "th" ? "th-TH" : "en-US", {
       day: "2-digit",
       month: "short",
@@ -124,19 +151,82 @@ export default function ReservationHistoryModal({
   };
 
   const load = useCallback(async () => {
+    const request = listRequests.begin();
+    loadingRef.current = true;
+    // A new first page replaces any next page still on its way, whose own
+    // `finally` now skips its reset; left set, the load-more button stayed
+    // disabled until the page was left.
+    setLoadingMore(false);
+    // Rows of another filter never stay under this one: if its first page
+    // then failed, the old rows - and their offset - would pass for this
+    // filter's, and load-more would append the wrong page to them.
+    if (rowsFilterRef.current !== filter) {
+      rowsFilterRef.current = null;
+      setReservations([]);
+      setHasMore(false);
+      setNextOffset(0);
+    }
     setLoading(true);
     setError("");
     try {
-      const res = await listReservations(filter === "all" ? {} : { status: filter });
-      setReservations(res.data.reservations ?? []);
+      const res = await listReservations({ ...(filter === "all" ? {} : { status: filter }), limit: RESERVATION_PAGE_SIZE });
+      if (!listRequests.isCurrent(request)) return;
+      const rows = res.data.reservations ?? [];
+      rowsFilterRef.current = filter;
+      setReservations(rows);
       setCounts(res.data.counts ?? {});
-    } catch (err) {
-      setError(apiErrorMessage(err) || copy.loadError);
+      setHasMore(Boolean(res.data.has_more) && rows.length > 0);
+      setNextOffset(res.data.next_offset || rows.length);
+    } catch {
+      if (!listRequests.isCurrent(request)) return;
+      // Nothing to page on from a list that did not load.
+      setHasMore(false);
+      // The app's own words, never the API's.
+      setError(copy.loadError);
     } finally {
-      setLoading(false);
+      if (listRequests.isCurrent(request)) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, listRequests]);
+
+  // The next page of the same filter, appended under what is shown.
+  const loadMore = async () => {
+    // The ref, not the rendered `loading`: a tap between a first page starting
+    // and the next render would otherwise start a newer request, and the first
+    // page's `finally` would then never clear the loading state.
+    if (loadingRef.current || loadingMore || !hasMore) return;
+    const request = listRequests.begin();
+    setLoadingMore(true);
+    setError("");
+    try {
+      const res = await listReservations({
+        ...(filter === "all" ? {} : { status: filter }),
+        limit: RESERVATION_PAGE_SIZE,
+        offset: nextOffset,
+      });
+      if (!listRequests.isCurrent(request)) return;
+      const page = res.data.reservations ?? [];
+      // Offset paging over `id desc`: a booking made between two pages pushes
+      // a row onto the next page, and it is kept once here. A booking closed
+      // under a status filter pulls rows up instead, and one can be skipped
+      // until the list is opened again - a limit of offset paging accepted
+      // for a history list.
+      setReservations((current) => {
+        const seen = new Set(current.map((item) => item.ID));
+        return [...current, ...page.filter((item) => !seen.has(item.ID))];
+      });
+      setCounts(res.data.counts ?? {});
+      setHasMore(Boolean(res.data.has_more) && page.length > 0);
+      setNextOffset(res.data.next_offset || nextOffset + page.length);
+    } catch {
+      if (listRequests.isCurrent(request)) setError(copy.loadMoreError);
+    } finally {
+      if (listRequests.isCurrent(request)) setLoadingMore(false);
+    }
+  };
 
   // Fetch whenever the modal is open (and on filter change while open). The
   // filter resets to "all" each time it opens so it always lands on the full list.
@@ -221,10 +311,9 @@ export default function ReservationHistoryModal({
       aria-label={copy.title}
     >
       <div className={`${closing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} relative flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-        <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-gray-900 dark:text-white">{copy.title}</h2>
-            <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400">{copy.subtitle}</p>
           </div>
           <button
             type="button"
@@ -287,12 +376,13 @@ export default function ReservationHistoryModal({
                   const confirming = confirmCancelId === reservation.ID;
                   return (
                     <div key={reservation.ID} className={rowGridClass}>
-                      <span className="font-semibold text-gray-950 dark:text-white">{reservation.table_label || reservation.table?.display_label || reservation.table?.table_number || "-"}</span>
+                      <span className="font-semibold text-gray-950 dark:text-white">{reservation.table_label || reservation.table?.display_label || reservation.table?.table_number || copy.noTable}</span>
                       <span className="min-w-0">
                         <span className="block truncate text-gray-800 dark:text-gray-100">{reservation.name || copy.noName}</span>
+                        {/* Values in one line are joined by a comma, not a middle dot. */}
                         <span className="mt-0.5 block truncate text-[12px] text-gray-500 dark:text-gray-400">
-                          <span className="font-mono tabular-nums">{reservation.phone || "-"}</span>
-                          {reservation.guest_count ? ` · ${copy.guests(reservation.guest_count)}` : ""}
+                          {reservation.phone ? <span className="font-mono tabular-nums">{reservation.phone}</span> : copy.noPhone}
+                          {reservation.guest_count ? `, ${copy.guests(reservation.guest_count)}` : ""}
                         </span>
                       </span>
                       {/* Only a booking for later has a time to arrive at. A hold
@@ -300,15 +390,15 @@ export default function ReservationHistoryModal({
                           instead of leaving a gap that reads as missing data. */}
                       <span className={`${timeCellClass} mt-1 lg:mt-0 ${reservation.reserved_for ? "font-semibold text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"}`}>
                         <span className="font-normal text-gray-500 dark:text-gray-400 lg:hidden">{copy.arriving} </span>
-                        {reservation.reserved_for ? formatDateTime(reservation.reserved_for) : copy.holdNow}
+                        {formatDateTime(reservation.reserved_for, copy.holdNow)}
                       </span>
                       <span className={`${timeCellClass} text-gray-500 dark:text-gray-400`}>
                         <span className="lg:hidden">{copy.reservedAt} </span>
-                        {formatDateTime(reservation.CreatedAt)}
+                        {formatDateTime(reservation.CreatedAt, copy.noTime)}
                       </span>
                       <span className={`${timeCellClass} text-gray-500 dark:text-gray-400`}>
                         <span className="lg:hidden">{copy.resolvedAt} </span>
-                        {formatDateTime(reservation.resolved_at)}
+                        {formatDateTime(reservation.resolved_at, copy.notClosed)}
                       </span>
                       <span className="col-span-2 mt-2 flex items-center gap-2 lg:col-span-1 lg:mt-0 lg:justify-center">
                         {actionable ? (
@@ -344,6 +434,18 @@ export default function ReservationHistoryModal({
                     </div>
                   );
                 })}
+                {hasMore ? (
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      disabled={loading || loadingMore}
+                      onClick={() => void loadMore()}
+                      className="ui-press h-9 w-full rounded-md border border-gray-200 bg-white px-2.5 text-[12px] font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                    >
+                      {copy.loadMore}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="grid h-full place-items-center px-4 text-center text-[14px] text-gray-500 dark:text-gray-400">{copy.empty}</div>

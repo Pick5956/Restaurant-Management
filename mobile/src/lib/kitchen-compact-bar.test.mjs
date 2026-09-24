@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 // The kitchen's compact bar (owner's Grab reference, 23 ก.ย. 2569). The phone
 // board keeps its full heading - tiles, "กำลังทำ" and the order switch - in the
-// content; once the heading has scrolled away, the bar carries the same switch
-// on its title row. Both faults this guards against are one wrong line at the
-// call site, which no test of the board's logic can see.
+// content; once the heading has scrolled away, the bar shows the title, in the
+// middle. On 25 ก.ย. 2569 the owner took the order switch off the bar and kept
+// it on the board heading only ("ปุ่มรอนานสุด ไม่ต้องเอาไว้ header ตอนเลื่อนลง").
+// Each of these is one line at the call site, which no test of the board's
+// logic can see.
 
 const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -24,7 +26,7 @@ function mainScreenTag(source) {
   return source.slice(start, end);
 }
 
-test('the compact bar carries the board order switch, driven by the same state', async () => {
+test('the phone bar is the title alone, centred, with no order switch', async () => {
   const kitchen = await read('app', 'kitchen.tsx');
   const tag = mainScreenTag(kitchen);
 
@@ -32,47 +34,26 @@ test('the compact bar carries the board order switch, driven by the same state',
   // is for, and the tablet never scrolls, so never gets it.
   assert.doesNotMatch(tag, /compactHeader=\{false\}/);
   assert.match(tag, /scroll=\{!isTablet\}/);
-
-  // Phone only, and on the same condition as the board heading's own switch -
-  // never an empty slot, never a switch with one ticket to order.
-  assert.match(
-    tag,
-    /compactAction=\{!isTablet && cookingTickets\.length > 1\s*\?\s*<SortSwitch sort=\{sortMode\} onSort=\{sortFromCompactBar\} language=\{language\} \/>\s*:\s*null\}/,
-  );
-  assert.match(kitchen, /showSort=\{cookingTickets\.length > 1\}/);
-  assert.match(tag, /scrollControlRef=\{scrollControlRef\}/);
-  // A second copy of the switch, not a second copy of the state: the bar's
-  // handler writes the one `sortMode` the heading reads.
-  assert.match(kitchen, /const \[sortMode, setSortMode\] = useState<KitchenSortMode>/);
-  assert.equal((kitchen.match(/useState<KitchenSortMode>/g) || []).length, 1);
+  assert.match(tag, /centerTitle=\{!isTablet\}/);
+  // No switch on the bar: `action` is the tablet's only, so the bar has none.
+  assert.doesNotMatch(tag, /compactAction=/);
+  assert.match(tag, /action=\{isTablet && cookingTickets\.length > 1/);
+  assert.doesNotMatch(kitchen, /sortFromCompactBar/);
 });
 
-test('a new order picked from down the list goes back to the top of the board', async () => {
+test('the board reads longest-waiting first, and its heading keeps the switch', async () => {
   const kitchen = await read('app', 'kitchen.tsx');
-  const start = kitchen.indexOf('function sortFromCompactBar(');
-  assert.ok(start !== -1, 'the compact bar switch has no handler of its own');
-  const body = kitchen.slice(start, kitchen.indexOf('\n  }\n', start));
-
-  // Pressing the order already chosen does not move the page.
-  assert.match(body, /if \(mode === sortMode\) return;/);
-  assert.match(body, /setSortMode\(mode\);/);
-  // Reduced motion jumps instead of gliding.
-  assert.match(body, /scrollControlRef\.current\?\.scrollTo\(0, !reducedMotion\);/);
+  assert.match(kitchen, /const \[sortMode, setSortMode\] = useState<KitchenSortMode>\('waiting'\);/);
+  assert.equal((kitchen.match(/useState<KitchenSortMode>/g) || []).length, 1);
+  assert.match(kitchen, /<BoardHeading\s+title=\{copy\('กำลังทำ', 'Cooking'\)\}\s+sort=\{sortMode\}\s+onSort=\{setSortMode\}\s+showSort=\{cookingTickets\.length > 1\}/);
 });
 
-test('the switch in the bar holds no Liquid Glass and fits the bar row', async () => {
+test('a ticket under five minutes wears the done button green, and its small line stays legible on it', async () => {
   const parts = await read('src', 'components', 'kitchen', 'parts.tsx');
-  const start = parts.indexOf('export function SortSwitch(');
-  assert.ok(start !== -1);
-  const body = parts.slice(start, parts.indexOf('\n}\n', start));
-
-  // The bar fades in; glass under a fading parent renders flat.
-  assert.doesNotMatch(body, /Glass/);
-  // The bar's row is 40pt: 3 + 5 + a Kanit 12.5 line + 5 + 3 + the border is
-  // just under it, so it is not scaled down there. Growing any of these means
-  // checking that sum again.
-  assert.match(body, /padding: 3,/);
-  assert.match(body, /paddingVertical: 5,/);
-  assert.match(body, /fontSize: 12\.5,/);
-  assert.doesNotMatch(body, /lineHeight/);
+  // The done button's own colour, not a copy of its value.
+  assert.match(parts, /const FRESH_HEADER = palette\.success;/);
+  assert.doesNotMatch(parts, /#2B1A12/);
+  assert.match(parts, /return urgency === 'overdue' \? palette\.danger : urgency === 'warning' \? palette\.warning : FRESH_HEADER;/);
+  // 12pt on the green, amber or red header needs 4.5:1; 0.82 white was 4.3 and 3.9.
+  assert.match(parts, /fontSize: 12, lineHeight: 16, color: 'rgba\(255,255,255,0\.92\)'/);
 });

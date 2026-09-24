@@ -5,7 +5,8 @@ import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, History, Undo2, X } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
+import { orderItemStatusRefusal } from "@/src/lib/knownApiErrors";
 import { playBeep } from "@/src/lib/browserAudio";
 import { can } from "@/src/lib/rbac";
 import { kitchenQueue, updateOrderItemStatus } from "@/src/lib/order";
@@ -58,16 +59,22 @@ function cookingBarClass(minutes: number) {
   return "bg-emerald-600";
 }
 
-function orderTableLabel(order: Order) {
-  return order.table?.display_label || order.table?.table_number || (order.table_id ? String(order.table_id) : "-");
+// Said in the slot of a missing value, never left as a dash or a bare word.
+const NO_TABLE = { th: "ไม่ระบุโต๊ะ", en: "No table" } as const;
+// Only ever follows a comma ("Takeaway, no name"), so it starts lower-case.
+const NO_NAME = { th: "ไม่ระบุชื่อ", en: "no name" } as const;
+
+function orderTableLabel(order: Order): string | null {
+  return order.table?.display_label || order.table?.table_number || (order.table_id ? String(order.table_id) : null);
 }
 
 function orderLocationLabel(order: Order, language: "th" | "en") {
   if (order.order_type === "takeaway") {
     const base = language === "th" ? "กลับบ้าน" : "Takeaway";
-    return order.customer_name?.trim() ? `${base} · ${order.customer_name.trim()}` : base;
+    return `${base}, ${order.customer_name?.trim() || NO_NAME[language]}`;
   }
-  return `${language === "th" ? "โต๊ะ" : "Table"} ${orderTableLabel(order)}`;
+  const table = orderTableLabel(order);
+  return table ? `${language === "th" ? "โต๊ะ" : "Table"} ${table}` : NO_TABLE[language];
 }
 
 function itemFulfillmentLabel(item: OrderItem, language: "th" | "en") {
@@ -161,10 +168,14 @@ export default function KitchenPage() {
         cancelSuccess: "ยกเลิกรายการแล้ว",
         loadError: "โหลดคิวครัวไม่สำเร็จ",
         saveError: "อัปเดตสถานะไม่สำเร็จ",
+        orderClosed: "ออเดอร์นี้ปิดไปแล้ว",
+        itemChanged: "รายการนี้ถูกเปลี่ยนสถานะไปแล้ว",
         recall: "รายการที่เสร็จสิ้น",
         recallEmpty: "ยังไม่มีรายการที่ครัวทำเสร็จ",
         finishedAt: "เสร็จเมื่อ",
         timeTaken: "ใช้เวลา",
+        noFinishTime: "ไม่ระบุเวลาเสร็จ",
+        noDuration: "ไม่ระบุเวลาที่ใช้",
         recallDuration: (m: number, s: number) => `${m} นาที ${s} วินาที`,
         recallClose: "ปิด",
       }
@@ -210,13 +221,26 @@ export default function KitchenPage() {
         cancelSuccess: "Item cancelled",
         loadError: "Could not load kitchen queue.",
         saveError: "Could not update item status.",
+        orderClosed: "This order has been closed.",
+        itemChanged: "This item's status has already changed.",
         recall: "Completed",
         recallEmpty: "No items finished yet",
         finishedAt: "Finished",
         timeTaken: "Took",
+        noFinishTime: "No finish time",
+        noDuration: "No duration",
         recallDuration: (m: number, s: number) => `${m}m ${s}s`,
         recallClose: "Close",
       };
+
+  // A refused status change in the kitchen's own words: the two refusals that
+  // mean this screen was behind, then the failures every page shares.
+  const statusFailureText = (error: unknown) => {
+    const refusal = orderItemStatusRefusal(error);
+    if (refusal === "order_closed") return copy.orderClosed;
+    if (refusal === "item_changed") return copy.itemChanged;
+    return apiFailureText(error, language, copy.saveError);
+  };
 
   const visibleOrders = useMemo(
     () => orders.filter((order) => order.items?.some((item) => item.status === "cooking" || item.status === "ready")),
@@ -267,7 +291,7 @@ export default function KitchenPage() {
       ticketIdsRef.current = nextIds;
       hasLoadedRef.current = true;
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.loadError);
+      setError(apiFailureText(error, language, copy.loadError));
     } finally {
       setLoading(false);
     }
@@ -336,7 +360,7 @@ export default function KitchenPage() {
       applyItemStatuses(order, [itemId], "ready");
     } catch (error) {
       transitioningItemIdsRef.current.delete(itemId);
-      setError(apiErrorMessage(error) || copy.saveError);
+      setError(statusFailureText(error));
     } finally {
       setSubmittingId(null);
     }
@@ -372,7 +396,7 @@ export default function KitchenPage() {
       applyItemStatuses(order, itemIds, "ready");
     } catch (error) {
       itemIds.forEach((itemId) => transitioningItemIdsRef.current.delete(itemId));
-      setError(apiErrorMessage(error) || copy.saveError);
+      setError(statusFailureText(error));
     } finally {
       setSubmittingId(null);
     }
@@ -396,7 +420,7 @@ export default function KitchenPage() {
       applyItemStatuses(order, [item.ID], "cooking");
       showToast({ title: copy.undoSuccess, tone: "info" });
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      setError(statusFailureText(error));
     } finally {
       transitioningItemIdsRef.current.delete(item.ID);
       setSubmittingId(null);
@@ -418,7 +442,7 @@ export default function KitchenPage() {
       applyItemStatuses(order, itemIds, "cooking");
       showToast({ title: copy.undoSuccess, tone: "info" });
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      setError(statusFailureText(error));
     } finally {
       itemIds.forEach((id) => transitioningItemIdsRef.current.delete(id));
       setSubmittingId(null);
@@ -524,7 +548,11 @@ export default function KitchenPage() {
       showToast({ title: copy.cancelSuccess });
       closeCancelDialog();
     } catch (error) {
-      setCancelReasonError(apiErrorMessage(error) || copy.saveError);
+      // The reason field only carries its own problem (left empty). A refused
+      // cancel is the action's outcome, so it is a toast; when this screen was
+      // behind (bill closed, dish already moved) the dialog has nothing left to do.
+      if (orderItemStatusRefusal(error)) closeCancelDialog();
+      showToast({ title: statusFailureText(error), tone: "error" });
     } finally {
       setSubmittingId(null);
     }
@@ -546,9 +574,10 @@ export default function KitchenPage() {
     const cookingBar = cookingBarClass(elapsed);
     const isReadyLane = lane === "ready";
     const locationLabel = orderLocationLabel(order, language);
+    const tableLabel = orderTableLabel(order);
     const readyCornerValue = order.order_type === "takeaway"
       ? (language === "th" ? "กลับบ้าน" : "Takeaway")
-      : orderTableLabel(order);
+      : tableLabel ?? NO_TABLE[language];
     const kitchenBatch = order.kitchen_batch || 1;
     const currentTicketKey = kitchenTicketKey(order);
     const isCompletingTicket = !isReadyLane && completingTicketIds.has(currentTicketKey);
@@ -588,8 +617,7 @@ export default function KitchenPage() {
                   <>
                     <h3 className="text-2xl font-bold leading-tight text-gray-950 dark:text-white">{locationLabel}</h3>
                     <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] font-medium text-gray-800 dark:text-gray-100">
-                      <span>{order.order_number}</span>
-                      <span aria-hidden="true">·</span>
+                      <span>{order.order_number},</span>
                       <span>{copy.kitchenBatch(kitchenBatch)}</span>
                     </p>
                   </>
@@ -597,7 +625,7 @@ export default function KitchenPage() {
               </div>
               <div className="text-right">
                 {isReadyLane ? (
-                  order.order_type === "takeaway" ? (
+                  order.order_type === "takeaway" || !tableLabel ? (
                     <p className="text-[16px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300">{readyCornerValue}</p>
                   ) : (
                     <div className="flex items-center justify-end gap-1.5">
@@ -885,10 +913,8 @@ export default function KitchenPage() {
   if (!canView) return <PermissionDenied title={copy.denied} />;
 
   const recallLocale = language === "th" ? "th-TH" : "en-US";
-  const formatClock = (value?: string | null) =>
-    value
-      ? new Intl.DateTimeFormat(recallLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(value))
-      : "-";
+  const formatClock = (value: string) =>
+    new Intl.DateTimeFormat(recallLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(value));
   const roundFinishAt = (order: Order) =>
     (order.items ?? [])
       .filter((it) => it.status === "ready")
@@ -1083,9 +1109,9 @@ export default function KitchenPage() {
                           <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{copy.kitchenBatch(order.kitchen_batch || 1)}</p>
                         </div>
                         <div className="shrink-0 text-right">
-                          <p className="font-mono text-[13px] tabular-nums text-gray-700 dark:text-gray-200">{copy.finishedAt} {formatClock(finishAt)}</p>
+                          <p className="font-mono text-[13px] tabular-nums text-gray-700 dark:text-gray-200">{finishAt ? `${copy.finishedAt} ${formatClock(finishAt)}` : copy.noFinishTime}</p>
                           <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                            {copy.timeTaken} {secs != null ? copy.recallDuration(Math.floor(secs / 60), secs % 60) : "-"}
+                            {secs != null ? `${copy.timeTaken} ${copy.recallDuration(Math.floor(secs / 60), secs % 60)}` : copy.noDuration}
                           </p>
                         </div>
                         {canUpdate ? (

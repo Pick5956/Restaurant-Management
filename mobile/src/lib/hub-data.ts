@@ -468,8 +468,8 @@ export type HubLoaderPlan = Record<HubLoaderKey, boolean> & {
  *   owner's gate on takings (view_reports - owners and managers, 2026-09-23);
  * - floor: the pos row (take_order), which ListTables and status=active accept;
  * - kitchen: view_kitchen, KitchenQueue's own check;
- * - paidToday: view_orders - requireOrderListAccess refuses a take_order-only
- *   member anything but status=active, though the orders row still shows;
+ * - paidToday: view_orders, the orders row's own gate (orderRoutePermissions)
+ *   and what requireOrderListAccess asks of anything but status=active;
  * - menu / inventory: the row's permission, which the list endpoints accept;
  * - insights: the owner only.
  */

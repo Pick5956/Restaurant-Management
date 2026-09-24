@@ -14,6 +14,7 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { BrandMark } from '@/src/components/brand-mark';
 import { MotionReveal } from '@/src/components/motion';
+import { goBackOr } from '@/src/lib/navigation-runtime';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, radius, spacing, typeScale } from '@/src/theme';
 
@@ -53,7 +54,7 @@ function LanguageControl() {
 function BackButton() {
   const { copy } = useDisplayPreferences();
   return (
-    <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => router.back()} />
+    <GlassButton icon="chevron-back" label={copy('ย้อนกลับ', 'Go back')} onPress={() => goBackOr(router, '/')} />
   );
 }
 

@@ -6,9 +6,8 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, Clock3, ReceiptText } from "lucide-react";
 import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
-import { getCustomerTableOrder, type CustomerTablePayload } from "@/src/lib/customerOrder";
+import { customerTableLoadText, getCustomerTableOrder, type CustomerTablePayload } from "@/src/lib/customerOrder";
 import {
   customerOrderItemStatusLabel,
   customerTableMenuHref,
@@ -40,7 +39,9 @@ export default function CustomerTableOrdersPage() {
         back: "กลับไปสั่งอาหาร",
         loading: "กำลังโหลดรายการ",
         loadError: "โหลดรายการที่สั่งไม่สำเร็จ",
+        qrInvalid: "QR นี้ใช้ไม่ได้แล้ว ขอ QR ใหม่จากพนักงาน",
         table: "โต๊ะ",
+        noTable: "ไม่ระบุโต๊ะ",
         order: "ออเดอร์",
         itemCount: "จำนวนอาหาร",
         itemUnit: "รายการ",
@@ -57,7 +58,9 @@ export default function CustomerTableOrdersPage() {
         back: "Back to menu",
         loading: "Loading orders",
         loadError: "Could not load table orders",
+        qrInvalid: "This QR code no longer works. Ask staff for a new one.",
         table: "Table",
+        noTable: "No table",
         order: "Order",
         itemCount: "Food items",
         itemUnit: "items",
@@ -76,11 +79,11 @@ export default function CustomerTableOrdersPage() {
       const response = await getCustomerTableOrder(token);
       setPayload(response.data);
     } catch (loadError) {
-      setError(apiErrorMessage(loadError) || copy.loadError);
+      setError(customerTableLoadText(loadError, language, { qrInvalid: copy.qrInvalid, loadError: copy.loadError }));
     } finally {
       setLoading(false);
     }
-  }, [copy.loadError, token]);
+  }, [copy.loadError, copy.qrInvalid, language, token]);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void load(), 0);
@@ -94,7 +97,8 @@ export default function CustomerTableOrdersPage() {
 
   const items = useMemo(() => payload?.order?.items ?? [], [payload?.order?.items]);
   const summary = useMemo(() => summarizeCustomerOrderItems(items), [items]);
-  const tableLabel = payload?.table.display_label || payload?.table.table_number || "-";
+  const tableNumber = payload?.table.display_label || payload?.table.table_number;
+  const tableLabel = tableNumber ? `${copy.table} ${tableNumber}` : copy.noTable;
 
   if (loading) {
     return <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">{copy.loading}</div>;
@@ -135,9 +139,9 @@ export default function CustomerTableOrdersPage() {
             <ReceiptText className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <p className="text-[15px] font-semibold">{copy.table} {tableLabel}</p>
+            <p className="text-[15px] font-semibold">{tableLabel}</p>
             <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400">
-              {payload.order ? `${copy.order} ${payload.order.order_number} · ${copy.subtitle}` : copy.subtitle}
+              {payload.order ? `${copy.order} ${payload.order.order_number}, ${copy.subtitle}` : copy.subtitle}
             </p>
           </div>
         </div>

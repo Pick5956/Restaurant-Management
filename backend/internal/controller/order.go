@@ -93,6 +93,24 @@ func requireOrderItemStatusAccess(c *gin.Context, status string) (service.OrderI
 	return "", false
 }
 
+// requireOrderCancelAccess: once an order has gone to the kitchen, cancelling
+// the whole of it throws away cooked food or an unpaid bill, so it takes the
+// supervisory permission every other status change takes. Anyone else may
+// cancel only an order none of whose live lines has left pending - judged by
+// its lines, because a served order reads "open" again once a new line is
+// added. Lines voided one by one at the bill, each with a reason, are the
+// front-of-house void and are not this gate's concern. The test is the
+// permission, not the role name: the seeded cashier and every custom role
+// pass the take_order gate without being a "waiter". The service checks the
+// same rule again under the row lock.
+func requireOrderCancelAccess(c *gin.Context, order *entity.Order) bool {
+	if memberCan(c, "update_order_status") || service.OrderNeverReachedKitchen(order) {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": service.ErrOrderCancelNeedsSupervisor.Error()})
+	return false
+}
+
 func (ctrl *OrderController) CreateOrder(c *gin.Context) {
 	restaurantID, ok := requireRestaurant(c)
 	if !ok {
@@ -267,20 +285,20 @@ func (ctrl *OrderController) CancelOrder(c *gin.Context) {
 	if !ok {
 		return
 	}
-	member, _ := contextMember(c)
-	if member != nil && member.Role != nil && member.Role.Name == "waiter" {
-		if resolved.Status != entity.OrderStatusOpen {
-			c.JSON(http.StatusForbidden, gin.H{"error": "waiter can only cancel open orders before kitchen send"})
-			return
-		}
+	if !requireOrderCancelAccess(c, resolved) {
+		return
 	}
 	var req service.CancelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondInvalidRequest(c)
 		return
 	}
-	order, err := ctrl.orderSvc.CancelOrder(restaurantID, userID, resolved.ID, req.Reason)
+	order, err := ctrl.orderSvc.CancelOrder(restaurantID, userID, resolved.ID, req.Reason, memberCan(c, "update_order_status"))
 	if err != nil {
+		if errors.Is(err, service.ErrOrderCancelNeedsSupervisor) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
 	}

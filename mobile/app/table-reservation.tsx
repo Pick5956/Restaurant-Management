@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
 import {
@@ -22,11 +22,14 @@ import {
   Surface,
   TextField,
 } from '@/src/components/ui';
+import { openTableFailure } from '@/src/lib/open-table-error';
 import { can } from '@/src/lib/rbac';
+import { reservationFailure } from '@/src/lib/reservation-error';
 import { formatReservationClock } from '@/src/lib/reservation-schedule';
 import { reservationArrivalOrderInput } from '@/src/lib/table-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
+import { useToast } from '@/src/providers/toast-provider';
 import { breakpoints, palette, spacing, typeScale } from '@/src/theme';
 import type { Reservation } from '@/src/types/reservation';
 import type { RestaurantTable } from '@/src/types/table';
@@ -39,6 +42,7 @@ export default function TableReservationScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
+  const { showToast } = useToast();
   const canTakeOrder = can(activeMembership, 'take_order');
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
   const { tableId: rawId } = useLocalSearchParams<{ tableId?: string }>();
@@ -48,29 +52,48 @@ export default function TableReservationScreen() {
   const [phone, setPhone] = useState('');
   const [guestCount, setGuestCount] = useState('1');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Only a failed load sits on the page: the step's own title, and the app's
+  // line under it when there is one - never the server's words. A refused
+  // action is a toast, and a problem with the phone sits under the phone.
+  const [loadError, setLoadError] = useState<{ title: string; detail?: string } | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [reservation, setReservation] = useState<Reservation | null>(null);
+  // Bumped when a refusal says the table changed under the screen.
+  const [reloadKey, setReloadKey] = useState(0);
+  const seededFor = useRef<string | undefined | null>(null);
 
   useEffect(() => {
-    if (!canTakeOrder) return;
+    if (!canTakeOrder) return undefined;
+    let active = true;
     listTables()
       .then((response) => {
-        setTables(response.tables || []);
-        const selectedTable = response.tables.find((item) => item.ID === Number(rawId));
+        if (!active) return;
+        const next = response.tables || [];
+        setTables(next);
+        setLoadError(null);
+        // The form starts from the table the floor sent us to, once. A reload
+        // after a refusal keeps the words already on screen and never puts
+        // back a table the refusal let go.
+        if (seededFor.current === rawId) return;
+        seededFor.current = rawId;
+        const selectedTable = next.find((item) => item.ID === Number(rawId));
         if (selectedTable) {
           setTableId(selectedTable.ID);
-          setName(selectedTable.reservation_name || '');
-          setPhone(selectedTable.reservation_phone || '');
           setGuestCount(defaultGuestCount(selectedTable));
         }
       })
-      .catch((err) => setError(
-        err instanceof Error
-          ? err.message
-          : copy('โหลดโต๊ะไม่สำเร็จ', 'Could not load tables'),
-      ));
-  }, [canTakeOrder, copy, rawId]);
+      .catch((err) => {
+        if (!active) return;
+        const failure = openTableFailure(err, 'load', language);
+        setLoadError({ title: failure.title, detail: failure.message });
+      });
+    return () => {
+      active = false;
+    };
+  }, [canTakeOrder, language, rawId, reloadKey]);
+
+  const reloadTables = () => setReloadKey((key) => key + 1);
 
   // The table row carries the guest's name and phone but not when the booking
   // was made or how many are coming — those live on the reservation. Failing to
@@ -87,40 +110,46 @@ export default function TableReservationScreen() {
         if (match?.guest_count) setGuestCount(String(match.guest_count));
       })
       .catch(() => setReservation(null));
-  }, [canTakeOrder, tableId]);
+  }, [canTakeOrder, reloadKey, tableId]);
 
   const selected = tables.find((item) => item.ID === tableId) || null;
   const options = useMemo(
     () => tables
       .filter((item) => item.status === 'free' || item.status === 'reserved' || item.ID === tableId)
       .map((item) => ({
-        label: `${item.display_label || item.table_number}${item.status === 'reserved' ? copy(' · จองแล้ว', ' · Reserved') : ''}`,
+        label: `${item.display_label || item.table_number}${item.status === 'reserved' ? copy(', จองแล้ว', ', Reserved') : ''}`,
         value: item.ID,
       })),
     [copy, tableId, tables],
   );
 
+  // The name and phone fields are only for a new booking; a booked table shows
+  // its own guest read-only. So picking another table keeps what the waiter
+  // typed, which is the whole point of letting a refused table go.
   function choose(id: number) {
     const item = tables.find((current) => current.ID === id);
     setTableId(id);
-    setName(item?.reservation_name || '');
-    setPhone(item?.reservation_phone || '');
     setGuestCount(defaultGuestCount(item));
     setConfirmCancel(false);
-    setError(null);
+    setPhoneError(null);
   }
 
   async function reserve() {
     if (!canTakeOrder || selected?.status === 'reserved') return;
-    if (!tableId || phone.replace(/\D/g, '').length < 9) {
-      setError(copy(
-        'เลือกโต๊ะและกรอกเบอร์โทรอย่างน้อย 9 หลัก',
-        'Choose a table and enter a phone number with at least 9 digits.',
-      ));
+    if (!tableId) {
+      showToast({
+        tone: 'error',
+        title: copy('จองโต๊ะไม่สำเร็จ', 'Could not reserve the table'),
+        message: copy('เลือกโต๊ะก่อน', 'Choose a table first.'),
+      });
+      return;
+    }
+    if (phone.replace(/\D/g, '').length < 9) {
+      setPhoneError(copy('กรอกเบอร์โทรอย่างน้อย 9 หลัก', 'Enter a phone number with at least 9 digits.'));
       return;
     }
     setSaving(true);
-    setError(null);
+    setPhoneError(null);
     try {
       await reserveTable(tableId, {
         reservation_phone: phone.trim(),
@@ -128,9 +157,17 @@ export default function TableReservationScreen() {
       });
       router.back();
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('จองโต๊ะไม่สำเร็จ', 'Could not reserve the table'));
+      const failure = openTableFailure(err, 'reserve', language);
+      if (failure.field === 'phone') setPhoneError(failure.message ?? failure.title);
+      else showToast({ tone: 'error', title: failure.title, message: failure.message });
+      // Someone else booked, opened, switched off or removed this table: let it
+      // go, so the waiter picks another with the name and phone still typed in,
+      // and read the floor again. Keeping it would turn the screen into the
+      // other booking.
+      if (failure.stale) {
+        setTableId(0);
+        reloadTables();
+      }
     } finally {
       setSaving(false);
     }
@@ -138,13 +175,14 @@ export default function TableReservationScreen() {
 
   async function acceptReservation() {
     if (!canTakeOrder || !selected || selected.status !== 'reserved') return;
+    // The booking is the table's, never what this screen had typed: the order
+    // is opened under the name and phone the table was booked with.
     const input = reservationArrivalOrderInput(selected.ID, {
       customerCount: guestCount,
-      customerName: selected.reservation_name || name,
-      customerPhone: selected.reservation_phone || phone,
+      customerName: selected.reservation_name,
+      customerPhone: selected.reservation_phone,
     });
     setSaving(true);
-    setError(null);
     try {
       const order = await createOrder(input);
       router.replace({
@@ -152,12 +190,9 @@ export default function TableReservationScreen() {
         params: { id: String(order.ID) },
       });
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy(
-          'รับลูกค้าและเปิดออเดอร์ไม่สำเร็จ',
-          'Could not seat the guests and open an order',
-        ));
+      const failure = reservationFailure(err, 'seat_hold', language);
+      showToast({ tone: 'error', title: failure.title, message: failure.message });
+      if (failure.reload) reloadTables();
     } finally {
       setSaving(false);
     }
@@ -170,14 +205,17 @@ export default function TableReservationScreen() {
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       await cancelReservation(selected.ID);
       router.back();
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('ยกเลิกการจองไม่สำเร็จ', 'Could not cancel the reservation'));
+      const failure = reservationFailure(err, 'cancel', language);
+      showToast({ tone: 'error', title: failure.title, message: failure.message });
+      if (failure.reload) {
+        // The booking moved on elsewhere; the question no longer applies.
+        setConfirmCancel(false);
+        reloadTables();
+      }
     } finally {
       setSaving(false);
     }
@@ -216,10 +254,10 @@ export default function TableReservationScreen() {
         </ActionDock>
       ) : undefined}
     >
-      {error ? (
+      {loadError ? (
         <Feedback
-          title={copy('ทำรายการไม่ได้', 'Could not complete this action')}
-          detail={error}
+          title={loadError.title}
+          detail={loadError.detail}
           tone="danger"
         />
       ) : null}
@@ -256,11 +294,11 @@ export default function TableReservationScreen() {
               <View style={{ flexDirection: 'row', gap: spacing.md }}>
                 <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
                   <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ชื่อผู้จอง', 'Guest name')}</Text>
-                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{name || copy('ไม่ระบุชื่อ', 'No guest name')}</Text>
+                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{selected?.reservation_name || copy('ไม่ระบุชื่อ', 'No guest name')}</Text>
                 </View>
                 <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
                   <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('เบอร์โทร', 'Phone')}</Text>
-                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{phone || '−'}</Text>
+                  <Text selectable numberOfLines={1} style={typeScale.cardTitle}>{selected?.reservation_phone || copy('ไม่มีเบอร์โทร', 'No phone')}</Text>
                 </View>
               </View>
               <View style={{ flexDirection: 'row', gap: spacing.md }}>
@@ -287,10 +325,14 @@ export default function TableReservationScreen() {
               maxLength={80}
             />
             <TextField
+              error={phoneError}
               icon="call-outline"
               label={copy('เบอร์โทรที่จอง', 'Reservation phone')}
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(text) => {
+                setPhoneError(null);
+                setPhone(text);
+              }}
               keyboardType="phone-pad"
               maxLength={32}
             />

@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 import { AppText as Text } from '@/src/components/app-text';
 import { CountBadge, StockMark } from '@/src/components/order-menu/menu-tile-parts';
 import { scaleFont } from '@/src/lib/app-font';
-import { money } from '@/src/lib/format';
+import { formatTender } from '@/src/lib/cash-tender';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette, radius, spacing, typeScale } from '@/src/theme';
 import type { MenuItem } from '@/src/types/menu';
@@ -139,7 +139,7 @@ export function MenuCompactTile({
           numberOfLines={1}
           style={[typeScale.number, { fontSize: PRICE_FONT_SIZE, fontWeight: '600', lineHeight: PRICE_LINE_HEIGHT }]}
         >
-          {money(item.price, language)}
+          {formatTender(item.price, language)}
         </Text>
         <StockMark item={item} soldOut={soldOut} bare />
       </View>

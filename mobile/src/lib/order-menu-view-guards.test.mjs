@@ -66,12 +66,14 @@ test('the layout button sits in the filter row between the picker and the magnif
   const closed = bar.slice(closedAt);
   assert.equal(count(bar, '<MenuViewToggle'), 1, 'the layout button is drawn more than once');
   assert.doesNotMatch(searching, /<MenuViewToggle\b/, 'the layout button crowds the search field');
-  // Picker, then the layout button, then the magnifier at the trailing edge it
-  // always had - on the phone and the tablet alike, since the row is shared.
+  // The category chips, then the layout button, then the magnifier at the
+  // trailing edge it always had - on the phone and the tablet alike, since the
+  // row is shared. The chips were a dropdown until 2026-09-25.
   assert.match(
     closed,
-    /<Select\b[\s\S]*?\/>\s*<\/View>\s*<MenuViewToggle value=\{viewMode\} onChange=\{setViewMode\} \/>\s*<IconButton\s+accessibilityLabel=\{copy\('ค้นหาเมนู', 'Search menu'\)\}\s+icon="search-outline"/,
+    /<FilterChipRow\b[\s\S]*?trailing=\{\(\s*<>\s*<MenuViewToggle value=\{viewMode\} onChange=\{setViewMode\} \/>\s*<IconButton\s+accessibilityLabel=\{copy\('ค้นหาเมนู', 'Search menu'\)\}\s+icon="search-outline"/,
   );
+  assert.doesNotMatch(closed, /<Select\b/);
 
   // The button itself: the magnifier's glass, and - like the tables screen's
   // density button - the glyph and the name of the layout the tap switches TO.
@@ -149,7 +151,8 @@ test('the photo grid keeps its look: the same tile, the full-size badge pinned o
     photo,
     /\{count > 0 \? \(\s*<View pointerEvents="none" style=\{\{ position: 'absolute', top: spacing\.sm, right: spacing\.sm \}\}>\s*<CountBadge count=\{count\} \/>/,
   );
-  assert.match(photo, /<Text selectable style=\{\[typeScale\.number, \{ flex: 1, fontSize: 15, fontWeight: '600' \}\]\}>\{money\(item\.price, language\)\}<\/Text>\s*<StockMark item=\{item\} soldOut=\{soldOut\} \/>/);
+  // formatTender, not money(): the price as the dish's bill line will read it.
+  assert.match(photo, /<Text selectable style=\{\[typeScale\.number, \{ flex: 1, fontSize: 15, fontWeight: '600' \}\]\}>\{formatTender\(item\.price, language\)\}<\/Text>\s*<StockMark item=\{item\} soldOut=\{soldOut\} \/>/);
   // The two layouts without a photo to sit on use the smaller badge.
   for (const [name, file] of [['list row', ROW], ['compact tile', COMPACT]]) {
     assert.match(code(file), /<CountBadge\b[^>]*\bsmall\b/, `${name} draws the photo tile's full-size badge`);

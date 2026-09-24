@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText as Text } from '@/src/components/app-text';
+import { FilterChipRow } from '@/src/components/filter-chip-row';
 import { MenuImage } from '@/src/components/menu-image';
 import { MotionReveal } from '@/src/components/motion';
 import { MenuCompactTile } from '@/src/components/order-menu/menu-compact-tile';
 import { MenuListRow } from '@/src/components/order-menu/menu-list-row';
 import { CountBadge, StockMark } from '@/src/components/order-menu/menu-tile-parts';
 import { MenuViewToggle } from '@/src/components/order-menu/menu-view-toggle';
-import { EmptyState, IconButton, SearchField, SectionHeader, Select } from '@/src/components/ui';
-import { money } from '@/src/lib/format';
+import { EmptyState, IconButton, SearchField, SectionHeader } from '@/src/components/ui';
+import { formatTender } from '@/src/lib/cash-tender';
 import { isMenuSoldOut, menuGridColumns, type MenuCatalogGroup } from '@/src/lib/menu-catalog';
 import { compactColumns, type MenuViewMode } from '@/src/lib/menu-view-mode';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -66,8 +67,9 @@ type OrderMenuFilterBarProps = {
 /**
  * Pinned with the heading rather than scrolled with the grid: a filter that
  * has scrolled off screen cannot be changed without scrolling back for it.
- * One row, not two - the category picker, the layout button and a magnifier
- * share it, and the search field takes the row over only while it is being used.
+ * One row, not two - the category chips, the layout button and a magnifier
+ * share it (FilterChipRow, the pattern /menu, the floor and the table plan
+ * use), and the search field takes the row over only while it is being used.
  */
 export function OrderMenuFilterBar({
   categories,
@@ -109,24 +111,24 @@ export function OrderMenuFilterBar({
     );
   }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-      <View style={{ minWidth: 0, flex: 1 }}>
-        <Select
-          value={categoryId}
-          onChange={onCategoryChange}
-          options={[{ label: copy('ทั้งหมด', 'All'), value: 'all' }, ...categories.filter((item) => item.is_active).map((item) => ({ label: item.name, value: String(item.ID) }))]}
-        />
-      </View>
-      {/* Between the picker and the magnifier, so the magnifier keeps the
-          trailing edge it has always had under the thumb. */}
-      <MenuViewToggle value={viewMode} onChange={setViewMode} />
-      <IconButton
-        accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
-        icon="search-outline"
-        onPress={onOpenSearch}
-        variant="glass"
-      />
-    </View>
+    <FilterChipRow
+      options={[{ key: 'all', label: copy('ทุกหมวด', 'All categories') }, ...categories.filter((item) => item.is_active).map((item) => ({ key: String(item.ID), label: item.name }))]}
+      value={categoryId}
+      onChange={onCategoryChange}
+      // The layout button between the chips and the magnifier, so the
+      // magnifier keeps the trailing edge it has always had under the thumb.
+      trailing={(
+        <>
+          <MenuViewToggle value={viewMode} onChange={setViewMode} />
+          <IconButton
+            accessibilityLabel={copy('ค้นหาเมนู', 'Search menu')}
+            icon="search-outline"
+            onPress={onOpenSearch}
+            variant="glass"
+          />
+        </>
+      )}
+    />
   );
 }
 
@@ -186,7 +188,9 @@ function MenuPhotoTile({ item, count, soldOut, onPress, accessibilityLabel, tabl
       <View style={{ gap: 2, paddingHorizontal: spacing.xs, paddingBottom: spacing.sm }}>
         <Text selectable numberOfLines={2} style={[typeScale.cardTitle, { fontWeight: '600' }]}>{item.name}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Text selectable style={[typeScale.number, { flex: 1, fontSize: 15, fontWeight: '600' }]}>{money(item.price, language)}</Text>
+          {/* formatTender, not money(): the dish's price as its line on the
+              bill will read it, satang included. */}
+          <Text selectable style={[typeScale.number, { flex: 1, fontSize: 15, fontWeight: '600' }]}>{formatTender(item.price, language)}</Text>
           <StockMark item={item} soldOut={soldOut} />
         </View>
       </View>

@@ -77,12 +77,27 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// The backend's answers that mean this tab's restaurant binding itself is
+// wrong: the X-Restaurant-ID header does not parse, or the user is no longer an
+// active member there (auth.RestaurantScope and the membership checks behind
+// it). Any other 400/403 that merely names a restaurant - a missing
+// manage_restaurant_settings permission, a slug already taken, an owner-only
+// action - is about the request, and must leave the tab where it is.
+const staleRestaurantBindingErrors = new Set([
+  "invalid x-restaurant-id",
+  "not a member of this restaurant",
+  "not an active member of this restaurant",
+]);
+
+export function isStaleRestaurantBindingError(status: unknown, message: unknown): boolean {
+  if (status !== 400 && status !== 403) return false;
+  return staleRestaurantBindingErrors.has(String(message ?? "").trim().toLowerCase());
+}
+
 apiClient.interceptors.response.use(
   normalizeResponseMedia,
   (error) => {
-    const status = error?.response?.status;
-    const message = String(error?.response?.data?.error ?? "").toLowerCase();
-    if ((status === 400 || status === 403) && message.includes("restaurant")) {
+    if (isStaleRestaurantBindingError(error?.response?.status, error?.response?.data?.error)) {
       restaurantRepository.clearActiveId();
     }
     return Promise.reject(error);

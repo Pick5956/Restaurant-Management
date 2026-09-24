@@ -115,17 +115,19 @@ test('mobile chrome does not retain dark neutral background islands', async () =
   assert.match(cropperSource, /aspectBadge:[\s\S]{0,260}backgroundColor:\s*palette\.navigationBorder/);
 });
 
-test('mobile form controls use orange boundaries at rest and focus', async () => {
+test('mobile form controls rest on the hairline and take the orange edge on focus', async () => {
   // theme.ts used to carry a second `inputStyles` copy of this rule that no
   // screen ever rendered; it was removed, so the guarantee is asserted on the
   // components that actually paint a field.
   // The assistant screen is the one exception: it wears the web AI page's own
   // cream-and-orange palette (src/components/ai/theme.ts), not the app's.
+  // At rest the edge was orange-brown until 2026-09-25, when the owner asked
+  // for every box to look like the account form's (field-look.test.mjs).
   const uiSource = await readFile(path.join(mobileRoot, 'src', 'components', 'ui.tsx'), 'utf8');
 
   assert.doesNotMatch(uiSource, /focused\s*\?\s*palette\.textStrong\s*:\s*palette\.border/);
-  assert.match(uiSource, /focused\s*\?\s*palette\.primary\s*:\s*palette\.controlBorder/);
-  assert.match(uiSource, /borderColor:\s*error \? palette\.danger : focused \? palette\.primary : palette\.controlBorder/);
+  assert.match(uiSource, /focused\s*\?\s*palette\.primary\s*:\s*palette\.fieldBorder/);
+  assert.match(uiSource, /borderColor:\s*error \? palette\.danger : focused \? palette\.primary : palette\.fieldBorder/);
 });
 
 test('staff warnings are announced and only describe a real custom-access reset', async () => {
@@ -171,7 +173,7 @@ test('role editor uses the shared permission cards and the quiet delete line', a
   assert.match(formSource, /export function DangerAction\(/);
   assert.match(roleSource, /<DangerAction/);
   assert.match(roleSource, /error=\{deleteError\}/);
-  assert.match(roleSource, /setDeleteError\(err instanceof Error/);
+  assert.match(roleSource, /setDeleteError\(staffFailureDetail\(err, 'delete_role', language\)/);
   assert.doesNotMatch(roleSource, /<Feedback[^>]*confirmDelete/);
   assert.match(roleSource, /if \(editing && loading\) \{/);
   assert.match(roleSource, /<SkeletonReveal/);
@@ -285,7 +287,8 @@ test('restaurant identity is rendered only on Home while detail headings retain 
 
   assert.doesNotMatch(appShellSource, /function RestaurantBar\b|<RestaurantBar\b/);
   assert.match(appShellSource, /showBack=\{!topLevel\}/);
-  assert.match(appShellSource, /router\.back\(\)/);
+  // Back, or the hub when there is nothing beneath (navigation-runtime.test.mjs).
+  assert.match(appShellSource, /goBackOr\(router, WORKSPACE_HUB_ROUTE\)/);
   // The restaurant row came off Home on 2026-09-11 at the owner's request: the
   // shop is chosen from the settings screen now, and no heading draws it.
   assert.deepEqual(identityConsumers, []);
@@ -342,13 +345,10 @@ test('the tablet rail stays outside native stack screen transitions', async () =
     /\{showRail\s*\?\s*\(\s*<PrimaryTabletRail\b/,
     'the shared visibility decision must gate the rendered tablet rail',
   );
-  assert.match(frameSource, /const isOnPrimaryRoot = primaryNavigation\.some\(/);
-  assert.match(frameSource, /router\.navigate\(item\.href as never\)/);
-  assert.match(
-    frameSource,
-    /onSelectPrimary=\{isOnPrimaryRoot \? navigateToPrimaryRoot : undefined\}/,
-    'primary rail presses must dispatch tab-compatible navigation while inside the tab host',
-  );
+  // Every rail item switches through the workspace exit, so each screen stands
+  // on the hub (navigation-runtime.test.mjs has the stacks this gives).
+  assert.match(frameSource, /<PrimaryTabletRail expanded=\{width >= breakpoints\.expandedRail\} \/>/);
+  assert.doesNotMatch(frameSource, /onSelectPrimary|router\.navigate\(/);
 
   const appScreenStart = appShellSource.indexOf('export function AppScreen(');
   assert.ok(appScreenStart >= 0, 'AppScreen must exist');
@@ -455,7 +455,8 @@ test('the hub is the only top-level screen, and the former tab screens show Back
   // With no dock to clear, the last row still has to clear the system bar:
   // Android's navigation bar (48dp) sat over the hub's last row at a flat 32.
   // A footer already pays the inset itself, so it is added only without one.
-  assert.match(shell, /paddingBottom: spacing\.xxxl \+ \(footer \? 0 : insets\.bottom\)/);
+  assert.match(shell, /const contentPaddingBottom = spacing\.xxxl \+ \(footer \? 0 : insets\.bottom\);/);
+  assert.match(shell, /paddingBottom: contentPaddingBottom \}\}/);
   // The kitchen wears the web sidebar's chef hat; the flame means "cooking".
   assert.match(shell, /key: 'kitchen',[^\n]*icon: 'chef-hat', activeIcon: 'chef-hat'/);
 });

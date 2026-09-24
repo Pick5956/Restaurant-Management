@@ -19,8 +19,11 @@ import { palette } from '@/src/theme';
 
 const CHIP_RADIUS = 18;
 const CHIP_GAP = 10;
+const GRID_CELL = { flex: 1, minWidth: 0 } as const;
 /** The badge is a mark, and its count is in the chip's label: it grows a little with the OS text size, no more. */
 const BADGE_TEXT_MAX_SCALE = 1.2;
+/** How far the badge's digits are nudged down to sit in the middle of the ring (see ChipBadge). */
+const BADGE_DIGIT_DROP = 1;
 const BADGE_MS = 160;
 
 /**
@@ -83,9 +86,13 @@ function ChipBadge({ badge, ring }: { badge: ShelfBadge; ring: string }) {
         transform: [{ scale }],
       }}
     >
+      {/* Kanit keeps room under its glyphs for Thai marks that digits never
+          use, so a count centred by its line box sits high in the ring (the
+          owner saw it on the hub, 25 ก.ย. 2569); the kitchen's timer needed the
+          same nudge, 2.5pt at 20pt. */}
       <Text
         maxFontSizeMultiplier={BADGE_TEXT_MAX_SCALE}
-        style={{ fontSize: 11, lineHeight: 13, fontWeight: '600', color: '#FFFFFF', fontVariant: ['tabular-nums'] }}
+        style={{ fontSize: 11, lineHeight: 13, fontWeight: '600', color: '#FFFFFF', fontVariant: ['tabular-nums'], transform: [{ translateY: BADGE_DIGIT_DROP }] }}
       >
         {shelfBadgeText(badge.count)}
       </Text>
@@ -116,8 +123,9 @@ export function ShelfChip({
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => ({
-        flex: 1,
-        minWidth: 0,
+        // Fills its grid cell's height (the row's tallest chip) without a zero
+        // basis, so a two-line title still sizes the chip from its content.
+        flexGrow: 1,
         minHeight: height,
         flexDirection: 'row',
         alignItems: 'center',
@@ -155,7 +163,13 @@ export function ShelfChip({
   );
 }
 
-/** Rows of `columns` chips; a short last row keeps its chips at the same width as the rows above. */
+/**
+ * Rows of `columns` chips; a short last row keeps its chips at the same width
+ * as the rows above. Every chip sits in a padding-free cell: a flex item's own
+ * padding is added on top of its zero basis, so a padded chip next to a bare
+ * spacer took 12pt more than its share and ตั้งค่า, alone on the last row,
+ * came out wider than the chips above it (owner, 2026-09-25).
+ */
 function ChipGrid({
   items,
   columns,
@@ -171,8 +185,8 @@ function ChipGrid({
     <View style={{ gap: CHIP_GAP }}>
       {rows.map((row) => (
         <View key={row.map((item) => item.key).join('|')} style={{ flexDirection: 'row', gap: CHIP_GAP }}>
-          {row.map(render)}
-          {Array.from({ length: columns - row.length }, (_, index) => <View key={`pad-${index}`} style={{ flex: 1 }} />)}
+          {row.map((item) => <View key={item.key} style={GRID_CELL}>{render(item)}</View>)}
+          {Array.from({ length: columns - row.length }, (_, index) => <View key={`pad-${index}`} style={GRID_CELL} />)}
         </View>
       ))}
     </View>

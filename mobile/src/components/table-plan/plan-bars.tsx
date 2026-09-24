@@ -1,7 +1,8 @@
 import { Pressable, View } from 'react-native';
 
 import { AppText as Text } from '@/src/components/app-text';
-import { ActionDock, Button, IconButton, SearchField, Select } from '@/src/components/ui';
+import { FilterChipRow } from '@/src/components/filter-chip-row';
+import { ActionDock, Button, IconButton, SearchField } from '@/src/components/ui';
 import { roomName, type PlanLanguage, type PlanRoom, type RoomKey } from '@/src/lib/table-plan';
 import { palette, spacing } from '@/src/theme';
 
@@ -48,20 +49,18 @@ export function FilterBar({ rooms, room, onRoom, searchOpen, onOpenSearch, query
   );
   if (rooms.length >= 2) {
     if (searchOpen) return search(true);
+    // The one filter row (FilterChipRow): the zones as chips, the magnifier at
+    // the end - a dropdown until 2026-09-25.
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <View style={{ minWidth: 0, flex: 1 }}>
-          <Select
-            onChange={(value) => onRoom(parseRoomFilter(value))}
-            options={[
-              { label: t('ทุกโซน', 'All zones'), value: 'all' },
-              ...rooms.map((item) => ({ label: roomName(item, language), value: roomFilterValue(item.key) })),
-            ]}
-            value={roomFilterValue(room)}
-          />
-        </View>
-        <IconButton accessibilityLabel={t('ค้นหาโต๊ะ', 'Search tables')} icon="search-outline" onPress={onOpenSearch} variant="glass" />
-      </View>
+      <FilterChipRow
+        onChange={(value) => onRoom(parseRoomFilter(value))}
+        options={[
+          { key: 'all', label: t('ทุกโซน', 'All zones') },
+          ...rooms.map((item) => ({ key: roomFilterValue(item.key), label: roomName(item, language) })),
+        ]}
+        trailing={<IconButton accessibilityLabel={t('ค้นหาโต๊ะ', 'Search tables')} icon="search-outline" onPress={onOpenSearch} variant="glass" />}
+        value={roomFilterValue(room)}
+      />
     );
   }
   if (tableCount >= SEARCH_ALONE_FROM) return search(false);

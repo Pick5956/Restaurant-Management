@@ -313,6 +313,75 @@ function PieChart({ data, width, height }: { data: AIChartData; width: number; h
   );
 }
 
+// ---------------------------------------------------------------- stock list
+
+const CARD = {
+  marginTop: 8,
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+  borderRadius: 8,
+  backgroundColor: ai.surface,
+  padding: 10,
+  gap: 6,
+};
+
+// What is running low: how many ran out, how many are close, and their names
+// as chips - the web's StockList. Not a chart: of things that ran out every bar
+// is 0, so the bars this kind used to fall through to drew an empty frame with
+// a column of names (20 ก.ย. 2569). The owner kept it to counts and names; the
+// amounts to order stay on the stock screen.
+const STOCK_TONE = {
+  critical: { fg: ai.status.critical, bg: 'rgba(185,28,28,0.12)', label: 'หมด' },
+  warning: { fg: ai.status.warning, bg: 'rgba(180,83,9,0.12)', label: 'ใกล้หมด' },
+} as const;
+
+function StockCount({ label, n, tone }: { label: string; n: number; tone: string }) {
+  return (
+    <View>
+      <Text style={{ fontSize: 11, color: ai.faint }}>{label}</Text>
+      <Text style={{ fontSize: 18, fontWeight: '700', lineHeight: 26, color: tone, fontVariant: ['tabular-nums'] }}>{n}</Text>
+    </View>
+  );
+}
+
+function StockList({ data }: { data: AIChartData }) {
+  const status = data.status ?? [];
+  const rows = data.categories.map((name, index) => ({ name, status: status[index] ?? '' }));
+  const out = rows.filter((row) => row.status === 'critical');
+  const low = rows.filter((row) => row.status === 'warning');
+  const listed = [...out, ...low];
+  if (listed.length === 0) return null;
+
+  return (
+    <View style={[CARD, { gap: 10 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+        {out.length > 0 ? <StockCount label="หมดแล้ว" n={out.length} tone={STOCK_TONE.critical.fg} /> : null}
+        {low.length > 0 ? (
+          <View style={out.length > 0 ? { borderLeftWidth: 1, borderLeftColor: ai.hairline, paddingLeft: 12 } : undefined}>
+            <StockCount label="ใกล้หมด" n={low.length} tone={STOCK_TONE.warning.fg} />
+          </View>
+        ) : null}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {listed.map((row, index) => {
+          const tone = row.status === 'critical' ? STOCK_TONE.critical : STOCK_TONE.warning;
+          return (
+            <View
+              key={`${row.name}-${index}`}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: tone.bg }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '500', color: tone.fg }}>{row.name}</Text>
+              {/* "ใกล้หมด" on the chip, not statusLabel's "ต่ำกว่าขั้นต่ำ": the
+                  count above says the same thing in the same words. */}
+              <Text style={{ fontSize: 11, color: tone.fg, opacity: 0.7 }}>{tone.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------- card
 
 function legendEntries(data: AIChartData): { colour: string; opacity: number; label: string }[] {
@@ -344,6 +413,8 @@ export function AIChart({ data }: { data: AIChartData }) {
   const [width, setWidth] = useState(0);
   const drawn = drawnSeries(data);
   if (drawn.length === 0 || data.categories.length === 0) return null;
+  // Its own card: the title, unit and legend below are a chart's.
+  if (data.kind === 'stocklist') return <StockList data={data} />;
   const horizontal = data.kind === 'bar' && data.layout === 'horizontal';
   const height = data.kind === 'pie'
     ? 190
@@ -354,15 +425,7 @@ export function AIChart({ data }: { data: AIChartData }) {
 
   return (
     <View
-      style={{
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
-        borderRadius: 8,
-        backgroundColor: ai.surface,
-        padding: 10,
-        gap: 6,
-      }}
+      style={CARD}
       onLayout={(event) => setWidth(Math.floor(event.nativeEvent.layout.width) - 20)}
     >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>

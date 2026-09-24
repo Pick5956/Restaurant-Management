@@ -6,7 +6,7 @@ import { useRepeatPress } from '@/src/components/table-plan/count-stepper';
 import { hapticSelect } from '@/src/components/table-plan/plan-context';
 import { RoundKey } from '@/src/components/table-plan/sheet-kit';
 import { clampGuestCount, GUEST_COUNT_MAX, GUEST_COUNT_MIN, QUICK_GUEST_COUNTS } from '@/src/lib/guest-count';
-import { controlShadow, palette, radius, spacing } from '@/src/theme';
+import { palette, radius, spacing } from '@/src/theme';
 
 // How many people a table is opened or booked for. The stepper keeps its shape
 // and place (− the count +, 52pt, the number in the middle); its keys are the
@@ -69,9 +69,8 @@ export function GuestCountPicker({
           onPressOut={minus.onPressOut}
           size={KEY_SIZE}
         />
-        {/* Shadow on the wrapper: Android drops a box shadow set on a
-            TextInput, the same reason TextField carries it outside. */}
-        <View style={{ flex: 1, minWidth: 0, borderRadius: radius.md, ...controlShadow }}>
+        {/* The flat form box, as TextField: white, a hairline edge, no glow. */}
+        <View style={{ flex: 1, minWidth: 0, borderRadius: radius.md }}>
           <TextInput
             accessibilityLabel={label}
             keyboardAppearance="light"
@@ -86,9 +85,9 @@ export function GuestCountPicker({
               height: KEY_SIZE,
               paddingVertical: 0,
               borderWidth: 1,
-              borderColor: palette.controlBorder,
+              borderColor: palette.fieldBorder,
               borderRadius: radius.md,
-              backgroundColor: palette.surfaceSubtle,
+              backgroundColor: palette.fieldFill,
               color: palette.textStrong,
               // One line, so the type-scale test sees the weight beside the size.
               // No lineHeight: on a single-line TextInput it pushes the digits

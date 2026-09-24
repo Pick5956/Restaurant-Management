@@ -8,7 +8,9 @@ import type { AppScreenScrollControl } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { MenuImage } from '@/src/components/menu-image';
 import { ActionDock, Button, ChipGroup, Feedback, IconButton, TextField } from '@/src/components/ui';
-import { money } from '@/src/lib/format';
+import { apiFailureDetail } from '@/src/lib/api-failure';
+import { billActionFailureMessage } from '@/src/lib/bill-failure';
+import { formatTender } from '@/src/lib/cash-tender';
 import { findPendingOrderItem, orderItemEditorDefaults } from '@/src/lib/order-detail-runtime';
 import { stockFailure, stockFailureMessage } from '@/src/lib/order-item-error';
 import { isOptionSelectionBelowMinimum } from '@/src/lib/order-workflow';
@@ -98,8 +100,8 @@ export function useOrderItemEditor({
       setSelectedOptionIds(next.selectedOptionIds);
       if (!nextMenu) setError(copy('ไม่พบเมนูนี้', 'Menu item not found'));
       else if (editing && !findPendingOrderItem(nextOrder.items, itemId)) setError(copy('รายการนี้ส่งเข้าครัวแล้ว แก้ไขไม่ได้', 'This item is already with the kitchen and can no longer be edited'));
-    }).catch(() => setError(copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item')));
-  }, [canTakeOrder, copy, editing, itemId, menuId, orderId, preloaded]);
+    }).catch((err: unknown) => setError(apiFailureDetail(err, language) ?? copy('โหลดเมนูไม่สำเร็จ', 'Could not load this menu item')));
+  }, [canTakeOrder, copy, editing, itemId, language, menuId, orderId, preloaded]);
 
   const optionTotal = useMemo(() => (menu?.option_groups || []).flatMap((group) => group.options || []).filter((option) => selectedOptionIds.includes(option.ID)).reduce((sum, option) => sum + Number(option.price_delta), 0), [menu, selectedOptionIds]);
   const total = (Number(menu?.price || 0) + optionTotal) * quantity;
@@ -139,12 +141,18 @@ export function useOrderItemEditor({
     catch (err) {
       // The stock ran out while the order screen sat open (it does not poll):
       // the server refuses, and the refusal is a toast in the app's own words.
-      // The editor itself is left as it was.
+      // The editor itself is left as it was. Past the stock refusal: the
+      // refusals the bill shares with this editor (a line already sent, a
+      // closed order), then the ones every screen shares, never the server's
+      // own words.
       const failure = stockFailure(err instanceof Error ? err.message : '');
+      const reason = failure
+        ? stockFailureMessage(failure, language)
+        : billActionFailureMessage(err, language) ?? apiFailureDetail(err, language);
       showToast({
         tone: 'error',
         title: editing ? copy('บันทึกรายการไม่สำเร็จ', 'Could not save this item') : copy('เพิ่มเมนูไม่สำเร็จ', 'Could not add this item'),
-        ...(failure ? { message: stockFailureMessage(failure, language) } : {}),
+        ...(reason ? { message: reason } : {}),
       });
     }
     finally {
@@ -344,7 +352,7 @@ export function OrderItemEditorBody({
       {/* Name and price share the first line, the price hard right. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, paddingTop: spacing.md }}>
         <Text accessibilityRole="header" selectable style={[typeScale.hero, { minWidth: 0, flex: 1 }]}>{menu.name}</Text>
-        <Text selectable style={[typeScale.hero, { flexShrink: 0 }]}>{money(menu.price, language)}</Text>
+        <Text selectable style={[typeScale.hero, { flexShrink: 0 }]}>{formatTender(menu.price, language)}</Text>
       </View>
       {menu.description ? (
         <Text selectable style={[typeScale.body, { color: palette.muted, paddingTop: spacing.xs, paddingBottom: spacing.md }]}>{menu.description}</Text>
@@ -413,7 +421,7 @@ export function OrderItemEditorBody({
                       size={23}
                     />
                     <Text selectable style={{ minWidth: 0, flex: 1, color: palette.text, fontSize: 15, lineHeight: 23, fontWeight: '500' }}>{option.name}</Text>
-                    {option.price_delta ? <Text selectable style={{ flexShrink: 0, color: palette.muted, fontSize: 13, fontWeight: '700' }}>+{money(option.price_delta, language)}</Text> : null}
+                    {option.price_delta ? <Text selectable style={{ flexShrink: 0, color: palette.muted, fontSize: 13, fontWeight: '700' }}>+{formatTender(option.price_delta, language)}</Text> : null}
                   </Pressable>
                 );
               })}
@@ -477,19 +485,24 @@ export function OrderItemEditorBody({
   );
 }
 
-/** The editor's one action, carrying the line's total. */
+/**
+ * The editor's one action, carrying the line's total. Written the way the bill
+ * writes it, satang included: rounded to the baht, a ฿45.50 dish read ฿46 on
+ * this button and ฿45.50 on the line it added.
+ */
 export function OrderItemAddButton({ editor }: { editor: OrderItemEditor }) {
   const { copy, language } = useDisplayPreferences();
   const { menu, editing, served, total, saving, missingRequired, add } = editor;
   if (!menu) return null;
+  const amount = formatTender(total, language);
   return (
     <Button
       icon={editing ? 'checkmark' : 'add'}
       label={editing
-        ? copy(`บันทึกรายการ · ${money(total, language)}`, `Save item · ${money(total, language)}`)
+        ? copy(`บันทึกรายการ, ${amount}`, `Save item, ${amount}`)
         : served
-          ? copy(`เพิ่มเข้าบิล · ${money(total, language)}`, `Add to bill · ${money(total, language)}`)
-          : copy(`เพิ่มเข้าออเดอร์ · ${money(total, language)}`, `Add to order · ${money(total, language)}`)}
+          ? copy(`เพิ่มเข้าบิล, ${amount}`, `Add to bill, ${amount}`)
+          : copy(`เพิ่มเข้าออเดอร์, ${amount}`, `Add to order, ${amount}`)}
       onPress={add}
       loading={saving}
       disabled={missingRequired || (!editing && !menu.is_available)}

@@ -13,6 +13,12 @@ test('the API refusals staff can act on map to their own outcome', () => {
   assert.equal(billActionFailureCode(new Error('cannot edit item on a closed order')), 'order_closed');
   assert.equal(billActionFailureCode(new Error('order is already closed')), 'order_closed');
   assert.equal(billActionFailureCode(new Error('no pending items to send')), 'nothing_to_send');
+  // The server wraps this one in the forbidden-transition error; read first, or
+  // a waiter taking a served dish off is told the line is "already sent".
+  assert.equal(
+    billActionFailureCode(new Error('front-of-house void requires every item to be sent: order item status transition is forbidden')),
+    'unsent_first',
+  );
   assert.equal(billActionFailureCode(new Error('only pending items can be edited')), 'already_sent');
   assert.equal(billActionFailureCode(new Error('order item status transition is forbidden')), 'already_sent');
   assert.equal(billActionFailureCode(new Error('menu item is unavailable')), 'sold_out');
@@ -35,6 +41,9 @@ test('anything else says nothing beyond the step that failed', () => {
 test('the mapped words are the app\'s own, in both languages', () => {
   assert.equal(billActionFailureMessage(new Error('no pending items to send'), 'th'), 'ไม่มีรายการรอส่งครัว');
   assert.equal(billActionFailureMessage(new Error('no pending items to send'), 'en'), 'Nothing is waiting to go to the kitchen');
+  const unsentFirst = new Error('front-of-house void requires every item to be sent: order item status transition is forbidden');
+  assert.equal(billActionFailureMessage(unsentFirst, 'th'), 'ส่งหรือลบรายการที่ยังไม่ส่งครัวก่อน');
+  assert.equal(billActionFailureMessage(unsentFirst, 'en'), 'Send or delete the unsent items first');
   const thai = billActionFailureMessage(new Error('cannot send a closed order to kitchen'), 'th');
   assert.doesNotMatch(thai, /closed order/);
 });

@@ -26,7 +26,7 @@ test('paying a bill announces itself before navigating away', async () => {
   const bill = await read('app', 'order', 'bill.tsx');
 
   const toastAt = bill.indexOf('showToast(');
-  const leaveAt = bill.indexOf('resetRouteStack(router, billExitRoute(');
+  const leaveAt = bill.indexOf('leaveBill();');
   assert.ok(toastAt !== -1, 'the bill never raises a toast');
   assert.ok(leaveAt !== -1, 'the bill never leaves after payment');
   assert.ok(toastAt < leaveAt, 'the toast must be raised before the route is reset');

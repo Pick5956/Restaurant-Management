@@ -9,15 +9,18 @@ type CancelOrderCandidate = Pick<Order, 'order_type' | 'payment_status' | 'statu
   items?: readonly { status?: string }[] | null;
 };
 
+/**
+ * An order opened by mistake, with nothing on it yet (a dish the kitchen
+ * cancelled does not count). A dine-in must still hold its table; a takeaway
+ * has none, and without this it could never be closed (owner, 2026-09-25) -
+ * the server has taken both since 2026-09-23, and the web offers both.
+ */
 export function canCloseEmptyOrder(order: EmptyOrderCandidate | null | undefined) {
-  const activeItemCount = order?.items?.filter((item) => item.status !== 'cancelled').length ?? 0;
-  return Boolean(
-    order
-    && order.order_type === 'dine_in'
-    && order.table_id
-    && order.status === 'open'
-    && activeItemCount === 0,
-  );
+  if (!order || order.status !== 'open') return false;
+  const activeItemCount = order.items?.filter((item) => item.status !== 'cancelled').length ?? 0;
+  if (activeItemCount !== 0) return false;
+  if (order.order_type === 'dine_in') return Boolean(order.table_id);
+  return order.order_type === 'takeaway';
 }
 
 export function canCancelOrderForRole(

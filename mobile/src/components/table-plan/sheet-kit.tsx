@@ -153,7 +153,7 @@ export const KitField = forwardRef<NativeTextInput, {
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{label}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 12, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: error ? ERROR_INK : focused ? palette.primary : palette.divider, backgroundColor: palette.surface }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 12, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: error ? ERROR_INK : focused ? palette.primary : palette.fieldBorder, backgroundColor: palette.fieldFill }}>
         <TextInput
           ref={ref}
           accessibilityLabel={label}

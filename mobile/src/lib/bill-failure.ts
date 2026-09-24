@@ -12,6 +12,7 @@ import { paymentFailureCode } from './payment-failure.ts';
 export type BillActionFailureCode =
   | 'order_closed'
   | 'nothing_to_send'
+  | 'unsent_first'
   | 'already_sent'
   | 'sold_out'
   | 'gone'
@@ -30,6 +31,10 @@ export function billActionFailureCode(err: unknown): BillActionFailureCode {
   if (!message) return 'unknown';
   if (message.includes('closed order') || message.includes('order is already closed')) return 'order_closed';
   if (message.includes('no pending items to send')) return 'nothing_to_send';
+  // Front-of-house may only take a made dish off while nothing is unsent. The
+  // server wraps this refusal in the generic forbidden-transition error, so it
+  // has to be read before that one or it says "already sent" to a line that is.
+  if (message.includes('requires every item to be sent')) return 'unsent_first';
   if (message.includes('only pending items can be edited') || message.includes('order item status transition is forbidden')) {
     return 'already_sent';
   }
@@ -44,6 +49,7 @@ export function billActionFailureCode(err: unknown): BillActionFailureCode {
 const MESSAGES: Record<BillActionFailureCode, { th: string; en: string } | null> = {
   order_closed: { th: 'ออเดอร์นี้ปิดไปแล้ว', en: 'This order is already closed' },
   nothing_to_send: { th: 'ไม่มีรายการรอส่งครัว', en: 'Nothing is waiting to go to the kitchen' },
+  unsent_first: { th: 'ส่งหรือลบรายการที่ยังไม่ส่งครัวก่อน', en: 'Send or delete the unsent items first' },
   already_sent: { th: 'รายการนี้ส่งครัวไปแล้ว', en: 'This item has already gone to the kitchen' },
   sold_out: { th: 'มีเมนูที่หมดแล้ว', en: 'Something on it is sold out' },
   gone: { th: 'ไม่พบรายการนี้แล้ว', en: 'This is no longer there' },

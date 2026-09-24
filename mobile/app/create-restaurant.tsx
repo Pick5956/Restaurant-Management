@@ -27,6 +27,7 @@ import {
   DEFAULT_RESTAURANT_TYPE,
   restaurantTypeOptions,
 } from '@/src/lib/restaurant-types';
+import { resetRouteStack } from '@/src/lib/navigation-runtime';
 import { getDefaultWorkspaceRoute } from '@/src/lib/work-mode';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -149,7 +150,9 @@ export default function CreateRestaurantScreen() {
       }
       await setActiveRestaurantFromMembership(membership);
       await refreshMemberships().catch(() => undefined);
-      router.replace(getDefaultWorkspaceRoute(membership));
+      // The hub alone: a replace left the chooser and its form under it, and
+      // Android's back walked into them.
+      resetRouteStack(router, getDefaultWorkspaceRoute(membership));
     } catch (err) {
       // The server's words are only classified here, never shown.
       const raw = err instanceof Error ? err.message : '';

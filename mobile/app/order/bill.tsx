@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
-import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useFocusEffect, useIsFocused, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, AppState, Pressable, useWindowDimensions, View } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
 import { listMenuItems } from '@/src/api/menu';
@@ -16,9 +16,9 @@ import { PaymentForm, type PaymentFormProps } from '@/src/components/payment/pay
 import { PaymentSheet } from '@/src/components/payment/payment-sheet';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
 import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, SectionHeader, StatusBadge } from '@/src/components/ui';
+import { useOrderEvents } from '@/src/hooks/use-order-events';
 import { billDiscountLines } from '@/src/lib/bill-promotions';
 import { cashReceivedToSend, formatTender, paidPaymentLine, repricedPaymentLine } from '@/src/lib/cash-tender';
-import { money } from '@/src/lib/format';
 import {
   currentRoundPresentation,
   selectOrderItemImage,
@@ -33,11 +33,12 @@ import {
   undeliveredOrderItems,
   validateKitchenCancelReason,
 } from '@/src/lib/order-workflow';
-import { resetRouteStack } from '@/src/lib/navigation-runtime';
-import { billActionFailureMessage } from '@/src/lib/bill-failure';
+import { leaveForWorkspaceRoute } from '@/src/lib/navigation-runtime';
+import { billActionFailureCode, billActionFailureMessage, type BillActionFailureCode } from '@/src/lib/bill-failure';
 import { paymentBlock, paymentBlockText, paymentFailureCode, paymentFailureMessage } from '@/src/lib/payment-failure';
 import { can } from '@/src/lib/rbac';
-import { describePrinterFailure } from '@/src/lib/printer';
+import { describePrinterFailure, printerFailureReason } from '@/src/lib/printer';
+import { createRequestGeneration, shouldStartRequest } from '@/src/lib/request-generation';
 import { ReceiptSlip } from '@/src/components/receipt-slip';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -49,6 +50,22 @@ import type { Bill, OrderItem } from '@/src/types/order';
 
 /** How far the item-status chip drops to sit on the item name's optical line. */
 const ROW_CHIP_OPTICAL_DROP = 4;
+/** The stream's greeting asks for a reload; skipped this soon after the focus load. */
+const STREAM_CONNECTED_SKIP_MS = 2_000;
+/** A quiet reload while the bill is followed, for when a reload the stream asked for failed. */
+const BILL_RECOVERY_POLL_MS = 30_000;
+/**
+ * Refusals that mean the server has moved on from the bill on screen: another
+ * phone sent the round, took the line off, or closed the order. The rows they
+ * refused are outdated, so the bill is read again at once rather than at the
+ * next event or the recovery reload.
+ */
+const SERVER_MOVED_FAILURES: ReadonlySet<BillActionFailureCode> = new Set<BillActionFailureCode>([
+  'nothing_to_send',
+  'already_sent',
+  'order_closed',
+  'gone',
+]);
 
 function resolveImage(value: string) {
   if (!value) return '';
@@ -124,6 +141,9 @@ export default function BillScreen() {
     message: detail,
   });
   const slipRef = useRef<View>(null);
+  // `printing` is state, and the header menu's print entry stays tappable
+  // while it is true: a second tap sent the slip to the printer again.
+  const printStartedRef = useRef(false);
   const {
     printReceiptView,
     printing,
@@ -131,37 +151,153 @@ export default function BillScreen() {
     supported: printerSupported,
   } = usePrinter();
 
-  const load = useCallback(async (quiet = false) => {
+  // The menu is read for the rows' photos only; nothing an order event changes.
+  const menuLoadedRef = useRef(false);
+  // Every read of the bill takes a number and only the newest may write it. The
+  // stream reloads on every restaurant event, so a reload that left before a
+  // change could land after the change's own re-read and put back a bill the
+  // server no longer has - with payment live again. A change's answer is newer
+  // than whatever a load in flight will bring.
+  const requestGenerationRef = useRef(createRequestGeneration());
+  // The load the spinner is for. Until a bill has loaded, a quiet reload does
+  // not cut in on it: it would take that load's outcome over, and a stream
+  // reload fails silently, so a bill that never loaded would read as `ไม่พบบิล
+  // นี้` instead of the failure.
+  const foregroundRequestRef = useRef<number | null>(null);
+  // A quiet reload asked for while the spinner's load was out; it runs after.
+  const pendingQuietReloadRef = useRef(false);
+  // A bill has been on screen. From then on the focus load is not waited for:
+  // getBill has no timeout on Android, and a focus load that never answers
+  // held back the stream, the recovery reload and the stale-bill retry with it
+  // - the very recovery a flaky network needs.
+  const billShownRef = useRef(false);
+  // A read has brought a bill since the screen last came into focus. Until one
+  // has, the bill on screen is the one from before the screen was left, and any
+  // read that fails - a stream or poll read too, however quiet - is the latest
+  // bill not arriving. The duty cannot ride on a single read: a quiet read over
+  // that bill drops the focus load's answer, and is dropped in turn by the next
+  // quiet read while it hangs (getBill has no timeout on Android).
+  const landedSinceFocusRef = useRef(false);
+  // A change has landed and no read begun after it has come back yet. If the
+  // read that owns the bill fails, the totals on screen are behind the server,
+  // however quiet the failure.
+  const rereadOwedRef = useRef(false);
+  // `fromStream`: a reload the order stream asked for. Once a read has brought
+  // a bill since focus it fails silently - the bill already on screen stays, the next event, the recovery reload or the
+  // next focus tries again - because a red panel over a bill that is still
+  // current read as the bill being wrong, and resuming the phone with the
+  // network still waking up raised exactly that.
+  const load = useCallback(async (quiet = false, fromStream = false) => {
     if (!canAccessBill || !validOrderId) {
       setLoading(false);
       return;
     }
-    if (!quiet) setLoading(true);
-    setError(null);
+    const heldForFirstBill = foregroundRequestRef.current !== null && !billShownRef.current;
+    if (!shouldStartRequest(quiet, heldForFirstBill)) {
+      pendingQuietReloadRef.current = true;
+      return;
+    }
+    const request = requestGenerationRef.current.begin();
+    if (!quiet) {
+      foregroundRequestRef.current = request;
+      setLoading(true);
+    }
+    if (!fromStream) setError(null);
     try {
       const nextBill = await getBill(orderId);
+      if (!requestGenerationRef.current.isCurrent(request)) return;
+      rereadOwedRef.current = false;
       setBill(nextBill);
       setBillStale(false);
+      setError(null);
+      billShownRef.current = true;
+      landedSinceFocusRef.current = true;
       if (nextBill.payment_status === 'paid' || !methodSeededRef.current) {
         setMethod(nextBill.payments.at(-1)?.method || 'cash');
         methodSeededRef.current = true;
       }
-      if (nextBill.payment_status !== 'paid' && canTakeOrder) {
-        const menuResponse = await listMenuItems();
-        setMenuItems(menuResponse.menu_items || []);
+      if (nextBill.payment_status !== 'paid' && canTakeOrder && (!quiet || !menuLoadedRef.current)) {
+        // Photos only: a failed menu read leaves the rows without pictures,
+        // never the bill with an error. Not held to the request number for
+        // the same reason: a photo can never put back an old bill.
+        const menuResponse = await listMenuItems().catch(() => null);
+        if (menuResponse) {
+          setMenuItems(menuResponse.menu_items || []);
+          menuLoadedRef.current = true;
+        }
       }
     } catch (err) {
+      if (!requestGenerationRef.current.isCurrent(request)) return;
+      if (rereadOwedRef.current) setBillStale(true);
+      // Silent only over a bill some read has brought since focus. Before that,
+      // a stream or poll read that failed here left the bill from before the
+      // screen was left on show as if the focus load had brought it, with
+      // payment live on its old total and nothing saying the latest bill never
+      // arrived - even when an earlier read had dropped the focus load's answer
+      // and then been dropped itself.
+      if (fromStream && landedSinceFocusRef.current) return;
       // The panel's title names the failure; the detail is only a reason staff
       // can act on, never the server's wording, and empty when there is none.
       setError(billActionFailureMessage(err, language) ?? '');
     } finally {
-      if (!quiet) setLoading(false);
+      // Even when a change has overtaken it: the change's re-read is quiet, so
+      // nothing else would take the spinner down.
+      if (foregroundRequestRef.current === request) {
+        foregroundRequestRef.current = null;
+        setLoading(false);
+        if (pendingQuietReloadRef.current) {
+          pendingQuietReloadRef.current = false;
+          void load(true, true);
+        }
+      }
     }
   }, [canAccessBill, canTakeOrder, copy, language, orderId, validOrderId]);
 
+  // Leaving the screen lets go of what its loads were holding, the way the
+  // tables and kitchen screens do, so a focus load that never answered cannot
+  // hold anything back after the next focus. The spinner is left as it is: the
+  // next focus starts a load that owns it, and taking it down here would show
+  // `ไม่พบบิลนี้` on the way back to a bill that never loaded.
   useFocusEffect(useCallback(() => {
+    landedSinceFocusRef.current = false;
     void load();
+    return () => {
+      requestGenerationRef.current.invalidate();
+      foregroundRequestRef.current = null;
+      pendingQuietReloadRef.current = false;
+    };
   }, [load]));
+
+  // The bill loaded on focus and then sat still: a cashier held at `ครัวยัง
+  // ทำไม่เสร็จ` stayed held until they left and came back, however long ago
+  // the kitchen had finished. The order stream reloads it quietly while the
+  // screen is up and the bill unpaid; a paid bill no longer changes.
+  //
+  // Every event counts, not only this order's: the server keeps one queued
+  // event per phone and drops the rest ("one queued invalidation is enough"),
+  // so this order's change can arrive as another order's event - a promotion
+  // or VAT change reprices every open order in one burst.
+  const isFocused = useIsFocused();
+  const followingBill = isFocused && canAccessBill && validOrderId && bill?.payment_status !== 'paid';
+  useOrderEvents(() => load(true, true), {
+    enabled: followingBill,
+    restaurantId: activeMembership?.restaurant_id,
+    skipConnectedRefreshWithinMs: STREAM_CONNECTED_SKIP_MS,
+  });
+
+  // Nothing asks again after a stream reload fails. Resuming the phone, the
+  // resync can fail while the network wakes, and the stream's greeting a moment
+  // later is skipped as too soon after it - so the bill sat at `ครัวยังทำไม่
+  // เสร็จ` until the next event, however long ago the kitchen finished. A slow
+  // quiet reload while the bill is followed, and only with the app in front.
+  useEffect(() => {
+    if (!followingBill) return;
+    const timer = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      void load(true, true);
+    }, BILL_RECOVERY_POLL_MS);
+    return () => clearInterval(timer);
+  }, [followingBill, load]);
 
   // The swipe that CLOSES a delete rail travels right - the same direction as
   // the stack's back gesture. That gesture is a native recogniser and takes no
@@ -173,6 +309,16 @@ export default function BillScreen() {
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: openRowId === null });
   }, [navigation, openRowId]);
+
+  // Out of a paid bill, onto the floor (or the archive, or the overview) with
+  // the hub beneath it. Clearing the stack down to that one screen left its
+  // back button with nowhere to go: the owner took a payment and was stuck on
+  // the floor until the app was killed (2026-09-25).
+  const leaveBill = () => leaveForWorkspaceRoute(
+    router,
+    navigation.getState()?.routes.map((route) => route.name) ?? [],
+    billExitRoute(canTakeOrder, canViewOrders),
+  );
 
   const activeItems = useMemo(() => activeOrderItems(bill?.items), [bill?.items]);
   const itemCount = useMemo(
@@ -214,16 +360,37 @@ export default function BillScreen() {
   // report something the eye has already seen.
   async function refreshBillAfterMutation(successMessage: string | null) {
     if (successMessage) showToast({ title: successMessage });
+    // The change has landed, so the bill on screen is behind it until a read
+    // begun from here comes back; begin() drops every read that left earlier.
+    // That is the only place a change drops them. Dropping them as the change
+    // STARTS threw away the read that could explain a refusal - another phone
+    // already sent the round, `ไม่มีรายการรอส่งครัว` - and nothing replaced it.
+    rereadOwedRef.current = true;
+    const request = requestGenerationRef.current.begin();
     try {
-      setBill(await getBill(orderId));
+      const nextBill = await getBill(orderId);
+      if (!requestGenerationRef.current.isCurrent(request)) return;
+      rereadOwedRef.current = false;
+      setBill(nextBill);
       setBillStale(false);
+      billShownRef.current = true;
+      landedSinceFocusRef.current = true;
     } catch (err) {
+      // A later read owns the bill now, and marks it behind if it fails too.
+      if (!requestGenerationRef.current.isCurrent(request)) return;
       setBillStale(true);
       const done = successMessage ?? copy('ทำรายการแล้ว', 'Done');
       const reason = billActionFailureMessage(err, language);
       const base = copy(`${done} แต่โหลดบิลล่าสุดไม่สำเร็จ`, `${done}, but the latest bill could not be loaded`);
       actionFailed(reason ? `${base}, ${reason}` : base);
     }
+  }
+
+  // A refused change that means the server has moved on reads the bill again,
+  // quietly: the toast has already said what was refused, and the outdated
+  // rows go now instead of up to 30 s later.
+  function rereadIfServerMoved(err: unknown) {
+    if (SERVER_MOVED_FAILURES.has(billActionFailureCode(err))) void load(true, true);
   }
 
   // Sending is the whole reason the basket can land here. It leaves the screen
@@ -246,6 +413,7 @@ export default function BillScreen() {
       // Pick's go-back on success (14 ก.ย. merge) with this branch's toast on
       // failure. `saving` is released only here: on success the screen leaves.
       actionFailed(billActionFailureMessage(err, language) ?? copy('ส่งเข้าครัวไม่สำเร็จ', 'Could not send to the kitchen'));
+      rereadIfServerMoved(err);
       setSaving(false);
     }
   }
@@ -278,6 +446,7 @@ export default function BillScreen() {
       );
     } catch (err) {
       actionFailed(billActionFailureMessage(err, language) ?? copy('ลบรายการไม่สำเร็จ', 'Could not delete the item'));
+      rereadIfServerMoved(err);
     } finally {
       setSaving(false);
     }
@@ -301,6 +470,7 @@ export default function BillScreen() {
       await refreshBillAfterMutation(copy('นำรายการออกจากบิลแล้ว', 'Item removed from the bill'));
     } catch (err) {
       actionFailed(billActionFailureMessage(err, language) ?? copy('นำรายการออกจากบิลไม่สำเร็จ', 'Could not remove the item from the bill'));
+      rereadIfServerMoved(err);
     } finally {
       setSaving(false);
     }
@@ -354,7 +524,7 @@ export default function BillScreen() {
       showToast(repriced
         ? { tone: 'warning', title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded'), message: repriced }
         : { title: copy('รับชำระเงินเรียบร้อย', 'Payment recorded') });
-      resetRouteStack(router, billExitRoute(canTakeOrder, canViewOrders));
+      leaveBill();
     } catch (err) {
       // Released only on failure: after a success the screen is leaving, and a
       // tap on the still-mounted sheet must not send the payment again.
@@ -378,11 +548,14 @@ export default function BillScreen() {
   }
 
   async function printReceipt() {
-    if (!bill || !canAccessBill) return;
-    const printFailed = (detail: string) => showToast({
+    if (!bill || !canAccessBill || printStartedRef.current) return;
+    // No detail line when there is no reason staff can act on: the title
+    // already says the print failed, and the native module's own message is
+    // the library's English, never the app's words.
+    const printFailed = (detail: string | null) => showToast({
       tone: 'error',
       title: copy('พิมพ์ใบเสร็จไม่สำเร็จ', 'Could not print'),
-      message: detail,
+      ...(detail ? { message: detail } : {}),
     });
 
     if (!selectedPrinter) {
@@ -390,15 +563,20 @@ export default function BillScreen() {
       return;
     }
 
-    const result = await printReceiptView(slipRef.current);
-    if (result.ok) {
-      showToast({
-        title: copy('ส่งไปเครื่องพิมพ์แล้ว', 'Sent to printer'),
-        message: selectedPrinter.name,
-      });
-      return;
+    printStartedRef.current = true;
+    try {
+      const result = await printReceiptView(slipRef.current);
+      if (result.ok) {
+        showToast({
+          title: copy('ส่งไปเครื่องพิมพ์แล้ว', 'Sent to printer'),
+          message: selectedPrinter.name,
+        });
+        return;
+      }
+      printFailed(printerFailureReason(result.code, language));
+    } finally {
+      printStartedRef.current = false;
     }
-    printFailed(describePrinterFailure(result.code, language, result.message));
   }
 
   if (!canAccessBill) {
@@ -460,17 +638,16 @@ export default function BillScreen() {
     : canViewOrders
       ? copy('กลับไปคลังออเดอร์', 'Back to orders')
       : copy('กลับหน้าหลัก', 'Back to home');
-  const exitBill = () => resetRouteStack(
-    router,
-    billExitRoute(canTakeOrder, canViewOrders),
-  );
+  // Every amount on the bill is written as the total is, satang included:
+  // rows rounded to the baht under a total that keeps its satang read out to a
+  // different sum from the one the customer is asked to pay.
   const summaryRows: Array<[string, string]> = [
-    [copy('ยอดอาหาร', 'Food subtotal'), money(bill.subtotal, language)],
+    [copy('ยอดอาหาร', 'Food subtotal'), formatTender(bill.subtotal, language)],
   ];
   // One row per promotion the server applied, so the staff can tell a
   // customer exactly what took the price down.
   for (const line of billDiscountLines(bill, copy('ส่วนลด', 'Discount'))) {
-    summaryRows.push([line.label, `−${money(line.amount, language)}`]);
+    summaryRows.push([line.label, `−${formatTender(line.amount, language)}`]);
   }
   if (bill.service_charge_enabled) {
     summaryRows.push([
@@ -478,13 +655,13 @@ export default function BillScreen() {
         `ค่าบริการ ${bill.service_charge_rate.toLocaleString('th-TH')}%`,
         `Service charge ${bill.service_charge_rate.toLocaleString('en-US')}%`,
       ),
-      money(bill.service_charge_amount, language),
+      formatTender(bill.service_charge_amount, language),
     ]);
   }
   if (bill.vat_enabled) {
     summaryRows.push([
       `VAT ${bill.vat_rate.toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}%`,
-      money(bill.vat_amount, language),
+      formatTender(bill.vat_amount, language),
     ]);
   }
 
@@ -522,7 +699,7 @@ export default function BillScreen() {
     onConfirm: (received) => { void pay(received); },
   };
   const paidLine = paymentStage === 'paid' ? paidPaymentLine(bill.payments.at(-1), language) : null;
-  const exitAction = <Button icon="arrow-back" label={exitLabel} onPress={exitBill} />;
+  const exitAction = <Button icon="arrow-back" label={exitLabel} onPress={leaveBill} />;
   const sendRoundAction = canSendRound ? (
     <Button
       icon="flame-outline"
@@ -666,7 +843,7 @@ export default function BillScreen() {
                         name - all start on one level. `number` carries no line
                         height of its own, so the price sat a couple of points
                         low against a taller natural line box. */}
-                    <Text selectable style={[typeScale.number, { fontSize: 17, fontWeight: '600', lineHeight: 23 }]}>{money(item.subtotal, language)}</Text>
+                    <Text selectable style={[typeScale.number, { fontSize: 17, fontWeight: '600', lineHeight: 23 }]}>{formatTender(item.subtotal, language)}</Text>
                     {/* The count, where the status chip used to be. `x2` in a
                         disc says quantity without spending a line on the word,
                         which is what `จำนวน 2` under the name was doing.
@@ -790,7 +967,7 @@ export default function BillScreen() {
       <SectionHeader title={copy('สถานะการชำระเงิน', 'Payment status')} />
       <View style={{ gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: palette.border, paddingBottom: spacing.lg }}>
         <Text selectable style={[typeScale.caption, { color: palette.muted }]}>{copy('ยอดคงเหลือ', 'Amount due')}</Text>
-        <Text selectable style={[typeScale.number, { fontSize: 20, lineHeight: 28, fontWeight: '600' }]}>{money(bill.grand_total, language)}</Text>
+        <Text selectable style={[typeScale.number, { fontSize: 20, lineHeight: 28, fontWeight: '600' }]}>{formatTender(bill.grand_total, language)}</Text>
       </View>
       <Feedback
         title={copy('ดูบิลได้ แต่รับชำระเงินไม่ได้', 'You can view this bill but cannot take payment')}

@@ -33,8 +33,10 @@ import {
   canManageTarget,
   memberInitials,
   roleLabel,
+  staffFailureDetail,
   staffStatusLabel,
   userDisplayName,
+  type StaffFailureStep,
 } from '@/src/lib/staff-workflow';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -71,11 +73,12 @@ export default function StaffMemberScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmStatus, setConfirmStatus] = useState<MembershipStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // `error` is the member failing to load, and gates the not-found screen.
+  // `error` is the member failing to load, and gates the not-found screen: the
+  // app's line under the title when there is one, never the server's words.
   // Save reports through a toast (14 ก.ย.).
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const { showToast } = useToast();
-  const actionFailed = (detail: string) => showToast({ tone: 'error', title: copy('ทำรายการไม่ได้', 'Unable to complete action'), message: detail });
+  const actionFailed = (title: string, detail?: string) => showToast({ tone: 'error', title, message: detail });
 
   useEffect(() => {
     if (!restaurantId || !allowed || memberId === null) {
@@ -105,12 +108,10 @@ export default function StaffMemberScreen() {
         ));
       })
       .catch((err) => {
-        setError(err instanceof Error
-          ? err.message
-          : copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details'));
+        setError({ detail: staffFailureDetail(err, 'load', language) });
       })
       .finally(() => setLoading(false));
-  }, [activeMembership, actorRole, allowed, canEditRole, copy, memberId, restaurantId]);
+  }, [activeMembership, actorRole, allowed, canEditRole, language, memberId, restaurantId]);
 
   const manageable = Boolean(
     (canEditStatus || (canEditRole && member?.role && canGrantRole(activeMembership, member.role)))
@@ -190,7 +191,7 @@ export default function StaffMemberScreen() {
         || !can(activeMembership, permission)
       ))
     ) {
-      actionFailed(copy(
+      actionFailed(copy('ทำรายการไม่ได้', 'Unable to complete action'), copy(
         'บันทึกสิทธิ์ไม่ได้ เพราะมีสิทธิ์ที่บัญชีนี้มอบต่อไม่ได้ กรุณาให้ผู้มีสิทธิ์สูงกว่าเป็นผู้แก้ไข',
         'These permissions exceed your grant scope. Ask a higher-privileged account to edit them.',
       ));
@@ -198,6 +199,9 @@ export default function StaffMemberScreen() {
     }
 
     setSaving(true);
+    // Which request a failure came from: bringing a removed member back is
+    // the one that can find their role deleted.
+    let step: StaffFailureStep = 'save_member';
     try {
       let updated = member;
       if (roleChanged) {
@@ -205,7 +209,9 @@ export default function StaffMemberScreen() {
         setMember(updated);
       }
       if (canEditStatus && status !== updated.status) {
+        if (updated.status === 'removed') step = 'restore_member';
         updated = (await updateMemberStatus(restaurantId, updated.ID, status)).member;
+        step = 'save_member';
         setMember(updated);
       }
       if (updatePermissions) {
@@ -228,9 +234,7 @@ export default function StaffMemberScreen() {
       setConfirmStatus(null);
       showToast({ title: copy('บันทึกข้อมูลพนักงานแล้ว', 'Staff details saved') });
     } catch (err) {
-      actionFailed(err instanceof Error
-        ? err.message
-        : copy('บันทึกพนักงานไม่สำเร็จ', 'Unable to save staff details'));
+      actionFailed(copy('บันทึกพนักงานไม่สำเร็จ', 'Unable to save staff details'), staffFailureDetail(err, step, language));
     } finally {
       setSaving(false);
     }
@@ -373,7 +377,7 @@ export default function StaffMemberScreen() {
       action={tablet && member ? <HeadingAction compact={false} icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'} label={saveLabel} onPress={save} /> : undefined}
       footer={!tablet && member ? <SaveDock icon={confirmStatus === 'removed' ? 'person-remove-outline' : 'checkmark'} variant={saveVariant} label={saveLabel} onPress={save} loading={saving} /> : undefined}
     >
-      {error ? <Feedback title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')} detail={error.detail} tone="danger" /> : null}
       {!member ? (loading ? skeleton : null) : tablet ? (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
           <View style={{ width: 360, gap: spacing.md }}>

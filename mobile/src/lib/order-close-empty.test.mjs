@@ -111,10 +111,20 @@ test('a native alert with a destructive button confirms, then the table is close
   // No sentence under the title explaining it.
   assert.match(confirm, /\n\s*undefined,\n/);
 
+  // A takeaway has no table: the same close is "ยกเลิกออเดอร์", named for the
+  // customer when there is one, and the keep button does not also say ยกเลิก.
+  const takeaway = confirm.slice(confirm.indexOf('if (closingTakeaway) {'), confirm.indexOf('      return;\n    }'));
+  assert.ok(takeaway.length > 0, 'the takeaway branch is gone');
+  assert.match(takeaway, /copy\(`ยกเลิกออเดอร์กลับบ้านของ \$\{takeawayName\}\?`, `Discard \$\{takeawayName\}'s takeaway order\?`\)/);
+  assert.match(takeaway, /copy\('ยกเลิกออเดอร์กลับบ้านนี้\?', 'Discard this takeaway order\?'\)/);
+  assert.match(takeaway, /\{ text: copy\('เปิดออเดอร์ไว้', 'Keep order'\), style: 'cancel' \}/);
+  assert.match(takeaway, /\{ text: copy\('ยกเลิกออเดอร์', 'Discard order'\), style: 'destructive', onPress: \(\) => \{ void closeEmpty\(\); \} \}/);
+  assert.match(source, /const closingTakeaway = order\?\.order_type === 'takeaway';/);
+
   const close = declaration(source, 'closeEmpty');
   assert.match(close, /if \(!canCloseEmpty\) return;/);
   assert.match(close, /const closed = await mutate\(\(\) => closeEmptyTable\(orderId\)\);/);
-  assert.match(close, /if \(closed\) router\.dismissTo\('\/tables'\);/);
+  assert.match(close, /if \(closed\) leaveForWorkspaceRoute\(router, navigation\.getState\(\)\?\.routes\.map\(\(route\) => route\.name\) \?\? \[\], '\/tables'\);/);
   assert.doesNotMatch(close, /Alert\.alert\(/, 'closing asks a second time');
 
   // The table and its zone as one value, joined by a space, no dot.

@@ -287,11 +287,14 @@ func (s *CustomerOrderService) SubmitOrder(
 			return recalcErr
 		}
 		// When the location could not be verified the items stay pending so staff
-		// can confirm the guests are really seated before the kitchen starts.
+		// can confirm the guests are really seated before the kitchen starts. A
+		// finished order reopens for them, as it does for a line staff key in.
 		if fence != geofenceUnverified {
 			if sendErr := sendPendingItemsToKitchenByIDs(tx, order, actorID, addedItemIDs); sendErr != nil {
 				return sendErr
 			}
+		} else if reopenErr := reopenForPendingItems(tx, order, actorID); reopenErr != nil {
+			return reopenErr
 		}
 		submission := &entity.CustomerOrderSubmission{
 			RestaurantID: lockedTable.RestaurantID,

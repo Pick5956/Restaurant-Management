@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"Project-M/internal/entity"
+	"Project-M/internal/realtime"
 	"Project-M/internal/repository"
 	"Project-M/internal/service"
 
@@ -21,9 +22,13 @@ import (
 type RestaurantController struct {
 	restaurantSvc *service.RestaurantService
 	invitationSvc *service.InvitationService
+	// An open order stores its service charge and VAT, so a settings save that
+	// changes them reprices the open orders and announces it.
+	orders      *repository.OrderRepository
+	orderEvents *realtime.OrderHub
 }
 
-func ProvideRestaurantController(db *gorm.DB) *RestaurantController {
+func ProvideRestaurantController(db *gorm.DB, orderEvents *realtime.OrderHub) *RestaurantController {
 	restaurantRepo := repository.NewRestaurantRepository(db)
 	memberRepo := repository.NewRestaurantMemberRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
@@ -35,6 +40,8 @@ func ProvideRestaurantController(db *gorm.DB) *RestaurantController {
 	return &RestaurantController{
 		restaurantSvc: service.ProvideRestaurantService(restaurantRepo, memberRepo, roleRepo, auditRepo, setupRepo),
 		invitationSvc: service.ProvideInvitationService(invRepo, memberRepo, roleRepo, userRepo, auditRepo),
+		orders:        repository.NewOrderRepository(db),
+		orderEvents:   orderEvents,
 	}
 }
 
@@ -238,6 +245,9 @@ func (ctrl *RestaurantController) Update(c *gin.Context) {
 		return
 	}
 
+	// Read before the save, to tell whether the bill settings moved.
+	previous, previousErr := ctrl.restaurantSvc.GetRestaurant(restaurantID)
+
 	restaurant, err := ctrl.restaurantSvc.UpdateRestaurant(restaurantID, &req)
 	if err != nil {
 		if respondRestaurantSlugError(c, err) {
@@ -245,6 +255,14 @@ func (ctrl *RestaurantController) Update(c *gin.Context) {
 		}
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
+	}
+
+	// Priced before answering, so a till that reloads on the reply already
+	// reads the new totals. Unknown previous settings reprice too: an order
+	// whose money did not move is neither saved nor announced.
+	if ctrl.orders != nil && (previousErr != nil || service.BillChargesChanged(previous, restaurant)) {
+		repriced := service.RepriceOpenOrders(ctrl.orders, restaurantID, "bill_settings")
+		publishOrdersRepriced(ctrl.orderEvents, restaurantID, repriced)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"restaurant": restaurant})

@@ -30,6 +30,7 @@ import {
   canViewTeamAudit,
   isInvitationUsableAt,
   roleLabel,
+  staffFailureDetail,
   staffStatusLabel,
   teamActivityCopy,
   teamRoleGroups,
@@ -94,7 +95,9 @@ export default function StaffScreen() {
   const [loading, setLoading] = useState(true);
   const [loadedRestaurantId, setLoadedRestaurantId] = useState<number | null>(null);
   const [loadingMoreAudit, setLoadingMoreAudit] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A step's own title, and the app's line under it when there is one - never
+  // the server's words.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<number | null>(null);
   const [tab, setTab] = useState<StaffTab>('members');
   const scrollControlRef = useRef<AppScreenScrollControl | null>(null);
@@ -128,13 +131,11 @@ export default function StaffScreen() {
       setAuditOffset(auditResponse.next_offset || auditResponse.logs.length);
       setLoadedRestaurantId(restaurantId);
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('โหลดข้อมูลทีมงานไม่สำเร็จ', 'Unable to load team data'));
+      setError({ title: copy('โหลดข้อมูลทีมงานไม่สำเร็จ', 'Unable to load team data'), detail: staffFailureDetail(err, 'load', language) });
     } finally {
       setLoading(false);
     }
-  }, [allowed, canInvite, canViewAudit, copy, restaurantId]);
+  }, [allowed, canInvite, canViewAudit, copy, language, restaurantId]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -150,9 +151,7 @@ export default function StaffScreen() {
       setAuditHasMore(Boolean(response.has_more));
       setAuditOffset(response.next_offset || auditOffset + response.logs.length);
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('โหลดประวัติทีมงานไม่สำเร็จ', 'Unable to load team history'));
+      setError({ title: copy('โหลดประวัติทีมงานไม่สำเร็จ', 'Unable to load team history'), detail: staffFailureDetail(err, 'load', language) });
     } finally {
       setLoadingMoreAudit(false);
     }
@@ -169,9 +168,7 @@ export default function StaffScreen() {
       setConfirmRevokeId(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('ยกเลิกคำเชิญไม่สำเร็จ', 'Unable to revoke invitation'));
+      setError({ title: copy('ยกเลิกคำเชิญไม่สำเร็จ', 'Unable to revoke invitation'), detail: staffFailureDetail(err, 'revoke_invitation', language) });
     }
   }
 
@@ -467,7 +464,7 @@ export default function StaffScreen() {
       compactRow={compactTabs}
     >
       {error ? (
-        <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete action')} detail={error} tone="danger" />
+        <Feedback title={error.title} detail={error.detail} tone="danger" />
       ) : null}
       {initialLoading ? skeleton : hasLoadedTeam ? (
         tablet ? tabletBody : (

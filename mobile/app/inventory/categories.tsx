@@ -12,11 +12,22 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { Dock, DockButton, FloatingHeader, FormGroup, headerContentTop } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail, apiFailureSays, apiFailureStatus } from '@/src/lib/api-failure';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
-import { palette } from '@/src/theme';
+import { palette, typeScale } from '@/src/theme';
 import type { IngredientCategory } from '@/src/types/ingredient';
+
+/** The server's own limit on a category name, in characters. */
+const NAME_MAX_LENGTH = 120;
+
+/** A name refused by the server, under the row it was typed into; indented to the name. */
+function NameProblem({ line }: { line: string }) {
+  return (
+    <Text accessibilityLiveRegion="polite" style={[typeScale.caption, { color: palette.danger, paddingLeft: 60, paddingRight: 12, paddingBottom: 10 }]}>{line}</Text>
+  );
+}
 
 /**
  * The ingredient categories: a list of names and nothing else, so the screen is
@@ -39,7 +50,16 @@ export default function IngredientCategoriesScreen() {
   const [draft, setDraft] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The step that failed, and the app's line under it when there is one. Delete
+  // answers every refusal with 409; only "in use by ingredients" is a category
+  // that still holds ingredients.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  // A 409 on add or rename is a name another category already has: the name
+  // field's problem, said under the row it was typed into, not in the panel.
+  const [nameProblem, setNameProblem] = useState<{ at: number | 'draft'; line: string } | null>(null);
+  // Return submits and then blurs the field, and both commit the draft. Without
+  // this the same name went out twice and the second came back as taken.
+  const addingRef = useRef(false);
   const scroll = useRef<ScrollView>(null);
 
   const load = async () => {
@@ -47,7 +67,7 @@ export default function IngredientCategoriesScreen() {
       const response = await listIngredientCategories();
       setCategories(response.categories || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('โหลดหมวดไม่สำเร็จ', 'Could not load ingredient categories'));
+      setError({ title: t('โหลดหมวดไม่สำเร็จ', 'Could not load ingredient categories'), detail: apiFailureDetail(err, language) });
     } finally {
       setLoading(false);
     }
@@ -70,6 +90,7 @@ export default function IngredientCategoriesScreen() {
     setEditingId(item.ID);
     setEditName(item.name);
     setError(null);
+    setNameProblem(null);
   };
 
   const commitEdit = async (item: IngredientCategory) => {
@@ -78,11 +99,13 @@ export default function IngredientCategoriesScreen() {
     if (!next || next === item.name) return;
     setBusyId(item.ID);
     setError(null);
+    setNameProblem(null);
     try {
       await updateIngredientCategory(item.ID, { name: next });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('แก้ชื่อหมวดไม่สำเร็จ', 'Could not rename the category'));
+      if (apiFailureStatus(err) === 409) setNameProblem({ at: item.ID, line: t('มีหมวดชื่อนี้แล้ว', 'That name is taken.') });
+      else setError({ title: t('แก้ชื่อหมวดไม่สำเร็จ', 'Could not rename the category'), detail: apiFailureDetail(err, language) });
     } finally {
       setBusyId(null);
     }
@@ -93,24 +116,30 @@ export default function IngredientCategoriesScreen() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setDraft('');
     setError(null);
+    setNameProblem(null);
     setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 60);
   };
 
   // Saves and leaves another empty row behind it: adding categories is
   // something people do in a run of five, not one at a time.
   const commitDraft = async () => {
+    if (addingRef.current) return;
     const name = (draft ?? '').trim();
-    if (!name) { setDraft(null); return; }
+    if (!name) { setDraft(null); setNameProblem(null); return; }
+    addingRef.current = true;
     setSaving(true);
     setError(null);
+    setNameProblem(null);
     try {
       await createIngredientCategory({ name, display_order: categories.length + 1, is_active: true });
       setDraft('');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('เพิ่มหมวดไม่สำเร็จ', 'Could not add the category'));
+      if (apiFailureStatus(err) === 409) setNameProblem({ at: 'draft', line: t('มีหมวดชื่อนี้แล้ว', 'That name is taken.') });
+      else setError({ title: t('เพิ่มหมวดไม่สำเร็จ', 'Could not add the category'), detail: apiFailureDetail(err, language) });
     } finally {
+      addingRef.current = false;
       setSaving(false);
     }
   };
@@ -132,7 +161,10 @@ export default function IngredientCategoriesScreen() {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setCategories((prev) => prev.filter((row) => row.ID !== item.ID));
             } catch (err) {
-              setError(err instanceof Error ? err.message : t('ลบหมวดไม่สำเร็จ อาจยังมีวัตถุดิบอยู่ในหมวดนี้', 'Could not delete it — it may still hold ingredients.'));
+              setError({
+                title: t('ลบหมวดไม่สำเร็จ', 'Could not delete the category'),
+                detail: apiFailureSays(err, 'in use by ingredients') ? t('ยังมีวัตถุดิบในหมวดนี้', 'Ingredients are still in it.') : apiFailureDetail(err, language),
+              });
             } finally {
               setBusyId(null);
             }
@@ -167,7 +199,7 @@ export default function IngredientCategoriesScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}
         >
-          {error ? <View style={{ marginBottom: 12 }}><Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /></View> : null}
+          {error ? <View style={{ marginBottom: 12 }}><Feedback title={error.title} detail={error.detail} tone="danger" /></View> : null}
           {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
 
           {!loading ? (
@@ -202,6 +234,7 @@ export default function IngredientCategoriesScreen() {
                         onSubmitEditing={() => { void commitEdit(item); }}
                         onBlur={() => { void commitEdit(item); }}
                         returnKeyType="done"
+                        maxLength={NAME_MAX_LENGTH}
                         selectTextOnFocus
                         accessibilityLabel={t('ชื่อหมวด', 'Category name')}
                         style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: '600', color: palette.textStrong, paddingVertical: 0 }}
@@ -231,6 +264,7 @@ export default function IngredientCategoriesScreen() {
                     >
                       {row}
                     </SwipeRow>
+                    {nameProblem?.at === item.ID ? <NameProblem line={nameProblem.line} /> : null}
                   </View>
                 );
               })}
@@ -241,22 +275,24 @@ export default function IngredientCategoriesScreen() {
                   <TextInput
                     autoFocus
                     value={draft}
-                    onChangeText={setDraft}
+                    onChangeText={(text) => { setDraft(text); setNameProblem(null); }}
                     onSubmitEditing={() => { void commitDraft(); }}
                     onBlur={() => { void commitDraft(); }}
                     returnKeyType="done"
+                    maxLength={NAME_MAX_LENGTH}
                     placeholder={t('ชื่อหมวดใหม่', 'New category name')}
                     placeholderTextColor={palette.placeholder}
                     accessibilityLabel={t('ชื่อหมวดใหม่', 'New category name')}
                     style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: '600', color: palette.textStrong, paddingVertical: 0 }}
                   />
                   {saving ? <ActivityIndicator color={palette.primary} /> : (
-                    <Pressable accessibilityRole="button" accessibilityLabel={t('ยกเลิก', 'Cancel')} onPress={() => setDraft(null)} hitSlop={8}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={t('ยกเลิก', 'Cancel')} onPress={() => { setDraft(null); setNameProblem(null); }} hitSlop={8}>
                       <AppIcon name="close-circle" size={20} color={palette.placeholder} />
                     </Pressable>
                   )}
                 </View>
               ) : null}
+              {draft !== null && nameProblem?.at === 'draft' ? <NameProblem line={nameProblem.line} /> : null}
 
               {!categories.length && draft === null ? (
                 <View style={{ minHeight: 64, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 }}>

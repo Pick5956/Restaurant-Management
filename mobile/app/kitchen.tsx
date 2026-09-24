@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutAnimation, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { kitchenQueue, updateOrderItemStatus } from '@/src/api/order';
-import { AppRefreshControl, AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
+import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import {
   BoardHeading,
   CancelSheet,
@@ -25,6 +25,7 @@ import { useReducedMotion } from '@/src/components/motion';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { useKitchenOrderEvents } from '@/src/hooks/use-kitchen-order-events';
 import { EmptyState, Feedback, StatusBadge } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { itemStatusLabel } from '@/src/lib/format';
 import {
   formatKitchenMinutes,
@@ -80,6 +81,22 @@ function ticketTitleOf(order: Order, copy: Copy) {
   return { title: copy(`โต๊ะ ${tableLabel}`, `Table ${tableLabel}`), icon: undefined };
 }
 
+/**
+ * The request failure inside a kitchen mutation. runKitchenMutation wraps it
+ * in a KitchenMutationError, whose own message is the server's text and which
+ * carries no HTTP status, so the app's words come from what it wraps.
+ */
+function kitchenFailureCause(err: unknown): unknown {
+  if (!(err instanceof KitchenMutationError)) return err;
+  return err.mutationFailed ? err.mutationError : err.reconciliationError;
+}
+
+/** "อัปเดตสำเร็จ 2 จาก 5 รายการ, ระบบขัดข้องชั่วคราว": the parts that exist, comma-joined. */
+function failureLine(...parts: (string | undefined)[]): string | undefined {
+  const line = [...new Set(parts.filter((part): part is string => Boolean(part)))].join(', ');
+  return line || undefined;
+}
+
 const styles = StyleSheet.create({
   tiles: {
     flexDirection: 'row',
@@ -112,7 +129,8 @@ export default function KitchenScreen() {
   // next load succeeds. What a button did — done, cancelled, recalled, or
   // failed — is an event, and goes out as a toast (14 ก.ย.). The green bar that
   // used to sit above the tiles pushed the whole board down on every tap.
-  const [error, setError] = useState<string | null>(null);
+  // `detail` is the app's line under the title, never the server's words.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const { showToast } = useToast();
   const [cancelTarget, setCancelTarget] = useState<{ order: Order; item: OrderItem } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -132,7 +150,6 @@ export default function KitchenScreen() {
   reducedMotionRef.current = reducedMotion;
   const ordersRef = useRef<Order[]>([]);
   ordersRef.current = orders;
-  const scrollControlRef = useRef<AppScreenScrollControl | null>(null);
 
   const requestQueueSnapshot = useCallback(async (request: number) => {
     try {
@@ -193,7 +210,7 @@ export default function KitchenScreen() {
       await requestQueueSnapshot(request);
     } catch (err) {
       if (!requestGenerationRef.current.isCurrent(request)) return;
-      setError(err instanceof Error ? err.message : copy('โหลดคิวครัวไม่สำเร็จ', 'Could not load the kitchen queue'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       if (!quiet && foregroundRequestRef.current === request) {
         foregroundRequestRef.current = null;
@@ -204,7 +221,7 @@ export default function KitchenScreen() {
         }
       }
     }
-  }, [canView, copy, requestQueueSnapshot]);
+  }, [canView, language, requestQueueSnapshot]);
 
   const realtimeStatus = useKitchenOrderEvents(
     () => load(true),
@@ -259,18 +276,6 @@ export default function KitchenScreen() {
   );
   const stats = useMemo(() => kitchenBoardStats(cookingTickets, doneTickets, clock), [clock, cookingTickets, doneTickets]);
 
-  /**
-   * The compact bar's copy of the order switch: the same `sortMode` as the one
-   * on the board heading, so the two never disagree. Picked from down the
-   * list, a new order goes back to the top, where the reordered board starts;
-   * the heading's own switch is already there and does not move the page.
-   */
-  function sortFromCompactBar(mode: KitchenSortMode) {
-    if (mode === sortMode) return;
-    setSortMode(mode);
-    scrollControlRef.current?.scrollTo(0, !reducedMotion);
-  }
-
   function releaseMutationGate() {
     mutationGateRef.current.release();
     if (pendingQuietRefreshRef.current) {
@@ -279,7 +284,8 @@ export default function KitchenScreen() {
     }
   }
 
-  function failed(title: string, detail: string) {
+  /** The step's title, and the app's line under it when there is one. */
+  function failed(title: string, detail?: string) {
     showToast({ tone: 'error', title, message: detail });
   }
 
@@ -304,7 +310,7 @@ export default function KitchenScreen() {
     } catch (err) {
       failed(
         copy('อัปเดตสถานะอาหารไม่สำเร็จ', 'Could not update the item'),
-        err instanceof Error ? err.message : copy('ลองอีกครั้ง', 'Try again'),
+        apiFailureDetail(kitchenFailureCause(err), language),
       );
       return false;
     } finally {
@@ -358,22 +364,25 @@ export default function KitchenScreen() {
       const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
       const reconciliationFailed = err instanceof KitchenMutationError && err.reconciliationFailed;
       const reconciliationError = err instanceof KitchenMutationError ? err.reconciliationError : null;
-      const detail = mutationError instanceof Error
-        ? mutationError.message
-        : copy('อัปเดตทั้งรอบไม่สำเร็จ', 'Could not update the entire batch');
+      // Why, in the app's words (apiFailureDetail); the server's never reach the pass.
+      const detail = mutationFailed ? apiFailureDetail(mutationError, language) : undefined;
       if (updatedCount > 0 && reconciliationFailed) {
-        const reconciliationDetail = reconciliationError instanceof Error
-          ? reconciliationError.message
-          : copy('โหลดคิวครัวล่าสุดไม่สำเร็จ', 'Could not load the latest kitchen queue');
-        failed(copy('ทำทั้งรอบไม่ครบ', 'Round only partly done'), copy(
-          `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ แต่ยังตรวจสอบคิวล่าสุดไม่ได้${mutationFailed ? ` · หยุดอัปเดตเพราะ: ${detail}` : ''} · โหลดคิวไม่สำเร็จ: ${reconciliationDetail}`,
-          `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items, but the latest queue could not be verified${mutationFailed ? ` · Update stopped: ${detail}` : ''} · Queue load failed: ${reconciliationDetail}`,
+        failed(copy('ทำทั้งรอบไม่ครบ', 'Round only partly done'), failureLine(
+          copy(
+            `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ แต่ยังตรวจสอบคิวล่าสุดไม่ได้`,
+            `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items, but the latest queue could not be verified`,
+          ),
+          detail,
+          apiFailureDetail(reconciliationError, language),
         ));
       } else {
         failed(copy('ทำทั้งรอบไม่สำเร็จ', 'Could not complete the round'), updatedCount > 0
-          ? copy(
-            `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ และตรวจคิวล่าสุดแล้ว · ${detail}`,
-            `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items and reconciled the latest queue · ${detail}`,
+          ? failureLine(
+            copy(
+              `อัปเดตสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ และตรวจคิวล่าสุดแล้ว`,
+              `Updated ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items and reconciled the latest queue`,
+            ),
+            detail,
           )
           : detail);
       }
@@ -410,14 +419,14 @@ export default function KitchenScreen() {
         message: ticketTitleOf(order, copy).title,
       });
     } catch (err) {
-      const mutationError = err instanceof KitchenMutationError ? err.mutationError : err;
-      const detail = mutationError instanceof Error
-        ? mutationError.message
-        : copy('ดึงรอบกลับไม่สำเร็จ', 'Could not move the round back');
+      const detail = apiFailureDetail(kitchenFailureCause(err), language);
       failed(copy('ดึงกลับไม่สำเร็จ', 'Could not move it back'), updatedCount > 0
-        ? copy(
-          `ย้ายกลับสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ · ${detail}`,
-          `Moved back ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items · ${detail}`,
+        ? failureLine(
+          copy(
+            `ย้ายกลับสำเร็จ ${updatedCount.toLocaleString('th-TH')} จาก ${items.length.toLocaleString('th-TH')} รายการ`,
+            `Moved back ${updatedCount.toLocaleString('en-US')} of ${items.length.toLocaleString('en-US')} items`,
+          ),
+          detail,
         )
         : detail);
     } finally {
@@ -622,7 +631,7 @@ export default function KitchenScreen() {
   const showSkeleton = loading && !hasSnapshot;
   const notices = (
     <>
-      {error ? <Feedback title={copy('คิวครัวมีปัญหา', 'Kitchen queue issue')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={copy('โหลดคิวครัวไม่สำเร็จ', 'Could not load the kitchen queue')} detail={error.detail} tone="danger" /> : null}
       {realtimeStatus === 'offline' ? (
         <Feedback
           tone="warning"
@@ -690,15 +699,10 @@ export default function KitchenScreen() {
       action={isTablet && cookingTickets.length > 1
         ? <SortSwitch sort={sortMode} onSort={setSortMode} language={language} />
         : undefined}
-      // Phone only: the tablet does not scroll, so it never gets the bar. Once
-      // the heading has gone, the order switch rides on the bar's title row,
-      // where the tablet keeps it on its heading - not in a row of its own
-      // under the title, which would be a band holding one small control. It
-      // shows when the board heading's switch does (more than one ticket).
-      compactAction={!isTablet && cookingTickets.length > 1
-        ? <SortSwitch sort={sortMode} onSort={sortFromCompactBar} language={language} />
-        : null}
-      scrollControlRef={scrollControlRef}
+      // The phone's bar is the title alone, centred (owner, 25 ก.ย. 2569): the
+      // order switch lives on the board heading at the top only, never on the
+      // bar once the page is scrolled. The board reads longest-waiting first.
+      centerTitle={!isTablet}
       refreshControl={isTablet ? undefined : <AppRefreshControl onRefresh={() => load()} />}
       scroll={!isTablet}
       contentMaxWidth={isTablet ? 4000 : 1320}

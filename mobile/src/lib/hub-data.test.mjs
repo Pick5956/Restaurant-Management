@@ -55,7 +55,7 @@ import {
 } from './hub-data.ts';
 import { isKitchenOrderChangeEvent } from './order-events.ts';
 import { buildOrderListPath } from './order-query.ts';
-import { orderListRequest } from './permission-parity.ts';
+import { orderListRequest, orderRoutePermissions } from './permission-parity.ts';
 import { can } from './rbac.ts';
 
 const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -530,7 +530,8 @@ const ROW_SHOWN = {
   takings: (has) => has('view_dashboard'),
   floor: (has) => has('take_order'),
   kitchen: (has) => has('view_kitchen'),
-  paidToday: (has) => has('view_orders') || has('take_order'),
+  // The orders row: app-shell gates it on orderRoutePermissions (view_orders).
+  paidToday: (has) => orderRoutePermissions.some(has),
   menu: (has) => has('view_menu') || has('manage_menu'),
   inventory: (has) => has('view_inventory') || has('manage_inventory'),
   insights: (_has, roleName) => roleName === 'owner',

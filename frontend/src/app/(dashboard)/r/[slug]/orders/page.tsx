@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
 import { can } from "@/src/lib/rbac";
 import { getOrderBill, listOrders } from "@/src/lib/order";
 import type { Bill, Order } from "@/src/types/order";
@@ -39,7 +39,9 @@ export default function OrdersPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
-  const canView = can(activeMembership, "view_orders") || can(activeMembership, "take_order");
+  // The archive lists paid orders, which the server answers only under
+  // view_orders; take_order alone reads the live orders, not this list.
+  const canView = can(activeMembership, "view_orders");
   const [orders, setOrders] = useState<Order[]>([]);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -220,7 +222,7 @@ export default function OrdersPage() {
       const response = await getOrderBill(order.ID);
       setReceiptBill(response.data);
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.receiptLoadError);
+      setError(apiFailureText(error, language, copy.receiptLoadError));
     } finally {
       setReceiptLoadingId(null);
     }

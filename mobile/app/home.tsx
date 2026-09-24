@@ -14,6 +14,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { AttentionList, AttentionRail, DayStrip, HomeHeading, HomeSkeleton, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
 import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import {
   bangkokHour,
   buildHomeAttention,
@@ -193,7 +194,8 @@ export default function HomeScreen() {
   const [optionalFailures, setOptionalFailures] = useState<OptionalFailure[]>([]);
   const [reportFailures, setReportFailures] = useState<ReportFailure[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The app's line under "อัปเดตข้อมูลไม่ได้" when there is one, never the server's words.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
 
   const workMode = localizedWorkMode(getWorkModeCopy(activeMembership), copy);
   // A shop that renamed the role sees its own name for it, not the stock one.
@@ -329,11 +331,7 @@ export default function HomeScreen() {
         setLoadedDate(selectedDate);
       }
       if (failurePolicy.showError) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : copy('โหลดภาพรวมร้านไม่สำเร็จ', 'Could not load the restaurant overview'),
-        );
+        setError({ detail: apiFailureDetail(err, language) });
       }
     } finally {
       if (!quiet && foregroundRequestIdRef.current === requestId) {
@@ -348,8 +346,8 @@ export default function HomeScreen() {
     canViewOrders,
     canViewReports,
     canViewTables,
-    copy,
     isToday,
+    language,
     selectedDate,
   ]);
 
@@ -692,7 +690,7 @@ export default function HomeScreen() {
       {error ? (
         <Feedback
           title={copy('อัปเดตข้อมูลไม่ได้', 'Could not update data')}
-          detail={error}
+          detail={error.detail}
           tone="danger"
         />
       ) : null}

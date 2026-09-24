@@ -27,7 +27,9 @@ export const HEADER_PAD_TOP = 4;
 // The rail is a pill, and a smaller one than the search above it: the search
 // is where the hand goes, the rail is a setting.
 const RAIL_HEIGHT = 38;
-export const SEARCH_HEIGHT = 50;
+// The app's search box height (SearchField), so the stock page's capsule is
+// the same size as every other search (owner, 2026-09-25).
+export const SEARCH_HEIGHT = 44;
 /** Between the rows of the header block. */
 const HEADER_ROW_GAP = 8;
 
@@ -716,7 +718,7 @@ export function HeaderTextButton({ label, onPress }: { label: string; onPress: (
 /** The search capsule: a magnifier, the field and a clear button, in the card material. */
 export function SearchCapsule({ value, onChangeText, placeholder, clearLabel }: { value: string; onChangeText: (value: string) => void; placeholder: string; clearLabel: string }) {
   return (
-    <GlassPanel radius={25} interactive={false} style={{ flex: 1, height: 50, flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 8, gap: 8 }} fallback={palette.surface} fallbackBorder={palette.border}>
+    <GlassPanel radius={SEARCH_HEIGHT / 2} interactive={false} style={{ flex: 1, height: SEARCH_HEIGHT, flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 8, gap: 8 }} fallback={palette.surface} fallbackBorder={palette.border}>
       <AppIcon name="search-outline" size={18} color={palette.muted} />
       <TextInput
         value={value}

@@ -1,7 +1,10 @@
 package service
 
 import (
+	"go/ast"
+	"go/token"
 	"math"
+	"strings"
 	"testing"
 
 	"Project-M/internal/entity"
@@ -166,6 +169,44 @@ func TestIngredientRecipeUnitChangeBlocked(t *testing.T) {
 	}
 }
 
+// TestUnitChangeRefusalCarriesItsSentinel: the API gives this refusal its own
+// code only when it is ErrIngredientUnitLocked. IngredientService.Update has
+// to return the sentinel, and no call site may spell the text out again - an
+// errors.New with the same words reaches the client as a plain
+// invalid_request.
+func TestUnitChangeRefusalCarriesItsSentinel(t *testing.T) {
+	update := packageFunction(t, "IngredientService.Update")
+	returned := 0
+	ast.Inspect(update.Body, func(node ast.Node) bool {
+		ret, ok := node.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, result := range ret.Results {
+			if ident, ok := result.(*ast.Ident); ok && ident.Name == "ErrIngredientUnitLocked" {
+				returned++
+			}
+		}
+		return true
+	})
+	if returned != 1 {
+		t.Fatalf("IngredientService.Update returns ErrIngredientUnitLocked %d times, want once", returned)
+	}
+	spelled := 0
+	for _, file := range packageSources(t) {
+		ast.Inspect(file, func(node ast.Node) bool {
+			lit, ok := node.(*ast.BasicLit)
+			if ok && lit.Kind == token.STRING && strings.Contains(lit.Value, "cannot change stock units") {
+				spelled++
+			}
+			return true
+		})
+	}
+	if spelled != 1 {
+		t.Fatalf("the unit-change refusal is spelled out %d times in the package, want once (the sentinel)", spelled)
+	}
+}
+
 // A restock's amount becomes a real ledger row, so anything that survives this
 // check gets summed into the restaurant's expenses forever.
 func TestRestockAmountOnlyAcceptsMoneyOnStockIn(t *testing.T) {
@@ -204,5 +245,22 @@ func TestRestockAmountOnlyAcceptsMoneyOnStockIn(t *testing.T) {
 	}
 	if got != 1234.57 {
 		t.Fatalf("restockAmount() = %v, want 1234.57", got)
+	}
+}
+
+// A member who may not write the ledger still moves stock; what the movement
+// is worth must then be nothing, or the Expense write downstream fires.
+func TestBookedRestockAmountBooksNothingWhenExpensesAreSkipped(t *testing.T) {
+	if got := bookedRestockAmount(true, 0, 8.4, 12.5); got != 0 {
+		t.Fatalf("skipped auto-valued stock-in booked %v, want 0", got)
+	}
+	if got := bookedRestockAmount(true, 1250, 8.4, 12.5); got != 0 {
+		t.Fatalf("skipped typed stock-in booked %v, want 0", got)
+	}
+	if got := bookedRestockAmount(false, 1250, 8.4, 12.5); got != 1250 {
+		t.Fatalf("typed amount = %v, want 1250", got)
+	}
+	if got := bookedRestockAmount(false, 0, 8.4, 12.5); got != 105 {
+		t.Fatalf("auto-valued amount = %v, want 105", got)
 	}
 }

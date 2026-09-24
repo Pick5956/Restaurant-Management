@@ -8,8 +8,10 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { CompactTableTile } from '@/src/components/compact-table-tile';
+import { FilterChipRow } from '@/src/components/filter-chip-row';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
-import { Button, EmptyState, Feedback, IconButton, SearchField, SectionHeader, Select } from '@/src/components/ui';
+import { Button, EmptyState, Feedback, IconButton, SearchField, SectionHeader } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { money, tableStatusLabel } from '@/src/lib/format';
 import { can } from '@/src/lib/rbac';
 import { createRequestGeneration, shouldStartRequest } from '@/src/lib/request-generation';
@@ -70,7 +72,8 @@ export default function TablesScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedZone, setSelectedZone] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The app's line under "โหลดผังโต๊ะไม่ได้" when there is one, never the server's words.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const requestGenerationRef = useRef(createRequestGeneration());
   const foregroundRequestRef = useRef<number | null>(null);
@@ -95,14 +98,14 @@ export default function TablesScreen() {
       setTables(tableResponse.tables || []); setOrders(orderResponse.orders || []);
     } catch (err) {
       if (!requestGenerationRef.current.isCurrent(request)) return;
-      setError(err instanceof Error ? err.message : copy('โหลดผังโต๊ะไม่สำเร็จ', 'Could not load the table map'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       if (!quiet && foregroundRequestRef.current === request) {
         foregroundRequestRef.current = null;
         if (requestGenerationRef.current.isCurrent(request)) setLoading(false);
       }
     }
-  }, [copy]);
+  }, [language]);
   useEffect(() => {
     if (
       primaryTabSceneStatus !== 'adjacent' ||
@@ -279,10 +282,11 @@ export default function TablesScreen() {
   ].filter(Boolean);
 
   // The order screen's filter bar, to the letter. Pinned under the heading, one
-  // row rather than two: the zone picker and a magnifier share it, and the
-  // search field takes the picker's place only while it is being used. The row
-  // of zone chips this replaced cost a whole line permanently, and both it and
-  // the search box used to scroll away with the first zone.
+  // row rather than two: the zone chips and a magnifier share it (FilterChipRow,
+  // owner 2026-09-25, in place of a dropdown), and the search field takes the
+  // chips' place only while it is being used. An earlier row of zone chips cost
+  // a whole line of its own and scrolled away with the first zone; these sit
+  // beside the magnifier in the pinned row.
   const zoneFilterBar = zoneOptions.length > 1 ? (
     <>
       {searchOpen ? (
@@ -298,21 +302,19 @@ export default function TablesScreen() {
           placeholder={copy('ค้นหาโต๊ะ', 'Search tables')}
         />
       ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <View style={{ minWidth: 0, flex: 1 }}>
-            <Select
-              value={selectedZone}
-              onChange={setSelectedZone}
-              options={[{ label: copy('ทุกโซน', 'All zones'), value: 'all' }, ...zoneOptions]}
+        <FilterChipRow
+          options={[{ key: 'all', label: copy('ทุกโซน', 'All zones') }, ...zoneOptions.map((zone) => ({ key: zone.value, label: zone.label }))]}
+          value={selectedZone}
+          onChange={setSelectedZone}
+          trailing={(
+            <IconButton
+              accessibilityLabel={copy('ค้นหาโต๊ะ', 'Search tables')}
+              icon="search-outline"
+              onPress={() => setSearchOpen(true)}
+              variant="glass"
             />
-          </View>
-          <IconButton
-            accessibilityLabel={copy('ค้นหาโต๊ะ', 'Search tables')}
-            icon="search-outline"
-            onPress={() => setSearchOpen(true)}
-            variant="glass"
-          />
-        </View>
+          )}
+        />
       )}
     </>
   ) : (
@@ -354,7 +356,7 @@ export default function TablesScreen() {
       onTouchOutsideStickyContent={searchOpen ? closeSearch : undefined}
       action={headerActions.length ? <View style={{ flexDirection: 'row', gap: spacing.sm }}>{headerActions}</View> : undefined}
     >
-      {error ? <Feedback title={copy('โหลดผังโต๊ะไม่ได้', 'Could not load the table map')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={copy('โหลดผังโต๊ะไม่ได้', 'Could not load the table map')} detail={error.detail} tone="danger" /> : null}
       {notice ? <Feedback title={copy('ยังเปิดโต๊ะนี้ไม่ได้', 'This table cannot be opened yet')} detail={notice} tone="warning" /> : null}
       {!canTakeOrder ? <Feedback title={copy('ไม่มีสิทธิ์รับออเดอร์', 'No order-taking permission')} detail={copy('เลือกโหมดงานอื่นที่บัญชีนี้ได้รับอนุญาตจากเมนูด้านล่าง', 'Choose another work mode allowed for this account from the menu below.')} tone="info" /> : null}
       <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.xl }}>

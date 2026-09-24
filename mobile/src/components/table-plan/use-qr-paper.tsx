@@ -5,7 +5,7 @@ import { Alert, Platform, View } from 'react-native';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
 import { QrPrintSlip } from '@/src/components/table-plan/print-slip';
-import { describePrinterFailure } from '@/src/lib/printer';
+import { printerFailureReason } from '@/src/lib/printer';
 import type { PlanLanguage } from '@/src/lib/table-plan';
 import { usePrinter } from '@/src/providers/printer-provider';
 import { useToast } from '@/src/providers/toast-provider';
@@ -65,8 +65,10 @@ export function useQrPaper({ language, t }: { language: PlanLanguage; t: (th: st
         } else if (result.code === 'NO_PRINTER_SELECTED') {
           askForPrinter();
         } else {
-          // The mapped words only: the printer's own message is never shown.
-          showToast({ tone: 'error', title: t('พิมพ์ QR ไม่สำเร็จ', 'Could not print the QR'), message: describePrinterFailure(result.code, language) });
+          // The mapped words only: the printer's own message is never shown,
+          // and a code with no mapped reason adds no line under the title.
+          const reason = printerFailureReason(result.code, language);
+          showToast({ tone: 'error', title: t('พิมพ์ QR ไม่สำเร็จ', 'Could not print the QR'), ...(reason ? { message: reason } : {}) });
         }
         return;
       }

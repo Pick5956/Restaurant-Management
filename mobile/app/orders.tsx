@@ -18,7 +18,7 @@ import {
 } from '@/src/components/ui';
 import { archiveDateLabel, groupArchiveByDay } from '@/src/lib/order-archive';
 import { formatBangkokDate } from '@/src/lib/order-query';
-import { orderListAccess, orderListRequest } from '@/src/lib/permission-parity';
+import { orderArchiveFailureDetail, orderListAccess, orderListRequest } from '@/src/lib/permission-parity';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -40,8 +40,8 @@ export default function OrdersScreen() {
   const { activeMembership } = useAuth();
   const { copy, language } = useDisplayPreferences();
   const canViewOrders = can(activeMembership, 'view_orders');
-  const canTakeOrder = can(activeMembership, 'take_order');
-  const access = orderListAccess(canViewOrders, canTakeOrder);
+  // view_orders alone: the server refuses take_order the paid list this screen asks for.
+  const access = orderListAccess(canViewOrders);
   const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -50,7 +50,8 @@ export default function OrdersScreen() {
   const [pagination, setPagination] = useState<OrderListResponse['pagination']>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the app's own line under the title, or none.
+  const [failure, setFailure] = useState<{ detail?: string } | null>(null);
   const requestIdRef = useRef(0);
   const adjacentWarmRequestedRef = useRef(false);
   const scrollControlRef = useRef<AppScreenScrollControl | null>(null);
@@ -83,7 +84,7 @@ export default function OrdersScreen() {
     }
     if (append) setLoadingMore(true);
     else setLoading(true);
-    setError(null);
+    setFailure(null);
     try {
       const response = await listOrders(request);
       if (requestId !== requestIdRef.current) return;
@@ -93,14 +94,15 @@ export default function OrdersScreen() {
       setPagination(response.pagination);
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
-      setError(err instanceof Error ? err.message : copy('โหลดคลังออเดอร์ไม่สำเร็จ', 'Could not load the order archive'));
+      // The app's words, never the server's.
+      setFailure({ detail: orderArchiveFailureDetail(err, language) });
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
         setLoadingMore(false);
       }
     }
-  }, [access, copy, date, debouncedSearch]);
+  }, [access, date, debouncedSearch, language]);
 
   useEffect(() => {
     if (
@@ -127,7 +129,7 @@ export default function OrdersScreen() {
   const totalCount = pagination?.total ?? orders.length;
   const days = useMemo(() => groupArchiveByDay(orders), [orders]);
   if (access === 'denied') {
-    return <AppScreen title={copy('ออเดอร์', 'Orders')}><EmptyState title={copy('ไม่มีสิทธิ์ดูออเดอร์', 'No permission to view orders')} detail={copy('ต้องมีสิทธิ์รับออเดอร์หรือดูออเดอร์ย้อนหลัง', 'The take_order or view_orders permission is required.')} /></AppScreen>;
+    return <AppScreen title={copy('ออเดอร์', 'Orders')}><EmptyState title={copy('ไม่มีสิทธิ์ดูคลังออเดอร์', 'No permission to view the order archive')} /></AppScreen>;
   }
 
   const dayLabel = archiveDateLabel(date, language);
@@ -164,7 +166,7 @@ export default function OrdersScreen() {
       )}
     >
       <View style={{ gap: spacing.md }}>
-        {error ? <Feedback title={copy('โหลดคลังออเดอร์ไม่ได้', 'Could not load the order archive')} detail={error} tone="danger" /> : null}
+        {failure ? <Feedback title={copy('โหลดคลังออเดอร์ไม่ได้', 'Could not load the order archive')} detail={failure.detail} tone="danger" /> : null}
         {/* Search and the day control share one row, so neither sits alone on a line. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
           <View style={{ flex: 1, minWidth: 0 }}>

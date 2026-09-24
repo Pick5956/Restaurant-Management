@@ -1,10 +1,11 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, View, type TextInput } from 'react-native';
+import { Keyboard, useWindowDimensions, View } from 'react-native';
 
 import { listCategories, listMenuItems, setMenuItemAvailability } from '@/src/api/menu';
 import { GlassButton } from '@/src/components/ai/chrome';
 import { AppRefreshControl, AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
+import { createChipRowSync } from '@/src/components/form/parts';
 import { MenuImage } from '@/src/components/menu-image';
 import { MenuCompactRow } from '@/src/components/menu-manage/menu-compact-row';
 import { MenuFilterBar } from '@/src/components/menu-manage/menu-filter-bar';
@@ -37,6 +38,10 @@ export default function MenuScreen() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
+  // The compact bar's row is the search field: a search run from deep in the
+  // list, with the results read from the top under the bar (owner, 24 ก.ย.
+  // 2569, the Grab reference). The page's own field at the top shares `search`.
+  const [searching, setSearching] = useState(false);
   // `loaded`: an answer has arrived at least once. `loadFailure`: the line a
   // failed load shows while there are no dishes to keep on screen.
   const [loaded, setLoaded] = useState(false);
@@ -57,9 +62,11 @@ export default function MenuScreen() {
   // failure alert must not land over the editor, where it reads as the edit
   // failing. The list stays, and the next focus loads again.
   const focusedRef = useRef(false);
-  // The compact header's row moves the page and the caret itself.
+  // The compact header's row moves the page itself.
   const scrollControlRef = useRef<AppScreenScrollControl | null>(null);
-  const searchRef = useRef<TextInput | null>(null);
+  // The two chip rows scroll sideways as one, so the bar's takes over from
+  // the page's exactly where it was left.
+  const chipSync = useRef(createChipRowSync()).current;
   const canManage = can(activeMembership, 'manage_menu');
   const canView = canManage || can(activeMembership, 'view_menu');
   const tabletWorkspace = width >= breakpoints.tabletWorkspace;
@@ -101,6 +108,13 @@ export default function MenuScreen() {
     focusedRef.current = true;
     return () => {
       focusedRef.current = false;
+      // Leaving the page - the add button, back, anything - closes the search
+      // as a touch below the bar does: the keyboard does not ride along to the
+      // next screen, and the page is not still searching when it comes back
+      // (owner, 2026-09-25).
+      Keyboard.dismiss();
+      setSearch('');
+      setSearching(false);
     };
   }, []));
   // Every focus reloads, which is how edits made on /menu/item and
@@ -136,6 +150,29 @@ export default function MenuScreen() {
   const clearFilters = () => {
     setCategory('all');
     setSearch('');
+  };
+
+  // Closing the search from the bar puts the chips back and takes the keyword
+  // with it, so the list can never stay filtered by a field that is no longer
+  // on screen. `Keyboard.dismiss()` is not redundant with unmounting the
+  // field: unmounting blurs it, and blur puts the keyboard away a frame
+  // later, which reads as the row snapping back with the keyboard trailing.
+  const closeSearch = () => {
+    Keyboard.dismiss();
+    setSearch('');
+    setSearching(false);
+  };
+
+  // The full bar's field is where most searches start, and it used to be a
+  // field of its own: typed into, then scrolled past or left for a dish, it
+  // kept the caret and the keyboard (owner, 2026-09-25). Touching it opens the
+  // bar's search stage instead, the one the round button opens: the page goes
+  // to the hand-off, the bar's field takes the caret (autoFocus), and from
+  // there it closes on a touch below the bar, on ยกเลิก or on leaving.
+  const openSearchFromPage = () => {
+    if (searching) return;
+    setSearching(true);
+    requestAnimationFrame(() => scrollControlRef.current?.scrollToCompactRow?.(false));
   };
 
   // The switch is controlled, so its thumb follows `is_available` - not the
@@ -195,18 +232,33 @@ export default function MenuScreen() {
           category={category}
           onCategory={setCategory}
           options={categoryOptions}
+          chipSync={chipSync}
           scrollControlRef={scrollControlRef}
-          searchRef={searchRef}
+          search={search}
+          searching={searching}
+          onSearch={setSearch}
+          onOpenSearch={() => setSearching(true)}
+          onCloseSearch={closeSearch}
           t={copy}
         />
       ) : undefined}
+      // While the bar's field is up, the page can rest with the bar in even
+      // when the answer is a few dishes or none.
+      pinCompactRow={searching}
+      // The order screen's search stage (owner, 2026-09-25): while the field is
+      // up, the first touch or drag anywhere below the bar closes it, puts the
+      // keyboard away and takes the keyword with it, and reaches nothing
+      // underneath. The bar sits over the catcher, so the field and ยกเลิก
+      // stay live.
+      onTouchOutsideStickyContent={searching ? closeSearch : undefined}
     >
       <MenuFilterBar
         category={category}
+        chipSync={chipSync}
         onCategory={setCategory}
         onManageCategories={canManage ? () => router.push('/menu/categories' as never) : undefined}
         onSearch={setSearch}
-        searchRef={searchRef}
+        onFocusSearch={openSearchFromPage}
         options={categoryOptions}
         search={search}
         t={copy}

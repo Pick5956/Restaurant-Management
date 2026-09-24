@@ -5,6 +5,7 @@ import type {
   Role,
 } from '@/src/types/restaurant';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
+import { apiFailureDetail } from './api-failure.ts';
 import { can } from './rbac.ts';
 import { normalizePermissionSelection, parsePermissionsForRole } from './permissions.ts';
 
@@ -169,18 +170,93 @@ export function canFinishRoleNameEdit(value: string): boolean {
   return value.trim().length > 0;
 }
 
+/**
+ * The line under "บันทึกบทบาทไม่สำเร็จ" for a failed role save. `failure` is
+ * the app's own detail (staffFailureDetail), never the server's message.
+ * Without one there is nothing to add unless the name went through first, and
+ * then the line says so on its own - never the title a second time.
+ */
 export function roleSaveFailureMessage(
   nameSaved: boolean,
-  failure: string,
+  failure: string | undefined,
   language: DisplayLanguage = 'th',
-): string {
-  const detail = failure.trim() || (language === 'th'
-    ? 'บันทึกบทบาทไม่สำเร็จ'
-    : 'Unable to save role');
-  if (!nameSaved) return detail;
-  return language === 'th'
-    ? `บันทึกชื่อบทบาทแล้ว แต่บันทึกสิทธิ์ไม่สำเร็จ: ${detail}`
-    : `Role name saved, but permissions could not be saved: ${detail}`;
+): string | undefined {
+  const detail = (failure ?? '').trim();
+  if (!nameSaved) return detail || undefined;
+  const partial = language === 'th'
+    ? 'บันทึกชื่อบทบาทแล้ว แต่บันทึกสิทธิ์ไม่สำเร็จ'
+    : 'Role name saved, but permissions could not be saved';
+  return detail ? `${partial}: ${detail}` : partial;
+}
+
+/**
+ * The staff steps whose refusals an owner can act on. The server refuses them
+ * in English ("role is still assigned to staff", "invalid invitation email"),
+ * and the staff screens used to print that as it came.
+ */
+export type StaffFailureStep =
+  | 'load'
+  | 'save_member'
+  | 'restore_member'
+  | 'save_role'
+  | 'delete_role'
+  | 'create_invitation'
+  | 'revoke_invitation';
+
+type StaffRefusal = 'role_unavailable' | 'role_has_staff' | 'role_has_invitations' | 'invalid_email' | 'invitation_closed';
+
+const STAFF_REFUSALS: Record<StaffRefusal, Record<DisplayLanguage, string>> = {
+  role_unavailable: { th: 'บทบาทเดิมของพนักงานคนนี้ถูกลบไปแล้ว ให้เชิญเข้าร้านใหม่', en: 'Their old role has been deleted. Invite them again.' },
+  role_has_staff: { th: 'ยังมีพนักงานใช้บทบาทนี้อยู่', en: 'Staff still have this role.' },
+  role_has_invitations: { th: 'ยังมีคำเชิญที่ใช้บทบาทนี้อยู่', en: 'A pending invitation uses this role.' },
+  invalid_email: { th: 'อีเมลไม่ถูกต้อง', en: 'That email is not valid.' },
+  invitation_closed: { th: 'คำเชิญนี้ถูกใช้หรือยกเลิกไปแล้ว', en: 'This invitation was already used or revoked.' },
+};
+
+/** The `code` of the error body src/api/client.ts keeps in ApiError.details. */
+function failureBodyCode(err: unknown): string {
+  const details = err && typeof err === 'object' ? (err as { details?: unknown }).details : undefined;
+  if (typeof details !== 'string' || !details.trim().startsWith('{')) return '';
+  try {
+    const parsed = JSON.parse(details) as { code?: unknown };
+    return typeof parsed.code === 'string' ? parsed.code : '';
+  } catch {
+    return '';
+  }
+}
+
+function staffRefusal(err: unknown, step: StaffFailureStep): StaffRefusal | null {
+  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const message = raw.trim().toLowerCase();
+  // A removed member comes back under the role they left with; when that role
+  // has been deleted since, the server refuses (code role_unavailable) and the
+  // only way back is a new invitation. The same words from a role edit mean
+  // something else, so the message alone counts on the restore step only.
+  if (step === 'restore_member' && (failureBodyCode(err) === 'role_unavailable' || message.includes('role is not available for this restaurant'))) {
+    return 'role_unavailable';
+  }
+  if (step === 'delete_role') {
+    if (message.includes('role is still assigned to staff')) return 'role_has_staff';
+    if (message.includes('role is used by pending invitations')) return 'role_has_invitations';
+  }
+  if (step === 'create_invitation' && message.includes('invalid invitation email')) return 'invalid_email';
+  if (step === 'revoke_invitation' && message.includes('only pending invitations can be revoked')) return 'invitation_closed';
+  return null;
+}
+
+/**
+ * The line under a failed staff step's title: the app's words for a refusal
+ * the owner can act on, then the failures every screen shares
+ * (apiFailureDetail), else `undefined` so the title stands alone. Never the
+ * server's wording.
+ */
+export function staffFailureDetail(
+  err: unknown,
+  step: StaffFailureStep,
+  language: DisplayLanguage = 'th',
+): string | undefined {
+  const refusal = staffRefusal(err, step);
+  return refusal ? STAFF_REFUSALS[refusal][language] : apiFailureDetail(err, language);
 }
 
 export function teamActivityCopy(language: DisplayLanguage = 'th') {

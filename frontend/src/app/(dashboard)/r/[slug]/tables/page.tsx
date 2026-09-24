@@ -7,8 +7,9 @@ import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { bulkCreateTables, createTableZone, deleteTable, deleteTableZone, listTables, listTableZones, moveTableZone, regenerateTableCustomerToken, updateTable, updateTableZone } from "@/src/lib/table";
-import { listOrders } from "@/src/lib/order";
+import { listAllOrders } from "@/src/lib/order";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
 import { reservationClock } from "@/src/lib/reservationSchedule";
 import { createSingleFlight } from "@/src/lib/singleFlight";
 import { useOrderEvents } from "@/src/hooks/useOrderEvents";
@@ -244,11 +245,12 @@ export default function TablesPage() {
 
   // null when the orders could not be read: the caller keeps what it had, and
   // the status column plus the server's own refusal still guard the lock.
+  // Every live order, not one page: the oldest are the ones a page drops, and a
+  // table whose order fell off it would lose its lock.
   const loadActiveTableIds = async (): Promise<ReadonlySet<number> | null> => {
     if (!canReadActiveOrders) return new Set();
     try {
-      const res = await listOrders({ status: "active", limit: 200 });
-      return activeOrderTableIds(res.data.orders ?? []);
+      return activeOrderTableIds(await listAllOrders({ status: "active" }));
     } catch {
       return null;
     }
@@ -385,10 +387,11 @@ export default function TablesPage() {
 
   // The server's refusal in the page's own words, as a toast. A refusal that
   // means the page is out of date (the table went into service meanwhile)
-  // reloads it, which turns that table read-only.
+  // reloads it, which turns that table read-only. The raw text is only ever
+  // read by tableErrorText; what it does not know falls to the shared lines.
   const showActionError = (err: unknown, fallback: string, context: "table" | "zone" = "table") => {
     const raw = apiErrorMessage(err);
-    showToast({ title: tableErrorText(raw, language, fallback, context), tone: "error" });
+    showToast({ title: tableErrorText(raw, language, apiFailureText(err, language, fallback), context), tone: "error" });
     if (tableErrorNeedsReload(raw)) void refresh({ background: true });
   };
 
