@@ -2,13 +2,45 @@
 
 import Link from "next/link";
 import { ArrowLeft, Globe, Search, Store, User, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { FOCUS_RING, RAISED, SettingsSearchContext, TEXT_FOCUS } from "./_components/SettingsPrimitives";
+
+/**
+ * Whether the phone's group strip overflows and where it sits - the same
+ * affordance as the stock page's ChipRow (inventory/mobile/primitives.tsx): the
+ * owner asked for its short centred bar here too (25 ก.ย. 2569).
+ */
+function useScrollAffordance() {
+  const ref = useRef<HTMLUListElement>(null);
+  const [state, setState] = useState({ scrollable: false, ratio: 0, progress: 0 });
+  const measure = useCallback(() => {
+    const node = ref.current;
+    if (!node) return;
+    const overflow = node.scrollWidth - node.clientWidth;
+    if (overflow <= 1) {
+      setState((current) => (current.scrollable ? { scrollable: false, ratio: 0, progress: 0 } : current));
+      return;
+    }
+    setState({ scrollable: true, ratio: node.clientWidth / node.scrollWidth, progress: node.scrollLeft / overflow });
+  }, []);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    node.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => {
+      node.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [measure]);
+  return { ref, ...state };
+}
 
 type NavItem = { key: "account" | "display" | "restaurant"; href: string; label: string; icon?: ReactNode };
 
@@ -82,7 +114,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       window.removeEventListener("resize", measure);
     };
   }, []);
-  const chipsRef = useRef<HTMLUListElement>(null);
+  const { ref: chipsRef, scrollable: chipsScroll, ratio: chipsRatio, progress: chipsProgress } = useScrollAffordance();
+  const chipsThumb = Math.max(chipsRatio * 100, 35);
 
   const scrollToGroup = (id: string) => {
     const target = document.querySelector<HTMLElement>(`[data-settings-group="${id}"]`);
@@ -142,7 +175,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     const chip = strip?.querySelector<HTMLElement>('[aria-current="true"]');
     if (!strip || !chip) return;
     strip.scrollTo({ left: chip.offsetLeft - strip.clientWidth / 2 + chip.offsetWidth / 2, behavior: "smooth" });
-  }, [activeGroup]);
+  }, [activeGroup, chipsRef]);
 
   const navRef = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -264,7 +297,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
       <nav aria-label={copy.categories} className="-mx-4 py-2 md:hidden">
         <div className="relative">
-          <ul ref={chipsRef} className="flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <ul ref={chipsRef} className="soft-scrollbar-hide flex gap-2 overflow-x-auto px-4">
             {groups.map((group) => {
               const active = activeGroup === group.id;
               return (
@@ -273,8 +306,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                     type="button"
                     onClick={() => goToGroup(group.id)}
                     aria-current={active ? "true" : undefined}
-                    className={`h-9 rounded-full px-3.5 text-[14px] transition-colors ${FOCUS_RING} ${
-                      active ? "bg-orange-600 font-semibold text-white" : `${RAISED} text-gray-700 dark:text-gray-200`
+                    className={`ui-press whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] font-semibold transition ${FOCUS_RING} ${
+                      active
+                        ? "border-orange-600 bg-orange-50 text-orange-700 dark:border-orange-500 dark:bg-orange-950/40 dark:text-orange-300"
+                        : "border-gray-200 bg-white text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
                     }`}
                   >
                     {group.label}
@@ -283,8 +318,23 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
-          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-white dark:from-gray-950" />
+          {chipsScroll ? (
+            <>
+              <div aria-hidden="true" className={`pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white to-transparent transition-opacity duration-200 dark:from-gray-950 ${chipsProgress > 0.02 ? "opacity-100" : "opacity-0"}`} />
+              <div aria-hidden="true" className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent transition-opacity duration-200 dark:from-gray-950 ${chipsProgress < 0.98 ? "opacity-100" : "opacity-0"}`} />
+            </>
+          ) : null}
         </div>
+        {chipsScroll ? (
+          // A short centred track under the chips, the stock page's: it only
+          // says there is more to the side, and follows the finger unanimated.
+          <div aria-hidden="true" className="mx-auto mt-2 h-[3px] w-12 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+            <div
+              className="h-full rounded-full bg-orange-600"
+              style={{ width: `${chipsThumb}%`, transform: `translateX(${(chipsProgress * (100 - chipsThumb) * 100) / chipsThumb}%)` }}
+            />
+          </div>
+        ) : null}
       </nav>
       </div>
       <div aria-hidden="true" className="md:hidden" style={{ height: barHeight }} />
