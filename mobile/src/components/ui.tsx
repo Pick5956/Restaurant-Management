@@ -1,6 +1,6 @@
 import { GlassView } from 'expo-glass-effect';
-import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+import { useState, type Ref } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type KeyboardTypeOptions, type StyleProp, type TextInput as NativeTextInput, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
@@ -641,8 +641,8 @@ export function TextField({
   return (
     <View style={{ gap: spacing.sm }}>
       {label ? <Text selectable style={{ color: palette.text, fontSize: 13, fontWeight: '600' }}>{label}</Text> : null}
-      {/* Shadow on the wrapper, not the input — see SearchField for why. */}
-      <View style={{ justifyContent: multiline ? 'flex-start' : 'center', borderRadius: radius.md, ...controlShadow }}>
+      {/* The flat form box: white, a hairline edge, no glow (fieldFill). */}
+      <View style={{ justifyContent: multiline ? 'flex-start' : 'center', borderRadius: radius.md }}>
         {icon ? (
           <View
             style={{
@@ -685,9 +685,9 @@ export function TextField({
           style={{
             minHeight: minHeight ?? (multiline ? 104 : 54),
             borderWidth: 1,
-            borderColor: error ? palette.danger : focused ? palette.primary : palette.controlBorder,
+            borderColor: error ? palette.danger : focused ? palette.primary : palette.fieldBorder,
             borderRadius: radius.md,
-            backgroundColor: focused ? palette.surface : palette.surfaceSubtle,
+            backgroundColor: palette.fieldFill,
             color: palette.textStrong,
             fontSize: 16,
             paddingLeft: icon ? 44 : spacing.md,
@@ -708,6 +708,9 @@ export function TextField({
   );
 }
 
+/** Every search box on a page (the compact bar's is 40). */
+const SEARCH_FIELD_HEIGHT = 44;
+
 export function SearchField({
   value,
   onChangeText,
@@ -716,6 +719,9 @@ export function SearchField({
   clearLabel = 'Clear search',
   autoFocus,
   glass = false,
+  compact = false,
+  inputRef,
+  onFocus,
 }: {
   value: string;
   onChangeText: (value: string) => void;
@@ -728,18 +734,29 @@ export function SearchField({
   /** The assistant screen's material on iOS 26. Everywhere else the field stays
    *  the flat control, so the material never has to be faked. */
   glass?: boolean;
+  /** The compact header's row height (COMPACT_BUTTON), for the field that
+   *  takes the row over while a search is typed from the bar. The text stays
+   *  16, the size every field in the app is typed in. */
+  compact?: boolean;
+  /** The field itself, for a control elsewhere that puts the caret in it - the
+   *  round search button in a compact header, once the page is back at the top. */
+  inputRef?: Ref<NativeTextInput>;
+  /** For a page that hands the typing over to a search stage elsewhere the
+   *  moment this field is touched (the menu manager's full bar). */
+  onFocus?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   const onGlass = glass && LIQUID_GLASS;
   const input = (
     <TextInput
+      ref={inputRef}
       accessibilityLabel={accessibilityLabel}
       autoCapitalize="none"
       autoCorrect={false}
       autoFocus={autoFocus}
       onBlur={() => setFocused(false)}
       onChangeText={onChangeText}
-      onFocus={() => setFocused(true)}
+      onFocus={() => { setFocused(true); onFocus?.(); }}
       placeholder={placeholder}
       placeholderTextColor={palette.placeholder}
       // The return key reads Search and dismisses on its own, so a Done bar over
@@ -747,13 +764,22 @@ export function SearchField({
       omitKeyboardDoneBar
       returnKeyType="search"
       style={{
-        minHeight: 52,
+        // The compact field is exactly the row's height, never taller: the
+        // bar hands its row off where the row's centre meets the page's, so a
+        // field that grew with Android's own text padding moved that centre,
+        // and the chips came back a few points off it once the field closed.
+        // A capsule at one fixed height (owner, 2026-09-25: the curve of the
+        // stock page's search, and no bigger than it needs to be): 44 on a
+        // page, 40 in the compact bar's row.
+        minHeight: compact ? 40 : SEARCH_FIELD_HEIGHT,
+        height: compact ? 40 : SEARCH_FIELD_HEIGHT,
+        paddingVertical: 0,
         // The glass draws its own edge and fill; a border and a wash on top of
         // it would be the flat control painted over the material.
         borderWidth: onGlass ? 0 : 1,
-        borderColor: focused ? palette.primary : palette.controlBorder,
-        borderRadius: radius.md,
-        backgroundColor: onGlass ? 'transparent' : focused ? palette.surface : palette.surfaceSubtle,
+        borderColor: focused ? palette.primary : palette.fieldBorder,
+        borderRadius: radius.full,
+        backgroundColor: onGlass ? 'transparent' : palette.fieldFill,
         color: palette.textStrong,
         fontSize: 16,
         paddingLeft: 44,
@@ -767,11 +793,12 @@ export function SearchField({
     // applies background, border and radius from the style but not box shadow, so
     // a shadow set on the input itself renders on iOS and silently vanishes on
     // Android. The radius here has to match the input so the glow follows its shape.
-    <View style={{ justifyContent: 'center', borderRadius: radius.md, ...controlShadow }}>
+    // Only the glass field keeps it: a plain field is the flat form box now.
+    <View style={{ justifyContent: 'center', borderRadius: radius.full, ...(onGlass ? controlShadow : null) }}>
       <View style={{ position: 'absolute', left: spacing.md, zIndex: 1, pointerEvents: 'none' }}>
         <AppIcon color={focused ? palette.textStrong : palette.muted} name="search-outline" size={19} />
       </View>
-      {onGlass ? <GlassLayer style={{ borderRadius: radius.md, overflow: 'hidden' }}>{input}</GlassLayer> : input}
+      {onGlass ? <GlassLayer style={{ borderRadius: radius.full, overflow: 'hidden' }}>{input}</GlassLayer> : input}
       {value ? (
         <Pressable
           accessibilityLabel={clearLabel}
@@ -925,11 +952,10 @@ export function Select<T extends string | number>({
           alignItems: 'center',
           gap: spacing.sm,
           borderWidth: 1,
-          borderColor: palette.borderStrong,
+          borderColor: palette.fieldBorder,
           borderRadius: radius.md,
-          backgroundColor: palette.surface,
+          backgroundColor: palette.fieldFill,
           paddingHorizontal: spacing.md,
-          ...controlShadow,
           opacity: disabled ? 0.6 : pressed ? 0.72 : 1,
         })}
       >

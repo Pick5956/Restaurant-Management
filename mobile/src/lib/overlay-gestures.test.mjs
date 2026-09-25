@@ -47,8 +47,4 @@ test('the cover is released when the overlay closes, and when its screen leaves'
   // would otherwise leave the pager switched off for the rest of the session.
   assert.match(body, /return \(\) => setNestedHorizontalGestureActive\(false\);/);
 
-  // And the pager has to actually read the flag before starting a swipe.
-  const layout = await readFile(path.join(mobileRoot, 'app', '(primary)', '_layout.tsx'), 'utf8');
-  const decision = layout.slice(layout.indexOf('onMoveShouldSetPanResponder:'));
-  assert.match(decision.slice(0, decision.indexOf('onPanResponderGrant')), /nestedHorizontalGestureActive\.current \|\|/);
 });

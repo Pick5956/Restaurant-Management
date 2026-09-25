@@ -11,6 +11,7 @@ import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, HeaderTextButton, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { buildIngredientCreateInput, ingredientUnitOptions } from '@/src/lib/inventory-form';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -48,14 +49,15 @@ export default function BulkAddIngredientsScreen() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [picker, setPicker] = useState<'none' | 'category' | 'unit' | 'storage'>('none');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The step that failed, and the app's line under it when there is one.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
 
   useEffect(() => {
     if (!canManage) return;
     listIngredientCategories()
       .then((response) => setCategories(response.categories || []))
-      .catch((err) => setError(err instanceof Error ? err.message : t('โหลดหมวดไม่สำเร็จ', 'Could not load categories.')));
-  }, [canManage, t]);
+      .catch((err) => setError({ title: t('โหลดหมวดไม่สำเร็จ', 'Could not load categories'), detail: apiFailureDetail(err, language) }));
+  }, [canManage, language, t]);
 
   const categoryOptions = useMemo(
     () => [{ label: t('ไม่มีหมวด', 'Uncategorised'), value: 'none' }, ...categories.filter((row) => row.is_active).map((row) => ({ label: row.name, value: String(row.ID) }))],
@@ -138,13 +140,16 @@ export default function BulkAddIngredientsScreen() {
       if (failed.length) {
         // Only what failed stays, ready to try again — nothing to retype.
         setRows(failed);
-        setError(t(`บันทึกได้ ${ready.length - failed.length} รายการ ล้มเหลว ${failed.length} รายการ — ที่เหลือคือรายการที่ยังไม่ได้บันทึก`, `Saved ${ready.length - failed.length}, ${failed.length} failed — what is left is what did not save.`));
+        setError({
+          title: t('ทำรายการไม่ได้', 'Unable to complete the action'),
+          detail: t(`บันทึกได้ ${ready.length - failed.length} รายการ ล้มเหลว ${failed.length} รายการ — ที่เหลือคือรายการที่ยังไม่ได้บันทึก`, `Saved ${ready.length - failed.length}, ${failed.length} failed — what is left is what did not save.`),
+        });
         return;
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save ingredients.'));
+      setError({ title: t('บันทึกวัตถุดิบไม่สำเร็จ', 'Could not save ingredients'), detail: apiFailureDetail(err, language) });
     } finally {
       setSaving(false);
     }
@@ -249,14 +254,14 @@ export default function BulkAddIngredientsScreen() {
       {rows.length === 0 ? (
         // One button, in the middle of an empty page.
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: contentTop, paddingBottom: dockBottom, paddingHorizontal: 32 }}>
-          {error ? <Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /> : null}
+          {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
           <AppIcon name="cube-outline" size={44} color={palette.border} />
           <Text style={{ fontSize: 14.5, color: palette.muted, textAlign: 'center', lineHeight: 21 }}>{t('ยังไม่มีรายการ\nเพิ่มทีละรายการ แล้วบันทึกทั้งหมดทีเดียว', 'Nothing yet.\nAdd them one at a time, then save all at once.')}</Text>
           {addButton}
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingTop: contentTop, paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}>
-          {error ? <View style={{ marginBottom: 12 }}><Feedback title={t('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /></View> : null}
+          {error ? <View style={{ marginBottom: 12 }}><Feedback title={error.title} detail={error.detail} tone="danger" /></View> : null}
           <FormGroup title={t(`รายการ · ${rows.length}`, `Items · ${rows.length}`)}>
             {rows.map((row, index) => (
               <Pressable

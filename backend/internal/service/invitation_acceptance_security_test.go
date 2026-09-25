@@ -197,3 +197,39 @@ func TestAcceptInvitationClearsOldPermissionOverrideWhenReactivatingMembership(t
 		t.Fatalf("reactivated override = %q, want nil", *member.PermissionsOverride)
 	}
 }
+
+func TestAcceptInvitationDoesNotReactivateSuspendedMembership(t *testing.T) {
+	oldOverride := `["take_payment"]`
+	runner := &memoryInvitationAcceptanceRunner{
+		invitation: entity.Invitation{
+			RestaurantID: 5,
+			RoleID:       3,
+			Token:        testInvitationToken,
+			Status:       entity.InvitationStatusPending,
+		},
+		users: map[uint]entity.User{
+			9: {Email: "suspended@example.test", Status: "active"},
+		},
+		members: map[[2]uint]entity.RestaurantMember{
+			{9, 5}: {
+				UserID:              9,
+				RestaurantID:        5,
+				RoleID:              4,
+				Status:              "suspended",
+				PermissionsOverride: &oldOverride,
+			},
+		},
+	}
+	service := &InvitationService{acceptanceTx: runner}
+
+	if _, err := service.AcceptInvitation(9, testInvitationToken); err == nil {
+		t.Fatal("AcceptInvitation() let a suspended member reactivate themself")
+	}
+	member := runner.members[[2]uint{9, 5}]
+	if member.Status != "suspended" || member.RoleID != 4 || member.PermissionsOverride == nil {
+		t.Fatalf("suspended membership was changed: %+v", member)
+	}
+	if runner.invitation.Status != entity.InvitationStatusPending {
+		t.Fatalf("invitation status = %q, want pending (still usable by the intended person)", runner.invitation.Status)
+	}
+}

@@ -1,24 +1,7 @@
-export type WorkspaceRoute = '/home' | '/tables' | '/kitchen' | '/orders' | '/menu';
-
-export function resolveWorkspaceRoute(
-  roleName: string,
-  hasPermission: (
-    permission:
-      | 'view_kitchen'
-      | 'take_order'
-      | 'view_orders'
-      | 'view_menu'
-      | 'manage_menu'
-  ) => boolean,
-): WorkspaceRoute {
-  if (roleName === 'chef' && hasPermission('view_kitchen')) return '/kitchen';
-  if (roleName === 'waiter' && hasPermission('take_order')) return '/tables';
-  if (roleName === 'cashier' && hasPermission('view_orders')) return '/orders';
-  if (roleName === 'owner' || roleName === 'manager') return '/home';
-
-  if (hasPermission('view_kitchen')) return '/kitchen';
-  if (hasPermission('take_order')) return '/tables';
-  if (hasPermission('view_orders')) return '/orders';
-  if (hasPermission('view_menu') || hasPermission('manage_menu')) return '/menu';
-  return '/home';
-}
+/**
+ * Where a session lands once a restaurant is chosen: the hub, for every role
+ * (owner, 2026-09-23). It used to open the role's own screen - kitchen for a
+ * chef, tables for a waiter - inside a five-tab pager; with the phone dock gone,
+ * the hub is the one screen that reaches all of them, so everyone starts there.
+ */
+export const WORKSPACE_HUB_ROUTE = '/more' as const;

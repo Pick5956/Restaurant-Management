@@ -87,7 +87,7 @@ test('a dine-in order cannot be submitted for an invalid or missing table', () =
 });
 
 test('iPad order taking gives the full workspace to the table grid without changing phone cards', async () => {
-  const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /\battentionTables\b|โต๊ะที่ต้องดูต่อ|Tables in progress/);
   // Every table comes from one walk over one list. The density toggle renders
@@ -103,7 +103,7 @@ test('iPad order taking gives the full workspace to the table grid without chang
 });
 
 test('table cards keep one size instead of stretching across a partial last row', async () => {
-  const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
 
   // Phones must not grow at all: two fixed 48% columns, so a lone card on the
   // last row stays half width instead of spanning the screen.
@@ -113,10 +113,23 @@ test('table cards keep one size instead of stretching across a partial last row'
 });
 
 test('a table with an active order never reads as available', async () => {
-  const source = await readFile(path.join(mobileRoot, 'app', '(primary)', 'tables.tsx'), 'utf8');
+  const source = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
 
   // Occupied is amber whether or not food is ready. Emerald means free, so a
   // busy table must never take the free tint no matter what its items say.
   assert.match(source, /const tone = order \? 'warning'/);
   assert.doesNotMatch(source, /const tone = ready \? 'success'/);
+});
+
+// Old-UI audit, 2026-09-23: "รับลูกค้าแล้ว" in the history resolved a booking
+// that was holding its table as seated, and the server then freed the table
+// under the guests. A hold is seated by opening its order, as the reservation
+// screen does; only a booking for later just closes its record.
+test('the history seats a held table by opening its order, never by resolving it', async () => {
+  const source = await readFile(path.join(mobileRoot, 'app', 'reservations.tsx'), 'utf8');
+  const seat = source.slice(source.indexOf('const seat = useCallback('), source.indexOf('useFocusEffect(useCallback('));
+  assert.match(seat, /if \(reservation\.reserved_for\) \{\s*await resolve\(reservation, 'seated'\);/);
+  assert.match(seat, /createOrder\(reservationArrivalOrderInput\(reservation\.table_id,/);
+  assert.equal(source.split("resolve(reservation, 'seated')").length - 1, 1, 'only the booking-for-later path resolves as seated');
+  assert.equal(source.split('void seat(reservation)').length - 1, 2, 'both seat buttons go through seat()');
 });

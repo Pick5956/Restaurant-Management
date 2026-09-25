@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"regexp"
 	"strings"
@@ -176,44 +175,10 @@ func (s *PromotionService) finish(restaurantID, promotionID uint) (*PromotionRes
 }
 
 // repriceOpenOrders applies the restaurant's current promotions to every order
-// that is still being served, one transaction per order so a busy till is
-// never held for long. An order that fails here is priced again by its next
-// change and, at the latest, inside PayOrder, so the failure is logged rather
-// than turned into a failed save of the promotion itself.
+// that is still being served. A failure is logged rather than turned into a
+// failed save of the promotion itself; see RepriceOpenOrders.
 func (s *PromotionService) repriceOpenOrders(restaurantID uint) []uint {
-	ids, err := s.orders.ListRepriceableOrderIDs(restaurantID)
-	if err != nil {
-		log.Printf("promotion_reprice_list_failed restaurant_id=%d error=%v", restaurantID, err)
-		return nil
-	}
-	repriced := make([]uint, 0, len(ids))
-	for _, orderID := range ids {
-		changed := false
-		err := s.orders.Transaction(func(tx *repository.OrderRepository) error {
-			order, err := tx.LockOrderForPricing(restaurantID, orderID)
-			if err != nil {
-				return err
-			}
-			if order.PaymentStatus == entity.PaymentStatusPaid ||
-				order.Status == entity.OrderStatusCompleted ||
-				order.Status == entity.OrderStatusCancelled {
-				return nil
-			}
-			changed, err = priceOrder(tx, order)
-			if err != nil || !changed {
-				return err
-			}
-			return tx.SaveOrder(order)
-		})
-		if err != nil {
-			log.Printf("promotion_reprice_failed restaurant_id=%d order_id=%d error=%v", restaurantID, orderID, err)
-			continue
-		}
-		if changed {
-			repriced = append(repriced, orderID)
-		}
-	}
-	return repriced
+	return RepriceOpenOrders(s.orders, restaurantID, "promotion")
 }
 
 func (s *PromotionService) ensureTargetsBelongTo(restaurantID uint, targets []entity.PromotionTarget) error {

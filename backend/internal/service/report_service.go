@@ -270,40 +270,6 @@ func barWindow(date string, hour int) (since, until time.Time, hourFilter *int, 
 	return since, until, hourFilter, nil
 }
 
-type ExpenseDetailResponse struct {
-	Date    string                               `json:"date"`
-	Hour    *int                                 `json:"hour"`
-	Items   []repository.ReportExpenseDetailItem `json:"items"`
-	Total   float64                              `json:"total"`
-	HasMore bool                                 `json:"has_more"`
-}
-
-// ExpenseDetail resolves one cost bar into the ingredients behind it.
-func (s *ReportService) ExpenseDetail(restaurantID uint, date string, hour int) (*ExpenseDetailResponse, error) {
-	since, until, hourFilter, err := barWindow(date, hour)
-	if err != nil {
-		return nil, err
-	}
-	items, err := s.repo.ExpenseDetail(restaurantID, since, until, salesDetailLimit+1)
-	if err != nil {
-		return nil, err
-	}
-	if items == nil {
-		items = []repository.ReportExpenseDetailItem{}
-	}
-	items, hasMore := truncateReportRows(items, salesDetailLimit)
-	summary, err := s.repo.SalesWindowSummary(restaurantID, since, until)
-	if err != nil {
-		return nil, err
-	}
-	response := &ExpenseDetailResponse{Date: date, Hour: hourFilter, Items: items, HasMore: hasMore}
-	for i := range items {
-		items[i].Cost = roundMoney(items[i].Cost)
-	}
-	response.Total = roundMoney(summary.Cost)
-	return response, nil
-}
-
 // SalesDetail resolves one chart bar back to its bills.
 func (s *ReportService) SalesDetail(restaurantID uint, date string, hour int) (*SalesDetailResponse, error) {
 	since, until, hourFilter, err := barWindow(date, hour)

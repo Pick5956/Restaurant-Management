@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { Animated, Easing, Modal, PanResponder, Pressable, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Easing, Keyboard, Modal, PanResponder, Platform, Pressable, View, useWindowDimensions, type KeyboardEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
@@ -1073,15 +1073,36 @@ export function BottomSheet({
   showClose,
   background,
   flushBottom = false,
+  keyboardLift = false,
+  fit = false,
 }: {
   open: boolean;
   onClose: () => void;
   /** How much of the screen it covers when it first opens. */
   heightFraction?: number;
+  /**
+   * Size the sheet to its content, up to the tallest a sheet goes, instead of
+   * a fixed share of the screen: a short form no longer sits over a blank band
+   * above its footer (owner, 2026-09-23). `heightFraction` is ignored, and
+   * there is nothing to pull up to. The content has to size itself - a column
+   * whose scrolling part shrinks (`flexShrink: 1`) rather than fills
+   * (`flex: 1`). With `keyboardLift` the keyboard's spacer grows the sheet.
+   */
+  fit?: boolean;
   children: ReactNode;
   label: string;
   /** A glass close button in the top-right corner. */
   showClose?: boolean;
+  /**
+   * For a sheet that takes typing. The sheet is a statusBarTranslucent Modal,
+   * which Android's adjustResize never resizes, and iOS does not move it
+   * either, so the keyboard would cover the footer and the field being typed
+   * into. With this on, the keyboard pulls the sheet up to full and a spacer
+   * the keyboard's height keeps the content above it; when the keyboard goes,
+   * a sheet it pulled up glides back to where it rested. Opt-in, so every
+   * sheet without a field behaves exactly as before.
+   */
+  keyboardLift?: boolean;
   /**
    * Let the content run to the sheet's bottom edge. For a sheet that is one
    * scrolling list: the list pads itself by the home indicator instead, so a
@@ -1097,13 +1118,18 @@ export function BottomSheet({
   const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
   const drag = useRef(new Animated.Value(0)).current;
-  const full = heightFraction >= 1;
+  const full = heightFraction >= 1 && !fit;
+  const fitted = fit;
 
   // A part-height sheet is built at its tallest and held down by an offset, so
   // dragging it up costs nothing to lay out: pull it open, pull it back to where
-  // it started, or keep pulling to put it away.
+  // it started, or keep pulling to put it away. A fitted sheet rests at its own
+  // height, so it has no offset and nothing above it to pull to.
   const tallHeight = full ? windowHeight : Math.round(windowHeight * 0.94);
-  const restingHeight = full ? windowHeight : Math.round(windowHeight * heightFraction);
+  const restingHeight = full || fitted ? tallHeight : Math.round(windowHeight * heightFraction);
+  // A fitted sheet's height is known only once it has laid out; until then it
+  // travels as if it were at its tallest, which starts it off screen either way.
+  const [fittedHeight, setFittedHeight] = useState(tallHeight);
   const restingOffset = tallHeight - restingHeight;
   const snap = useRef(new Animated.Value(restingOffset)).current;
   const expandedRef = useRef(false);
@@ -1142,6 +1168,49 @@ export function BottomSheet({
   restingOffsetRef.current = restingOffset;
   const tallHeightRef = useRef(tallHeight);
   tallHeightRef.current = tallHeight;
+
+  // keyboardLift: the room the keyboard takes at the bottom of a sheet pulled
+  // up to full, and whether the keyboard is what pulled it up.
+  const [keyboardSpace, setKeyboardSpace] = useState(0);
+  const keyboardLiftedRef = useRef(false);
+  useEffect(() => {
+    if (!keyboardLift || !shown) return undefined;
+    const glideTo = (to: number) => {
+      Animated.timing(snap, {
+        toValue: to,
+        duration: 280,
+        easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+        useNativeDriver: false,
+      }).start();
+    };
+    const onShow = (event: KeyboardEvent) => {
+      // A sheet at full keeps the home-indicator inset as its bottom padding,
+      // which the keyboard already covers.
+      setKeyboardSpace(Math.max(0, Math.round(event.endCoordinates.height - insets.bottom - 6)));
+      // A fitted sheet is not pulled up: the spacer grows it by the keyboard.
+      if (!full && !fitted && !expandedRef.current) {
+        expandedRef.current = true;
+        keyboardLiftedRef.current = true;
+        glideTo(0);
+      }
+    };
+    const onHide = () => {
+      setKeyboardSpace(0);
+      if (keyboardLiftedRef.current) {
+        keyboardLiftedRef.current = false;
+        expandedRef.current = false;
+        glideTo(restingOffsetRef.current);
+      }
+    };
+    const showing = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', onShow);
+    const hiding = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', onHide);
+    return () => {
+      showing.remove();
+      hiding.remove();
+      keyboardLiftedRef.current = false;
+      setKeyboardSpace(0);
+    };
+  }, [fitted, full, insets.bottom, keyboardLift, shown, snap]);
 
   // Only the strip along the top listens, so a list inside still scrolls.
   //
@@ -1253,8 +1322,13 @@ export function BottomSheet({
   const sideInset = between(CARD_INSET, 0);
   // Off the bottom by exactly the gap it has at the sides — the owner's call
   // over clearing the home indicator, which made the gap read as a margin
-  // rather than a frame.
-  const bottomInset = between(CARD_INSET, 0);
+  // rather than a frame. That is an iOS call: the home indicator is a hairline
+  // the card may sit over. Android draws its navigation bar over this Modal,
+  // and the three-button bar is a row of buttons - a card resting under it had
+  // its footer button half hidden behind ◀ ● ■ (2026-09-23). There the card
+  // rests on top of the bar, keeping the same gap above it.
+  const navLift = Platform.OS === 'android' ? insets.bottom : 0;
+  const bottomInset = between(CARD_INSET + navLift, 0);
   const topRadius = between(REST_RADIUS, FULL_RADIUS);
   const bottomRadius = between(REST_RADIUS, 0);
   const bottomPadding = flushBottom ? 0 : between(10, insets.bottom + 6);
@@ -1263,7 +1337,9 @@ export function BottomSheet({
   // keeps at the bottom, and a little more for its shadow. Travelling a whole
   // tallHeight instead — as this did — put it off screen in the first fifth of
   // the animation, which is why closing read as vanishing rather than sliding.
-  const away = full ? tallHeight : Animated.add(shownHeight, Animated.add(bottomInset, 28));
+  const away = full
+    ? tallHeight
+    : Animated.add(fitted ? fittedHeight : shownHeight, Animated.add(bottomInset, 28));
   const translateY = Animated.add(
     Animated.multiply(progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), away),
     pushDown,
@@ -1281,6 +1357,7 @@ export function BottomSheet({
         </View>
       ) : null}
       {children}
+      {keyboardLift && keyboardSpace > 0 ? <View pointerEvents="none" style={{ height: keyboardSpace }} /> : null}
     </>
   );
 
@@ -1293,8 +1370,14 @@ export function BottomSheet({
         {/* The shadow lives on this wrapper; the surface inside clips to its
             corners, and a shadow on a clipping view is clipped away with it. */}
         <Animated.View
+          onLayout={fitted ? (event) => {
+            const next = Math.round(event.nativeEvent.layout.height);
+            setFittedHeight((current) => (current === next ? current : next));
+          } : undefined}
           style={{
-            height: shownHeight,
+            // A fitted sheet takes its content's height, capped at the tallest.
+            height: fitted ? undefined : shownHeight,
+            maxHeight: fitted ? tallHeight - navLift : undefined,
             marginHorizontal: sideInset,
             marginBottom: bottomInset,
             transform: [{ translateY }],
@@ -1322,14 +1405,14 @@ export function BottomSheet({
               borderTopRightRadius={topRadius}
               borderBottomLeftRadius={bottomRadius}
               borderBottomRightRadius={bottomRadius}
-              style={{ flex: 1, overflow: 'hidden', paddingTop: 8, paddingBottom: bottomPadding }}
+              style={[fitted ? { flexShrink: 1, minHeight: 0 } : { flex: 1 }, { overflow: 'hidden', paddingTop: 8, paddingBottom: bottomPadding }]}
             >
               {inner}
             </AnimatedGlassView>
           ) : (
             <Animated.View
               style={{
-                flex: 1,
+                ...(fitted ? { flexShrink: 1, minHeight: 0 } : { flex: 1 }),
                 overflow: 'hidden',
                 backgroundColor: background ?? ai.surface,
                 borderCurve: 'continuous',

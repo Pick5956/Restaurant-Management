@@ -46,6 +46,10 @@ func main() {
 	purge := flag.Bool("purge", false, "remove the activity previously seeded for this day")
 	restock := flag.Bool("restock", false, "top every ingredient that is below its minimum back up to a working level")
 	calibrate := flag.Bool("calibrate", false, "set each ingredient's minimum from how fast it is actually used, then refill the shelves")
+	// Backfilling a month of past days would otherwise run every shelf to zero
+	// and sell out the whole menu today: those days' cooking was restocked long
+	// ago. The day's sales, costs and expenses are still written.
+	keepStock := flag.Bool("keep-stock", false, "record the day's sales without moving today's live stock (for backfilling past days)")
 	flag.Parse()
 
 	if err := config.LoadRuntimeEnvironment(); err != nil {
@@ -135,7 +139,7 @@ func main() {
 	// -force reproduce the same day rather than a different one.
 	rng := rand.New(rand.NewSource(int64(hashDate(dateStr))))
 
-	summary, err := seedDay(db, *restaurantID, marker, dateStr, day, loc, menus, ingredients, staffID, rng)
+	summary, err := seedDay(db, *restaurantID, marker, dateStr, day, loc, menus, ingredients, staffID, rng, *keepStock)
 	if err != nil {
 		log.Fatalf("seed day %s: %v", dateStr, err)
 	}
@@ -151,7 +155,7 @@ type daySummary struct {
 }
 
 func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Time, loc *time.Location,
-	menus []entity.MenuItem, ingredients []entity.Ingredient, staffID uint, rng *rand.Rand) (daySummary, error) {
+	menus []entity.MenuItem, ingredients []entity.Ingredient, staffID uint, rng *rand.Rand, keepStock bool) (daySummary, error) {
 
 	var summary daySummary
 	// Total ingredient quantity consumed today, keyed by ingredient id, so the
@@ -258,6 +262,9 @@ func seedDay(db *gorm.DB, restaurantID uint, marker, dateStr string, day time.Ti
 				return err
 			}
 			summary.expenses = len(rows)
+		}
+		if keepStock {
+			return nil
 		}
 
 		// ---- drop live stock by what today's cooking consumed ---------------

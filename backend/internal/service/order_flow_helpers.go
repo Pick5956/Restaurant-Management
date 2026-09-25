@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"Project-M/internal/entity"
@@ -12,6 +13,111 @@ import (
 
 func roundMoney(value float64) float64 {
 	return math.Round(value*100) / 100
+}
+
+// unpaidCharges is the service charge and VAT an open bill carries under the
+// restaurant's current settings: service on the discounted total, VAT on top
+// of both. The bill view and the stored order both price through here so they
+// never disagree. A paid order keeps the amounts it was paid under instead.
+// billAmounts is the bill's own rounding of subtotal, discount and the total
+// after discount, each to satang. The stored order prices its open charges
+// from this same total: fed the unrounded float instead, a 12% promotion on
+// 1,203 left the table list at 1,246.01 while the bill said 1,246.02.
+func billAmounts(rawSubtotal, rawDiscount float64) (subtotal, discount, total float64) {
+	subtotal = roundMoney(rawSubtotal)
+	discount = roundMoney(rawDiscount)
+	if discount < 0 {
+		discount = 0
+	}
+	if discount > subtotal {
+		discount = subtotal
+	}
+	total = roundMoney(subtotal - discount)
+	if total < 0 {
+		total = 0
+	}
+	return subtotal, discount, total
+}
+
+func unpaidCharges(total float64, restaurant *entity.Restaurant) (serviceAmount, vatAmount float64) {
+	if restaurant.ServiceChargeEnabled {
+		serviceAmount = roundMoney(total * restaurant.ServiceChargeRate / 100)
+	}
+	if restaurant.VATEnabled {
+		vatAmount = roundMoney((total + serviceAmount) * restaurant.VATRate / 100)
+	}
+	return serviceAmount, vatAmount
+}
+
+// reopenForPendingItems takes a ready or served order back to open once a
+// pending line lands on it, so the line is not hidden behind a finished status
+// on the floor and the kitchen queue.
+func reopenForPendingItems(tx *repository.OrderRepository, order *entity.Order, userID uint) error {
+	next := orderStatusAfterPendingItemAdded(order.Status)
+	if next == order.Status {
+		return nil
+	}
+	return setOrderStatus(tx, order, next, userID, "pending item added")
+}
+
+// cancelUnservedItems closes every line the kitchen has not handed over with
+// the order's own reason, so a cancelled order stops claiming stock for dishes
+// nobody will cook. Served lines stay served: the guest had them. Nothing is
+// restocked either way; a cooked dish is gone whether or not it was paid for.
+func cancelUnservedItems(tx *repository.OrderRepository, order *entity.Order, reason string) error {
+	items, err := tx.ListItems(order.ID)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		switch items[i].Status {
+		case entity.OrderItemStatusPending, entity.OrderItemStatusCooking, entity.OrderItemStatusReady:
+		default:
+			continue
+		}
+		items[i].Status = entity.OrderItemStatusCancelled
+		items[i].CancelledReason = reason
+		if err := tx.SaveItem(&items[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stockDeduction splits what a cooked dish needs into what the shelf can give
+// and what it cannot. The dish exists either way - the count was wrong, not
+// the cooking - so the shelf goes to zero and the rest is only written down.
+//
+// A recipe of 0.1 times 3 is 0.30000000000000004 in float, so "short" means
+// short by more than recipeQuantityEpsilon, and a real shortfall is rounded to
+// the 4 places stock is stored in. Without both, a shelf holding exactly the
+// recipe wrote "ขาด 0.0000000000000000555" into the movement.
+func stockDeduction(stock, required float64) (removed, shortfall float64) {
+	if stock <= 0 {
+		return 0, roundStockQuantity(required)
+	}
+	if required-stock > recipeQuantityEpsilon {
+		return stock, roundStockQuantity(required - stock)
+	}
+	return math.Min(required, stock), 0
+}
+
+// roundStockQuantity rounds to the precision stock is stored in (numeric(18,4)).
+func roundStockQuantity(quantity float64) float64 {
+	return math.Round(quantity*1e4) / 1e4
+}
+
+// autoDeductionNote reads on the phone as "ตัดอัตโนมัติ, ORD-0042, ผัดกะเพราหมู":
+// the answer to "why did this stock disappear", in the language of the person
+// asking. A shortfall is said in the same line, so a count that did not match
+// the shelf is visible where the movement is. Values are joined by a comma,
+// never " · " (owner, 17 ก.ย. 2569); rows written before keep their dots.
+func autoDeductionNote(orderNumber, menuName string, shortfall float64, unit string) string {
+	note := fmt.Sprintf("ตัดอัตโนมัติ, %s, %s", orderNumber, menuName)
+	if shortfall <= 0 {
+		return note
+	}
+	return note + ", ขาด " + strconv.FormatFloat(shortfall, 'f', -1, 64) + " " + unit
 }
 
 // ensureMenuCapacity blocks an order that would claim more portions than current
@@ -176,10 +282,22 @@ func deductInventoryForCompletedKitchenItem(tx *repository.OrderRepository, rest
 		if err != nil {
 			return err
 		}
-		if ingredient.Stock < required {
-			return fmt.Errorf("%s stock is not enough for %s", snapshot.IngredientName, item.MenuName)
+		// The dish is already cooked, so a shelf count below the recipe is never
+		// a reason to refuse it: take what the shelf has and note the rest. This
+		// runs on ready, on served and inside PayOrder, and refusing here once
+		// left a cooked dish stuck in the kitchen and its bill unpayable.
+		removed, shortfall := stockDeduction(ingredient.Stock, required)
+		deductedIngredientIDs = append(deductedIngredientIDs, ingredient.ID)
+		if removed <= 0 {
+			// An empty shelf leaves nothing to move, and the movement rows must
+			// carry a positive quantity, so there is nothing to write. With no
+			// deduction row for this ingredient, the served step and PayOrder
+			// try again: if a delivery has come in by then, the dish's use comes
+			// off it. That is deliberate - the dish was cooked, so the count
+			// that said the shelf was empty was the wrong number, not the use.
+			continue
 		}
-		ingredient.Stock -= required
+		ingredient.Stock -= removed
 		if err := tx.SaveIngredient(ingredient); err != nil {
 			return err
 		}
@@ -187,23 +305,19 @@ func deductInventoryForCompletedKitchenItem(tx *repository.OrderRepository, rest
 		// transaction and under the same row lock. A shortfall means the lots
 		// already disagreed with stock; it is not a reason to refuse the dish
 		// the kitchen has already cooked.
-		if _, err := tx.DrainLots(restaurantID, ingredient.ID, required); err != nil {
+		if _, err := tx.DrainLots(restaurantID, ingredient.ID, removed); err != nil {
 			return err
 		}
-		deductedIngredientIDs = append(deductedIngredientIDs, ingredient.ID)
-		cost := recipeComponentCost(required, snapshot.CostPerUnit, snapshot.YieldPercent)
+		cost := recipeComponentCost(removed, snapshot.CostPerUnit, snapshot.YieldPercent)
 		deduction := &entity.OrderInventoryDeduction{
 			RestaurantID: restaurantID,
 			OrderID:      order.ID,
 			OrderItemID:  item.ID,
 			MenuItemID:   item.MenuID,
 			IngredientID: ingredient.ID,
-			Quantity:     required,
+			Quantity:     removed,
 			CostSnapshot: cost,
-			// Reads on the phone as "ตัดอัตโนมัติ · ORD-0042 · ผัดกะเพราหมู": the
-			// answer to "why did this stock disappear", in the language of the
-			// person asking. The menu name in it was always Thai regardless.
-			Note:         fmt.Sprintf("ตัดอัตโนมัติ · %s · %s", order.OrderNumber, item.MenuName),
+			Note:         autoDeductionNote(order.OrderNumber, item.MenuName, shortfall, snapshot.Unit),
 			CreatedByID:  userID,
 		}
 		if err := tx.CreateInventoryDeduction(deduction); err != nil {
@@ -213,7 +327,7 @@ func deductInventoryForCompletedKitchenItem(tx *repository.OrderRepository, rest
 			RestaurantID: restaurantID,
 			IngredientID: ingredient.ID,
 			Type:         "out",
-			Quantity:     required,
+			Quantity:     removed,
 			Note:         deduction.Note,
 			CreatedByID:  userID,
 		}

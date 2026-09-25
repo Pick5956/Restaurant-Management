@@ -42,6 +42,7 @@ import {
   roleEditorHeading,
   roleLabel,
   roleSaveFailureMessage,
+  staffFailureDetail,
 } from '@/src/lib/staff-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -76,7 +77,11 @@ export default function RoleEditorScreen() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(editing);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A step's own title, and the app's line under it when there is one - never
+  // the server's words.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  // An empty name is the name field's problem, so it is said under that field.
+  const [nameError, setNameError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -102,9 +107,7 @@ export default function RoleEditorScreen() {
         setHolders((memberResponse.members || []).filter((member) => member.status !== 'removed' && (member.role?.ID ?? member.role_id) === roleId));
       })
       .catch((err) => {
-        setError(err instanceof Error
-          ? err.message
-          : copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role'));
+        setError({ title: copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role'), detail: staffFailureDetail(err, 'load', language) });
       })
       .finally(() => setLoading(false));
   }, [activeMembership, actorRole, allowed, copy, editing, language, restaurantId, roleId]);
@@ -146,7 +149,7 @@ export default function RoleEditorScreen() {
 
   function finishNameEditing(): boolean {
     if (!canFinishRoleNameEdit(name)) {
-      setError(copy('กรอกชื่อบทบาทก่อน', 'Enter a role name first.'));
+      setNameError(copy('กรอกชื่อบทบาทก่อน', 'Enter a role name first.'));
       setEditingName(true);
       requestAnimationFrame(() => nameInputRef.current?.focus());
       return false;
@@ -184,11 +187,16 @@ export default function RoleEditorScreen() {
       }
       router.back();
     } catch (err) {
-      setError(roleSaveFailureMessage(
-        nameSaved,
-        err instanceof Error ? err.message : '',
-        language,
-      ));
+      setError({
+        title: editing
+          ? copy('บันทึกบทบาทไม่สำเร็จ', 'Unable to save role')
+          : copy('เพิ่มบทบาทไม่สำเร็จ', 'Unable to add role'),
+        detail: roleSaveFailureMessage(
+          nameSaved,
+          staffFailureDetail(err, 'save_role', language),
+          language,
+        ),
+      });
     } finally {
       setSaving(false);
     }
@@ -203,9 +211,10 @@ export default function RoleEditorScreen() {
       await deleteRole(roleId);
       router.back();
     } catch (err) {
-      setDeleteError(err instanceof Error
-        ? err.message
-        : copy('ลบบทบาทไม่สำเร็จ', 'Unable to delete role'));
+      // One line in place of the confirmation: why, when the app can say, or
+      // the step's own title.
+      setDeleteError(staffFailureDetail(err, 'delete_role', language)
+        ?? copy('ลบบทบาทไม่สำเร็จ', 'Unable to delete role'));
       setSaving(false);
     }
   }
@@ -239,8 +248,8 @@ export default function RoleEditorScreen() {
     return (
       <AppScreen title={screenTitle} topLevel={false} centerTitle>
         <EmptyState
-          title={error ? copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load role') : copy('จัดการบทบาทนี้ไม่ได้', 'This role cannot be managed')}
-          detail={error || copy('บทบาทนี้อยู่นอกลำดับสิทธิ์ของคุณหรือถูกนำออกจากร้านแล้ว', 'This role is outside your permission hierarchy or was removed.')}
+          title={error ? error.title : copy('จัดการบทบาทนี้ไม่ได้', 'This role cannot be managed')}
+          detail={error ? error.detail : copy('บทบาทนี้อยู่นอกลำดับสิทธิ์ของคุณหรือถูกนำออกจากร้านแล้ว', 'This role is outside your permission hierarchy or was removed.')}
         />
       </AppScreen>
     );
@@ -251,25 +260,29 @@ export default function RoleEditorScreen() {
   const holderCount = holders.length;
 
   // The title is the role's name; the pencil turns it into a field in place.
+  // An empty name is said under it, the way TextField says a field's problem.
   const titleContent = editingName ? (
-    <TextInput
-      ref={nameInputRef}
-      accessibilityHint={copy('แก้ชื่อแล้วกดเครื่องหมายถูก จากนั้นกดบันทึกบทบาทด้านล่าง', 'Edit the name, tap Done, then save the role below.')}
-      accessibilityLabel={copy('ชื่อบทบาท', 'Role name')}
-      autoCapitalize="words"
-      autoCorrect
-      autoFocus
-      editable={!saving}
-      onChangeText={(value) => { setName(value); setError(null); }}
-      onSubmitEditing={finishNameEditing}
-      placeholder={copy('ชื่อบทบาท', 'Role name')}
-      placeholderTextColor={palette.placeholder}
-      returnKeyType="done"
-      selectionColor={palette.accent}
-      submitBehavior="submit"
-      style={[typeScale.hero, { width: '100%', minHeight: 44, fontWeight: '600', textAlign: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 0 }]}
-      value={name}
-    />
+    <View>
+      <TextInput
+        ref={nameInputRef}
+        accessibilityHint={nameError || copy('แก้ชื่อแล้วกดเครื่องหมายถูก จากนั้นกดบันทึกบทบาทด้านล่าง', 'Edit the name, tap Done, then save the role below.')}
+        accessibilityLabel={copy('ชื่อบทบาท', 'Role name')}
+        autoCapitalize="words"
+        autoCorrect
+        autoFocus
+        editable={!saving}
+        onChangeText={(value) => { setName(value); setError(null); setNameError(null); }}
+        onSubmitEditing={finishNameEditing}
+        placeholder={copy('ชื่อบทบาท', 'Role name')}
+        placeholderTextColor={palette.placeholder}
+        returnKeyType="done"
+        selectionColor={palette.accent}
+        submitBehavior="submit"
+        style={[typeScale.hero, { width: '100%', minHeight: 44, fontWeight: '600', textAlign: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 0 }]}
+        value={name}
+      />
+      {nameError ? <Text selectable style={[typeScale.caption, { color: palette.danger, textAlign: 'center' }]}>{nameError}</Text> : null}
+    </View>
   ) : (
     <Text accessibilityRole="header" numberOfLines={1} selectable style={[typeScale.hero, { fontWeight: '600', textAlign: 'center', minHeight: 44, textAlignVertical: 'center' }]}>{displayRoleName}</Text>
   );
@@ -333,7 +346,7 @@ export default function RoleEditorScreen() {
     <AppScreen
       title={displayRoleName}
       titleContent={titleContent}
-      subtitle={editing ? (role?.is_system ? copy('บทบาทมาตรฐาน · แตะดินสอเพื่อเปลี่ยนชื่อ', 'Standard role · tap the pencil to rename') : copy('บทบาทที่ร้านสร้าง · แตะดินสอเพื่อเปลี่ยนชื่อ', 'Custom role · tap the pencil to rename')) : copy('ตั้งชื่อแล้วเปิดสิทธิ์ที่ต้องการ', 'Name it, then switch on what it may do')}
+      subtitle={editing ? (role?.is_system ? copy('บทบาทมาตรฐาน', 'Standard role') : copy('บทบาทที่ร้านสร้าง', 'Custom role')) : undefined}
       topLevel={false}
       centerTitle
       action={tablet ? (
@@ -342,14 +355,16 @@ export default function RoleEditorScreen() {
           <HeadingAction compact={false} icon="checkmark" label={saveLabel} onPress={save} />
         </View>
       ) : nameAction}
+      // Not the pencil: it edits the title in place and focuses a field that has scrolled out of view.
+      compactAction={tablet ? <HeadingAction compact={false} icon="checkmark" label={saveLabel} onPress={save} /> : null}
       contentMaxWidth={tablet ? 1180 : undefined}
       footer={!tablet && !confirmDelete ? <SaveDock label={saveLabel} onPress={save} loading={saving} /> : undefined}
     >
-      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete action')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
       {!editing && !tablet ? (
         <FormCard title={copy('ชื่อบทบาท', 'Role name')}>
           <FormBody>
-            <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('เช่น หัวหน้ากะ', 'e.g. Shift lead')} icon="key-outline" autoCapitalize="words" />
+            <Field value={name} onChangeText={(value) => { setName(value); setError(null); setNameError(null); }} placeholder={copy('เช่น หัวหน้ากะ', 'e.g. Shift lead')} icon="key-outline" autoCapitalize="words" />
           </FormBody>
         </FormCard>
       ) : null}
@@ -361,7 +376,7 @@ export default function RoleEditorScreen() {
                 <View style={{ width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
                   <AppIcon name="key-outline" size={26} color={palette.primaryInk} />
                 </View>
-                {!editing ? <Field value={name} onChangeText={(value) => { setName(value); setError(null); }} placeholder={copy('ชื่อบทบาท', 'Role name')} autoCapitalize="words" grow /> : <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong }}>{displayRoleName}</Text>}
+                {!editing ? <Field value={name} onChangeText={(value) => { setName(value); setError(null); setNameError(null); }} placeholder={copy('ชื่อบทบาท', 'Role name')} autoCapitalize="words" grow /> : <Text style={{ fontSize: 20, lineHeight: 28, fontWeight: '600', color: palette.textStrong }}>{displayRoleName}</Text>}
               </View>
               <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>{figures}</View>
             </FormCard>

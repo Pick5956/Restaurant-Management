@@ -199,6 +199,11 @@ func (s *InvitationService) AcceptInvitation(userID uint, token string) (*entity
 		member, err := store.FindMemberByUserAndRestaurant(userID, invitation.RestaurantID)
 		switch {
 		case err == nil:
+			// A suspension is a decision someone made about this person; an
+			// invite link must not undo it. Only a removed member may rejoin.
+			if member.Status == "suspended" {
+				return errors.New("membership is suspended")
+			}
 			if member.Status != "active" {
 				member.RoleID = invitation.RoleID
 				member.Status = "active"

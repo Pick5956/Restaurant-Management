@@ -7,7 +7,8 @@ import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurant
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
-import { FOCUS_RING, RAISED, SettingsSearchContext } from "./_components/SettingsPrimitives";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
+import { FOCUS_RING, RAISED, SettingsSearchContext, TEXT_FOCUS } from "./_components/SettingsPrimitives";
 
 type NavItem = { key: "account" | "display" | "restaurant"; href: string; label: string; icon?: ReactNode };
 
@@ -114,11 +115,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
           type="button"
           onClick={goBack}
           aria-label={copy.back}
-          // The same back control the rest of the web app uses (expenses, POS,
-          // reports): a bordered square, no round grey blob of its own.
-          className={`ui-press mr-4 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 ${FOCUS_RING}`}
+          className={`mr-2 ${BACK_CONTROL}`}
         >
-          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+          <ArrowLeft aria-hidden="true" className={BACK_ICON} />
         </button>
         <h1 className="text-[24px] font-semibold leading-8">{copy.title}</h1>
       </div>
@@ -136,7 +135,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
           aria-label={copy.searchLabel}
           // A 40px line box and no vertical padding, so Thai tone marks are
           // not clipped (see fieldClass in SettingsPrimitives).
-          className={`h-10 w-full rounded ${RAISED} pl-12 pr-12 text-[16px] leading-10 text-gray-950 placeholder:text-gray-600 dark:text-white dark:placeholder:text-gray-300 [&::-webkit-search-cancel-button]:hidden ${FOCUS_RING}`}
+          className={`h-10 w-full rounded ${RAISED} pl-12 pr-12 text-[16px] leading-10 text-gray-950 placeholder:text-gray-600 dark:text-white dark:placeholder:text-gray-300 [&::-webkit-search-cancel-button]:hidden ${TEXT_FOCUS}`}
         />
         {query ? (
           <button

@@ -3,9 +3,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Gift, Package, Percent, Plus, ReceiptText, Trash2, type LucideIcon } from "lucide-react";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
 import type { AppLanguage } from "@/src/lib/format";
 import { toDashboardDate } from "@/src/lib/homeDashboard";
+import { promotionTargetsGone } from "@/src/lib/knownApiErrors";
 import {
   createPromotion,
   deletePromotion,
@@ -248,8 +249,8 @@ export default function PromotionDialog({
     } catch (error) {
       // The server's wording never reaches the screen; only the one failure a
       // person can fix from here gets its own message.
-      const gone = /^promotion (menu item|category) not found$/.test(apiErrorMessage(error));
-      showToast({ title: gone ? copy.goneTargets : copy.saveError, tone: "error" });
+      const title = promotionTargetsGone(error) ? copy.goneTargets : apiFailureText(error, language, copy.saveError);
+      showToast({ title, tone: "error" });
     } finally {
       setBusy(null);
     }
@@ -269,8 +270,8 @@ export default function PromotionDialog({
       await deletePromotion(form.id);
       showToast({ title: copy.deleted });
       onDeleted(form.id);
-    } catch {
-      showToast({ title: copy.deleteError, tone: "error" });
+    } catch (error) {
+      showToast({ title: apiFailureText(error, language, copy.deleteError), tone: "error" });
       setBusy(null);
     }
   };

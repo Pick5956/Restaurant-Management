@@ -9,6 +9,7 @@ import { OrderItemPanel } from '@/src/components/order-item-editor';
 import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
 import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { addedQuantityByMenu, filterMenuCatalog, groupMenuByCategory } from '@/src/lib/menu-catalog';
 import { can } from '@/src/lib/rbac';
 import { createRequestGeneration } from '@/src/lib/request-generation';
@@ -33,7 +34,7 @@ export default function ServedItemScreen() {
   const orderId = Number(id);
   const validOrderId = Number.isInteger(orderId) && orderId > 0;
   const { activeMembership } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
   const canTakeOrder = can(activeMembership, 'take_order');
   const [order, setOrder] = useState<Order | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -70,9 +71,11 @@ export default function ServedItemScreen() {
       setCategories(categoryResponse.categories || []);
     } catch (err) {
       if (!loadGeneration.current.isCurrent(request)) return;
-      setError(err instanceof Error ? err.message : copy('โหลดเมนูไม่สำเร็จ', 'Could not load the menu'));
+      // The panel's title names the failure; the detail is only a reason in the
+      // app's words, never the server's, and empty when there is none.
+      setError(apiFailureDetail(err, language) ?? '');
     }
-  }, [canTakeOrder, copy, orderId, validOrderId]);
+  }, [canTakeOrder, language, orderId, validOrderId]);
 
   // Also runs on the way back from the item screen, which is how a new line
   // reaches the badge.
@@ -165,7 +168,7 @@ export default function ServedItemScreen() {
       onCloseSearch={sidePanel ? closeSearch : undefined}
     />
   ) : undefined;
-  const loadFailure = error ? <Feedback title={copy('โหลดเมนูไม่สำเร็จ', 'Could not load the menu')} detail={error} tone="danger" /> : null;
+  const loadFailure = error !== null ? <Feedback title={copy('โหลดเมนูไม่สำเร็จ', 'Could not load the menu')} detail={error || undefined} tone="danger" /> : null;
   const grid = editable ? (
     <OrderMenuGrid
       groups={menuGroups}

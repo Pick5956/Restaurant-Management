@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -502,7 +503,37 @@ func TestTableMetadataWritesCannotCreateLifecycleStatuses(t *testing.T) {
 	}
 }
 
-func TestTableMetadataUpdatePreservesExistingLifecycleStatuses(t *testing.T) {
+// The bulk-create answer replaces the whole floor on both clients, so it has to
+// be the same list GET /tables gives - bookings for later included. Without
+// them the close-with-booking confirm stopped asking after every add, until the
+// next quiet reload.
+func TestBulkCreateTablesAnswersTheFloorWithItsBookings(t *testing.T) {
+	scenario := newReservationDBScenario(t)
+	booked := scenario.table(t, 1, entity.TableStatusFree)
+	scenario.bookTableForLater(t, booked.ID)
+
+	tables, err := scenario.tableSvc.BulkCreateTables(scenario.restaurant.ID, &BulkCreateTablesRequest{Count: 1, Capacity: 2})
+	if err != nil {
+		t.Fatalf("BulkCreateTables() error = %v", err)
+	}
+	for _, table := range tables {
+		if table.ID != booked.ID {
+			continue
+		}
+		if table.UpcomingReservationAt == nil || table.UpcomingReservationName != "Later guest" {
+			t.Fatalf("booked table in the bulk-create answer = at %v name %q, want its booking for later", table.UpcomingReservationAt, table.UpcomingReservationName)
+		}
+		return
+	}
+	t.Fatalf("bulk-create answer has no table %d: %+v", booked.ID, tables)
+}
+
+// Editing the seats of a held or seated table used to go through and keep the
+// lifecycle status. Since 2026-09-23 a table in service takes no edit at all
+// (owner: a table still in use cannot be edited until it is closed through the
+// service steps), so both updates are refused and nothing about either table
+// moves - not the seats, not the status, not the booking on it.
+func TestTableMetadataUpdateLeavesTablesInServiceUntouched(t *testing.T) {
 	scenario := newReservationDBScenario(t)
 
 	reservedTable := scenario.table(t, 1, entity.TableStatusFree)
@@ -517,18 +548,21 @@ func TestTableMetadataUpdatePreservesExistingLifecycleStatuses(t *testing.T) {
 	); err != nil {
 		t.Fatalf("reserve table: %v", err)
 	}
-	reservedUpdated, err := scenario.tableSvc.UpdateTable(scenario.restaurant.ID, reservedTable.ID, &TableRequest{
+	if _, err := scenario.tableSvc.UpdateTable(scenario.restaurant.ID, reservedTable.ID, &TableRequest{
 		Capacity: 6,
 		Status:   entity.TableStatusFree,
-	})
-	if err != nil {
-		t.Fatalf("update reserved table metadata: %v", err)
+	}); !errors.Is(err, ErrTableInUse) {
+		t.Fatalf("update reserved table metadata error = %v, want %v", err, ErrTableInUse)
 	}
-	if reservedUpdated.Status != entity.TableStatusReserved || reservedUpdated.Capacity != 6 {
-		t.Fatalf("reserved metadata update = status %q capacity %d, want reserved/6", reservedUpdated.Status, reservedUpdated.Capacity)
+	var persistedReserved entity.RestaurantTable
+	if err := scenario.db.First(&persistedReserved, reservedTable.ID).Error; err != nil {
+		t.Fatalf("reload reserved table: %v", err)
 	}
-	if reservedUpdated.ReservationPhone != "0812345678" || reservedUpdated.ReservationName != "Reserved guest" {
-		t.Fatalf("reserved metadata was cleared: %+v", reservedUpdated)
+	if persistedReserved.Status != entity.TableStatusReserved || persistedReserved.Capacity != 4 {
+		t.Fatalf("reserved table = status %q capacity %d, want reserved/4", persistedReserved.Status, persistedReserved.Capacity)
+	}
+	if persistedReserved.ReservationPhone != "0812345678" || persistedReserved.ReservationName != "Reserved guest" {
+		t.Fatalf("reserved table lost its booking: %+v", persistedReserved)
 	}
 
 	occupiedTable := scenario.table(t, 2, entity.TableStatusFree)
@@ -544,21 +578,29 @@ func TestTableMetadataUpdatePreservesExistingLifecycleStatuses(t *testing.T) {
 	); err != nil {
 		t.Fatalf("open table order: %v", err)
 	}
-	occupiedUpdated, err := scenario.tableSvc.UpdateTable(scenario.restaurant.ID, occupiedTable.ID, &TableRequest{
+	if _, err := scenario.tableSvc.UpdateTable(scenario.restaurant.ID, occupiedTable.ID, &TableRequest{
 		Capacity: 8,
 		Status:   entity.TableStatusInactive,
-	})
-	if err != nil {
-		t.Fatalf("update occupied table metadata: %v", err)
+	}); !errors.Is(err, ErrTableInUse) {
+		t.Fatalf("update occupied table metadata error = %v, want %v", err, ErrTableInUse)
 	}
-	if occupiedUpdated.Status != entity.TableStatusOccupied || occupiedUpdated.Capacity != 8 {
-		t.Fatalf("occupied metadata update = status %q capacity %d, want occupied/8", occupiedUpdated.Status, occupiedUpdated.Capacity)
+	var persistedOccupied entity.RestaurantTable
+	if err := scenario.db.First(&persistedOccupied, occupiedTable.ID).Error; err != nil {
+		t.Fatalf("reload occupied table: %v", err)
+	}
+	if persistedOccupied.Status != entity.TableStatusOccupied || persistedOccupied.Capacity != 4 {
+		t.Fatalf("occupied table = status %q capacity %d, want occupied/4", persistedOccupied.Status, persistedOccupied.Capacity)
 	}
 }
 
+// A booking for later leaves its table free and sellable, so the table is not in
+// service - but it is still somebody's booking, and deleting the table would
+// strand it. The reservation refusal, not the in-service one, answers this.
+// (A table held for a booking now is in service; see table_lock_db_test.go.)
 func TestDeleteTableRejectsActiveReservation(t *testing.T) {
 	scenario := newReservationDBScenario(t)
 	table := scenario.table(t, 1, entity.TableStatusFree)
+	later := repository.BangkokNow().Add(3 * time.Hour)
 	if _, err := scenario.tableSvc.ReserveTable(
 		scenario.restaurant.ID,
 		scenario.user.ID,
@@ -566,9 +608,9 @@ func TestDeleteTableRejectsActiveReservation(t *testing.T) {
 		"0812345678",
 		"Waiting guest",
 		2,
-		nil,
+		&later,
 	); err != nil {
-		t.Fatalf("reserve table: %v", err)
+		t.Fatalf("book table for later: %v", err)
 	}
 
 	if err := scenario.tableSvc.DeleteTable(scenario.restaurant.ID, table.ID); err == nil || err.Error() != "table has an active reservation; cancel it first" {

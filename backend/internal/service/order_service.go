@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -470,64 +471,37 @@ func (s *OrderService) AddItem(restaurantID, userID, orderID uint, req *AddOrder
 		// round has gone to the kitchen its quantity is a record of what was sent,
 		// and a served-immediately line is its own event with its own timestamp.
 		if !req.ServeImmediately {
-			if existing := findMergeableOrderItem(order, menu.ID, fulfillmentType, strings.TrimSpace(req.Note), selectedOptions); existing != nil {
-				merged, err := tx.FindItemForUpdate(restaurantID, order.ID, existing.ID)
-				if err != nil {
-					return err
-				}
-				merged.Quantity += qty
-				merged.Subtotal = (merged.UnitPrice + merged.OptionsTotal) * float64(merged.Quantity)
-				if err := tx.SaveItem(merged); err != nil {
+			existing, err := mergeablePendingLine(tx, order, menu, fulfillmentType, strings.TrimSpace(req.Note), selectedOptions, optionsTotal)
+			if err != nil {
+				return err
+			}
+			if existing != nil {
+				if err := raisePendingLine(tx, order, existing.ID, qty); err != nil {
 					return err
 				}
 				if err := recalcOrderTotals(tx, order); err != nil {
+					return err
+				}
+				// The merged line is still pending, so a finished order gets the
+				// same reopening a new pending line gives it below.
+				if err := reopenForPendingItems(tx, order, userID); err != nil {
 					return err
 				}
 				changed = order.ID
 				return nil
 			}
 		}
-		itemStatus := entity.OrderItemStatusPending
-		if req.ServeImmediately {
-			itemStatus = entity.OrderItemStatusServed
-		}
-		item := &entity.OrderItem{
-			OrderID:         order.ID,
-			RestaurantID:    restaurantID,
-			MenuID:          menu.ID,
-			MenuName:        menu.Name,
-			UnitPrice:       menu.Price,
-			OptionsTotal:    optionsTotal,
-			Quantity:        qty,
-			Subtotal:        (menu.Price + optionsTotal) * float64(qty),
-			FulfillmentType: fulfillmentType,
-			Note:            strings.TrimSpace(req.Note),
-			Status:          itemStatus,
-		}
-		if req.ServeImmediately {
-			now := repository.BangkokNow()
-			item.ServedAt = &now
-		}
-		if err := tx.CreateItem(item); err != nil {
+		item, err := createOrderLine(tx, order, orderLineSpec{
+			menu:             menu,
+			fulfillmentType:  fulfillmentType,
+			note:             strings.TrimSpace(req.Note),
+			options:          selectedOptions,
+			optionsTotal:     optionsTotal,
+			quantity:         qty,
+			serveImmediately: req.ServeImmediately,
+		})
+		if err != nil {
 			return err
-		}
-		if err := snapshotRecipeForOrderItem(tx, order, item, selectedOptions); err != nil {
-			return err
-		}
-		for _, option := range selectedOptions {
-			snapshot := &entity.OrderItemOption{
-				OrderItemID:   item.ID,
-				OrderID:       order.ID,
-				RestaurantID:  restaurantID,
-				MenuOptionID:  option.ID,
-				OptionGroupID: option.OptionGroupID,
-				GroupName:     option.GroupName,
-				OptionName:    option.OptionName,
-				PriceDelta:    option.PriceDelta,
-			}
-			if err := tx.CreateItemOption(snapshot); err != nil {
-				return err
-			}
 		}
 		if req.ServeImmediately {
 			// Already handed to the guest, so bypass the kitchen and deduct its
@@ -545,13 +519,8 @@ func (s *OrderService) AddItem(restaurantID, userID, orderID uint, req *AddOrder
 			if err := refreshOrderStatusFromItems(tx, order, userID); err != nil {
 				return err
 			}
-		} else {
-			nextStatus := orderStatusAfterPendingItemAdded(order.Status)
-			if nextStatus != order.Status {
-				if err := setOrderStatus(tx, order, nextStatus, userID, "pending item added"); err != nil {
-					return err
-				}
-			}
+		} else if err := reopenForPendingItems(tx, order, userID); err != nil {
+			return err
 		}
 		changed = order.ID
 		return nil
@@ -576,7 +545,8 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 		// Raising the quantity claims more stock, so gate the increase the same way a
 		// new item is gated. The item's current quantity is already counted in the
 		// committed usage, so only the delta needs fresh capacity.
-		if delta := qty - item.Quantity; delta > 0 {
+		delta := qty - item.Quantity
+		if delta > 0 {
 			if err := tx.LockRestaurantOrderCounter(restaurantID); err != nil {
 				return err
 			}
@@ -584,14 +554,28 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 				return err
 			}
 		}
-		if req.SelectedOptionIDs != nil {
-			if len(*req.SelectedOptionIDs) > 50 {
-				return errors.New("too many selected options")
-			}
-			menu, err := tx.FindMenuItem(restaurantID, item.MenuID)
+		if req.SelectedOptionIDs != nil && len(*req.SelectedOptionIDs) > 50 {
+			return errors.New("too many selected options")
+		}
+		// The mobile editor sends the line's options with every edit, a
+		// quantity-only one too, so they count as changed only when they differ
+		// from what the line carries.
+		optionIDs := lineOptionIDs(order, item.ID)
+		optionsChanged := req.SelectedOptionIDs != nil && !sameOptionIDs(*req.SelectedOptionIDs, optionIDs)
+		// An increase sells more of the dish, whichever line the units end on,
+		// so it is refused for a dish deleted from the menu (not found here) or
+		// taken off sale (raiseStaysOnLine), at the line's own price too - the
+		// way AddItem refuses a new order of it. New options are read off the
+		// menu as well. A decrease on the line's own options never asks, so a
+		// line of a dish deleted since can still be lowered.
+		var menu *entity.MenuItem
+		if optionsChanged || delta > 0 {
+			menu, err = tx.FindMenuItem(restaurantID, item.MenuID)
 			if err != nil {
 				return errors.New("menu item not found")
 			}
+		}
+		if optionsChanged {
 			selectedOptions, optionsTotal, err := validateSelectedMenuOptions(menu, *req.SelectedOptionIDs)
 			if err != nil {
 				return err
@@ -603,20 +587,8 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 			if err := tx.DeleteItemOptions(restaurantID, item.ID); err != nil {
 				return err
 			}
-			for _, option := range selectedOptions {
-				snapshot := &entity.OrderItemOption{
-					OrderItemID:   item.ID,
-					OrderID:       order.ID,
-					RestaurantID:  restaurantID,
-					MenuOptionID:  option.ID,
-					OptionGroupID: option.OptionGroupID,
-					GroupName:     option.GroupName,
-					OptionName:    option.OptionName,
-					PriceDelta:    option.PriceDelta,
-				}
-				if err := tx.CreateItemOption(snapshot); err != nil {
-					return err
-				}
+			if err := createItemOptionSnapshots(tx, order, item, selectedOptions); err != nil {
+				return err
 			}
 			if err := tx.DeleteItemRecipeSnapshots(restaurantID, item.ID); err != nil {
 				return err
@@ -625,9 +597,20 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 				return err
 			}
 			item.OptionsTotal = optionsTotal
+			optionIDs = *req.SelectedOptionIDs
+		}
+		item.Note = strings.TrimSpace(req.Note)
+		// Units that would not cost what this line costs go on another line,
+		// and this one keeps its quantity; a decrease never moves anything. The
+		// line is saved and priced at the quantity placeRaisedUnits returns: at
+		// the requested one as well, units placed elsewhere were billed twice.
+		if delta > 0 {
+			qty, err = placeRaisedUnits(tx, order, item, menu, optionIDs, delta)
+			if err != nil {
+				return err
+			}
 		}
 		item.Quantity = qty
-		item.Note = strings.TrimSpace(req.Note)
 		item.Subtotal = (item.UnitPrice + item.OptionsTotal) * float64(qty)
 		if err := tx.SaveItem(item); err != nil {
 			return err
@@ -642,6 +625,32 @@ func (s *OrderService) UpdateItem(restaurantID, orderID, itemID uint, req *Updat
 		return nil, err
 	}
 	return s.repo.FindOrder(restaurantID, changed)
+}
+
+// sameOptionIDs reports whether an edit's options are the ones the line
+// already carries: the same set in any order, read the way
+// validateSelectedMenuOptions reads a request, where a repeated id or a 0
+// counts for nothing.
+func sameOptionIDs(requested, current []uint) bool {
+	set := func(ids []uint) map[uint]struct{} {
+		out := make(map[uint]struct{}, len(ids))
+		for _, id := range ids {
+			if id != 0 {
+				out[id] = struct{}{}
+			}
+		}
+		return out
+	}
+	want, have := set(requested), set(current)
+	if len(want) != len(have) {
+		return false
+	}
+	for id := range want {
+		if _, ok := have[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *OrderService) DeleteItem(restaurantID, orderID, itemID uint) (*entity.Order, error) {
@@ -881,7 +890,33 @@ func cloneOrderItemForVoid(src *entity.OrderItem, count int, reason string) *ent
 	}
 }
 
-func (s *OrderService) CancelOrder(restaurantID, userID, orderID uint, reason string) (*entity.Order, error) {
+// ErrOrderCancelNeedsSupervisor refuses a whole-order cancel from someone who
+// may not change order status, once any of its food has reached the kitchen or
+// the guest.
+var ErrOrderCancelNeedsSupervisor = errors.New("missing update_order_status permission to cancel an order already sent to the kitchen")
+
+// OrderNeverReachedKitchen reports that nothing on the order has left pending:
+// the only kind of order anyone taking orders may cancel outright. The items
+// decide, not the status alone - a served, unpaid order goes back to "open" as
+// soon as a pending line is added, and cancelling it then wrote off food that
+// had been eaten.
+func OrderNeverReachedKitchen(order *entity.Order) bool {
+	if order == nil || order.Status != entity.OrderStatusOpen {
+		return false
+	}
+	for _, item := range order.Items {
+		if item.Status != entity.OrderItemStatusPending && item.Status != entity.OrderItemStatusCancelled {
+			return false
+		}
+	}
+	return true
+}
+
+// CancelOrder closes an order and every line on it that was not served.
+// supervisor is whether the caller may change order status; without it the
+// rule is checked again here, under the row lock, so a send to the kitchen
+// that lands between the handler's read and this write is seen.
+func (s *OrderService) CancelOrder(restaurantID, userID, orderID uint, reason string, supervisor bool) (*entity.Order, error) {
 	var changed uint
 	err := s.repo.Transaction(func(tx *repository.OrderRepository) error {
 		order, err := tx.FindOrderForUpdate(restaurantID, orderID)
@@ -891,9 +926,21 @@ func (s *OrderService) CancelOrder(restaurantID, userID, orderID uint, reason st
 		if isTerminalOrder(order.Status) {
 			return errors.New("order is already closed")
 		}
+		// Judged on the effective status, as the handler's read was: a raw
+		// "sent_to_kitchen" can outlive its last live line (a deleted pending
+		// line refreshes nothing), and a table of only cancelled lines would
+		// then need a manager to be let go.
+		effective := *order
+		effective.Status = effectiveOrderStatus(order)
+		if !supervisor && !OrderNeverReachedKitchen(&effective) {
+			return ErrOrderCancelNeedsSupervisor
+		}
 		order.CancelledReason = strings.TrimSpace(reason)
 		now := repository.BangkokNow()
 		order.ClosedAt = &now
+		if err := cancelUnservedItems(tx, order, order.CancelledReason); err != nil {
+			return err
+		}
 		if err := setOrderStatus(tx, order, entity.OrderStatusCancelled, userID, order.CancelledReason); err != nil {
 			return err
 		}
@@ -910,7 +957,19 @@ func (s *OrderService) CancelOrder(restaurantID, userID, orderID uint, reason st
 }
 
 func validateEmptyTableClose(order *entity.Order) error {
-	if order == nil || order.OrderType != entity.OrderTypeDineIn || order.TableID == nil || *order.TableID == 0 {
+	if order == nil {
+		return errors.New("only an empty dine-in table can be closed")
+	}
+	switch order.OrderType {
+	case entity.OrderTypeDineIn:
+		if order.TableID == nil || *order.TableID == 0 {
+			return errors.New("only an empty dine-in table can be closed")
+		}
+	case entity.OrderTypeTakeaway:
+		// A takeaway holds no table, so there is nothing to free — but an order
+		// opened by mistake still needs a way out, so it can be discarded here
+		// as long as nothing was ordered on it (checked below).
+	default:
 		return errors.New("only an empty dine-in table can be closed")
 	}
 	if order.Status != entity.OrderStatusOpen {
@@ -1267,20 +1326,22 @@ func buildOrderItemRecipeSnapshots(
 	return snapshots
 }
 
-// findMergeableOrderItem returns the pending line this add should fold into:
-// same menu, same dine-in/takeaway, same note, and exactly the same set of
-// options. Anything else is a different order line even when the dish matches.
-func findMergeableOrderItem(
+// findMergeableOrderItems returns the pending lines this add could fold into,
+// newest first: same menu, same dine-in/takeaway, same note, and exactly the
+// same set of options. Anything else is a different order line even when the
+// dish matches.
+func findMergeableOrderItems(
 	order *entity.Order,
 	menuID uint,
 	fulfillmentType string,
 	note string,
 	options []selectedMenuOption,
-) *entity.OrderItem {
+) []*entity.OrderItem {
 	wanted := make(map[uint]struct{}, len(options))
 	for _, option := range options {
 		wanted[option.ID] = struct{}{}
 	}
+	var lines []*entity.OrderItem
 	for index := range order.Items {
 		item := &order.Items[index]
 		if item.Status != entity.OrderItemStatusPending {
@@ -1303,7 +1364,362 @@ func findMergeableOrderItem(
 			}
 		}
 		if matches {
-			return item
+			lines = append(lines, item)
+		}
+	}
+	sort.SliceStable(lines, func(a, b int) bool {
+		if !lines[a].CreatedAt.Equal(lines[b].CreatedAt) {
+			return lines[a].CreatedAt.After(lines[b].CreatedAt)
+		}
+		return lines[a].ID > lines[b].ID
+	})
+	return lines
+}
+
+// mergeablePendingLine is the pending line an add folds into, or nil when the
+// add needs a line of its own: no matching line, or none whose price the new
+// units would share (see mergeKeepsLinePricing). Every matching line is asked,
+// newest first. Asking only the oldest opened a new line on every add once it
+// stopped sharing today's price - a beer at 17:55 in happy hour, another at
+// 18:05 on its own line, then 18:10 and 18:12 each on a third and fourth line
+// instead of joining the 18:05 one.
+func mergeablePendingLine(
+	tx *repository.OrderRepository,
+	order *entity.Order,
+	menu *entity.MenuItem,
+	fulfillmentType string,
+	note string,
+	options []selectedMenuOption,
+	optionsTotal float64,
+) (*entity.OrderItem, error) {
+	lines := findMergeableOrderItems(order, menu.ID, fulfillmentType, note, options)
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	promotions, categories, err := dishPricingPromotions(tx, order.RestaurantID, menu.ID)
+	if err != nil {
+		return nil, err
+	}
+	return firstLineKeepingPricing(lines, menu.Price, optionsTotal, promotions, categories, time.Now()), nil
+}
+
+// firstLineKeepingPricing is the first of the lines whose price units added now
+// would share, or nil when none would.
+func firstLineKeepingPricing(
+	lines []*entity.OrderItem,
+	unitPrice float64,
+	optionsTotal float64,
+	promotions []entity.Promotion,
+	categories map[uint][]uint,
+	now time.Time,
+) *entity.OrderItem {
+	for _, line := range lines {
+		if mergeKeepsLinePricing(line, unitPrice, optionsTotal, promotions, categories, now) {
+			return line
+		}
+	}
+	return nil
+}
+
+// dishPricingPromotions loads what mergeKeepsLinePricing reads: the restaurant's
+// active promotions and, only when one of them targets a category, the
+// categories the dish is listed under.
+func dishPricingPromotions(
+	tx *repository.OrderRepository,
+	restaurantID uint,
+	menuID uint,
+) ([]entity.Promotion, map[uint][]uint, error) {
+	promotions, err := tx.ListActivePromotions(restaurantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !promotionsTargetCategories(promotions) {
+		return promotions, nil, nil
+	}
+	categories, err := tx.MenuCategoryIDs(restaurantID, []uint{menuID})
+	if err != nil {
+		return nil, nil, err
+	}
+	return promotions, categories, nil
+}
+
+// mergeKeepsLinePricing reports whether units added now would cost what the
+// pending line they fold into costs. A merged unit takes the line's stored unit
+// price and options total, and the promotion engine prices every unit of a line
+// at the line's ordered time. So a price change since the line was taken, or a
+// dish-level promotion whose hours, dates or days cover one moment and not the
+// other, keeps the new units on their own line: merged, a dish added after
+// happy hour ended got the happy-hour price, and one added once it began did
+// not. Only a promotion that can price this dish counts: a cocktail happy hour
+// has no say over fried rice. categories maps the dish to the categories it is
+// listed under, and may be nil when no promotion targets a category. The
+// bill-level promotion is judged on when the order opened, not on any line, so
+// it never splits one.
+func mergeKeepsLinePricing(
+	existing *entity.OrderItem,
+	unitPrice float64,
+	optionsTotal float64,
+	promotions []entity.Promotion,
+	categories map[uint][]uint,
+	now time.Time,
+) bool {
+	if !moneyEqual(existing.UnitPrice, unitPrice) || !moneyEqual(existing.OptionsTotal, optionsTotal) {
+		return false
+	}
+	orderedAt := existing.CreatedAt
+	if orderedAt.IsZero() {
+		orderedAt = now
+	}
+	for i := range promotions {
+		promotion := &promotions[i]
+		if !promotion.IsActive || promotion.Type == entity.PromotionTypeBillDiscount {
+			continue
+		}
+		if !promotionTargetsDish(promotion, existing.MenuID, categories) {
+			continue
+		}
+		if promotionRunsAt(promotion, orderedAt) != promotionRunsAt(promotion, now) {
+			return false
+		}
+	}
+	return true
+}
+
+// promotionTargetsDish reports whether a dish-level promotion can price the
+// dish at all, through the same target matching the promotion engine runs: the
+// dish itself, or a category it is listed under, in any of the promotion's
+// groups.
+func promotionTargetsDish(promotion *entity.Promotion, menuID uint, categories map[uint][]uint) bool {
+	run := promotionRun{categories: categories}
+	unit := promotionUnit{menu: menuID}
+	for _, group := range groupsOf(promotion) {
+		if run.matches(group, unit) {
+			return true
+		}
+	}
+	return false
+}
+
+// placeRaisedUnits decides where the units added by raising a pending line's
+// quantity go, and returns the quantity the line itself ends with (see
+// raisedLineQuantity). Raised in place they take the line's stored price and
+// its ordered time, and the web bill's "+" raises the oldest line of a group
+// whose lines differ only by when they were taken - so a beer added after
+// happy hour, on a line taken in it, got the happy-hour price. Units that
+// would not cost what the line costs go the way AddItem sends an add instead:
+// into the newest matching pending line whose price they share, or onto a new
+// line at today's price. A raise at the line's own price stays on the line.
+func placeRaisedUnits(
+	tx *repository.OrderRepository,
+	order *entity.Order,
+	item *entity.OrderItem,
+	menu *entity.MenuItem,
+	optionIDs []uint,
+	delta int,
+) (int, error) {
+	promotions, categories, err := dishPricingPromotions(tx, order.RestaurantID, item.MenuID)
+	if err != nil {
+		return 0, err
+	}
+	stays, err := raiseStaysOnLine(item, menu, optionIDs, promotions, categories, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	if !stays {
+		// The units are a new order of the dish, so they pass the option check
+		// an add passes: an option no longer offered is refused rather than
+		// sold at the old line's price.
+		options, optionsTotal, err := validateSelectedMenuOptions(menu, optionIDs)
+		if err != nil {
+			return 0, err
+		}
+		existing, err := mergeablePendingLine(tx, order, menu, item.FulfillmentType, item.Note, options, optionsTotal)
+		if err != nil {
+			return 0, err
+		}
+		// The raised line itself is never the answer: it just failed the same
+		// check. The guard keeps a stale copy of it in order.Items from ever
+		// taking the units back.
+		if existing != nil && existing.ID != item.ID {
+			err = raisePendingLine(tx, order, existing.ID, delta)
+		} else {
+			_, err = createOrderLine(tx, order, orderLineSpec{
+				menu:            menu,
+				fulfillmentType: item.FulfillmentType,
+				note:            item.Note,
+				options:         options,
+				optionsTotal:    optionsTotal,
+				quantity:        delta,
+			})
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	// The one way out with a quantity, whichever line the units went to: the
+	// line keeps them only when raiseStaysOnLine said they stay.
+	return raisedLineQuantity(item.Quantity, delta, stays), nil
+}
+
+// raiseStaysOnLine reports whether units raised onto a pending line stay on
+// it: the dish still costs what the line costs and the line's options are
+// still offered. An increase sells more of the dish wherever the units land,
+// so a dish taken off sale is refused before the price is asked; checked only
+// on the way to another line, it was raised in place at an unchanged price
+// while an add of the same dish was refused.
+func raiseStaysOnLine(
+	item *entity.OrderItem,
+	menu *entity.MenuItem,
+	optionIDs []uint,
+	promotions []entity.Promotion,
+	categories map[uint][]uint,
+	now time.Time,
+) (bool, error) {
+	if !menu.IsAvailable {
+		return false, errors.New("menu item is unavailable")
+	}
+	optionsTotal, offered := optionsPriceOnMenu(menu, optionIDs)
+	return offered && mergeKeepsLinePricing(item, menu.Price, optionsTotal, promotions, categories, now), nil
+}
+
+// raisedLineQuantity is the quantity a pending line ends with after a raise of
+// delta: all of it when the units stayed on the line, none of it when they
+// went to another line or a new one. Kept on the line as well, those units
+// were on the bill twice.
+func raisedLineQuantity(current, delta int, stays bool) int {
+	if !stays {
+		return current
+	}
+	return current + delta
+}
+
+// optionsPriceOnMenu is what the options cost on the menu today, and false when
+// one of them is no longer offered.
+func optionsPriceOnMenu(menu *entity.MenuItem, optionIDs []uint) (float64, bool) {
+	prices := map[uint]float64{}
+	for _, group := range menu.OptionGroups {
+		if !group.IsActive {
+			continue
+		}
+		for _, option := range group.Options {
+			if option.IsActive {
+				prices[option.ID] = option.PriceDelta
+			}
+		}
+	}
+	seen := map[uint]bool{}
+	total := 0.0
+	for _, id := range optionIDs {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		price, ok := prices[id]
+		if !ok {
+			return 0, false
+		}
+		total += price
+	}
+	return total, true
+}
+
+// lineOptionIDs is the options a line of the loaded order carries.
+func lineOptionIDs(order *entity.Order, itemID uint) []uint {
+	for _, line := range order.Items {
+		if line.ID != itemID {
+			continue
+		}
+		ids := make([]uint, 0, len(line.SelectedOptions))
+		for _, selected := range line.SelectedOptions {
+			ids = append(ids, selected.MenuOptionID)
+		}
+		return ids
+	}
+	return nil
+}
+
+// raisePendingLine folds more units into a pending line at the line's own
+// price.
+func raisePendingLine(tx *repository.OrderRepository, order *entity.Order, itemID uint, by int) error {
+	line, err := tx.FindItemForUpdate(order.RestaurantID, order.ID, itemID)
+	if err != nil {
+		return err
+	}
+	line.Quantity += by
+	line.Subtotal = (line.UnitPrice + line.OptionsTotal) * float64(line.Quantity)
+	return tx.SaveItem(line)
+}
+
+// orderLineSpec is one new order line: the dish at today's price with the
+// options already validated against it.
+type orderLineSpec struct {
+	menu             *entity.MenuItem
+	fulfillmentType  string
+	note             string
+	options          []selectedMenuOption
+	optionsTotal     float64
+	quantity         int
+	serveImmediately bool
+}
+
+// createOrderLine writes a new line with its option and recipe snapshots. A
+// served-immediately line is marked served now; taking its ingredients out of
+// stock is the caller's job.
+func createOrderLine(tx *repository.OrderRepository, order *entity.Order, spec orderLineSpec) (*entity.OrderItem, error) {
+	status := entity.OrderItemStatusPending
+	if spec.serveImmediately {
+		status = entity.OrderItemStatusServed
+	}
+	item := &entity.OrderItem{
+		OrderID:         order.ID,
+		RestaurantID:    order.RestaurantID,
+		MenuID:          spec.menu.ID,
+		MenuName:        spec.menu.Name,
+		UnitPrice:       spec.menu.Price,
+		OptionsTotal:    spec.optionsTotal,
+		Quantity:        spec.quantity,
+		Subtotal:        (spec.menu.Price + spec.optionsTotal) * float64(spec.quantity),
+		FulfillmentType: spec.fulfillmentType,
+		Note:            spec.note,
+		Status:          status,
+	}
+	if spec.serveImmediately {
+		now := repository.BangkokNow()
+		item.ServedAt = &now
+	}
+	if err := tx.CreateItem(item); err != nil {
+		return nil, err
+	}
+	if err := snapshotRecipeForOrderItem(tx, order, item, spec.options); err != nil {
+		return nil, err
+	}
+	if err := createItemOptionSnapshots(tx, order, item, spec.options); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// createItemOptionSnapshots copies the chosen options onto the line, so the
+// bill keeps what was charged for them after the menu changes.
+func createItemOptionSnapshots(
+	tx *repository.OrderRepository,
+	order *entity.Order,
+	item *entity.OrderItem,
+	options []selectedMenuOption,
+) error {
+	for _, option := range options {
+		snapshot := &entity.OrderItemOption{
+			OrderItemID:   item.ID,
+			OrderID:       order.ID,
+			RestaurantID:  order.RestaurantID,
+			MenuOptionID:  option.ID,
+			OptionGroupID: option.OptionGroupID,
+			GroupName:     option.GroupName,
+			OptionName:    option.OptionName,
+			PriceDelta:    option.PriceDelta,
+		}
+		if err := tx.CreateItemOption(snapshot); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1416,18 +1832,7 @@ func orderSubtotalFromItems(items []entity.OrderItem) float64 {
 }
 
 func billFromOrder(order *entity.Order, restaurant *entity.Restaurant) *BillResponse {
-	subtotal := roundMoney(order.Subtotal)
-	discount := roundMoney(order.DiscountAmount)
-	if discount < 0 {
-		discount = 0
-	}
-	if discount > subtotal {
-		discount = subtotal
-	}
-	total := roundMoney(subtotal - discount)
-	if total < 0 {
-		total = 0
-	}
+	subtotal, discount, total := billAmounts(order.Subtotal, order.DiscountAmount)
 	serviceEnabled := restaurant.ServiceChargeEnabled
 	serviceRate := restaurant.ServiceChargeRate
 	vatEnabled := restaurant.VATEnabled
@@ -1442,16 +1847,7 @@ func billFromOrder(order *entity.Order, restaurant *entity.Restaurant) *BillResp
 		vatRate = order.VATRateSnapshot
 	}
 	if order.PaymentStatus != entity.PaymentStatusPaid {
-		if serviceEnabled {
-			serviceAmount = roundMoney(total * serviceRate / 100)
-		} else {
-			serviceAmount = 0
-		}
-		if vatEnabled {
-			vatAmount = roundMoney((total + serviceAmount) * vatRate / 100)
-		} else {
-			vatAmount = 0
-		}
+		serviceAmount, vatAmount = unpaidCharges(total, restaurant)
 		grandTotal = roundMoney(total + serviceAmount + vatAmount)
 	}
 	if grandTotal <= 0 {

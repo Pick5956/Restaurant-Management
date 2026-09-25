@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
 import { can } from "@/src/lib/rbac";
 import { getOrderBill, listOrders } from "@/src/lib/order";
 import type { Bill, Order } from "@/src/types/order";
@@ -39,7 +39,9 @@ export default function OrdersPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
-  const canView = can(activeMembership, "view_orders") || can(activeMembership, "take_order");
+  // The archive lists paid orders, which the server answers only under
+  // view_orders; take_order alone reads the live orders, not this list.
+  const canView = can(activeMembership, "view_orders");
   const [orders, setOrders] = useState<Order[]>([]);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -220,7 +222,7 @@ export default function OrdersPage() {
       const response = await getOrderBill(order.ID);
       setReceiptBill(response.data);
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.receiptLoadError);
+      setError(apiFailureText(error, language, copy.receiptLoadError));
     } finally {
       setReceiptLoadingId(null);
     }
@@ -233,7 +235,7 @@ export default function OrdersPage() {
       <div
         data-shell-sticky=""
         ref={stickyToolbarRef}
-        className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto"
+        className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto"
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">

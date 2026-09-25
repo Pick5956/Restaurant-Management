@@ -11,6 +11,8 @@ import AppLogo from '@/src/components/shared/AppLogo';
 import AppWordmark from '@/src/components/shared/AppWordmark';
 import { useBackdropClose } from '@/src/hooks/useBackdropClose';
 import { can, TEAM_MANAGEMENT_PERMISSIONS } from '@/src/lib/rbac';
+import { getDefaultWorkspaceRoute } from '@/src/lib/workMode';
+import { branchLabel } from '@/src/lib/branchLabel';
 import type { Permission } from '@/src/types/auth';
 
 type SubItem = {
@@ -90,7 +92,9 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
         {
           label: language === 'th' ? 'คลังออเดอร์' : 'Order archive',
           href: '/orders',
-          permission: ['view_orders', 'take_order'],
+          // The archive lists paid orders, which the server answers only under
+          // view_orders; take_order alone reads the live orders, not this list.
+          permission: 'view_orders',
           icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>,
         },
         {
@@ -139,28 +143,6 @@ function buildNav(language: 'th' | 'en'): NavGroup[] {
       ],
     },
   ] as const;
-}
-
-// The first page this member is allowed to open, in nav order — where the
-// dishy logo and the access-denied "back" button send them. It reads the same
-// nav definition the sidebar filters by, so it can never point somewhere the
-// rail would hide: a chef with no dashboard access lands on the kitchen, not on
-// a page that would just bounce them back. Language is irrelevant to hrefs and
-// permissions, so any value builds the same map.
-export function firstAccessibleHref(membership: Parameters<typeof can>[0]): string {
-  for (const section of buildNav('en')) {
-    for (const item of section.items) {
-      if (item.ownerOnly && membership?.role?.name !== 'owner') continue;
-      const permissions = item.permission
-        ? Array.isArray(item.permission) ? item.permission : [item.permission]
-        : [];
-      if (permissions.length === 0 || permissions.some((permission) => can(membership, permission))) {
-        return item.href;
-      }
-    }
-  }
-  // Account settings carries no permission, so it is always a valid last resort.
-  return '/settings/account';
 }
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
@@ -218,7 +200,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
               // Active if either this parent href matches or one of its child sub-items matches
               const active = !comingSoon && (isActive(href) || (hasSubItems && visibleSubItems.some(sub => isActive(sub.href))));
 
-              const itemClassName = `relative flex w-full items-center rounded-md px-2.5 py-2 text-[12px] font-medium transition-[background-color,border-color,box-shadow,color,gap] duration-200 ease-out motion-reduce:transition-none [@media(max-height:760px)]:py-1.5 ${
+              const itemClassName = `relative flex w-full items-center rounded-md px-2.5 py-2 text-[14px] font-medium transition-[background-color,border-color,box-shadow,color,gap] duration-200 ease-out motion-reduce:transition-none [@media(max-height:760px)]:py-1.5 ${
                 active
                   ? 'border border-transparent bg-[var(--rail-active-bg)] text-[var(--rail-active-fg)] shadow-[0_0_6px_rgba(15,23,42,0.18)] active:shadow-[0_0_3px_rgba(15,23,42,0.16)] dark:border-orange-700 dark:shadow-[0_0_7px_rgba(249,115,22,0.24)] dark:active:shadow-[0_0_3px_rgba(249,115,22,0.18)]'
                   : 'border border-transparent text-[var(--rail-fg)] hover:border-[var(--rail-border)] hover:bg-[var(--rail-hover-bg)] hover:text-[var(--rail-hover-fg)]'
@@ -233,7 +215,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
                     }`}
                   >
                     <span className="truncate leading-[1.6]">{label}</span>
-                    {comingSoon && <span className="shrink-0 text-[10px] font-medium text-[var(--rail-fg-dim)]">{language === 'th' ? 'เร็วๆ นี้' : 'Soon'}</span>}
+                    {comingSoon && <span className="shrink-0 text-[11px] font-medium text-[var(--rail-fg-dim)]">{language === 'th' ? 'เร็วๆ นี้' : 'Soon'}</span>}
                     {hasSubItems && (
                       <svg
                         viewBox="0 0 24 24"
@@ -308,7 +290,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
                               href={restaurantPageHref(sub.href)}
                               onClick={onNavigate}
                               tabIndex={isExpanded ? 0 : -1}
-                              className={`flex items-center rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                              className={`flex items-center rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
                                 subActive
                                   ? 'bg-[var(--rail-active-bg)] text-[var(--rail-active-fg)]'
                                   : 'text-[var(--rail-fg)] hover:bg-[var(--rail-hover-bg)] hover:text-[var(--rail-hover-fg)]'
@@ -331,29 +313,12 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   );
 }
 
-function useOpenState() {
-  const { activeMembership } = useAuth();
-  const { language } = useLanguage();
-  const openTime = activeMembership?.restaurant?.open_time ?? '';
-  const closeTime = activeMembership?.restaurant?.close_time ?? '';
-  if (!/^\d{2}:\d{2}$/.test(openTime) || !/^\d{2}:\d{2}$/.test(closeTime)) return null;
-  const now = new Date();
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const toMinutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-  const open = toMinutes(openTime);
-  const close = toMinutes(closeTime);
-  // A close time earlier than the open time means the shift runs past midnight.
-  const isOpen = close > open ? minutes >= open && minutes < close : minutes >= open || minutes < close;
-  return language === 'th'
-    ? `${isOpen ? 'เปิดอยู่' : 'ปิดอยู่'} · ${isOpen ? 'ปิด' : 'เปิด'} ${isOpen ? closeTime : openTime}`
-    : `${isOpen ? 'Open' : 'Closed'} · ${isOpen ? 'closes' : 'opens'} ${isOpen ? closeTime : openTime}`;
-}
-
 function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const name = activeMembership?.restaurant?.name ?? (language === 'th' ? 'เลือกร้าน' : 'Select restaurant');
-  const detail = useOpenState();
+  // The branch, not the opening hours: the owner asked for it on 2026-09-21.
+  const detail = activeMembership?.restaurant ? branchLabel(activeMembership.restaurant.branch_name, language) : null;
   const initial = name.trim().charAt(0) || '?';
 
   return (
@@ -373,8 +338,8 @@ function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
       {!collapsed && (
         <>
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[12px] font-bold leading-[1.6] text-[var(--rail-fg)]">{name}</span>
-            {detail && <span className="truncate text-[11px] leading-[1.6] text-[var(--rail-fg-muted)] [@media(max-height:760px)]:hidden">{detail}</span>}
+            <span className="truncate text-[14px] font-bold leading-[1.6] text-[var(--rail-fg)]">{name}</span>
+            {detail && <span className="truncate text-[12px] leading-[1.6] text-[var(--rail-fg-muted)] [@media(max-height:760px)]:hidden">{detail}</span>}
           </span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0 text-[var(--rail-fg-muted)]" aria-hidden="true">
             <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
@@ -390,9 +355,9 @@ export default function Sidebar() {
   const { mobileOpen, setMobileOpen, collapsed, setCollapsed } = useSidebar();
   const { language } = useLanguage();
   const { activeMembership } = useAuth();
-  // The logo goes to the member's first reachable page, not a hard-coded
-  // overview a chef cannot open.
-  const landingHref = firstAccessibleHref(activeMembership);
+  // The logo goes to the member's default workspace, not a hard-coded overview
+  // a chef cannot open — the same resolver the restaurant entry redirect uses.
+  const landingHref = getDefaultWorkspaceRoute(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
   const collapseTitle = collapsed
@@ -494,7 +459,7 @@ export default function Sidebar() {
         className={`
           dashboard-shell-border-r fixed left-0 top-0 z-30 hidden h-dvh flex-col overflow-hidden bg-[var(--rail-bg)] lg:flex
           transition-[width] duration-300 ease-in-out will-change-[width]
-          ${collapsed ? 'w-[68px]' : 'w-[220px]'}
+          ${collapsed ? 'w-[68px]' : 'w-[235px]'}
         `}
       >
         <div className="flex h-[62px] shrink-0 flex-col justify-center px-3">

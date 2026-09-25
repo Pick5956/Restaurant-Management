@@ -133,6 +133,7 @@ func (ctrl *IngredientController) Create(c *gin.Context) {
 		respondInvalidRequest(c)
 		return
 	}
+	req.SkipExpense = skipStockExpense(c)
 	ingredient, err := ctrl.svc.Create(restaurantID, userID, &req)
 	if err != nil {
 		respondAPIError(c, http.StatusBadRequest, err)
@@ -196,6 +197,7 @@ func (ctrl *IngredientController) AdjustStock(c *gin.Context) {
 	if !requireStockExpensePermission(c, req.Amount) {
 		return
 	}
+	req.SkipExpense = skipStockExpense(c)
 	userID, _ := contextUserID(c)
 	ingredient, err := ctrl.svc.AdjustStock(restaurantID, ingredientID, userID, &req)
 	if err != nil {
@@ -288,6 +290,13 @@ func requireStockExpensePermission(c *gin.Context, amount float64) bool {
 		return true
 	}
 	return requirePermission(c, "manage_expenses", "missing manage_expenses permission")
+}
+
+// skipStockExpense: refusing a typed amount is not enough, because the service
+// values a stock-in with no amount at the ingredient's own rate and books that.
+// A member who may not write the ledger still moves stock; nothing is booked.
+func skipStockExpense(c *gin.Context) bool {
+	return !memberCan(c, "manage_expenses")
 }
 
 // ListTransactions serves both the per-ingredient history (an :id in the path)

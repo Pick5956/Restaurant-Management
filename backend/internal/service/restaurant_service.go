@@ -319,6 +319,13 @@ func (s *RestaurantService) UpdateMemberStatus(actorUserID, restaurantID, member
 	if err != nil {
 		return nil, err
 	}
+	if target.Status == "removed" && nextStatus != "removed" {
+		// Checked ahead of the hierarchy test, which reads a deleted role as
+		// "not yours to manage" and would give the wrong reason.
+		if err := ensureRestorableMemberRole(s.roleRepo, restaurantID, target.Role); err != nil {
+			return nil, err
+		}
+	}
 	if !canManageMemberWithPermission(actor, target, PermissionManageMembers) {
 		return nil, errors.New("you do not have permission to manage this member")
 	}
@@ -355,6 +362,37 @@ func (s *RestaurantService) UpdateMemberStatus(actorUserID, restaurantID, member
 	)
 
 	return updated, nil
+}
+
+// ErrMemberRoleUnavailable refuses to bring a removed member back under a role
+// the restaurant no longer has.
+var ErrMemberRoleUnavailable = errors.New("role is not available for this restaurant")
+
+type hiddenRoleChecker interface {
+	IsRoleHiddenForRestaurant(restaurantID uint, roleID uint) (bool, error)
+}
+
+// ensureRestorableMemberRole reports whether a removed member can come back
+// under the role they left with. A removed member does not stop their role
+// being deleted, so it may be gone by now: a deleted custom role is no longer
+// loaded (role is nil) and a deleted default role is hidden for this
+// restaurant. Either way they rejoin through an invitation, which gives them a
+// role the restaurant still has.
+func ensureRestorableMemberRole(roles hiddenRoleChecker, restaurantID uint, role *entity.Role) error {
+	if role == nil || !roleAssignableToRestaurant(role, restaurantID) {
+		return ErrMemberRoleUnavailable
+	}
+	if role.RestaurantID != nil {
+		return nil
+	}
+	hidden, err := roles.IsRoleHiddenForRestaurant(restaurantID, role.ID)
+	if err != nil {
+		return err
+	}
+	if hidden {
+		return ErrMemberRoleUnavailable
+	}
+	return nil
 }
 
 func (s *RestaurantService) UpdateMemberRole(actorUserID, restaurantID, memberID, roleID uint) (*entity.RestaurantMember, error) {
@@ -630,9 +668,8 @@ func (s *RestaurantService) UpdateRestaurantPromptPayQR(restaurantID uint, qrIma
 	return s.restaurantRepo.FindByID(restaurantID)
 }
 
+// DeleteRestaurant removes the restaurant and its memberships together, so a
+// failure part-way never leaves a live restaurant nobody belongs to.
 func (s *RestaurantService) DeleteRestaurant(restaurantID uint) error {
-	if err := s.memberRepo.DeleteByRestaurant(restaurantID); err != nil {
-		return err
-	}
-	return s.restaurantRepo.Delete(restaurantID)
+	return s.restaurantRepo.DeleteWithMemberships(restaurantID)
 }

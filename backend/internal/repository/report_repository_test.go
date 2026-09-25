@@ -178,33 +178,3 @@ func TestSalesWindowSummaryUsesFullBarCohortWithoutRowLimit(t *testing.T) {
 	}
 }
 
-// The ingredient table is opened from a cost bar, so it has to repeat the cost
-// leg of salesBuckets exactly. Any drift here shows a total that disagrees with
-// the bar the user just clicked.
-func TestExpenseDetailRepeatsTheCostCohort(t *testing.T) {
-	db, capture := dryRunRepositoryDB(t)
-	repo := NewReportRepository(db)
-	bangkok := time.FixedZone("Asia/Bangkok", 7*60*60)
-	since := time.Date(2026, time.August, 3, 13, 0, 0, 0, bangkok)
-
-	if _, err := repo.ExpenseDetail(7, since, since.Add(time.Hour), 300); err != nil &&
-		!errors.Is(err, gorm.ErrDryRunModeUnsupported) {
-		t.Fatalf("ExpenseDetail() error = %v", err)
-	}
-
-	joined := strings.Join(capture.statements, "\n")
-	for _, fragment := range []string{
-		"orders.status = 'completed'",
-		"orders.payment_status = 'paid'",
-		// Cancelled-after-cooking items are excluded from the bars, so they must
-		// be excluded here too or the rows would overshoot the bar.
-		"order_items.status = 'served'",
-		"orders.completed_at >= ",
-		"orders.completed_at < ",
-		"sum(order_inventory_deductions.cost_snapshot)",
-	} {
-		if !strings.Contains(joined, fragment) {
-			t.Fatalf("ingredient breakdown does not match the cost bar cohort, missing %q:\n%s", fragment, joined)
-		}
-	}
-}

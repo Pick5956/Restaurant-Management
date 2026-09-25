@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Printer } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
@@ -10,7 +11,8 @@ import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { loadSarabun } from "@/src/lib/sarabunFont";
-import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
+import { expenseRefusal } from "@/src/lib/knownApiErrors";
 import { formatCurrency } from "@/src/lib/format";
 import { toDashboardDate } from "@/src/lib/homeDashboard";
 import { createRequestGeneration } from "@/src/lib/requestGeneration";
@@ -28,6 +30,7 @@ import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import OperationalPageShell from "@/src/components/shared/OperationalPageShell";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
+import { useToast } from "@/src/components/shared/FeedbackProvider";
 
 type SortKey = "spent_at" | "category" | "note" | "amount" | "created_by";
 
@@ -78,6 +81,7 @@ export default function ExpensesPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
+  const { showToast } = useToast();
   // The page glides on the mouse wheel and coasts on after it, like the
   // overview, inventory and revenue pages. The scroller belongs to the shell
   // layout, so it is wired up here and let go when the page is left.
@@ -161,11 +165,16 @@ export default function ExpensesPage() {
             confirmDelete: "ลบรายการนี้?",
             recordedBy: "บันทึกโดย",
             generatedStockIn: "สร้างอัตโนมัติจากการรับวัตถุดิบ",
+            noNote: "ไม่มีรายละเอียด",
+            noRecorder: "ไม่ระบุผู้บันทึก",
             partialList: (shown: number, total: number) => `แสดงรายการล่าสุด ${shown} จากทั้งหมด ${total} รายการ`,
             empty: "ยังไม่มีรายจ่ายในเดือนนี้",
             loadError: "โหลดรายจ่ายไม่สำเร็จ",
             saveError: "บันทึกไม่สำเร็จ",
             amountRequired: "กรอกจำนวนเงินให้มากกว่า 0",
+            amountTooLarge: "จำนวนเงินสูงเกินไป",
+            expenseGone: "รายการนี้ถูกลบไปแล้ว",
+            stockInLocked: "รายจ่ายจากการรับวัตถุดิบแก้ไขหรือลบไม่ได้",
             readOnly: "คุณดูได้อย่างเดียว ไม่มีสิทธิ์แก้ไขรายจ่าย",
           }
         : {
@@ -197,11 +206,16 @@ export default function ExpensesPage() {
             confirmDelete: "Delete this entry?",
             recordedBy: "Recorded by",
             generatedStockIn: "Generated from stock-in",
+            noNote: "No details",
+            noRecorder: "Unknown",
             partialList: (shown: number, total: number) => `Showing the latest ${shown} of ${total} entries.`,
             empty: "No expenses recorded this month.",
             loadError: "Could not load expenses.",
             saveError: "Could not save.",
             amountRequired: "Enter an amount greater than 0.",
+            amountTooLarge: "That amount is too high.",
+            expenseGone: "This entry has already been deleted.",
+            stockInLocked: "Stock-in expenses cannot be changed or deleted.",
             readOnly: "You have read-only access to expenses.",
           },
     [language],
@@ -289,9 +303,9 @@ export default function ExpensesPage() {
         entries: res.data.entries ?? 0,
         hasMore: res.data.has_more ?? false,
       });
-    } catch (err) {
+    } catch {
       if (!expenseRequests.isCurrent(requestGeneration)) return;
-      setError(apiErrorMessage(err) || copy.loadError);
+      setError(copy.loadError);
     } finally {
       if (expenseRequests.isCurrent(requestGeneration)) setLoading(false);
     }
@@ -304,6 +318,33 @@ export default function ExpensesPage() {
     void load();
     return () => expenseRequests.invalidate();
   }, [expenseRequests, load, refreshTick]);
+
+  // A refused save or delete in the ledger's own words, then the failures
+  // every page shares.
+  const saveFailureText = (err: unknown) => {
+    const refusal = expenseRefusal(err);
+    if (refusal === "amount_too_large") return copy.amountTooLarge;
+    if (refusal === "gone") return copy.expenseGone;
+    if (refusal === "stock_in_locked") return copy.stockInLocked;
+    return apiFailureText(err, language, copy.saveError);
+  };
+
+  // An entry someone else already deleted: the ledger re-reads so the row
+  // leaves the list. The re-read clears the page's error line, so the reason
+  // is a toast.
+  const expenseGone = (err: unknown) => {
+    if (expenseRefusal(err) !== "gone") return false;
+    setFormOpen(false);
+    setRefreshTick((tick) => tick + 1);
+    showToast({ title: copy.expenseGone, tone: "warning" });
+    return true;
+  };
+
+  // A missing value is said, never a dash: in the list, the print table and the PDF.
+  const expenseNote = (expense: Expense) =>
+    expense.note || (expense.ingredient_transaction_id != null ? copy.generatedStockIn : copy.noNote);
+  const expenseRecorder = (expense: Expense) =>
+    (expense.created_by ? `${expense.created_by.first_name} ${expense.created_by.last_name}`.trim() : "") || copy.noRecorder;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -324,7 +365,7 @@ export default function ExpensesPage() {
       setFormOpen(false);
       setRefreshTick((tick) => tick + 1);
     } catch (err) {
-      setError(apiErrorMessage(err) || copy.saveError);
+      if (!expenseGone(err)) setError(saveFailureText(err));
     } finally {
       setSavingRestaurantId((current) => current === requestedRestaurantId ? null : current);
     }
@@ -338,7 +379,7 @@ export default function ExpensesPage() {
       setForm((current) => current.restaurantId === restaurantId && current.id === expense.ID ? emptyForm(restaurantId) : current);
       setRefreshTick((tick) => tick + 1);
     } catch (err) {
-      setError(apiErrorMessage(err) || copy.saveError);
+      if (!expenseGone(err)) setError(saveFailureText(err));
     }
   };
 
@@ -368,9 +409,9 @@ export default function ExpensesPage() {
           String(index + 1),
           expense.spent_at.slice(0, 10),
           copy.categories[expense.category],
-          expense.note || (expense.ingredient_transaction_id != null ? copy.generatedStockIn : "-"),
+          expenseNote(expense),
           formatCurrency(expense.amount, language),
-          expense.created_by ? `${expense.created_by.first_name} ${expense.created_by.last_name}`.trim() : "-",
+          expenseRecorder(expense),
         ]),
         foot: [
           [
@@ -394,8 +435,8 @@ export default function ExpensesPage() {
         },
       });
       doc.save(`expenses-${monthValue}.pdf`);
-    } catch (err) {
-      setError(apiErrorMessage(err) || copy.exportError);
+    } catch {
+      setError(copy.exportError);
     }
   };
 
@@ -457,8 +498,8 @@ export default function ExpensesPage() {
         <span className="hidden text-[16px] font-semibold print:block">{monthLabel}</span>
         <span className="text-[11px] text-gray-500 dark:text-gray-400 print:hidden">{scopedData.entries} {copy.entries}</span>
         {/* Icon-only, so the label has to survive as an accessible name. */}
-        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className="ui-press ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className={`ml-auto ${BACK_CONTROL} print:hidden`}>
+          <ArrowLeft className={BACK_ICON} aria-hidden="true" />
         </Link>
         <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
           <Printer className="h-4 w-4" aria-hidden="true" />
@@ -483,7 +524,7 @@ export default function ExpensesPage() {
           options={(["all", ...expenseCategories] as const).map((value) => {
             const amount = value === "all" ? monthTotal : scopedData.categories.find((item) => item.category === value)?.amount ?? 0;
             const label = value === "all" ? copy.all : copy.categories[value];
-            return { value, label: `${label} · ${formatCurrency(amount, language)}` };
+            return { value, label: `${label}, ${formatCurrency(amount, language)}` };
           })}
           compact
           className="w-full sm:w-[240px]"
@@ -511,9 +552,9 @@ export default function ExpensesPage() {
               <td className="num">{index + 1}</td>
               <td>{expense.spent_at.slice(0, 10)}</td>
               <td>{copy.categories[expense.category]}</td>
-              <td>{expense.note || (expense.ingredient_transaction_id != null ? copy.generatedStockIn : "-")}</td>
+              <td>{expenseNote(expense)}</td>
               <td className="num">{formatCurrency(expense.amount, language)}</td>
-              <td>{expense.created_by ? `${expense.created_by.first_name} ${expense.created_by.last_name}`.trim() : "-"}</td>
+              <td>{expenseRecorder(expense)}</td>
             </tr>
           ))}
         </tbody>
@@ -587,14 +628,14 @@ export default function ExpensesPage() {
                   </span>
                 </span>
                 <span className="min-w-0 text-gray-700 dark:text-gray-200">
-                  <span className="block truncate">{expense.note || "-"}</span>
+                  <span className="block truncate">{expense.note || copy.noNote}</span>
                   {expense.ingredient_transaction_id != null ? (
                     <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-500">{copy.generatedStockIn}</span>
                   ) : null}
                 </span>
                 <span className="font-mono font-semibold tabular-nums text-gray-950 dark:text-white lg:text-right">{formatCurrency(expense.amount, language)}</span>
                 <span className="flex items-center justify-end gap-2 text-[12px] text-gray-500">
-                  <span className="truncate">{expense.created_by ? `${expense.created_by.first_name} ${expense.created_by.last_name}`.trim() : "-"}</span>
+                  <span className="truncate">{expenseRecorder(expense)}</span>
                   {/* Edit moved onto the row itself; delete stays a button and
                       must not also trigger the row's edit dialog. */}
                   {canEdit && expense.ingredient_transaction_id == null && (

@@ -12,10 +12,15 @@ describe("canCloseEmptyTableOrder", () => {
     expect(canCloseEmptyTableOrder({ order_type: "dine_in", table_id: 7, status: "open", items: [] })).toBe(true);
   });
 
-  it("rejects takeaway, non-open, and non-empty orders", () => {
-    expect(canCloseEmptyTableOrder({ order_type: "takeaway", table_id: null, status: "open", items: [] })).toBe(false);
+  it("allows an open takeaway without items (opened by mistake, no table to free)", () => {
+    expect(canCloseEmptyTableOrder({ order_type: "takeaway", table_id: null, status: "open", items: [] })).toBe(true);
+  });
+
+  it("rejects non-open and non-empty orders", () => {
     expect(canCloseEmptyTableOrder({ order_type: "dine_in", table_id: 7, status: "cooking", items: [] })).toBe(false);
     expect(canCloseEmptyTableOrder({ order_type: "dine_in", table_id: 7, status: "open", items: [{ status: "cooking" }] })).toBe(false);
+    expect(canCloseEmptyTableOrder({ order_type: "takeaway", table_id: null, status: "open", items: [{ status: "cooking" }] })).toBe(false);
+    expect(canCloseEmptyTableOrder({ order_type: "takeaway", table_id: null, status: "cooking", items: [] })).toBe(false);
   });
 
   it("allows an open dine-in table whose items were all cancelled", () => {

@@ -10,6 +10,7 @@ import { ChoiceChips, DangerAction, Field, FieldRow, FormBody, FormCard, Note, S
 import { HeadingAction } from '@/src/components/heading-action';
 import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { toFloat, toInt } from '@/src/lib/forms';
 import { can } from '@/src/lib/rbac';
 import { parseGeofenceSettings } from '@/src/lib/restaurant-settings';
@@ -63,7 +64,7 @@ export default function RestaurantSettingsScreen() {
   const [orderRadius, setOrderRadius] = useState('150');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   // `error` is the restaurant failing to load. Save and delete report through a
   // toast (14 ก.ย.) — the form is long, and a bar at the top of it was out of
   // sight of the Save button that raised it.
@@ -108,11 +109,9 @@ export default function RestaurantSettingsScreen() {
           ? String(restaurant.order_radius_meters)
           : '150');
       })
-      .catch((err) => setError(err instanceof Error
-        ? err.message
-        : copy('โหลดข้อมูลร้านไม่สำเร็จ', 'Could not load restaurant information')))
+      .catch((err) => setError({ detail: apiFailureDetail(err, language) }))
       .finally(() => setLoading(false));
-  }, [canManageRestaurant, copy, restaurantId]);
+  }, [canManageRestaurant, language, restaurantId]);
 
   async function save() {
     if (!restaurantId || !canManageRestaurant || saving) return;
@@ -163,9 +162,7 @@ export default function RestaurantSettingsScreen() {
       await refreshMemberships();
       showToast({ title: copy('บันทึกข้อมูลร้านแล้ว', 'Restaurant information saved') });
     } catch (err) {
-      actionFailed(err instanceof Error
-        ? err.message
-        : copy('บันทึกร้านไม่สำเร็จ', 'Could not save restaurant information'));
+      showToast({ tone: 'error', title: copy('บันทึกร้านไม่สำเร็จ', 'Could not save restaurant information'), message: apiFailureDetail(err, language) });
     } finally {
       setSaving(false);
     }
@@ -179,9 +176,7 @@ export default function RestaurantSettingsScreen() {
       await refreshMemberships();
       router.replace('/restaurants');
     } catch (err) {
-      actionFailed(err instanceof Error
-        ? err.message
-        : copy('ลบร้านไม่สำเร็จ', 'Could not delete the restaurant'));
+      showToast({ tone: 'error', title: copy('ลบร้านไม่สำเร็จ', 'Could not delete the restaurant'), message: apiFailureDetail(err, language) });
       setSaving(false);
     }
   }
@@ -318,7 +313,7 @@ export default function RestaurantSettingsScreen() {
       action={tablet ? <HeadingAction compact={false} icon="checkmark" label={copy('บันทึกข้อมูลร้าน', 'Save restaurant')} onPress={save} /> : undefined}
       footer={!tablet && !confirmDelete && !loading ? <SaveDock label={copy('บันทึกข้อมูลร้าน', 'Save restaurant')} onPress={save} loading={saving} /> : undefined}
     >
-      {error ? <Feedback title={copy('โหลดข้อมูลร้านไม่สำเร็จ', 'Could not load restaurant information')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={copy('โหลดข้อมูลร้านไม่สำเร็จ', 'Could not load restaurant information')} detail={error.detail} tone="danger" /> : null}
       {loading ? skeleton : tablet ? (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xl }}>
           <View style={{ width: 240, gap: 4 }}>

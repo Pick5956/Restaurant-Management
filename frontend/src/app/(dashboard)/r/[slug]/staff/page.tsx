@@ -6,6 +6,8 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import { createRole, deleteRole, getRoles, updateRole, updateRolePermissions } from "@/src/lib/auth";
 import { createInvitation, listPendingInvitations, revokeInvitation } from "@/src/lib/invitation";
 import { listAuditLogs, listMembers, updateMemberPermissions, updateMemberRole, updateMemberStatus } from "@/src/lib/restaurant";
+import { apiFailureText } from "@/src/lib/apiFailure";
+import { memberRoleUnavailable } from "@/src/lib/knownApiErrors";
 import type { Invitation, Membership, MembershipStatus, RestaurantAuditLog } from "@/src/types/restaurant";
 import type { Role } from "@/src/types/role";
 import type { Permission } from "@/src/types/auth";
@@ -124,6 +126,7 @@ export default function StaffPage() {
         copyError: "คัดลอกลิงก์ไม่ได้",
         revokeError: "ยกเลิกคำเชิญไม่สำเร็จ",
         memberError: "อัปเดตข้อมูลสมาชิกไม่สำเร็จ",
+        roleUnavailable: "บทบาทเดิมของพนักงานคนนี้ถูกลบแล้ว เชิญเข้าร้านใหม่อีกครั้ง",
         inviteCreated: "สร้างลิงก์เชิญแล้ว",
         inviteCopied: "คัดลอกลิงก์ไปยังคลิปบอร์ดแล้ว",
         inviteRevoked: "ยกเลิกคำเชิญแล้ว",
@@ -225,6 +228,7 @@ export default function StaffPage() {
         copyError: "Could not copy invitation link.",
         revokeError: "Could not revoke invitation.",
         memberError: "Could not update member details.",
+        roleUnavailable: "This member's role has been deleted. Invite them to the restaurant again.",
         inviteCreated: "Invitation link created",
         inviteCopied: "Invitation link copied to clipboard",
         inviteRevoked: "Invitation revoked",
@@ -526,15 +530,21 @@ export default function StaffPage() {
     }
   };
 
-  const withMemberLock = async (memberId: number, action: () => Promise<void>) => {
+  const memberFailureText = (err: unknown) => apiFailureText(err, language, copy.memberError);
+
+  const withMemberLock = async (
+    memberId: number,
+    action: () => Promise<void>,
+    failureText: (err: unknown) => string = memberFailureText,
+  ) => {
     if (memberLocksRef.current.has(memberId)) return;
     memberLocksRef.current.add(memberId);
     setUpdatingMemberIds((current) => [...current, memberId]);
     setError("");
     try {
       await action();
-    } catch {
-      setError(copy.memberError);
+    } catch (err) {
+      setError(failureText(err));
     } finally {
       memberLocksRef.current.delete(memberId);
       setUpdatingMemberIds((current) => current.filter((id) => id !== memberId));
@@ -661,7 +671,11 @@ export default function StaffPage() {
       setMembers((current) => replaceMember(current, res.data.member));
       showToast({ title: copy.memberUpdated });
       await refresh();
-    });
+    }, (err) => (
+      // A removed member whose role was deleted meanwhile rejoins through a
+      // new invitation, which gives them a role the restaurant still has.
+      memberRoleUnavailable(err) ? copy.roleUnavailable : memberFailureText(err)
+    ));
   };
 
   const changeMemberRole = async (memberId: number, nextRoleId: string) => {

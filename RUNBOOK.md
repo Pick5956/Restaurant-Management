@@ -271,6 +271,7 @@ npm --prefix frontend run tunnel:public
 | Expo Go iOS ขึ้นให้ล็อกอิน | ดู 5.3 |
 | `Metro waiting` แต่ log ไม่มี `Bundled` เลย | เครื่องยังไม่ถึง Metro — ลองเปิด `http://<IP>:8081` ใน Safari/Chrome บนมือถือ ถ้าเห็น JSON = เครือข่ายผ่าน ปัญหาอยู่ที่แอป |
 | เว็บ (localhost:3000) refresh ไม่หยุด / console ขึ้น `adapterFn is not a function` + `webpack-hmr ... failed` | `.next` cache ค้างข้ามเวอร์ชัน Next (มักหลัง pull/merge ที่ Next ขยับเวอร์ชัน) → ปิด dev server, ลบ `frontend/.next`, รัน `npm --prefix frontend run dev` ใหม่ แล้ว **hard refresh เบราว์เซอร์** (`Ctrl+Shift+R`) |
+| backend สตาร์ตไม่ขึ้น: `database has N applied schema migrations; application requires M` หรือ `migration <v> name changed from "…" to "…"` | รัน `go run ./cmd/migrate` บนแบรนช์ตัวเอง**ก่อน** merge แล้วตอน merge มี migration ถูกแทรก/เรียงเลขใหม่ → ledger ใน DB (ตาราง `schema_migrations`) เลข/ชื่อไม่ตรงกับโค้ด · **เก็บข้อมูลไว้:** ลบแถวที่ชนออก (`DELETE FROM schema_migrations WHERE version IN (<เลขที่ชน>)` ผ่าน psql/ตัวจัดการ DB) แล้ว `go run ./cmd/migrate` ใหม่ (apply ตามลำดับที่ถูก) · **ล้างเลย:** ปิด backend แล้ว `go run ./cmd/resetdb --mode=full --yes` (ต้องสร้างร้านใหม่) · **กันไว้:** อย่ารัน migrate จนกว่าเลข migration จะนิ่งหลัง merge |
 
 ---
 

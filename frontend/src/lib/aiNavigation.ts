@@ -70,7 +70,8 @@ const navigationEntries: NavigationEntry[] = [
   {
     href: "/orders",
     label: { th: "คลังออเดอร์", en: "Order archive" },
-    permission: ["view_orders", "take_order"],
+    // Paid orders only, which the server answers only under view_orders.
+    permission: "view_orders",
     aliases: ["orders", "order archive", "sales orders", "ออเดอร์", "รายการออเดอร์", "คลังออเดอร์"],
   },
   {

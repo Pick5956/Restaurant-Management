@@ -55,12 +55,19 @@ test('a recorded payment cannot be submitted again while the receipt reloads', (
   assert.equal(billPaymentStage('paid'), 'paid');
 });
 
-test('only an open empty dine-in table order can use the mistake-recovery close action', () => {
+test('only an open empty order can use the mistake-recovery close action: a dine-in on its table, or a takeaway', () => {
   assert.equal(canCloseEmptyOrder({ order_type: 'dine_in', table_id: 7, status: 'open', items: [] }), true);
-  assert.equal(canCloseEmptyOrder({ order_type: 'takeaway', table_id: null, status: 'open', items: [] }), false);
+  assert.equal(canCloseEmptyOrder({ order_type: 'dine_in', table_id: null, status: 'open', items: [] }), false);
   assert.equal(canCloseEmptyOrder({ order_type: 'dine_in', table_id: 7, status: 'sent_to_kitchen', items: [] }), false);
   assert.equal(canCloseEmptyOrder({ order_type: 'dine_in', table_id: 7, status: 'open', items: [{ status: 'pending' }] }), false);
   assert.equal(canCloseEmptyOrder({ order_type: 'dine_in', table_id: 7, status: 'open', items: [{ status: 'cancelled' }] }), true);
+  // A takeaway opened by mistake had no way out on the phone (owner, 2026-09-25);
+  // the server's validateEmptyTableClose has taken it since 2026-09-23.
+  assert.equal(canCloseEmptyOrder({ order_type: 'takeaway', table_id: null, status: 'open', items: [] }), true);
+  assert.equal(canCloseEmptyOrder({ order_type: 'takeaway', table_id: null, status: 'open', items: [{ status: 'cancelled' }] }), true);
+  assert.equal(canCloseEmptyOrder({ order_type: 'takeaway', table_id: null, status: 'open', items: [{ status: 'pending' }] }), false);
+  assert.equal(canCloseEmptyOrder({ order_type: 'takeaway', table_id: null, status: 'cancelled', items: [] }), false);
+  assert.equal(canCloseEmptyOrder(null), false);
 });
 
 test('waiters can cancel only before the order is sent while other take-order roles follow the backend rule', () => {

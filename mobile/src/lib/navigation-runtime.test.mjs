@@ -1,28 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
-  classifyHorizontalSwipe,
-  getAdjacentNavigationTarget,
-  getNavigationIndexByRouteName,
-  getNavigationRouteName,
-  getPagerSceneTranslateXFromPosition,
-  isPagerSwipeCooldownActive,
-  notePagerVerticalScrollActivity,
-  PAGER_VERTICAL_SCROLL_COOLDOWN_MS,
+  goBackOr,
+  leaveForWorkspaceRoute,
   resetRouteStack,
-  resolvePagerAnimationDuration,
-  resolvePagerDockSelectionPlan,
-  resolvePagerGestureStartPlan,
-  resolvePhoneNavigationIndicatorMetrics,
-  resolvePagerAnimationSettlement,
-  resolvePagerRouteSyncAction,
-  resolvePagerSwipeSettlement,
-  resolveTabChangeTick,
-  shouldStartPagerHorizontalSwipe,
-  shouldOpenSettings,
-  TAB_CHANGE_RETURN_WINDOW_MS,
+  rootStackRouteNames,
+  stackRouteName,
+  workspaceExitSteps,
 } from './navigation-runtime.ts';
 
 test('root-level resets replace without dispatching an unhandled pop-to-top action', () => {
@@ -49,10 +37,10 @@ test('restaurant switching dismisses the prior stack before entering the new wor
       dismissAll: () => actions.push('dismiss-all'),
       replace: (href) => actions.push(`replace:${href}`),
     },
-    '/kitchen',
+    '/more',
   );
 
-  assert.deepEqual(actions, ['dismiss-all', 'replace:/kitchen']);
+  assert.deepEqual(actions, ['dismiss-all', 'replace:/more']);
 });
 
 test('auth and restaurant invalidation targets use the same non-backtrackable reset', () => {
@@ -72,726 +60,209 @@ test('auth and restaurant invalidation targets use the same non-backtrackable re
   }
 });
 
-test('account navigation is a no-op on settings and all settings subroutes', () => {
-  assert.equal(shouldOpenSettings('/settings'), false);
-  assert.equal(shouldOpenSettings('/settings/account'), false);
-  assert.equal(shouldOpenSettings('/settings/restaurant'), false);
+// ------------------------------------------------------------ workspace exits
+
+/**
+ * The app Stack as expo-router 57 moves it (build/react-navigation StackRouter
+ * and router.js): dismissAll pops to the bottom route, dismissTo pops to the
+ * nearest route of that name or, when there is none, swaps ONLY the top route
+ * for it, replace swaps the top route, push appends, back pops one and is
+ * unhandled on a single route. Each route carries a key so a test can tell a
+ * screen kept from one mounted again.
+ */
+function stack(names) {
+  let next = 0;
+  const route = (name) => ({ name, key: `${name}-${next++}` });
+  const routes = names.map(route);
+  const unhandled = [];
+  const router = {
+    routes,
+    unhandled,
+    names: () => routes.map((item) => item.name),
+    dismissAll: () => { routes.splice(1); },
+    dismissTo: (href) => {
+      const name = stackRouteName(href);
+      const at = routes.map((item) => item.name).lastIndexOf(name);
+      if (at >= 0) routes.splice(at + 1);
+      else routes.splice(routes.length - 1, 1, route(name));
+    },
+    replace: (href) => { routes.splice(routes.length - 1, 1, route(stackRouteName(href))); },
+    push: (href) => { routes.push(route(stackRouteName(href))); },
+    canGoBack: () => routes.length > 1,
+    back: () => {
+      if (routes.length > 1) routes.pop();
+      else unhandled.push('GO_BACK');
+    },
+  };
+  return router;
+}
+
+const leave = (names, href) => {
+  const router = stack(names);
+  leaveForWorkspaceRoute(router, router.names(), href);
+  return router;
+};
+
+// The owner, 2026-09-25: a table's bill paid, and the floor it landed on had a
+// back button that did nothing. The old exit cleared the stack to one screen.
+test('a paid bill lands on the floor with the hub beneath it, and back goes to the hub', () => {
+  const router = stack(['more', 'tables', 'order/[id]', 'order/bill']);
+  const floor = router.routes[1].key;
+  leaveForWorkspaceRoute(router, router.names(), '/tables');
+  assert.deepEqual(router.names(), ['more', 'tables']);
+  // The floor the waiter came from, not a new one: its scroll and zone stay.
+  assert.equal(router.routes[1].key, floor);
+  router.back();
+  assert.deepEqual(router.names(), ['more']);
+  assert.deepEqual(router.unhandled, []);
 });
 
-test('account navigation remains available outside the settings route family', () => {
-  assert.equal(shouldOpenSettings('/home'), true);
-  assert.equal(shouldOpenSettings('/more'), true);
-  assert.equal(shouldOpenSettings('/settings-legacy'), true);
+test('the old exit is what stranded it: one screen, and back unhandled', () => {
+  const router = stack(['more', 'tables', 'order/[id]', 'order/bill']);
+  resetRouteStack({ ...router, canDismiss: () => router.routes.length > 1 }, '/tables');
+  assert.deepEqual(router.names(), ['tables']);
+  router.back();
+  assert.deepEqual(router.unhandled, ['GO_BACK']);
 });
 
-test('horizontal swipes map left to the next tab and right to the previous tab', () => {
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: -72, deltaY: 12, velocityX: -320 }),
-    1,
-  );
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: 72, deltaY: -12, velocityX: 320 }),
-    -1,
-  );
-});
-
-test('a short swipe is accepted when its horizontal release velocity is high enough', () => {
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: -18, deltaY: 4, velocityX: -900 }),
-    1,
-  );
-});
-
-test('slow short movement is not classified as a tab swipe', () => {
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: 24, deltaY: 3, velocityX: 180 }),
-    null,
-  );
-});
-
-test('vertical scrolling blocks an otherwise valid horizontal pager gesture', () => {
-  const blockedUntil = notePagerVerticalScrollActivity(0, 1_000);
-
-  assert.equal(
-    blockedUntil,
-    1_000 + PAGER_VERTICAL_SCROLL_COOLDOWN_MS,
-  );
-  assert.equal(isPagerSwipeCooldownActive(blockedUntil, 1_001), true);
-  assert.equal(
-    shouldStartPagerHorizontalSwipe(
-      { deltaX: -5, deltaY: 1 },
-      isPagerSwipeCooldownActive(blockedUntil, 1_001),
-    ),
-    false,
-  );
-});
-
-test('post-scroll horizontal pager lock lasts exactly 30 milliseconds', () => {
-  const blockedUntil = notePagerVerticalScrollActivity(0, 5_000);
-
-  assert.equal(PAGER_VERTICAL_SCROLL_COOLDOWN_MS, 30);
-  assert.equal(isPagerSwipeCooldownActive(blockedUntil, 5_029), true);
-  assert.equal(isPagerSwipeCooldownActive(blockedUntil, 5_030), false);
-});
-
-test('horizontal pager gestures resume at the exact end of the scroll cooldown', () => {
-  const blockedUntil = notePagerVerticalScrollActivity(0, 2_000);
-
-  assert.equal(
-    isPagerSwipeCooldownActive(blockedUntil, blockedUntil - 1),
-    true,
-  );
-  assert.equal(isPagerSwipeCooldownActive(blockedUntil, blockedUntil), false);
-  assert.equal(
-    shouldStartPagerHorizontalSwipe(
-      { deltaX: -5, deltaY: 1 },
-      isPagerSwipeCooldownActive(blockedUntil, blockedUntil),
-    ),
-    true,
-  );
-});
-
-test('pager responder admission keeps its minimum distance and direction dominance', () => {
-  assert.equal(
-    shouldStartPagerHorizontalSwipe({ deltaX: 4, deltaY: 0 }, false),
-    false,
-  );
-  assert.equal(
-    shouldStartPagerHorizontalSwipe({ deltaX: 5, deltaY: 5 }, false),
-    false,
-  );
-  assert.equal(
-    shouldStartPagerHorizontalSwipe({ deltaX: 5, deltaY: 1 }, false),
-    true,
-  );
-});
-
-test('continued vertical momentum extends the pager cooldown from its latest activity', () => {
-  const firstDeadline = notePagerVerticalScrollActivity(0, 3_000);
-  const momentumDeadline = notePagerVerticalScrollActivity(firstDeadline, 3_180);
-  const staleDeadline = notePagerVerticalScrollActivity(momentumDeadline, 3_100);
-
-  assert.equal(
-    momentumDeadline,
-    3_180 + PAGER_VERTICAL_SCROLL_COOLDOWN_MS,
-  );
-  assert.equal(staleDeadline, momentumDeadline);
-  assert.equal(isPagerSwipeCooldownActive(momentumDeadline, firstDeadline), true);
-});
-
-test('phone navigation indicator stays inside every dock slot on narrow screens', () => {
-  const dockWidth = 288;
-
-  for (const itemCount of [1, 2, 3, 5]) {
-    const metrics = resolvePhoneNavigationIndicatorMetrics(dockWidth, itemCount, 4);
-
-    assert.ok(metrics);
-    assert.equal(metrics.slotWidth, dockWidth / itemCount);
-    assert.equal(metrics.indicatorInset, 4);
-    assert.equal(metrics.indicatorWidth, metrics.slotWidth - 8);
-
-    for (const position of [0, (itemCount - 1) / 2, itemCount - 1]) {
-      const left = metrics.indicatorInset + position * metrics.slotWidth;
-      const right = left + metrics.indicatorWidth;
-
-      assert.ok(left >= 0);
-      assert.ok(right <= dockWidth);
-    }
+test('every way into a bill leaves it for [hub, target] with no order screen left', () => {
+  const cases = [
+    [['more', 'tables', 'order/[id]', 'order/bill'], '/tables'],
+    [['more', 'tables', 'reservations', 'order/[id]', 'order/bill'], '/tables'],
+    [['more', 'home', 'order/[id]', 'order/bill'], '/tables'],
+    [['more', 'reports', 'order/[id]', 'order/bill'], '/tables'],
+    [['more', 'orders', 'order/bill'], '/tables'],
+    [['more', 'orders', 'order/bill'], '/orders'],
+    [['more', 'home', 'order/[id]', 'order/bill'], '/orders'],
+    [['more', 'home', 'order/[id]', 'order/bill'], '/home'],
+    // A session stranded by the old exit, mended on the next payment.
+    [['tables', 'order/[id]', 'order/bill'], '/tables'],
+    [['orders', 'order/bill'], '/orders'],
+  ];
+  for (const [names, href] of cases) {
+    const router = leave(names, href);
+    const label = `${names.join(' > ')} to ${href}`;
+    assert.deepEqual(router.names(), ['more', stackRouteName(href)], label);
+    router.back();
+    assert.deepEqual(router.names(), ['more'], label);
+    assert.deepEqual(router.unhandled, [], label);
   }
 });
 
-test('phone navigation indicator rejects unusable dock geometry', () => {
-  assert.equal(resolvePhoneNavigationIndicatorMetrics(0, 5, 4), null);
-  assert.equal(resolvePhoneNavigationIndicatorMetrics(Number.NaN, 5, 4), null);
-  assert.equal(resolvePhoneNavigationIndicatorMetrics(288, 0, 4), null);
-  assert.equal(resolvePhoneNavigationIndicatorMetrics(288, 2.5, 4), null);
-  assert.equal(resolvePhoneNavigationIndicatorMetrics(288, 5, -1), null);
+test('a tablet rail tap switches screens on the hub instead of piling them up or dropping the hub', () => {
+  // From the hub: pushed, the hub kept (a replace had dropped it).
+  assert.deepEqual(leave(['more'], '/menu').names(), ['more', 'menu']);
+  // From one screen to another: still two deep, however many taps.
+  let router = stack(['more']);
+  for (const href of ['/kitchen', '/tables', '/kitchen', '/orders', '/tables']) {
+    leaveForWorkspaceRoute(router, router.names(), href);
+    assert.deepEqual(router.names(), ['more', stackRouteName(href)], href);
+  }
+  // Inside an order, the floor's item pops back to the floor already open.
+  router = stack(['more', 'tables', 'order/[id]']);
+  const floor = router.routes[1].key;
+  leaveForWorkspaceRoute(router, router.names(), '/tables');
+  assert.deepEqual(router.names(), ['more', 'tables']);
+  assert.equal(router.routes[1].key, floor);
+  // The screen already on top: nothing moves.
+  router = stack(['more', 'kitchen']);
+  const kitchen = router.routes[1].key;
+  leaveForWorkspaceRoute(router, router.names(), '/kitchen');
+  assert.equal(router.routes[1].key, kitchen);
+  // The hub's own item goes down to it.
+  assert.deepEqual(leave(['more', 'tables', 'order/[id]'], '/more').names(), ['more']);
+  assert.deepEqual(leave(['tables'], '/more').names(), ['more']);
 });
 
-test('a released short drag settles exactly on the committed page', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-  const settlement = resolvePagerSwipeSettlement(
-    items,
-    1,
-    { deltaX: -17, deltaY: 2, velocityX: -120 },
-    390,
-  );
-
-  assert.deepEqual(settlement, { targetIndex: 1, shouldNavigate: false });
-  const interruptedReturn = resolvePagerAnimationSettlement({
-    committedIndex: 1,
-    finished: false,
-    ownsTransition: true,
-    targetIndex: settlement.targetIndex,
-  });
-  assert.deepEqual(interruptedReturn, { completed: false, position: 1 });
-  assert.equal(
-    getPagerSceneTranslateXFromPosition(1, interruptedReturn.position, 390),
-    0,
-  );
+test('the steps are planned from the stack, and a pop never leaves the hub out', () => {
+  assert.deepEqual(workspaceExitSteps(['more', 'tables', 'order/[id]', 'order/bill'], '/tables'), ['pop-to']);
+  assert.deepEqual(workspaceExitSteps(['more', 'home', 'order/[id]', 'order/bill'], '/tables'), ['dismiss-all', 'push']);
+  assert.deepEqual(workspaceExitSteps(['more'], '/tables'), ['push']);
+  assert.deepEqual(workspaceExitSteps(['tables', 'order/[id]', 'order/bill'], '/tables'), ['dismiss-all', 'replace-with-hub', 'push']);
+  assert.deepEqual(workspaceExitSteps(['more', 'tables'], '/tables'), []);
+  assert.deepEqual(workspaceExitSteps(['more'], '/more'), []);
+  // dismissTo on its own is wrong whenever the target is missing: it swaps the
+  // top only, so the order screen stays under the floor.
+  const bare = stack(['more', 'home', 'order/[id]', 'order/bill']);
+  bare.dismissTo('/tables');
+  assert.deepEqual(bare.names(), ['more', 'home', 'order/[id]', 'tables']);
 });
 
-test('post-release tab switching uses 500 milliseconds without slowing rollback', () => {
-  assert.equal(
-    resolvePagerAnimationDuration({
-      navigateAfterAnimation: true,
-      settleAfterGesture: true,
-      travel: 0.65,
-    }),
-    500,
-  );
-  assert.equal(
-    resolvePagerAnimationDuration({
-      navigateAfterAnimation: false,
-      settleAfterGesture: true,
-      travel: 0.35,
-    }),
-    180,
-  );
+test('route names and the root state read the way expo-router names them', () => {
+  assert.equal(stackRouteName('/tables'), 'tables');
+  assert.equal(stackRouteName('/more'), 'more');
+  assert.equal(stackRouteName('/orders?status=paid'), 'orders');
+  const state = { routes: [{ name: '__root', state: { routes: [{ name: 'more' }, { name: 'tables' }, { name: 'order/[id]' }] } }] };
+  assert.deepEqual(rootStackRouteNames(state), ['more', 'tables', 'order/[id]']);
+  assert.deepEqual(rootStackRouteNames({ routes: [{ name: 'more' }, { name: 'kitchen' }] }), ['more', 'kitchen']);
+  assert.deepEqual(rootStackRouteNames(undefined), []);
 });
 
-test('dock selections jump directly and can supersede an in-flight swipe', () => {
-  assert.deepEqual(
-    resolvePagerDockSelectionPlan({
-      committedIndex: 1,
-      itemCount: 5,
-      pendingRouteIndex: null,
-      targetIndex: 3,
-      transitionActive: false,
-    }),
-    {
-      animation: 'none',
-      interruptsTransition: false,
-      position: 3,
-      shouldNavigate: true,
-    },
-  );
-  assert.deepEqual(
-    resolvePagerDockSelectionPlan({
-      committedIndex: 1,
-      itemCount: 5,
-      pendingRouteIndex: 2,
-      targetIndex: 4,
-      transitionActive: true,
-    }),
-    {
-      animation: 'none',
-      interruptsTransition: true,
-      position: 4,
-      shouldNavigate: true,
-    },
-  );
-  assert.deepEqual(
-    resolvePagerDockSelectionPlan({
-      committedIndex: 2,
-      itemCount: 5,
-      pendingRouteIndex: null,
-      targetIndex: 2,
-      transitionActive: true,
-    }),
-    {
-      animation: 'none',
-      interruptsTransition: true,
-      position: 2,
-      shouldNavigate: false,
-    },
-  );
-  assert.deepEqual(
-    resolvePagerDockSelectionPlan({
-      committedIndex: 0,
-      itemCount: 5,
-      pendingRouteIndex: 1,
-      targetIndex: 0,
-      transitionActive: true,
-    }),
-    {
-      animation: 'none',
-      interruptsTransition: true,
-      position: 0,
-      shouldNavigate: true,
-    },
-    'the committed tab must still dispatch when it cancels a pending swipe route',
-  );
+test('a back button with nothing beneath goes to its fallback instead of doing nothing', () => {
+  const stranded = stack(['tables']);
+  goBackOr(stranded, '/more');
+  assert.deepEqual(stranded.names(), ['more']);
+  assert.deepEqual(stranded.unhandled, []);
+  const normal = stack(['more', 'tables']);
+  goBackOr(normal, '/more');
+  assert.deepEqual(normal.names(), ['more']);
 });
 
-test('a consecutive swipe starts from the pending target without waiting for settle', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-  const firstSwipe = resolvePagerSwipeSettlement(
-    items,
-    0,
-    { deltaX: -8, deltaY: 1, velocityX: -350 },
-    390,
-  );
-  assert.deepEqual(firstSwipe, { targetIndex: 1, shouldNavigate: true });
+// ------------------------------------------------------------- call sites
 
-  const nextGesture = resolvePagerGestureStartPlan({
-    committedIndex: 0,
-    itemCount: items.length,
-    pendingRouteIndex: firstSwipe.targetIndex,
-  });
-  assert.deepEqual(nextGesture, {
-    routeIndexToReaffirm: 1,
-    startIndex: 1,
-  });
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      nextGesture.startIndex,
-      { deltaX: -8, deltaY: 1, velocityX: -350 },
-      390,
-    ),
-    { targetIndex: 2, shouldNavigate: true },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      nextGesture.startIndex,
-      { deltaX: -3, deltaY: 1, velocityX: -200 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-    'canceling the second gesture must retain the reaffirmed pending tab',
-  );
+const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const read = async (relative) => (await readFile(path.join(mobileRoot, relative), 'utf8')).replace(/\r\n/g, '\n');
+
+async function sourceFiles(dir) {
+  const entries = await readdir(path.join(mobileRoot, dir), { withFileTypes: true });
+  const files = await Promise.all(entries.map(async (entry) => {
+    const relative = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return sourceFiles(relative);
+    return /\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name) ? [relative] : [];
+  }));
+  return files.flat();
+}
+
+test('the bill leaves through the workspace exit, read from its own stack', async () => {
+  const bill = await read('app/order/bill.tsx');
+  assert.match(bill, /const leaveBill = \(\) => leaveForWorkspaceRoute\(\s*router,\s*navigation\.getState\(\)\?\.routes\.map\(\(route\) => route\.name\) \?\? \[\],\s*billExitRoute\(canTakeOrder, canViewOrders\),\s*\);/);
+  assert.equal((bill.match(/leaveBill\(\)/g) || []).length, 1, 'payment success leaves through leaveBill');
+  assert.match(bill, /onPress=\{leaveBill\} \/>/);
+  assert.doesNotMatch(bill, /resetRouteStack/);
 });
 
-test('route acknowledgement preserves a running settle and ignores stale route updates', () => {
-  assert.equal(
-    resolvePagerRouteSyncAction({
-      activeIndex: 1,
-      pendingRouteIndex: 4,
-      permittedItemsChanged: false,
-    }),
-    'ignore-stale',
-  );
-  assert.equal(
-    resolvePagerRouteSyncAction({
-      activeIndex: 4,
-      pendingRouteIndex: 4,
-      permittedItemsChanged: false,
-    }),
-    'acknowledge',
-  );
-  assert.equal(
-    resolvePagerRouteSyncAction({
-      activeIndex: 2,
-      pendingRouteIndex: null,
-      permittedItemsChanged: false,
-    }),
-    'reconcile',
-  );
-  assert.equal(
-    resolvePagerRouteSyncAction({
-      activeIndex: 2,
-      pendingRouteIndex: 2,
-      permittedItemsChanged: true,
-    }),
-    'reconcile',
-  );
+// resetRouteStack leaves one screen, so it is only for a screen that is a root
+// with no back button. Any other target strands whoever lands there.
+test('resetRouteStack only ever targets a root screen', async () => {
+  const roots = new Set(["'/login'", "'/restaurants'", 'WORKSPACE_HUB_ROUTE', "'/more'"]);
+  const files = [...await sourceFiles('app'), ...await sourceFiles('src')].filter((file) => !file.endsWith('navigation-runtime.ts'));
+  let calls = 0;
+  for (const file of files) {
+    const source = await read(file);
+    for (const [, target] of source.matchAll(/resetRouteStack\(router, ([^;]+)\);/g)) {
+      calls += 1;
+      const root = roots.has(target) || /^getDefaultWorkspaceRoute\(/.test(target);
+      assert.ok(root, `${file} resets the stack onto ${target}, which has a back button`);
+    }
+  }
+  assert.ok(calls >= 6, `only ${calls} resets were found; the pattern no longer matches the call sites`);
 });
 
-test('a pager swipe commits at half the viewport without needing release velocity', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -194, deltaY: 3, velocityX: -299 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: 194, deltaY: 3, velocityX: 299 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -195, deltaY: 3, velocityX: -1 },
-      390,
-    ),
-    { targetIndex: 2, shouldNavigate: true },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: 195, deltaY: 3, velocityX: 1 },
-      390,
-    ),
-    { targetIndex: 0, shouldNavigate: true },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -195, deltaY: 3, velocityX: Number.POSITIVE_INFINITY },
-      390,
-    ),
-    { targetIndex: 2, shouldNavigate: true },
-  );
+test('every back button checks there is somewhere to go', async () => {
+  const shell = await read('src/components/app-shell.tsx');
+  assert.match(shell, /<GlassButton icon="chevron-back" label=\{copy\('ย้อนกลับ', 'Go back'\)\} onPress=\{\(\) => goBackOr\(router, WORKSPACE_HUB_ROUTE\)\} \/>/);
+  const compact = await read('src/components/compact-header.tsx');
+  assert.match(compact, /onPress=\{\(\) => goBackOr\(router, WORKSPACE_HUB_ROUTE\)\} size=\{COMPACT_BUTTON\}/);
+  const auth = await read('src/components/auth-screen.tsx');
+  assert.match(auth, /onPress=\{\(\) => goBackOr\(router, '\/'\)\}/);
+  for (const [file, source] of [['app-shell', shell], ['compact-header', compact], ['auth-screen', auth]]) {
+    assert.doesNotMatch(source, /chevron-back[^\n]*router\.back\(\)/, file);
+  }
 });
 
-test('a deliberate fast flick commits before half the viewport in either direction', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -5, deltaY: 1, velocityX: -300 },
-      390,
-    ),
-    { targetIndex: 2, shouldNavigate: true },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: 5, deltaY: 1, velocityX: 300 },
-      390,
-    ),
-    { targetIndex: 0, shouldNavigate: true },
-  );
-});
-
-test('a short pager movement must meet both flick speed and minimum distance', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -5, deltaY: 1, velocityX: -299 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -4, deltaY: 1, velocityX: -4_000 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-});
-
-test('a fast flick cannot commit when its release velocity reverses direction', () => {
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      [{ href: '/home' }, { href: '/tables' }, { href: '/kitchen' }],
-      1,
-      { deltaX: -5, deltaY: 1, velocityX: 4_000 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-});
-
-test('a pager swipe still needs to be predominantly horizontal at half the viewport', () => {
-  const items = [
-    { href: '/home' },
-    { href: '/tables' },
-    { href: '/kitchen' },
-  ];
-
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -205, deltaY: 205, velocityX: -4_000 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -5, deltaY: 5, velocityX: -4_000 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-});
-
-test('an invalid pager viewport cannot commit navigation', () => {
-  assert.equal(
-    resolvePagerSwipeSettlement(
-      [{ href: '/home' }, { href: '/tables' }],
-      0,
-      { deltaX: -250, deltaY: 0 },
-      0,
-    ),
-    null,
-  );
-});
-
-test('a swipe beyond either pager edge settles on the current page', () => {
-  const items = [{ href: '/home' }, { href: '/tables' }];
-
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      0,
-      { deltaX: 210, deltaY: 4, velocityX: 320 },
-      390,
-    ),
-    { targetIndex: 0, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -210, deltaY: 4, velocityX: -320 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      0,
-      { deltaX: 5, deltaY: 1, velocityX: 300 },
-      390,
-    ),
-    { targetIndex: 0, shouldNavigate: false },
-  );
-  assert.deepEqual(
-    resolvePagerSwipeSettlement(
-      items,
-      1,
-      { deltaX: -5, deltaY: 1, velocityX: -300 },
-      390,
-    ),
-    { targetIndex: 1, shouldNavigate: false },
-  );
-});
-
-test('an interrupted current pager animation rolls back to the committed page', () => {
-  assert.deepEqual(
-    resolvePagerAnimationSettlement({
-      committedIndex: 1,
-      finished: false,
-      ownsTransition: true,
-      targetIndex: 2,
-    }),
-    { completed: false, position: 1 },
-  );
-});
-
-test('a stale interrupted pager animation leaves the newer transition alone', () => {
-  assert.equal(
-    resolvePagerAnimationSettlement({
-      committedIndex: 1,
-      finished: false,
-      ownsTransition: false,
-      targetIndex: 2,
-    }),
-    null,
-  );
-});
-
-test('a completed pager animation settles exactly on its target page', () => {
-  assert.deepEqual(
-    resolvePagerAnimationSettlement({
-      committedIndex: 1,
-      finished: true,
-      ownsTransition: true,
-      targetIndex: 2,
-    }),
-    { completed: true, position: 2 },
-  );
-});
-
-test('mostly vertical movement is rejected even with enough distance or velocity', () => {
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: -72, deltaY: 68, velocityX: -900 }),
-    null,
-  );
-  assert.equal(
-    classifyHorizontalSwipe({ deltaX: 12, deltaY: 80, velocityX: 900 }),
-    null,
-  );
-});
-
-test('adjacent navigation targets follow the passed permission-filtered item order', () => {
-  const permittedItems = [
-    { key: 'home', href: '/home' },
-    { key: 'kitchen', href: '/kitchen' },
-    { key: 'more', href: '/more' },
-  ];
-
-  assert.deepEqual(getAdjacentNavigationTarget(permittedItems, 1, -1), {
-    index: 0,
-    href: '/home',
-  });
-  assert.deepEqual(getAdjacentNavigationTarget(permittedItems, 1, 1), {
-    index: 2,
-    href: '/more',
-  });
-});
-
-test('adjacent navigation targets stop at both boundaries without wrapping', () => {
-  const items = [{ href: '/home' }, { href: '/orders' }];
-
-  assert.equal(getAdjacentNavigationTarget(items, 0, -1), null);
-  assert.equal(getAdjacentNavigationTarget(items, items.length - 1, 1), null);
-  assert.equal(getAdjacentNavigationTarget([], 0, 1), null);
-  assert.equal(getAdjacentNavigationTarget(items, -1, 1), null);
-});
-
-test('the tab navigator route name is the canonical navigation index', () => {
-  const permittedItems = [
-    { key: 'home', href: '/home' },
-    { key: 'pos', href: '/tables' },
-    { key: 'kitchen', href: '/kitchen' },
-  ];
-
-  assert.equal(getNavigationIndexByRouteName(permittedItems, 'home'), 0);
-  assert.equal(getNavigationIndexByRouteName(permittedItems, 'tables'), 1);
-  assert.equal(getNavigationIndexByRouteName(permittedItems, 'pos'), 1);
-  assert.equal(getNavigationIndexByRouteName(permittedItems, 'kitchen'), 2);
-  assert.equal(getNavigationIndexByRouteName(permittedItems, 'orders'), -1);
-  assert.equal(getNavigationIndexByRouteName(permittedItems, null), -1);
-});
-
-// The tab bar dispatches JUMP_TO by route name. It used to send item.key, which
-// is only the same string by coincidence: "pos" is served by tables.tsx, so the
-// navigator was asked for a route it does not have and answered "The action
-// 'JUMP_TO' with payload {"name":"pos"} was not handled by any navigator" while
-// the tab stayed put.
-test('the JUMP_TO route name is the file behind the tab, not the tab key', () => {
-  assert.equal(getNavigationRouteName({ key: 'home', href: '/home' }), 'home');
-  assert.equal(getNavigationRouteName({ key: 'pos', href: '/tables' }), 'tables');
-  assert.equal(getNavigationRouteName({ key: 'more', href: '/more/' }), 'more');
-});
-
-// The real guard: whatever name the tab bar dispatches has to resolve back to
-// the same tab. This fails for any future item whose key and href disagree, not
-// just the one that broke.
-test('every tab dispatches a name that resolves back to itself', () => {
-  const permittedItems = [
-    { key: 'home', href: '/home' },
-    { key: 'pos', href: '/tables' },
-    { key: 'kitchen', href: '/kitchen' },
-    { key: 'orders', href: '/orders' },
-    { key: 'more', href: '/more' },
-  ];
-
-  permittedItems.forEach((item, index) => {
-    const dispatched = getNavigationRouteName(item);
-    assert.equal(
-      getNavigationIndexByRouteName(permittedItems, dispatched),
-      index,
-      `tab ${item.key} dispatches ${dispatched}, which does not resolve back to it`,
-    );
-  });
-});
-
-test('absolute pager position keeps the target scene fixed across route synchronization', () => {
-  assert.equal(getPagerSceneTranslateXFromPosition(1, 1, 360), 0);
-  assert.equal(getPagerSceneTranslateXFromPosition(2, 1, 360), 360);
-  assert.equal(getPagerSceneTranslateXFromPosition(2, 1.5, 360), 180);
-  assert.equal(getPagerSceneTranslateXFromPosition(1, 1.5, 360), -180);
-  assert.equal(getPagerSceneTranslateXFromPosition(2, 2, 360), 0);
-});
-
-test('absolute pager position safely rejects invalid geometry', () => {
-  assert.equal(getPagerSceneTranslateXFromPosition(1, Number.NaN, 360), 0);
-  assert.equal(getPagerSceneTranslateXFromPosition(1, 1, 0), 0);
-  assert.equal(getPagerSceneTranslateXFromPosition(1, 1, -360), 0);
-  assert.equal(
-    getPagerSceneTranslateXFromPosition(Number.POSITIVE_INFINITY, 1, 360),
-    0,
-  );
-});
-
-// The unit tests above prove the helper is right; this one proves the tab bar
-// actually calls it. The bug was not in a function - it was one call site
-// passing target.key where a route name belongs, which every pure-logic test in
-// this file would happily stay green through.
-test('the tab bar dispatches JUMP_TO through getNavigationRouteName', async () => {
-  const layout = await readFile(
-    new URL('../../app/(primary)/_layout.tsx', import.meta.url),
-    'utf8',
-  );
-
-  const dispatch = layout.slice(layout.indexOf("type: 'JUMP_TO'"));
-  const payload = dispatch.slice(0, dispatch.indexOf('}'));
-
-  assert.match(
-    payload,
-    /name: getNavigationRouteName\(/,
-    'JUMP_TO must carry the route name from getNavigationRouteName',
-  );
-  assert.doesNotMatch(
-    payload,
-    /name: \w+\.key/,
-    'dispatching an item key asks for a route the navigator does not have',
-  );
-});
-
-test('the tab-change tick is held back only for a quick return to the tab just left', () => {
-  const quick = TAB_CHANGE_RETURN_WINDOW_MS - 1;
-  const slow = TAB_CHANGE_RETURN_WINDOW_MS + 1;
-
-  // 2 -> 3 ticks; 3 -> 2 quickly is the undo and is silent.
-  let step = resolveTabChangeTick(null, { from: 2, to: 3, now: 1000 });
-  assert.equal(step.tick, true);
-  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 1000 + quick });
-  assert.equal(step.tick, false);
-  // ...and after the silent return, going back out to 3 quickly is a new change.
-  step = resolveTabChangeTick(step.memory, { from: 2, to: 3, now: 1000 + quick + quick });
-  assert.equal(step.tick, true);
-
-  // 2 -> 3, then quickly on to 1 from 2? No: 3 -> 2 (silent), 2 -> 1 quickly ticks.
-  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 5000 });
-  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 5000 + quick });
-  assert.equal(step.tick, false);
-  step = resolveTabChangeTick(step.memory, { from: 2, to: 1, now: 5000 + quick + quick });
-  assert.equal(step.tick, true);
-
-  // A return that is not quick is an ordinary change.
-  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 9000 });
-  step = resolveTabChangeTick(step.memory, { from: 3, to: 2, now: 9000 + slow });
-  assert.equal(step.tick, true);
-
-  // Going on to a third tab quickly is not a return.
-  step = resolveTabChangeTick(null, { from: 2, to: 3, now: 12000 });
-  step = resolveTabChangeTick(step.memory, { from: 3, to: 4, now: 12000 + quick });
-  assert.equal(step.tick, true);
-
-  // Staying put never ticks and leaves the memory alone.
-  const memory = { leftIndex: 2, at: 15000 };
-  assert.deepEqual(resolveTabChangeTick(memory, { from: 3, to: 3, now: 15001 }), { tick: false, memory });
+test('the tablet rail switches through the workspace exit', async () => {
+  const shell = await read('src/components/app-shell.tsx');
+  assert.match(shell, /onPress=\{\(\) => leaveForWorkspaceRoute\(\s*router,\s*rootStackRouteNames\(navigationRef\.getRootState\(\)\),\s*item\.href as never,\s*\)\}/);
+  assert.doesNotMatch(shell, /router\.replace\(item\.href/);
+  assert.doesNotMatch(shell, /router\.navigate\(item\.href/);
 });

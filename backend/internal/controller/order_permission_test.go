@@ -170,3 +170,70 @@ func TestKitchenUpdatePermissionStillAllowsEveryStatusTransition(t *testing.T) {
 		}
 	}
 }
+
+func TestCancelOrderAfterKitchenSendNeedsStatusPermissionNotARoleName(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sent := []string{
+		entity.OrderStatusSentToKitchen,
+		entity.OrderStatusCooking,
+		entity.OrderStatusReady,
+		entity.OrderStatusServed,
+	}
+	// The seeded cashier and a custom role both reach CancelOrder through
+	// take_order without being named "waiter"; neither may void a sent order.
+	for _, roleName := range []string{"cashier", "custom_1_floor"} {
+		for _, status := range sent {
+			context, recorder := orderPermissionContext("take_order", "take_payment", "view_orders")
+			member, _ := contextMember(context)
+			member.Role.Name = roleName
+			if requireOrderCancelAccess(context, &entity.Order{Status: status}) {
+				t.Fatalf("%s without update_order_status cancelled a %s order", roleName, status)
+			}
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("%s cancelling %s: status = %d, want %d", roleName, status, recorder.Code, http.StatusForbidden)
+			}
+		}
+		context, recorder := orderPermissionContext("take_order")
+		member, _ := contextMember(context)
+		member.Role.Name = roleName
+		if !requireOrderCancelAccess(context, &entity.Order{Status: entity.OrderStatusOpen}) {
+			t.Fatalf("%s could not cancel an open order; status=%d", roleName, recorder.Code)
+		}
+
+		// A served or ready order goes back to "open" once a pending line is
+		// added. The lines decide: the eaten food must not be written off.
+		for _, reached := range []string{entity.OrderItemStatusServed, entity.OrderItemStatusReady, entity.OrderItemStatusCooking} {
+			context, recorder := orderPermissionContext("take_order", "take_payment", "view_orders")
+			member, _ := contextMember(context)
+			member.Role.Name = roleName
+			reopened := &entity.Order{Status: entity.OrderStatusOpen, Items: []entity.OrderItem{
+				{Status: reached}, {Status: entity.OrderItemStatusPending},
+			}}
+			if requireOrderCancelAccess(context, reopened) || recorder.Code != http.StatusForbidden {
+				t.Fatalf("%s cancelled an open order holding a %s line; status=%d", roleName, reached, recorder.Code)
+			}
+		}
+	}
+
+	for _, status := range append(sent, entity.OrderStatusOpen) {
+		context, recorder := orderPermissionContext("take_order", "update_order_status")
+		if !requireOrderCancelAccess(context, &entity.Order{Status: status}) {
+			t.Fatalf("update_order_status should allow cancelling a %s order; status=%d", status, recorder.Code)
+		}
+	}
+}
+
+func TestCancelOrderAccessHonoursManagerFallbackButNotWaiterFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for roleName, want := range map[string]bool{"owner": true, "manager": true, "waiter": false} {
+		context, _ := orderPermissionContext()
+		member, _ := contextMember(context)
+		member.Role.Name = roleName
+		member.Role.Permissions = ""
+		if got := requireOrderCancelAccess(context, &entity.Order{Status: entity.OrderStatusServed}); got != want {
+			t.Fatalf("legacy %s cancelling a served order = %v, want %v", roleName, got, want)
+		}
+	}
+}

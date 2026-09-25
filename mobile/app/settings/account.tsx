@@ -8,6 +8,7 @@ import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { Field, FieldRow, FORM_MAX_WIDTH, FormBody, FormCard, SaveDock } from '@/src/components/form/parts';
 import { Button } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { memberInitials, userDisplayName } from '@/src/lib/staff-workflow';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -31,7 +32,7 @@ export default function AccountSettingsScreen() {
   // Nothing on this form loads on its own, so every message is the outcome of
   // pressing Save — a toast (14 ก.ย.).
   const { showToast } = useToast();
-  const setError = (detail: string) => showToast({ tone: 'error', title: copy('บันทึกไม่ได้', 'Unable to save'), message: detail });
+  const setError = (detail?: string) => showToast({ tone: 'error', title: copy('บันทึกไม่ได้', 'Unable to save'), message: detail });
 
   useEffect(() => {
     setFirstName(user?.first_name || '');
@@ -59,9 +60,7 @@ export default function AccountSettingsScreen() {
       await refreshProfile();
       showToast({ title: copy('บันทึกข้อมูลบัญชีแล้ว', 'Account information saved') });
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('บันทึกบัญชีไม่สำเร็จ', 'Could not save account information'));
+      setError(apiFailureDetail(err, language));
     } finally {
       setSaving(false);
     }

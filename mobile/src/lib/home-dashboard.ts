@@ -406,7 +406,9 @@ export type HomeRevenueCurve = {
  * count at the hour they were closed, since that is when the money was taken.
  * The axis runs from the first sale (never later than 10:00) to the last one, or
  * to the current hour when the day is still going, so the line ends where the
- * day has actually got to instead of trailing flat to midnight.
+ * day has actually got to instead of trailing flat to midnight. With no sale
+ * above ฿0 yet (a ฿0 bill closed before opening), the axis starts at the current
+ * hour, so it never begins after the moment it ends at (stress test, 2026-09-23).
  */
 export function homeRevenueCurve(orders: HomeOrder[], nowHour: number | null): HomeRevenueCurve | null {
   const byHour = new Array<number>(24).fill(0);
@@ -422,7 +424,7 @@ export function homeRevenueCurve(orders: HomeOrder[], nowHour: number | null): H
   }
   if (!any && nowHour === null) return null;
   let first = byHour.findIndex((value) => value > 0);
-  if (first < 0) first = 10;
+  if (first < 0) first = nowHour ?? 10;
   const startHour = Math.min(first, 10);
   let last = 23;
   while (last > startHour && byHour[last] === 0) last -= 1;

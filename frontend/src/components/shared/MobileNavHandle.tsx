@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { useSidebar } from '@/src/providers/SidebarProvider';
 import { useLanguage } from '@/src/providers/LanguageProvider';
@@ -11,22 +12,22 @@ import { useLanguage } from '@/src/providers/LanguageProvider';
 // did nothing, and the account menu now sits at the foot of the menu, the same
 // place as on a computer.
 //
-// It starts at the top-left, where it covers the first control on some pages
-// (a search box, "ทุกโซน"), so it can be dragged up or down. It stays on the
-// left edge; the height is kept on this device.
-//
-// A drag starts as soon as the finger moves — no hold first (เจ้าของขอ
-// 25 ก.ย. 2569; it used to wait 150ms). A touch that stays within
-// DRAG_START_PX of where it began is a tap and opens the menu.
+// It starts just under the page header; it used to start at the top-left,
+// over the first control on some pages (a search box, "ทุกโซน"). A long press
+// lifts it and it can be dragged up or down. It stays on the left edge; a
+// dragged height is kept on this device and wins over the default.
 //
 // Touch goes through native touch listeners that cancel the browser's own
 // handling from the first touch. With pointer events alone, iPhone Safari
 // claimed the long press for itself and the drag never started (found on the
 // owner's phone the same day). Mouse uses pointer events and click.
 
-const STORAGE_KEY = 'dishy.navHandleTop';
-// How far a finger may wander and still be a tap rather than a drag.
-const DRAG_START_PX = 6;
+// v2: the default moved under the page header on 2026-09-22; a new key lets
+// a height dragged before that give way to it once.
+const STORAGE_KEY = 'dishy.navHandleTop.v2';
+// 350ms felt too long on the phone (19 ก.ย. 2569); 150ms still tells a tap from a hold.
+const HOLD_MS = 150;
+const MOVE_CANCEL_PX = 8;
 const EDGE_GAP = 8;
 const HANDLE_H = 40;
 
@@ -35,7 +36,7 @@ function clampTop(top: number) {
   return Math.round(Math.min(Math.max(top, EDGE_GAP), Math.max(EDGE_GAP, max)));
 }
 
-type Press = { startY: number; offset: number; lifted: boolean };
+type Press = { startY: number; offset: number; timer: number | null; lifted: boolean; cancelled: boolean };
 
 export default function MobileNavHandle() {
   const { mobileOpen, setMobileOpen } = useSidebar();
@@ -50,6 +51,44 @@ export default function MobileNavHandle() {
   useEffect(() => {
     openMenu.current = setMobileOpen;
   }, [setMobileOpen]);
+
+  // Until someone drags it, the tab sits just under the page's own header
+  // (owner, 2026-09-22) instead of over its first control. Headers differ in
+  // height from page to page and grow once their data loads, so the header
+  // is found again on every navigation and watched for size changes.
+  const pathname = usePathname();
+  useEffect(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    let header: HTMLElement | null = null;
+    const sizeWatch = new ResizeObserver(() => place());
+    const dragged = () => {
+      try {
+        return Number(window.localStorage.getItem(STORAGE_KEY)) > 0;
+      } catch {
+        return false;
+      }
+    };
+    function place() {
+      if (dragged()) return;
+      button!.style.top = header ? `${clampTop(header.getBoundingClientRect().bottom + EDGE_GAP)}px` : '';
+    }
+    const findHeader = () => {
+      const next = document.querySelector<HTMLElement>('[data-shell-sticky]');
+      if (next === header) return;
+      if (header) sizeWatch.unobserve(header);
+      header = next;
+      if (header) sizeWatch.observe(header);
+      place();
+    };
+    const pageWatch = new MutationObserver(findHeader);
+    pageWatch.observe(document.body, { childList: true, subtree: true });
+    findHeader();
+    return () => {
+      pageWatch.disconnect();
+      sizeWatch.disconnect();
+    };
+  }, [pathname]);
 
   useEffect(() => {
     const button = buttonRef.current;
@@ -70,15 +109,23 @@ export default function MobileNavHandle() {
     };
     const begin = (clientY: number) => {
       const rect = button.getBoundingClientRect();
-      press = { startY: clientY, offset: clientY - rect.top, lifted: false };
+      const current: Press = { startY: clientY, offset: clientY - rect.top, lifted: false, cancelled: false, timer: null };
+      current.timer = window.setTimeout(() => {
+        current.timer = null;
+        if (current.cancelled) return;
+        current.lifted = true;
+        setDragging(true);
+        navigator.vibrate?.(10);
+      }, HOLD_MS);
+      press = current;
     };
     const move = (clientY: number) => {
       const current = press;
-      if (!current) return;
+      if (!current || current.cancelled) return;
       if (!current.lifted) {
-        if (Math.abs(clientY - current.startY) <= DRAG_START_PX) return;
-        current.lifted = true;
-        setDragging(true);
+        // Moved before the hold finished: a slip, neither a tap nor a drag.
+        if (Math.abs(clientY - current.startY) > MOVE_CANCEL_PX) current.cancelled = true;
+        return;
       }
       placeAt(clientY - current.offset);
     };
@@ -88,12 +135,13 @@ export default function MobileNavHandle() {
       const current = press;
       press = null;
       if (!current) return 'none';
+      if (current.timer) window.clearTimeout(current.timer);
       if (current.lifted) {
         setDragging(false);
         save();
         return 'drag';
       }
-      return 'tap';
+      return current.cancelled ? 'none' : 'tap';
     };
 
     try {

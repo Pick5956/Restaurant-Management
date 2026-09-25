@@ -7,7 +7,13 @@ import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { bulkCreateTables, createTableZone, deleteTable, deleteTableZone, listTables, listTableZones, moveTableZone, regenerateTableCustomerToken, updateTable, updateTableZone } from "@/src/lib/table";
+import { listAllOrders } from "@/src/lib/order";
+import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
+import { reservationClock } from "@/src/lib/reservationSchedule";
 import { createSingleFlight } from "@/src/lib/singleFlight";
+import { useOrderEvents } from "@/src/hooks/useOrderEvents";
+import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
 import type { RestaurantTable, RestaurantTableInput, TableZone, TableZoneInput } from "@/src/types/table";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
@@ -21,14 +27,25 @@ import {
   qrViewBoxSize,
 } from "@/src/lib/qr";
 import {
+  activeOrderTableIds,
+  drawerTableStatus,
   emptyTableForm,
   emptyZoneForm,
+  isTableInService,
   safeQrFileName,
   statusMeta,
   tableAccentClass,
+  tableErrorNeedsReload,
+  tableErrorText,
+  tableInUseText,
+  tableServiceStatus,
   tableStatusEditorState,
   tableStatusPillClass,
+  zoneHasTableInService,
 } from "./tablesPageUtils";
+
+// Recovery only: order events keep the lock current while the stream is up.
+const TABLE_REFRESH_INTERVAL_MS = 60_000;
 
 export default function TablesPage() {
   const { activeMembership } = useAuth();
@@ -37,7 +54,10 @@ export default function TablesPage() {
   const confirm = useConfirm();
   const canManage = can(activeMembership, "manage_table");
   const canView = canManage || can(activeMembership, "view_tables");
+  // The server lets these two read the active orders that put a table in service.
+  const canReadActiveOrders = can(activeMembership, "view_orders") || can(activeMembership, "take_order");
   const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [activeTableIds, setActiveTableIds] = useState<ReadonlySet<number>>(() => new Set());
   const [zones, setZones] = useState<TableZone[]>([]);
   const [zoneFilter, setZoneFilter] = useState("all");
   const [editingTable, setEditingTable] = useState<RestaurantTable | null>(null);
@@ -89,7 +109,8 @@ export default function TablesPage() {
         zone: "โซน",
         capacity: "จำนวนที่นั่ง",
         status: "สถานะ",
-        lifecycleStatusHelp: "สถานะนี้เปลี่ยนจากขั้นตอนการจองหรือออเดอร์เท่านั้น",
+        closeTable: "ปิด",
+        booked: "มีจอง",
         bulkCreate: "สร้างโต๊ะเป็นชุด",
         count: "จำนวนโต๊ะ",
         preview: "ตัวอย่างเลข",
@@ -165,7 +186,8 @@ export default function TablesPage() {
         zone: "Zone",
         capacity: "Seats",
         status: "Status",
-        lifecycleStatusHelp: "This status changes only through the reservation or order workflow.",
+        closeTable: "Close",
+        booked: "Booked",
         bulkCreate: "Bulk create tables",
         count: "Table count",
         preview: "Number preview",
@@ -221,18 +243,37 @@ export default function TablesPage() {
 
   const STATUS = statusMeta(language);
 
-  const refresh = async () => {
-    if (!canView) return;
-    setLoading(true);
-    setError("");
+  // null when the orders could not be read: the caller keeps what it had, and
+  // the status column plus the server's own refusal still guard the lock.
+  // Every live order, not one page: the oldest are the ones a page drops, and a
+  // table whose order fell off it would lose its lock.
+  const loadActiveTableIds = async (): Promise<ReadonlySet<number> | null> => {
+    if (!canReadActiveOrders) return new Set();
     try {
-      const [tableRes, zoneRes] = await Promise.all([listTables(), listTableZones()]);
+      return activeOrderTableIds(await listAllOrders({ status: "active" }));
+    } catch {
+      return null;
+    }
+  };
+
+  // A background refresh keeps the grid on screen and stays quiet on failure;
+  // it exists to keep each table's lock current while the page is open.
+  const refresh = async ({ background = false }: { background?: boolean } = {}) => {
+    if (!canView) return;
+    if (!background) {
+      setLoading(true);
+      setError("");
+    }
+    try {
+      const [tableRes, zoneRes, nextActiveTableIds] = await Promise.all([listTables(), listTableZones(), loadActiveTableIds()]);
       setTables(tableRes.data.tables ?? []);
       setZones(zoneRes.data.zones ?? []);
+      if (nextActiveTableIds) setActiveTableIds(nextActiveTableIds);
+      setError("");
     } catch {
-      setError(copy.loadError);
+      if (!background) setError(copy.loadError);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   };
 
@@ -240,7 +281,17 @@ export default function TablesPage() {
     const loadTimer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(loadTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView, language]);
+  }, [canView, canReadActiveOrders, language]);
+
+  useOrderEvents(() => refresh({ background: true }), {
+    enabled: canView && canReadActiveOrders,
+    restaurantId: activeMembership?.restaurant_id,
+  });
+  useVisiblePolling(() => refresh({ background: true }), {
+    enabled: canView,
+    intervalMs: TABLE_REFRESH_INTERVAL_MS,
+    runImmediately: false,
+  });
 
   // Track the fixed toolbar's height so the mobile spacer matches it exactly,
   // even as the toolbar wraps to a different number of rows across breakpoints.
@@ -268,9 +319,17 @@ export default function TablesPage() {
       return zoneMatch;
     });
   }, [tables, zoneFilter]);
-  const occupiedCount = tables.filter((table) => table.status === "occupied").length;
-  const inactiveCount = tables.filter((table) => table.status === "inactive").length;
-  const tableEditorStatus = tableStatusEditorState(tableForm.status);
+  const occupiedCount = tables.filter((table) => tableServiceStatus(table, activeTableIds) === "occupied").length;
+  const inactiveCount = tables.filter((table) => tableServiceStatus(table, activeTableIds) === "inactive").length;
+  // The drawer keeps the row it opened with, but the lock follows the latest
+  // load: a table that goes into service while open turns read-only at once.
+  const liveEditingTable = editingTable ? tables.find((table) => table.ID === editingTable.ID) ?? editingTable : null;
+  const editingLocked = liveEditingTable ? isTableInService(liveEditingTable, activeTableIds) : false;
+  const editingZoneLocked = editingZone ? zoneHasTableInService(editingZone.ID, tables, activeTableIds) : false;
+  const formStatus = drawerTableStatus(tableForm.status, liveEditingTable?.status, editingLocked);
+  const tableEditorStatus = tableStatusEditorState(
+    editingLocked && liveEditingTable ? tableServiceStatus(liveEditingTable, activeTableIds) : formStatus,
+  );
   const bulkPreview = useMemo(() => {
     const count = Math.max(1, Number(bulkCount) || 1);
     const zone = activeZones.find((item) => item.ID === tableForm.zone_id);
@@ -326,13 +385,45 @@ export default function TablesPage() {
     }, 180);
   };
 
+  // The server's refusal in the page's own words, as a toast. A refusal that
+  // means the page is out of date (the table went into service meanwhile)
+  // reloads it, which turns that table read-only. The raw text is only ever
+  // read by tableErrorText; what it does not know falls to the shared lines.
+  const showActionError = (err: unknown, fallback: string, context: "table" | "zone" = "table") => {
+    const raw = apiErrorMessage(err);
+    showToast({ title: tableErrorText(raw, language, apiFailureText(err, language, fallback), context), tone: "error" });
+    if (tableErrorNeedsReload(raw)) void refresh({ background: true });
+  };
+
+  // Closing a free table with a booking coming asks first, with the booking's
+  // time and name, since the booking itself is not cancelled by this.
+  const confirmCloseWithBooking = async () => {
+    if (!liveEditingTable || formStatus !== "inactive" || liveEditingTable.status === "inactive") return true;
+    const clock = reservationClock(liveEditingTable.upcoming_reservation_at, language);
+    if (!clock) return true;
+    const name = liveEditingTable.upcoming_reservation_name?.trim();
+    return confirm({
+      title: `${copy.closeTable} ${liveEditingTable.display_label || liveEditingTable.table_number}?`,
+      message: `${copy.booked} ${clock}${name ? `, ${name}` : ""}`,
+      confirmLabel: copy.inactive,
+      cancelLabel: copy.cancel,
+      tone: "warning",
+    });
+  };
+
   const saveTable = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage) return;
+    if (editingTable && editingLocked) {
+      showToast({ title: tableInUseText(language), tone: "error" });
+      return;
+    }
+    if (editingTable && !(await confirmCloseWithBooking())) return;
     await saveOnceRef.current(async () => {
       setSubmitting(true);
       setError("");
       setFormError("");
+      let moved = false;
       try {
         if (editingTable) {
           const originalZone = editingTable.zone_id ?? null;
@@ -340,10 +431,11 @@ export default function TablesPage() {
           let updated: RestaurantTable;
           if (originalZone !== nextZone) {
             updated = (await moveTableZone(editingTable.ID, { zone_id: nextZone })).data;
+            moved = true;
           } else {
             updated = editingTable;
           }
-          updated = (await updateTable(editingTable.ID, { ...tableForm, zone_id: updated.zone_id ?? null, capacity: Number(tableForm.capacity) || 2 })).data;
+          updated = (await updateTable(editingTable.ID, { ...tableForm, status: formStatus, zone_id: updated.zone_id ?? null, capacity: Number(tableForm.capacity) || 2 })).data;
           setTables((current) => current.map((table) => table.ID === updated.ID ? updated : table));
           showToast({ title: copy.tableUpdated });
         } else {
@@ -353,8 +445,10 @@ export default function TablesPage() {
           showToast({ title: count > 1 ? copy.batchCreated : copy.tableCreated });
         }
         closeTableDrawer();
-      } catch {
-        setFormError(copy.saveError);
+      } catch (err) {
+        showActionError(err, copy.saveError);
+        // The zone move is its own request; if it went through, the grid must show the new label.
+        if (moved) void refresh({ background: true });
       } finally {
         setSubmitting(false);
       }
@@ -367,6 +461,10 @@ export default function TablesPage() {
       setFormError(copy.requiredName);
       return;
     }
+    // A new prefix renumbers every table in the zone, and a table in service
+    // keeps its number: while one is, the zone keeps its saved prefix and only
+    // the name can change.
+    const prefix = editingZone && editingZoneLocked ? editingZone.prefix : zoneForm.prefix;
     await saveOnceRef.current(async () => {
       setSubmitting(true);
       setFormError("");
@@ -374,7 +472,7 @@ export default function TablesPage() {
         const nextDisplayOrder = editingZone
           ? Number(zoneForm.display_order) || editingZone.display_order
           : Math.max(0, ...zones.map((zone) => zone.display_order || 0)) + 1;
-        const payload = { ...zoneForm, name: zoneForm.name.trim(), prefix: zoneForm.prefix?.trim().toUpperCase(), display_order: nextDisplayOrder, is_active: true };
+        const payload = { ...zoneForm, name: zoneForm.name.trim(), prefix: prefix?.trim().toUpperCase(), display_order: nextDisplayOrder, is_active: true };
         const res = editingZone ? await updateTableZone(editingZone.ID, payload) : await createTableZone(payload);
         setZones((current) => editingZone ? current.map((zone) => zone.ID === res.data.ID ? res.data : zone) : [...current, res.data]);
         if (editingZone) {
@@ -395,8 +493,8 @@ export default function TablesPage() {
         showToast({ title: editingZone ? copy.zoneUpdated : copy.zoneCreated });
         setEditingZone(null);
         setZoneForm(emptyZoneForm);
-      } catch {
-        setFormError(copy.saveError);
+      } catch (err) {
+        showActionError(err, copy.saveError, "zone");
       } finally {
         setSubmitting(false);
       }
@@ -432,9 +530,9 @@ export default function TablesPage() {
         is_active: true,
       })));
       showToast({ title: copy.orderUpdated });
-    } catch {
+    } catch (err) {
       setZones(previousZones);
-      setFormError(copy.saveError);
+      showActionError(err, copy.saveError, "zone");
     } finally {
       setSubmitting(false);
     }
@@ -453,6 +551,14 @@ export default function TablesPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    if (deleteTarget.type === "table") {
+      const target = tables.find((table) => table.ID === deleteTarget.table.ID) ?? deleteTarget.table;
+      if (isTableInService(target, activeTableIds)) {
+        showToast({ title: tableInUseText(language), tone: "error" });
+        closeDeleteModal();
+        return;
+      }
+    }
     await deleteOnceRef.current(async () => {
       setSubmitting(true);
       setError("");
@@ -472,8 +578,10 @@ export default function TablesPage() {
         }
         showToast({ title: copy.itemDeleted });
         closeDeleteModal();
-      } catch {
-        setError(copy.deleteError);
+      } catch (err) {
+        // The modal would cover a message left on the page, so the refusal is a toast.
+        showActionError(err, copy.deleteError, deleteTarget.type);
+        closeDeleteModal();
       } finally {
         setSubmitting(false);
       }
@@ -521,7 +629,7 @@ export default function TablesPage() {
   };
 
   const regenerateCustomerQr = async () => {
-    if (!editingTable || !canManage) return;
+    if (!editingTable || !canManage || editingLocked) return;
     const confirmed = await confirm({
       title: copy.regenerateQrTitle,
       message: copy.regenerateQrBody,
@@ -538,8 +646,8 @@ export default function TablesPage() {
         setEditingTable(updated);
         setTables((current) => current.map((table) => table.ID === updated.ID ? updated : table));
         showToast({ title: copy.qrRegenerated });
-      } catch {
-        setError(copy.saveError);
+      } catch (err) {
+        showActionError(err, copy.saveError);
       } finally {
         setSubmitting(false);
       }
@@ -551,7 +659,7 @@ export default function TablesPage() {
       <div
         data-shell-sticky=""
         ref={stickyToolbarRef}
-        className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto"
+        className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto"
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">
@@ -565,7 +673,7 @@ export default function TablesPage() {
             </div>
             {canManage ? (
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setZoneManagerOpen(true)} className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.zoneManager}</button>
+                <button type="button" onClick={() => { setFormError(""); setZoneManagerOpen(true); }} className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-700 shadow-(--dashboard-control-shadow) hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.zoneManager}</button>
                 <button type="button" onClick={startCreateTable} className="h-9 rounded-xl bg-orange-700 px-3 text-[12px] font-semibold text-white shadow-(--dashboard-control-shadow) hover:bg-orange-800 dark:bg-orange-700 dark:text-white">+ {copy.createTable}</button>
               </div>
             ) : null}
@@ -595,6 +703,7 @@ export default function TablesPage() {
           ) : filteredTables.length ? (
             <div className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
               {filteredTables.map((table) => {
+                const serviceStatus = tableServiceStatus(table, activeTableIds);
                 return (
                   <button
                     key={table.ID}
@@ -603,14 +712,14 @@ export default function TablesPage() {
                     onClick={() => startEditTable(table)}
                     className={`group relative flex min-h-[118px] overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,translate,box-shadow,border-color] dark:border-gray-800 dark:bg-gray-800 ${canManage ? "ui-press hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:hover:border-gray-700 dark:hover:bg-gray-800" : ""}`}
                   >
-                    <span className={`w-1.5 shrink-0 ${tableAccentClass(table.status)}`} />
+                    <span className={`w-1.5 shrink-0 ${tableAccentClass(serviceStatus)}`} />
                     <div className="flex min-w-0 flex-1 flex-col px-3 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <h2 className="truncate text-[22px] font-semibold leading-none tracking-tight text-gray-950 dark:text-white">{table.display_label || table.table_number}</h2>
                           <p className="mt-2 truncate text-[12px] font-medium text-gray-500 dark:text-gray-400">{hasAnyZone ? `${table.table_zone?.name || table.zone || copy.noZone} · ` : ""}{table.capacity} {copy.seats}</p>
                         </div>
-                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${tableStatusPillClass(table.status)}`}>{STATUS[table.status].label}</span>
+                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${tableStatusPillClass(serviceStatus)}`}>{STATUS[serviceStatus].label}</span>
                       </div>
                     </div>
                   </button>
@@ -634,8 +743,14 @@ export default function TablesPage() {
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{copy.tableEditor}</p>
-                <h2 className="mt-0.5 text-[15px] font-semibold text-gray-900 dark:text-white">{editingTable ? copy.saveTable : copy.createTable}</h2>
-                <p className="mt-1 text-[11px] text-gray-500">{editingTable ? `${copy.autoNumber}: ${editingTable.display_label || editingTable.table_number}` : copy.autoNumber}</p>
+                {editingLocked && liveEditingTable ? (
+                  <h2 className="mt-0.5 text-[15px] font-semibold text-gray-900 dark:text-white">{liveEditingTable.display_label || liveEditingTable.table_number}</h2>
+                ) : (
+                  <>
+                    <h2 className="mt-0.5 text-[15px] font-semibold text-gray-900 dark:text-white">{editingTable ? copy.saveTable : copy.createTable}</h2>
+                    <p className="mt-1 text-[11px] text-gray-500">{editingTable ? `${copy.autoNumber}: ${editingTable.display_label || editingTable.table_number}` : copy.autoNumber}</p>
+                  </>
+                )}
               </div>
               <button type="button" onClick={closeTableDrawer} className="h-8 w-8 rounded-md text-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">×</button>
             </div>
@@ -647,10 +762,16 @@ export default function TablesPage() {
                     <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.tableEditor}</span>
                   </div>
                   <div className="space-y-3 p-3">
-                    <label className="block">
-                      <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.zone}</span>
-                      <ThemedSelect value={tableForm.zone_id ? String(tableForm.zone_id) : "none"} onChange={(next) => setTableForm((current) => ({ ...current, zone_id: next === "none" ? null : Number(next) }))} options={[{ value: "none", label: copy.noZone }, ...activeZones.map((zone) => ({ value: String(zone.ID), label: `${zone.name}${zone.prefix ? ` (${zone.prefix})` : ""}` }))]} />
-                    </label>
+                    {editingLocked && liveEditingTable ? (
+                      <ReadOnlyField label={copy.zone}>
+                        <span className="truncate">{liveEditingTable.table_zone?.name || liveEditingTable.zone || copy.noZone}</span>
+                      </ReadOnlyField>
+                    ) : (
+                      <label className="block">
+                        <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.zone}</span>
+                        <ThemedSelect value={tableForm.zone_id ? String(tableForm.zone_id) : "none"} onChange={(next) => setTableForm((current) => ({ ...current, zone_id: next === "none" ? null : Number(next) }))} options={[{ value: "none", label: copy.noZone }, ...activeZones.map((zone) => ({ value: String(zone.ID), label: `${zone.name}${zone.prefix ? ` (${zone.prefix})` : ""}` }))]} />
+                      </label>
+                    )}
                     <div className={`grid gap-3 ${editingTable ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
                       {!editingTable && (
                         <label className="block">
@@ -658,17 +779,23 @@ export default function TablesPage() {
                           <NumberInput min={1} max={200} inputMode="numeric" value={bulkCount} onValue={setBulkCount} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" aria-label={copy.count} />
                         </label>
                       )}
-                      <label className="block">
-                        <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.capacity}</span>
-                        <NumberInput min={1} max={50} emptyAs={2} inputMode="numeric" value={tableForm.capacity} onValue={(value) => setTableForm((current) => ({ ...current, capacity: value }))} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" aria-label={copy.capacity} />
-                      </label>
+                      {editingLocked && liveEditingTable ? (
+                        <ReadOnlyField label={copy.capacity}>
+                          <span className="tabular-nums">{liveEditingTable.capacity}</span>
+                        </ReadOnlyField>
+                      ) : (
+                        <label className="block">
+                          <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.capacity}</span>
+                          <NumberInput min={1} max={50} emptyAs={2} inputMode="numeric" value={tableForm.capacity} onValue={(value) => setTableForm((current) => ({ ...current, capacity: value }))} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" aria-label={copy.capacity} />
+                        </label>
+                      )}
                       <label className="block">
                         <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.status}</span>
                         <span className="flex h-10 items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
                           <span className={`truncate rounded-md px-2 py-1 text-[12px] font-semibold leading-none ${tableStatusPillClass(tableEditorStatus.status)}`}>
                             {STATUS[tableEditorStatus.status].label}
                           </span>
-                          {!tableEditorStatus.isLifecycleManaged && (
+                          {!tableEditorStatus.isLifecycleManaged && !editingLocked && (
                             <input
                               type="checkbox"
                               checked={tableEditorStatus.isActive}
@@ -678,11 +805,6 @@ export default function TablesPage() {
                             />
                           )}
                         </span>
-                        {tableEditorStatus.isLifecycleManaged && (
-                          <span className="mt-1.5 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-                            {copy.lifecycleStatusHelp}
-                          </span>
-                        )}
                       </label>
                     </div>
                     {!editingTable && (
@@ -695,16 +817,18 @@ export default function TablesPage() {
 
                 {editingTable && customerOrderLink && (
                   <div className="relative rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
-                    <button
-                      type="button"
-                      onClick={regenerateCustomerQr}
-                      disabled={submitting}
-                      aria-label={copy.regenerateQr}
-                      title={copy.regenerateQr}
-                      className="ui-press absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-red-600 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-300 dark:hover:border-red-900/60 dark:hover:bg-red-900/20 dark:hover:text-red-200"
-                    >
-                      <KeyRound className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                    {!editingLocked && (
+                      <button
+                        type="button"
+                        onClick={regenerateCustomerQr}
+                        disabled={submitting}
+                        aria-label={copy.regenerateQr}
+                        title={copy.regenerateQr}
+                        className="ui-press absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-red-600 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-red-300 dark:hover:border-red-900/60 dark:hover:bg-red-900/20 dark:hover:text-red-200"
+                      >
+                        <KeyRound className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    )}
                     <div className="grid grid-cols-[96px_1fr] gap-3">
                       <div className="relative h-24 w-24 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-700">
                         {customerOrderQr ? (
@@ -724,7 +848,7 @@ export default function TablesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0 pr-9">
+                      <div className={`min-w-0 ${editingLocked ? "" : "pr-9"}`}>
                         <p className="text-[13px] font-semibold text-gray-900 dark:text-white">{copy.qrOrder}</p>
                         <p className="mt-1 text-[11px] leading-5 text-gray-500 dark:text-gray-400">{copy.qrHint}</p>
                         <p className="mt-1 truncate font-mono text-[10px] text-gray-500">{customerOrderLink}</p>
@@ -743,11 +867,13 @@ export default function TablesPage() {
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-gray-200 p-4 dark:border-gray-800">
-              {editingTable && <button type="button" onClick={() => setDeleteTarget({ type: "table", table: editingTable })} className="h-10 w-full rounded-md border border-red-200 text-[13px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{copy.delete}</button>}
-              <button disabled={submitting} className="ui-press h-10 w-full rounded-md bg-orange-700 text-[13px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">{editingTable ? copy.saveTable : copy.createTable}</button>
-              {formError && <p className="text-[11px] font-medium text-red-600 dark:text-red-300">{formError}</p>}
-            </div>
+            {!editingLocked && (
+              <div className="space-y-2 border-t border-gray-200 p-4 dark:border-gray-800">
+                {editingTable && <button type="button" onClick={() => setDeleteTarget({ type: "table", table: editingTable })} className="h-10 w-full rounded-md border border-red-200 text-[13px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{copy.delete}</button>}
+                <button disabled={submitting} className="ui-press h-10 w-full rounded-md bg-orange-700 text-[13px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">{editingTable ? copy.saveTable : copy.createTable}</button>
+                {formError && <p className="text-[11px] font-medium text-red-600 dark:text-red-300">{formError}</p>}
+              </div>
+            )}
           </form>
         </>
       )}
@@ -776,11 +902,12 @@ export default function TablesPage() {
             <div className="grid gap-2">
               <label className="block">
                 <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.prefix}</span>
-                <input value={zoneForm.prefix} onChange={(event) => setZoneForm((current) => ({ ...current, prefix: event.target.value }))} placeholder={copy.prefixPlaceholder} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] dark:border-gray-700 dark:bg-gray-800" />
+                <input value={editingZone && editingZoneLocked ? editingZone.prefix : zoneForm.prefix} disabled={editingZoneLocked} onChange={(event) => setZoneForm((current) => ({ ...current, prefix: event.target.value }))} placeholder={copy.prefixPlaceholder} className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-[13px] disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:disabled:bg-gray-800/50 dark:disabled:text-gray-400" />
                 <span className="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{copy.prefixHelp}</span>
               </label>
             </div>
             <button disabled={submitting} className="h-10 w-full rounded-md bg-orange-700 text-[13px] font-semibold text-white disabled:opacity-60 dark:bg-orange-700 dark:text-white">{editingZone ? copy.saveZone : copy.addZone}</button>
+            {formError && <p className="text-[11px] font-medium text-red-600 dark:text-red-300">{formError}</p>}
           </form>
         </ManagerModal>
       )}
@@ -801,6 +928,16 @@ export default function TablesPage() {
       )}
     </div>
     </>
+  );
+}
+
+// A table in service shows its values in the field's frame with nothing to change.
+function ReadOnlyField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{label}</span>
+      <span className="flex h-10 items-center rounded-md border border-gray-200 bg-white px-3 text-[13px] text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">{children}</span>
+    </div>
   );
 }
 

@@ -5,15 +5,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ListFilter, ReceiptText, Search, ShoppingBasket, X } from "lucide-react";
-import { createCustomerOrderRequestKey, getCustomerTableOrder, readDeviceLocation, submitCustomerTableOrder, type CustomerCartItemInput, type CustomerMenuItem, type CustomerTablePayload } from "@/src/lib/customerOrder";
+import { CUSTOMER_ORDER_LIMITS, createCustomerOrderRequestKey, customerFailureText, customerLineCanGrow, customerNewLineRoom, customerOrderLimitRefusal, customerTableLoadText, getCustomerTableOrder, readDeviceLocation, submitCustomerTableOrder, type CustomerCartItemInput, type CustomerMenuItem, type CustomerTablePayload } from "@/src/lib/customerOrder";
 import { customerTableOrdersHref, shouldShowCustomerCartAction, summarizeCustomerOrderItems } from "@/src/lib/customerOrderView";
-import { apiErrorCode, apiErrorMessage } from "@/src/lib/apiErrors";
+import { customerOrderRefusal, type CustomerOrderRefusal } from "@/src/lib/knownApiErrors";
 import { menuCategoryIds, menuOptionLimits } from "@/src/lib/menuUtils";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
+
+// Refusals that mean the menu on screen is behind the kitchen or the owner.
+const MENU_CHANGED_REFUSALS: ReadonlySet<CustomerOrderRefusal["kind"]> = new Set<CustomerOrderRefusal["kind"]>([
+  "sold_out",
+  "only_left",
+  "menu_unavailable",
+  "options_changed",
+]);
 
 type CartItem = CustomerCartItemInput & {
   key: string;
@@ -74,6 +82,16 @@ export default function CustomerTableOrderPage() {
         submitted: "ส่งออเดอร์เข้าครัวแล้ว",
         checkingLocation: "กำลังตรวจสอบตำแหน่ง...",
         outsideRestaurant: "สั่งอาหารได้เฉพาะเมื่ออยู่ที่ร้านเท่านั้น กรุณาสั่งที่โต๊ะของคุณ",
+        submitError: "ส่งออเดอร์ไม่สำเร็จ ลองอีกครั้ง",
+        soldOutItem: (name: string) => `${name} หมดแล้ว`,
+        onlyLeftItem: (name: string, left: number) => `${name} เหลือ ${left} ที่`,
+        menuUnavailable: "บางเมนูในตะกร้างดขายแล้ว",
+        optionsChanged: "ตัวเลือกของบางเมนูเปลี่ยนไป เลือกใหม่อีกครั้ง",
+        orderClosed: "โต๊ะนี้ปิดบิลแล้ว เรียกพนักงานหากต้องการสั่งเพิ่ม",
+        qrInvalid: "QR นี้ใช้ไม่ได้แล้ว ขอ QR ใหม่จากพนักงาน",
+        cartFull: "ตะกร้าเต็มแล้ว ส่งออเดอร์นี้ก่อนแล้วค่อยสั่งเพิ่ม",
+        cartTooLarge: "ตะกร้านี้เกินจำนวนที่ส่งได้ในครั้งเดียว ลดจำนวนแล้วส่งอีกครั้ง",
+        noteTooLong: "หมายเหตุบางรายการยาวเกินไป เพิ่มรายการนั้นใหม่ด้วยหมายเหตุที่สั้นลง",
         awaitingStaffConfirm: "ส่งรายการแล้ว รอพนักงานยืนยันก่อนเข้าครัว (ตรวจสอบตำแหน่งไม่ได้)",
         tableOrders: "ที่สั่งแล้ว",
         itemUnit: "รายการ",
@@ -113,6 +131,16 @@ export default function CustomerTableOrderPage() {
         submitted: "Order sent to kitchen",
         checkingLocation: "Checking your location...",
         outsideRestaurant: "Ordering is only available at the restaurant. Please order from your table.",
+        submitError: "Could not send the order. Try again.",
+        soldOutItem: (name: string) => `${name} has sold out.`,
+        onlyLeftItem: (name: string, left: number) => `Only ${left} of ${name} left.`,
+        menuUnavailable: "An item in your cart is no longer available.",
+        optionsChanged: "The options for an item have changed. Choose them again.",
+        orderClosed: "This table's bill is closed. Ask staff if you want to order more.",
+        qrInvalid: "This QR code no longer works. Ask staff for a new one.",
+        cartFull: "Your cart is full. Send this order, then add more.",
+        cartTooLarge: "This cart is more than one order can take. Reduce it and send again.",
+        noteTooLong: "A note is too long. Add that item again with a shorter note.",
         awaitingStaffConfirm: "Order received. Staff will confirm it before the kitchen starts (location could not be verified).",
         tableOrders: "Ordered",
         itemUnit: "items",
@@ -140,10 +168,22 @@ export default function CustomerTableOrderPage() {
     try {
       const res = await getCustomerTableOrder(token);
       setPayload(res.data);
-    } catch {
-      setError(copy.loadError);
+    } catch (err) {
+      setError(customerTableLoadText(err, language, copy));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Re-reads the table without the loading screen, so an open summary sheet
+  // stays where it is while the grid catches up.
+  const refreshMenuInBackground = async () => {
+    try {
+      const res = await getCustomerTableOrder(token);
+      setPayload(res.data);
+    } catch {
+      // The toast has already told the guest about their order; the grid
+      // keeps what it showed until the next load.
     }
   };
 
@@ -197,11 +237,18 @@ export default function CustomerTableOrderPage() {
   }, [cart]);
   const sentItemCount = summarizeCustomerOrderItems(payload?.order?.items ?? []).itemCount;
   const canOrder = Boolean(payload?.order);
+  // Portions a new line may still hold under the server's submit limits.
+  const newLineRoom = customerNewLineRoom(cart);
+  const quantityCap = Math.max(1, newLineRoom);
   const showCartAction = shouldShowCustomerCartAction(canOrder, cartItemCount);
 
   const openMenu = (item: CustomerMenuItem) => {
     if (!canOrder) {
       showToast({ title: copy.noActiveOrderBody, tone: "warning" });
+      return;
+    }
+    if (newLineRoom <= 0) {
+      showToast({ title: copy.cartFull, tone: "warning" });
       return;
     }
     const defaultOptionIds = (item.option_groups ?? []).flatMap((group) => {
@@ -254,7 +301,9 @@ export default function CustomerTableOrderPage() {
 
   const increaseCartItem = (key: string) => {
     submissionKeyRef.current = null;
-    setCart((current) => current.map((item) => item.key === key ? { ...item, quantity: item.quantity + 1 } : item));
+    setCart((current) => current.map((item) => (
+      item.key === key && customerLineCanGrow(current, item) ? { ...item, quantity: item.quantity + 1 } : item
+    )));
   };
 
   const decreaseCartItem = (key: string) => {
@@ -283,7 +332,7 @@ export default function CustomerTableOrderPage() {
   const menuBackdrop = useBackdropClose(closeMenu);
 
   const addToCart = () => {
-    if (!canOrder || !selectedMenu || requiredOptionsMissing) return;
+    if (!canOrder || !selectedMenu || requiredOptionsMissing || newLineRoom <= 0) return;
     submissionKeyRef.current = null;
     const item: CartItem = {
       key: `${selectedMenu.ID}-${Date.now()}-${Math.random()}`,
@@ -292,13 +341,43 @@ export default function CustomerTableOrderPage() {
       image_url: selectedMenu.image_url,
       unit_price: selectedMenu.price,
       options_total: selectedOptionsTotal,
-      quantity,
+      quantity: Math.min(quantity, newLineRoom),
       note: note.trim(),
       selected_option_ids: selectedOptionIds,
       selected_options: selectedOptions,
     };
     setCart((current) => [...current, item]);
     closeMenu();
+  };
+
+  // A refused order in the guest's language: what they can act on by name,
+  // then the failures every page shares, then this step's own line.
+  const submitFailureText = (err: unknown) => {
+    const refusal = customerOrderRefusal(err);
+    if (!refusal) {
+      const limit = customerOrderLimitRefusal(err);
+      if (limit === "too_much") return copy.cartTooLarge;
+      if (limit === "note_too_long") return copy.noteTooLong;
+      return customerFailureText(err, language, copy.submitError);
+    }
+    switch (refusal.kind) {
+      case "outside_restaurant":
+        return copy.outsideRestaurant;
+      case "table_not_open":
+        return copy.noActiveOrderBody;
+      case "order_closed":
+        return copy.orderClosed;
+      case "qr_invalid":
+        return copy.qrInvalid;
+      case "menu_unavailable":
+        return copy.menuUnavailable;
+      case "options_changed":
+        return copy.optionsChanged;
+      case "sold_out":
+        return copy.soldOutItem(refusal.menu);
+      case "only_left":
+        return copy.onlyLeftItem(refusal.menu, refusal.left);
+    }
   };
 
   const submitOrder = async () => {
@@ -330,12 +409,9 @@ export default function CustomerTableOrderPage() {
       });
       closeSummary();
     } catch (err) {
-      showToast({
-        title: apiErrorCode(err) === "OUTSIDE_RESTAURANT"
-          ? copy.outsideRestaurant
-          : apiErrorMessage(err) || copy.loadError,
-        tone: "error",
-      });
+      showToast({ title: submitFailureText(err), tone: "error" });
+      const refusal = customerOrderRefusal(err);
+      if (refusal && MENU_CHANGED_REFUSALS.has(refusal.kind)) void refreshMenuInBackground();
     } finally {
       setLocating(false);
       setSubmitting(false);
@@ -455,7 +531,7 @@ export default function CustomerTableOrderPage() {
           >
             <span className="flex min-w-0 items-center gap-2 text-[14px] font-semibold">
               <ShoppingBasket className="h-5 w-5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{copy.cart} · <span className="font-mono tabular-nums">{cartItemCount}</span> {copy.itemUnit}</span>
+              <span className="truncate">{copy.cart}, <span className="font-mono tabular-nums">{cartItemCount}</span> {copy.itemUnit}</span>
             </span>
             <span className="shrink-0 font-mono text-[17px] font-semibold tabular-nums">฿{cartTotal.toLocaleString()}</span>
           </button>
@@ -488,7 +564,7 @@ export default function CustomerTableOrderPage() {
                     <div className="flex shrink-0 items-center gap-1.5">
                       <button type="button" onClick={() => decreaseCartItem(item.key)} disabled={submitting} className="ui-press h-9 w-9 rounded-md border border-gray-200 text-[16px] font-semibold hover:bg-gray-50 disabled:opacity-50 dark:border-gray-800 dark:hover:bg-gray-900">-</button>
                       <span className="min-w-6 text-center font-mono text-[14px] font-semibold tabular-nums">{item.quantity}</span>
-                      <button type="button" onClick={() => increaseCartItem(item.key)} disabled={submitting} className="ui-press h-9 w-9 rounded-md border border-gray-200 text-[16px] font-semibold hover:bg-gray-50 disabled:opacity-50 dark:border-gray-800 dark:hover:bg-gray-900">+</button>
+                      <button type="button" onClick={() => increaseCartItem(item.key)} disabled={submitting || !customerLineCanGrow(cart, item)} className="ui-press h-9 w-9 rounded-md border border-gray-200 text-[16px] font-semibold hover:bg-gray-50 disabled:opacity-50 dark:border-gray-800 dark:hover:bg-gray-900">+</button>
                       <button type="button" onClick={() => removeCartItem(item.key)} disabled={submitting} className="ui-press h-9 rounded-md border border-red-200 px-2.5 text-[12px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{copy.remove}</button>
                     </div>
                   </div>
@@ -562,15 +638,15 @@ export default function CustomerTableOrderPage() {
                   <span className="mb-1.5 block text-[12px] font-medium">{copy.quantity}</span>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">-</button>
-                    <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] dark:border-gray-800 dark:bg-gray-900" />
-                    <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">+</button>
+                    <NumberInput min={1} max={quantityCap} inputMode="numeric" value={quantity} onValue={(value) => setQuantity(Math.floor(value))} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] dark:border-gray-800 dark:bg-gray-900" />
+                    <button type="button" onClick={() => setQuantity((current) => Math.min(quantityCap, current + 1))} disabled={quantity >= quantityCap} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold disabled:opacity-50 dark:border-gray-800">+</button>
                   </div>
                 </label>
-                <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.note} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[16px] dark:border-gray-800 dark:bg-gray-900" />
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={CUSTOMER_ORDER_LIMITS.maxItemNoteLength} placeholder={copy.note} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[16px] dark:border-gray-800 dark:bg-gray-900" />
                 {requiredOptionsMissing && <p className="text-[12px] font-medium text-red-600 dark:text-red-300">{copy.chooseRequired}</p>}
               </div>
               <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-                <button type="button" onClick={addToCart} disabled={requiredOptionsMissing} className="h-11 w-full rounded-md bg-orange-700 px-3 text-[13px] font-semibold text-white disabled:opacity-50 dark:bg-orange-700 dark:text-white">{copy.add}</button>
+                <button type="button" onClick={addToCart} disabled={requiredOptionsMissing || newLineRoom <= 0} className="h-11 w-full rounded-md bg-orange-700 px-3 text-[13px] font-semibold text-white disabled:opacity-50 dark:bg-orange-700 dark:text-white">{copy.add}</button>
               </div>
             </div>
           </div>

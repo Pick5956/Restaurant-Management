@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   inventoryItemAccess,
   kitchenAccess,
+  orderArchiveFailureDetail,
   orderDetailLoadResources,
   orderListAccess,
   orderListRequest,
@@ -238,12 +242,54 @@ test('legacy manager fallback includes the backend expense permission', () => {
   assert.equal(can(membership, 'manage_expenses'), true);
 });
 
-test('both order permissions open the same paid archive, as they do on the web', () => {
-  assert.deepEqual(orderRoutePermissions, ['view_orders', 'take_order']);
-  assert.equal(orderListAccess(true, false), 'archive');
-  assert.equal(orderListAccess(false, true), 'archive');
-  assert.equal(orderListAccess(true, true), 'archive');
-  assert.equal(orderListAccess(false, false), 'denied');
+const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = path.resolve(mobileRoot, '..');
+const orderController = path.join(repoRoot, 'backend', 'internal', 'controller', 'order.go');
+
+// 2026-09-24: a member with take_order but not view_orders was offered the
+// archive (the nav row and the screen both accepted either permission), the
+// server refused its paid-orders query, and the screen printed the server's
+// English 403 under its heading.
+test('the archive is offered only with view_orders, the one permission the server answers it for', () => {
+  assert.deepEqual(orderRoutePermissions, ['view_orders']);
+  assert.equal(orderListAccess(true), 'archive');
+  assert.equal(orderListAccess(false), 'denied');
+});
+
+test('the server still refuses take_order anything but the active list', { skip: !existsSync(orderController) && 'backend not checked out' }, () => {
+  // If this starts failing, the server may have opened the paid list to
+  // take_order: reopen the archive to it here rather than keep it hidden.
+  const order = readFileSync(orderController, 'utf8');
+  const listAccess = order.slice(order.indexOf('func requireOrderListAccess'), order.indexOf('func requireOrderReadAccess'));
+  assert.match(listAccess, /if memberCan\(c, "view_orders"\) \{\s*return true\s*\}/);
+  assert.match(listAccess, /memberCan\(c, "take_order"\) &&\s*normalizedOrderListStatus\(c\) == "active"/);
+});
+
+test('the archive screen gates on view_orders alone and never prints the server\'s words', () => {
+  const screen = readFileSync(path.join(mobileRoot, 'app', 'orders.tsx'), 'utf8');
+  assert.match(screen, /const access = orderListAccess\(canViewOrders\);/);
+  assert.doesNotMatch(screen, /canTakeOrder/);
+  assert.doesNotMatch(screen, /err\.message/);
+  assert.match(screen, /setFailure\(\{ detail: orderArchiveFailureDetail\(err, language\) \}\);/);
+  assert.match(screen, /detail=\{failure\.detail\}/);
+});
+
+test('a failed archive load says the app\'s words, or nothing after its title', () => {
+  const apiError = (message, status) => Object.assign(new Error(message), { name: 'ApiError', status });
+  assert.equal(
+    orderArchiveFailureDetail(apiError('missing view_orders permission or operational take_order query', 403), 'th'),
+    'บัญชีนี้ไม่มีสิทธิ์ดูคลังออเดอร์',
+  );
+  assert.equal(
+    orderArchiveFailureDetail(apiError('missing view_orders permission or operational take_order query', 403), 'en'),
+    'This account cannot view the order archive.',
+  );
+  assert.equal(orderArchiveFailureDetail(apiError('Request failed (530)', 530), 'th'), 'ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้ง');
+  assert.equal(orderArchiveFailureDetail(new TypeError('Network request failed'), 'th'), 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่');
+  assert.equal(orderArchiveFailureDetail(new TypeError('Network request failed'), 'en'), 'Cannot reach the server. Check the connection and try again.');
+  // Anything else: the title "โหลดคลังออเดอร์ไม่ได้" stands alone.
+  assert.equal(orderArchiveFailureDetail(apiError('invalid date', 400), 'th'), undefined);
+  assert.equal(orderArchiveFailureDetail(undefined, 'th'), undefined);
 });
 
 test('the archive asks for paid orders only, never a status filter', () => {

@@ -25,6 +25,7 @@ import {
   statusColour,
 } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail, apiFailureKind, apiFailureSays } from '@/src/lib/api-failure';
 import { money } from '@/src/lib/format';
 import { countPayload, stockStatus } from '@/src/lib/inventory-list';
 import { can } from '@/src/lib/rbac';
@@ -55,7 +56,8 @@ export default function IngredientDetailScreen() {
   const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the panel's title names it, `detail` is the app's line under it when there is one.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const [sheet, setSheet] = useState<'none' | 'restock' | 'count'>('none');
   const [busy, setBusy] = useState(false);
 
@@ -72,11 +74,11 @@ export default function IngredientDetailScreen() {
         setTransactions(history.transactions || []);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('โหลดข้อมูลวัตถุดิบไม่สำเร็จ', 'Could not load the ingredient.'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       setLoading(false);
     }
-  }, [canView, itemId, t]);
+  }, [canView, itemId, language]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
@@ -107,7 +109,7 @@ export default function IngredientDetailScreen() {
         // The stock is saved; a stale history is the lesser problem.
       }
     } catch (err) {
-      Alert.alert(done, err instanceof Error ? err.message : undefined);
+      Alert.alert(done, apiFailureDetail(err, language));
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,14 @@ export default function IngredientDetailScreen() {
             style: 'destructive',
             onPress: async () => {
               try { await deleteIngredient(item.ID); router.back(); }
-              catch (err) { Alert.alert(t('ลบไม่สำเร็จ', 'Could not delete'), err instanceof Error ? err.message : undefined); }
+              catch (err) {
+                // Another phone deleted it first: the item is gone either
+                // way, so its page closes as it would have.
+                if (apiFailureKind(err) === 'not_found') { router.back(); return; }
+                // Every refusal here is a 409, an ingredient already deleted
+                // too: only this wording is the ingredient still in a recipe.
+                Alert.alert(t('ลบไม่สำเร็จ', 'Could not delete'), apiFailureSays(err, 'used by a menu recipe') ? t('ยังมีเมนูที่ใช้วัตถุดิบนี้', 'A menu recipe still uses it.') : apiFailureDetail(err, language));
+              }
             },
           },
         ]),
@@ -162,7 +171,7 @@ export default function IngredientDetailScreen() {
         trailing={canManage && item ? <GlassButton icon="ellipsis-horizontal" label={t('ตัวเลือก', 'Options')} onPress={menu} /> : undefined}
       />
       <ScrollView contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: insets.bottom + 24, gap: 10 }}>
-        {error ? <Feedback title={t('โหลดข้อมูลไม่ได้', 'Could not load')} detail={error} tone="danger" /> : null}
+        {error ? <Feedback title={t('โหลดข้อมูลไม่ได้', 'Could not load')} detail={error.detail} tone="danger" /> : null}
         {loading && !item ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
         {missing ? <EmptyState title={t('ไม่พบวัตถุดิบ', 'Ingredient not found')} detail={t('อาจถูกลบไปแล้ว', 'It may have been deleted.')} /> : null}
 

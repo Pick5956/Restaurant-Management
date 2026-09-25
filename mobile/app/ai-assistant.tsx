@@ -43,7 +43,7 @@ import { AIChart } from '@/src/components/ai/chart';
 import { ChatListSheet } from '@/src/components/ai/chat-list-sheet';
 import { GlassButton, GlassMorphMenu, GlassPill, GlassSurface } from '@/src/components/ai/chrome';
 import { Composer } from '@/src/components/ai/composer';
-import { ConfirmCard, type ConfirmState } from '@/src/components/ai/confirm-card';
+import { ConfirmCard, ConfirmRefusal, type ConfirmState } from '@/src/components/ai/confirm-card';
 import { InsightsSheet, insightKey } from '@/src/components/ai/insights-sheet';
 import { AIOrb } from '@/src/components/ai/orb';
 import { SettingsSheet } from '@/src/components/ai/settings-sheet';
@@ -67,6 +67,7 @@ import {
   welcomeFor,
 } from '@/src/lib/ai-chat';
 import { recentConversationHistory } from '@/src/lib/ai-conversation';
+import { apiFailureDetail, apiFailureSays, apiFailureStatus } from '@/src/lib/api-failure';
 import {
   readActiveThread,
   readCachedOwnerTitle,
@@ -82,6 +83,7 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { breakpoints } from '@/src/theme';
 import type {
   AIActionPlan,
+  AIActionPlanConfirmation,
   AIActionPlanItem,
   AIActionPreview,
   AIConversationMessage,
@@ -153,6 +155,83 @@ function previewToConfirm(preview: AIActionPreview, language: 'th' | 'en'): Conf
     from,
     to,
   };
+}
+
+// The plan endpoint's own refusals. getAIActionErrorMessage words the one-dish
+// preview's, where a 409 is the data moving under the card. Here a 409 is the
+// plan already claimed and still running (for up to two minutes): "ask for a
+// new list" would have the owner book the same delivery twice, while pressing
+// again later is safe - a finished plan answers with its stored outcome and
+// runs nothing. A 410 is a plan that expired or was cancelled; the server's
+// text is read only to tell the two apart.
+function planConfirmRefusal(error: unknown, language: 'th' | 'en'): string {
+  const status = apiFailureStatus(error);
+  if (status === 409) return language === 'th' ? 'รายการนี้กำลังบันทึกอยู่' : 'This is already being saved.';
+  if (status === 410 && apiFailureSays(error, 'cancelled')) {
+    return language === 'th' ? 'รายการนี้ถูกยกเลิกแล้ว ไม่มีการแก้ข้อมูล' : 'This was cancelled, nothing changed.';
+  }
+  return getAIActionErrorMessage(error, language);
+}
+
+// Why one item of a confirmed plan failed. The server words it for the owner
+// in Thai from a fixed set (aiActionFailureLine in
+// backend/internal/service/ai_joyboy_command.go); only a line from that set is
+// shown - as written in Thai, from this table in English - so a stored error
+// text an older server passes through never reaches the chat. The fallback
+// "บันทึกไม่สำเร็จ" says nothing the head line does not, so it adds nothing.
+function planItemReason(error: string | undefined, language: 'th' | 'en'): string | undefined {
+  const text = (error ?? '').trim();
+  if (!text) return undefined;
+  const th = language === 'th';
+  // A row that moved under the card: the server adds which value and both numbers.
+  if (text.startsWith('ข้อมูลเปลี่ยนไประหว่างรอยืนยัน')) return th ? text : 'Changed while waiting to be confirmed, ask again';
+  const dish = /^มีเมนู “(.+)” อยู่แล้ว$/.exec(text);
+  if (dish) return th ? text : `“${dish[1]}” is already on the menu`;
+  const english: Record<string, string> = {
+    'ไม่พบวัตถุดิบที่ระบุ': 'No such ingredient',
+    'คำสั่งเสียหาย': 'The command was damaged',
+    'ไม่พบเมนูนี้ในร้านแล้ว': 'This dish is no longer on the menu',
+    'ไม่พบรายการนี้ในร้านแล้ว': 'This no longer exists',
+    'ไม่พบวัตถุดิบนี้ในร้านแล้ว': 'This ingredient no longer exists',
+    'ยอดเงินต้องมากกว่า 0': 'The amount must be more than 0',
+    'ยอดเงินมากเกินไป': 'The amount is too large',
+    'จำนวนต้องมากกว่า 0': 'The quantity must be more than 0',
+    'จำนวนมากเกินไป': 'The quantity is too large',
+    'สต๊อกจะมากเกินไป': 'The stock would be too high',
+    'สต๊อกไม่พอสำหรับตัดออก': 'Not enough stock to take out',
+    'ราคาต้องไม่ติดลบ': 'The price cannot be negative',
+    'ราคาสูงเกินไป': 'The price is too high',
+    'เปลี่ยนหน่วยไม่ได้ เพราะวัตถุดิบนี้อยู่ในสูตรเมนู': 'A menu recipe uses this unit',
+    'มีรายการนี้อยู่แล้ว': 'This already exists',
+  };
+  if (!Object.prototype.hasOwnProperty.call(english, text)) return undefined;
+  return th ? text : english[text];
+}
+
+// What a confirmed plan did, said on the phone from the counts, then a line
+// per failed item: its title, the restaurant's own name the card lists, and
+// why when planItemReason has words for it. The server's `message` is never
+// shown. With nothing saved the card already lists every item, so an item
+// without a reason adds no line.
+function planOutcomeLine(result: AIActionPlanConfirmation, language: 'th' | 'en'): string {
+  const th = language === 'th';
+  if (result.failed === 0) {
+    if (result.replayed) return th ? 'บันทึกไว้แล้ว ไม่ได้ทำซ้ำ' : 'Already saved, not run again.';
+    if (result.succeeded <= 1) return th ? 'บันทึกแล้ว' : 'Saved.';
+    return th ? `บันทึกแล้ว ${result.succeeded} รายการ` : `Saved ${result.succeeded} changes.`;
+  }
+  const noneSaved = result.succeeded === 0;
+  const head = noneSaved
+    ? (th ? 'บันทึกไม่สำเร็จ ข้อมูลไม่ถูกเปลี่ยน' : 'Nothing was saved.')
+    : (th ? `บันทึกแล้ว ${result.succeeded} รายการ, ไม่สำเร็จ ${result.failed} รายการ` : `Saved ${result.succeeded}, ${result.failed} failed.`);
+  const failures = (result.items ?? []).flatMap((item) => {
+    const title = item.title.trim();
+    if (item.succeeded || !title) return [];
+    const reason = planItemReason(item.error, language);
+    if (reason) return [`${title}: ${reason}`];
+    return noneSaved ? [] : [title];
+  });
+  return [head, ...failures].join('\n');
 }
 
 function newId(prefix: string): string {
@@ -454,7 +533,7 @@ export default function AIAssistantScreen() {
         return;
       }
       setNotice({
-        text: error instanceof Error && error.message ? error.message : copy('ผู้ช่วยตอบไม่ได้ในขณะนี้', 'The assistant could not answer'),
+        text: apiFailureDetail(error, language) ?? copy('ผู้ช่วยตอบไม่ได้ในขณะนี้', 'The assistant could not answer'),
         tone: 'error',
       });
     } finally {
@@ -478,14 +557,23 @@ export default function AIAssistantScreen() {
   const confirmPlan = useCallback(async () => {
     const plan = pendingPlan;
     if (!plan) return;
-    const result = await confirmAIActionPlan(plan.id, plan.confirmation_token);
+    // A request that fails is worded here, like the preview's below; the card
+    // prints only a ConfirmRefusal and never the ApiError it used to receive.
+    let result: AIActionPlanConfirmation;
+    try {
+      result = await confirmAIActionPlan(plan.id, plan.confirmation_token);
+    } catch (error) {
+      throw new ConfirmRefusal(planConfirmRefusal(error, language));
+    }
+    // The outcome is said from the counts, not from the server's composed text.
+    const line = planOutcomeLine(result, language);
     setMessages((current) => current.map((message) => (
       message.planId === plan.id
-        ? { ...message, outcome: { tone: result.failed > 0 ? 'bad' : 'good', text: result.message } }
+        ? { ...message, outcome: { tone: result.failed > 0 ? 'bad' : 'good', text: line } }
         : message
     )));
-    if (result.succeeded === 0 && result.failed > 0) throw new Error(result.message);
-  }, [pendingPlan]);
+    if (result.succeeded === 0 && result.failed > 0) throw new ConfirmRefusal(line);
+  }, [language, pendingPlan]);
 
   const confirmPreview = useCallback(async () => {
     const preview = pendingPreview;
@@ -497,7 +585,7 @@ export default function AIAssistantScreen() {
         message.previewId === preview.id ? { ...message, outcome: { tone: 'good', text } } : message
       )));
     } catch (error) {
-      throw new Error(getAIActionErrorMessage(error, language));
+      throw new ConfirmRefusal(getAIActionErrorMessage(error, language));
     }
   }, [language, pendingPreview]);
 

@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, UIManager, View } from 'react-native';
+import { ActivityIndicator, Alert, LayoutAnimation, ScrollView, View } from 'react-native';
 import type { Anchor } from '@/src/components/inventory/parts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,6 +35,7 @@ import {
   headerContentTop,
 } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail, apiFailureKind, apiFailureSays } from '@/src/lib/api-failure';
 import {
   countPayload,
   filterIngredients,
@@ -51,10 +52,6 @@ import { useDisplayPreferences } from '@/src/providers/display-preferences-provi
 import { useToast } from '@/src/providers/toast-provider';
 import { palette } from '@/src/theme';
 import type { Ingredient, IngredientCategory } from '@/src/types/ingredient';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type Sheet =
   | { kind: 'none' }
@@ -80,7 +77,8 @@ export default function InventoryScreen() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<IngredientCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the panel's title names it, `detail` is the app's line under it when there is one.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   // What a sheet just did is a toast now (14 ก.ย.); only a failed load stays in the list.
   const { showToast } = useToast();
   const setNotice = (title: string) => showToast({ title });
@@ -120,11 +118,11 @@ export default function InventoryScreen() {
       setIngredients(ingredientResponse.ingredients || []);
       setCategories(categoryResponse.categories || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('โหลดคลังวัตถุดิบไม่สำเร็จ', 'Could not load inventory.'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       setLoading(false);
     }
-  }, [canView, copy]);
+  }, [canView, language]);
 
   useFocusEffect(useCallback(() => { void load(ingredients.length > 0); }, [load])); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -161,7 +159,7 @@ export default function InventoryScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setNotice(t(`เติม ${item.name} +${fmt(quantity, locale)} ${item.unit} แล้ว`, `Restocked ${item.name} +${fmt(quantity, locale)} ${item.unit}`));
     } catch (err) {
-      Alert.alert(t('เติมสต็อกไม่สำเร็จ', 'Could not restock'), err instanceof Error ? err.message : undefined);
+      Alert.alert(t('เติมสต็อกไม่สำเร็จ', 'Could not restock'), apiFailureDetail(err, language));
     } finally {
       setBusy(false);
     }
@@ -178,7 +176,7 @@ export default function InventoryScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setNotice(t(`บันทึกยอด ${item.name} = ${fmt(next.stock, locale)} ${item.unit}`, `${item.name} set to ${fmt(next.stock, locale)} ${item.unit}`));
     } catch (err) {
-      Alert.alert(t('ปรับยอดไม่สำเร็จ', 'Could not save the count'), err instanceof Error ? err.message : undefined);
+      Alert.alert(t('ปรับยอดไม่สำเร็จ', 'Could not save the count'), apiFailureDetail(err, language));
     } finally {
       setBusy(false);
     }
@@ -194,13 +192,24 @@ export default function InventoryScreen() {
           text: t('ลบ', 'Delete'),
           style: 'destructive',
           onPress: async () => {
-            try {
-              await deleteIngredient(item.ID);
+            const removed = () => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setIngredients((prev) => prev.filter((row) => row.ID !== item.ID));
               setNotice(t(`ลบ ${item.name} แล้ว`, `Deleted ${item.name}`));
+            };
+            try {
+              await deleteIngredient(item.ID);
+              removed();
             } catch (err) {
-              Alert.alert(t('ลบไม่สำเร็จ', 'Could not delete'), err instanceof Error ? err.message : undefined);
+              // Another phone deleted it first: what was asked for is done, so
+              // the row goes as if this delete had done it.
+              if (apiFailureKind(err) === 'not_found') {
+                removed();
+                return;
+              }
+              // Every refusal here is a 409, an ingredient already deleted too:
+              // only this wording is the ingredient still in a menu recipe.
+              Alert.alert(t('ลบไม่สำเร็จ', 'Could not delete'), apiFailureSays(err, 'used by a menu recipe') ? t('ยังมีเมนูที่ใช้วัตถุดิบนี้', 'A menu recipe still uses it.') : apiFailureDetail(err, language));
             }
           },
         },
@@ -320,7 +329,7 @@ export default function InventoryScreen() {
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true, true), paddingHorizontal: 12, paddingBottom: dockBottom + 12, gap: 10 }}
       >
-        {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error} tone="danger" /> : null}
+        {error ? <Feedback title={t('โหลดคลังไม่ได้', 'Could not load inventory')} detail={error.detail} tone="danger" /> : null}
 
         {/* The totals are the whole inventory's, whatever the rail is showing, so
             they stay put across all three tabs. Only a search or select mode
@@ -511,7 +520,8 @@ function BatchSheet({
       try {
         patched.push(await adjustStock(row.ID, payload));
       } catch (err) {
-        failed.push(`${row.name}: ${err instanceof Error ? err.message : t('ไม่สำเร็จ', 'failed')}`);
+        const detail = apiFailureDetail(err, language);
+        failed.push(detail ? `${row.name}: ${detail}` : row.name);
       }
     }
     setBusy(false);

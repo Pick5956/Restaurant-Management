@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -283,12 +284,26 @@ func (ctrl *MenuController) UpdateMenuItem(c *gin.Context) {
 		respondInvalidRequest(c)
 		return
 	}
+	previousImage := ""
+	if existing, err := ctrl.menuSvc.FindMenuItem(restaurantID, itemID); err == nil {
+		previousImage = existing.ImageURL
+		// A form opened before another device changed the photo sends the old
+		// URL back, and that file was removed when the photo changed. Saving
+		// it would point the dish at a missing picture and then release - and
+		// delete - the photo it has now. The stored picture stays.
+		if staleMenuImage(restaurantID, req.ImageURL) {
+			req.ImageURL = previousImage
+		}
+	}
 	item, err := ctrl.menuSvc.UpdateMenuItem(restaurantID, itemID, &req)
 	if err != nil {
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, item)
+	if previousImage != item.ImageURL {
+		ctrl.releaseMenuImage(restaurantID, previousImage)
+	}
 }
 
 func (ctrl *MenuController) UpdateMenuItemAvailability(c *gin.Context) {
@@ -322,11 +337,71 @@ func (ctrl *MenuController) DeleteMenuItem(c *gin.Context) {
 	if !ok {
 		return
 	}
+	previousImage := ""
+	if existing, err := ctrl.menuSvc.FindMenuItem(restaurantID, itemID); err == nil {
+		previousImage = existing.ImageURL
+	}
 	if err := ctrl.menuSvc.DeleteMenuItem(restaurantID, itemID); err != nil {
 		respondAPIError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	ctrl.releaseMenuImage(restaurantID, previousImage)
+}
+
+// releaseMenuImage deletes the file behind previousURL once no menu item of
+// the restaurant shows it any more. Without this every replaced or deleted
+// picture stays on disk, the 500-file quota fills, and uploads stop for good.
+func (ctrl *MenuController) releaseMenuImage(restaurantID uint, previousURL string) {
+	if strings.TrimSpace(previousURL) == "" {
+		return
+	}
+	items, err := ctrl.menuSvc.ListMenuItems(restaurantID, true, 0)
+	if err != nil {
+		// A stray file costs less than deleting a picture still on the menu.
+		log.Printf("menu_image_release_skipped error_type=%T", err)
+		return
+	}
+	removeUnreferencedMenuImage(restaurantID, previousURL, items)
+}
+
+// staleMenuImage reports that imageURL names one of this restaurant's menu
+// uploads whose file is no longer on disk. Anything else - empty, an external
+// URL, a file that exists - is not stale.
+func staleMenuImage(restaurantID uint, imageURL string) bool {
+	directory, publicPrefix := menuUploadLocation(restaurantID)
+	path := uploadPathFromURL(imageURL, publicPrefix, directory)
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
+}
+
+// removeUnreferencedMenuImage removes the file previousURL points at when it
+// is one of this restaurant's menu uploads and none of items still uses it.
+// Items are compared by file, not URL text, so the same picture stored under
+// two public hosts still counts as in use.
+func removeUnreferencedMenuImage(restaurantID uint, previousURL string, items []entity.MenuItem) {
+	directory, publicPrefix := menuUploadLocation(restaurantID)
+	previousPath := uploadPathFromURL(previousURL, publicPrefix, directory)
+	if previousPath == "" {
+		return
+	}
+	for _, item := range items {
+		if uploadPathFromURL(item.ImageURL, publicPrefix, directory) == previousPath {
+			return
+		}
+	}
+	removeSavedUpload(previousPath)
+}
+
+// menuUploadLocation is where one restaurant's menu images live: the directory
+// UploadMenuImage writes to, relative to the working directory the server runs
+// from, and the public path prefix stored on the item.
+func menuUploadLocation(restaurantID uint) (directory, publicPrefix string) {
+	tenant := strconv.FormatUint(uint64(restaurantID), 10)
+	return filepath.Join("uploads", "menu", tenant), "/uploads/menu/" + tenant + "/"
 }
 
 func (ctrl *MenuController) UploadMenuImage(c *gin.Context) {
@@ -353,7 +428,7 @@ func (ctrl *MenuController) UploadMenuImage(c *gin.Context) {
 		respondMenuBackgroundOptionError(c, err)
 		return
 	}
-	relativeDir := filepath.Join("uploads", "menu", strconv.FormatUint(uint64(restaurantID), 10))
+	relativeDir, publicPrefix := menuUploadLocation(restaurantID)
 
 	opened, err := file.Open()
 	if err != nil {
@@ -400,7 +475,7 @@ func (ctrl *MenuController) UploadMenuImage(c *gin.Context) {
 		return
 	}
 
-	publicPath := "/uploads/menu/" + strconv.FormatUint(uint64(restaurantID), 10) + "/" + fileName
+	publicPath := publicPrefix + fileName
 	c.JSON(http.StatusCreated, gin.H{
 		"image_url":          publicURL(c, publicPath),
 		"path":               publicPath,

@@ -9,6 +9,8 @@ import (
 
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 // Joyboy's inventory command path.
@@ -640,10 +642,14 @@ func newAIActionPlanConfirmation(plan *entity.AIActionPlan, replayed bool) *AIAc
 		} else {
 			confirmation.Failed++
 		}
+		failure := ""
+		if !succeeded && strings.TrimSpace(item.ErrorText) != "" {
+			failure = aiActionFailureLine(item.ErrorText)
+		}
 		confirmation.Items = append(confirmation.Items, AIActionPlanItemOutcomeView{
 			Title:     title,
 			Succeeded: succeeded,
-			Error:     item.ErrorText,
+			Error:     failure,
 		})
 	}
 	switch {
@@ -658,14 +664,64 @@ func newAIActionPlanConfirmation(plan *entity.AIActionPlan, replayed bool) *AIAc
 	// only Message, so without this the owner read "ไม่สำเร็จ 1 รายการ" and had
 	// no way to learn that it was refused because a colleague had changed the
 	// stock while the card was on screen — which is the one thing they need to
-	// know to decide what to do next.
+	// know to decide what to do next. The reason is the worded line, never the
+	// stored error: see aiActionFailureLine.
 	for _, item := range confirmation.Items {
-		if item.Succeeded || strings.TrimSpace(item.Error) == "" {
+		if item.Succeeded || item.Error == "" {
 			continue
 		}
 		confirmation.Message += fmt.Sprintf("\n- %s: %s", item.Title, item.Error)
 	}
 	return confirmation
+}
+
+// aiActionFailureFallback is an item's reason when its error is not one the
+// owner has words for.
+const aiActionFailureFallback = "บันทึกไม่สำเร็จ"
+
+// aiActionKnownFailures words the service refusals a confirmed item can meet,
+// keyed by the stored error text in lower case.
+var aiActionKnownFailures = map[string]string{
+	strings.ToLower(errAIActionTargetNotFound.Error()): "ไม่พบเมนูนี้ในร้านแล้ว",
+	strings.ToLower(gorm.ErrRecordNotFound.Error()):    "ไม่พบรายการนี้ในร้านแล้ว",
+	"ingredient not found":                             "ไม่พบวัตถุดิบนี้ในร้านแล้ว",
+	"amount must be greater than zero":                 "ยอดเงินต้องมากกว่า 0",
+	"amount is too large":                              "ยอดเงินมากเกินไป",
+	"quantity must be greater than zero":               "จำนวนต้องมากกว่า 0",
+	"quantity is too large":                            "จำนวนมากเกินไป",
+	"resulting stock is too large":                     "สต๊อกจะมากเกินไป",
+	"not enough stock":                                 ErrAIActionNotEnoughStock.Error(),
+	"price must be zero or more":                       "ราคาต้องไม่ติดลบ",
+	"price must be zero or greater":                    "ราคาต้องไม่ติดลบ",
+	"price is too large":                               "ราคาสูงเกินไป",
+	strings.ToLower(ErrIngredientUnitLocked.Error()):   "เปลี่ยนหน่วยไม่ได้ เพราะวัตถุดิบนี้อยู่ในสูตรเมนู",
+}
+
+// aiActionFailureLine is how the owner reads why one item of a confirmed plan
+// failed. The stored text is whatever error the item's service call returned,
+// and the chat prints the line as it is, so the service's own English never
+// goes through: a refusal this package already wrote for the owner (the row
+// changed meanwhile, the dish already exists, the ingredient is gone, a
+// damaged command) is kept, a known service refusal gets its Thai, and
+// anything else reads aiActionFailureFallback. The confirmation carries no
+// conversation language and its head line is Thai, so the reason is Thai too.
+func aiActionFailureLine(stored string) string {
+	text := strings.TrimSpace(stored)
+	switch {
+	case strings.HasPrefix(text, ErrAIActionChangedMeanwhile.Error()),
+		text == ErrAIActionUnknownIngredient.Error(),
+		text == "คำสั่งเสียหาย",
+		strings.HasPrefix(text, "มีเมนู “") && strings.HasSuffix(text, "” อยู่แล้ว"):
+		return text
+	}
+	lower := strings.ToLower(text)
+	if line, ok := aiActionKnownFailures[lower]; ok {
+		return line
+	}
+	if strings.Contains(lower, "duplicate key") || strings.Contains(lower, "sqlstate 23505") {
+		return "มีรายการนี้อยู่แล้ว"
+	}
+	return aiActionFailureFallback
 }
 
 func aiActionItemTitle(item entity.AIActionPlanItem) string {

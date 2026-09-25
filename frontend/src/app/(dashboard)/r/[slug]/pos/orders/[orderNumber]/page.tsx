@@ -6,16 +6,20 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { AlertTriangle, ArrowLeft, ArrowRight, MapPin, Minus, Plus, Printer, ReceiptText, Search, ShoppingBasket, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
+import { apiFailureText } from "@/src/lib/apiFailure";
+import { menuRefusal, orderItemStatusRefusal, stockRefusalOf, type MenuRefusal, type OrderItemStatusRefusal, type StockRefusal } from "@/src/lib/knownApiErrors";
 import { MENU_CARD_GRID_CLASS, MENU_CARD_SHELL_CLASS } from "@/src/lib/menuGrid";
 import { menuCategoryIds, menuOptionLimits } from "@/src/lib/menuUtils";
 import { billDiscountLines } from "@/src/lib/billPromotions";
-import { groupOrderItems, type OrderItemGroup } from "@/src/lib/orderItemGroups";
+import { groupOrderItems, newestPendingItem, type OrderItemGroup } from "@/src/lib/orderItemGroups";
 import { canCloseEmptyTableOrder } from "@/src/lib/orderNavigation";
 import { printThermalReceipt } from "@/src/lib/thermalReceiptPrint";
 import { can } from "@/src/lib/rbac";
+import { createRequestGeneration } from "@/src/lib/requestGeneration";
 import { addOrderItem, closeEmptyTableOrder, deleteOrderItem, getOrder, getOrderBill, payOrder, sendOrderToKitchen, updateOrderItem, updateOrderItemStatus, voidOrderItemUnits } from "@/src/lib/order";
 import { listCategories, listMenuItems } from "@/src/lib/menu";
 import type { Category, MenuItem } from "@/src/types/menu";
@@ -70,6 +74,75 @@ function fulfillmentSections(groups: OrderItemGroup[]): FulfillmentSection[] {
     .filter((section) => section.groups.length > 0);
 }
 
+const unitCount = (items: OrderItem[]) => items.reduce((sum, item) => sum + item.quantity, 0);
+
+// What an action on this order can be refused for that staff can act on,
+// matched on the server's own wording (OrderService). First hit wins. The
+// refusals other pages meet too are read in knownApiErrors, before this table:
+// the stock wording (stockRefusalOf), a bill closed or a dish moved on another
+// screen (orderItemStatusRefusal), a dish or its options changed on the menu
+// (menuRefusal). That wording never reaches the screen: anything else is the
+// shared failure line or the action's own.
+const ORDER_REFUSALS: ReadonlyArray<{ needles: readonly string[]; th: string; en: string }> = [
+  { needles: ["front-of-house void requires every item to be sent"], th: "ส่งรายการที่รอเข้าครัวก่อน แล้วค่อยยกเลิก", en: "Send the waiting items to the kitchen first, then void." },
+  { needles: ["only pending items can be edited"], th: "รายการนี้ส่งเข้าครัวแล้ว", en: "This item was already sent to the kitchen." },
+  { needles: ["no pending items to send"], th: "ไม่มีรายการรอส่งครัว", en: "Nothing is waiting to be sent." },
+  { needles: ["unavailable ingredient", "option ingredient is unavailable"], th: "วัตถุดิบของเมนูนี้หมด", en: "An ingredient for this dish has run out." },
+  // validateOrderReadyForPayment. An order whose every line was voided is back
+  // to open before it looks, so that is refused here too: confirmPayment reads
+  // the bill again and says there is nothing to charge instead.
+  { needles: ["completed by the kitchen"], th: "ครัวยังทำรายการไม่ครบ", en: "The kitchen has not finished every item yet." },
+  { needles: ["less than grand total"], th: "ยอดสุทธิเปลี่ยนแล้ว ตรวจยอดอีกครั้ง", en: "The total has changed. Check it again." },
+  // validateEmptyTableClose: the order's status moved on, not its items.
+  { needles: ["can be closed without an order"], th: "ออเดอร์นี้เปลี่ยนไปแล้ว", en: "This order has changed." },
+  { needles: ["already has items"], th: "ออเดอร์นี้มีรายการแล้ว", en: "This order already has items." },
+];
+
+type RefusalCopy = { th: string; en: string };
+
+const STOCK_REFUSALS: Record<StockRefusal["kind"], RefusalCopy> = {
+  sold_out: { th: "เมนูนี้หมดแล้ว", en: "This menu item is sold out." },
+  only_left: { th: "เมนูนี้เหลือไม่พอ", en: "Not enough of this menu item is left." },
+};
+
+const ITEM_STATUS_REFUSALS: Record<OrderItemStatusRefusal, RefusalCopy> = {
+  order_closed: { th: "ออเดอร์นี้ปิดไปแล้ว", en: "This order is already closed." },
+  item_changed: { th: "รายการนี้เปลี่ยนสถานะไปแล้ว", en: "This item has already changed." },
+};
+
+const MENU_REFUSALS: Record<MenuRefusal, RefusalCopy> = {
+  menu_gone: { th: "ไม่พบเมนูนี้แล้ว", en: "This menu item no longer exists." },
+  menu_unavailable: { th: "เมนูนี้ปิดขายอยู่", en: "This menu item is not available." },
+  options_changed: { th: "ตัวเลือกไม่ตรงกับเมนูแล้ว เลือกใหม่อีกครั้ง", en: "The options no longer match this menu item. Choose again." },
+};
+
+// Payment refusals the pay button's own guards would have caught on a fresh
+// bill: the total moved, a line came back to the kitchen, or every line was
+// voided on another screen. The bill on screen is behind, so it is read again.
+const STALE_BILL_REFUSALS = ["less than grand total", "completed by the kitchen"] as const;
+
+/** The server's refusal, lower-cased for matching. Never shown. */
+const refusalOf = (error: unknown) => apiErrorMessage(error).trim().toLowerCase();
+const billIsStale = (error: unknown) => {
+  const refusal = refusalOf(error);
+  return STALE_BILL_REFUSALS.some((needle) => refusal.includes(needle));
+};
+
+/** Whether a bill still has a line to charge: one that was not voided. */
+const billHasCharge = (bill: Bill) => bill.items.some((item) => item.status !== "cancelled");
+
+function orderFailureText(error: unknown, language: "th" | "en", fallback: string): string {
+  const stock = stockRefusalOf(error);
+  if (stock) return STOCK_REFUSALS[stock.kind][language];
+  const itemStatus = orderItemStatusRefusal(error);
+  if (itemStatus) return ITEM_STATUS_REFUSALS[itemStatus][language];
+  const menu = menuRefusal(error);
+  if (menu) return MENU_REFUSALS[menu][language];
+  const refusal = refusalOf(error);
+  const known = refusal ? ORDER_REFUSALS.find((entry) => entry.needles.some((needle) => refusal.includes(needle))) : undefined;
+  return known ? known[language] : apiFailureText(error, language, fallback);
+}
+
 
 
 export default function PosOrderDetailPage() {
@@ -116,6 +189,11 @@ export default function PosOrderDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const actionInFlightRef = useRef(false);
+  // Only the newest read of the order lands. The status effect below reloads
+  // in the foreground, past the in-flight guard, so a read that was started
+  // before an action finished would otherwise overwrite the order the action
+  // just returned.
+  const [loadRequests] = useState(createRequestGeneration);
 
   const copy = language === "th"
     ? {
@@ -145,6 +223,7 @@ export default function PosOrderDetailPage() {
       emptyCart: "ยังไม่มีรายการ",
       sendKitchen: "ส่งเข้าครัว",
       close: "ออกบิล / รับเงิน",
+      closeShort: "รับเงิน",
       bill: "บิล",
       service: "Service charge",
       vat: "VAT",
@@ -180,16 +259,29 @@ export default function PosOrderDetailPage() {
       closeEmptyTableBody: "โต๊ะนี้ยังไม่มีรายการอาหาร ระบบจะไม่บันทึกออเดอร์ว่างนี้ (ไม่ขึ้นในประวัติ) และเปลี่ยนโต๊ะกลับเป็นว่าง",
       keepTableOpen: "เปิดโต๊ะไว้",
       tableClosed: "ปิดโต๊ะแล้ว",
+      closeTakeaway: "ยกเลิกออเดอร์",
+      closeTakeawayTitle: "ยกเลิกออเดอร์กลับบ้านที่เปิดผิด?",
+      closeTakeawayBody: "ออเดอร์นี้ยังไม่มีรายการอาหาร ระบบจะไม่บันทึกออเดอร์ว่างนี้ (ไม่ขึ้นในประวัติ)",
+      keepTakeawayOpen: "เปิดออเดอร์ไว้",
+      takeawayClosed: "ยกเลิกออเดอร์แล้ว",
       remove: "ลบ",
       foodSubtotal: "ยอดอาหาร",
       discount: "ส่วนลด",
       total: "ยอดรวม",
       loadError: "โหลดออเดอร์ไม่สำเร็จ",
       saveError: "ทำรายการไม่สำเร็จ",
+      billLoadError: "เปิดบิลไม่สำเร็จ",
+      billReloadError: "โหลดบิลล่าสุดไม่สำเร็จ",
+      paymentError: "รับเงินไม่สำเร็จ",
+      nothingToCharge: "บิลนี้ไม่มีรายการให้เก็บเงิน",
+      voidError: "ยกเลิกรายการไม่สำเร็จ",
+      closeTableError: "ปิดโต๊ะไม่สำเร็จ",
+      closeTakeawayError: "ยกเลิกออเดอร์ไม่สำเร็จ",
+      partialVoidToast: (done: number, total: number) => `ยกเลิกได้ ${done} จาก ${total} รายการ ตรวจบิลอีกครั้ง`,
       noMenu: "ยังไม่มีเมนู",
       soldOut: "หมด",
-      lowStockLeft: "เหลือ",
-      servingUnit: "ที่",
+      lowStockLeft: (n: number) => `เหลือ ${n}`,
+      noStockLimit: "ไม่จำกัด",
       leftToast: (n: number, name: string) => `${name} เหลืออีก ${n} ที่`,
       soldOutToast: (name: string) => `${name} หมดแล้ว`,
     }
@@ -220,6 +312,7 @@ export default function PosOrderDetailPage() {
       emptyCart: "No items yet",
       sendKitchen: "Send to Kitchen",
       close: "Bill / Pay",
+      closeShort: "Pay",
       bill: "Bill",
       service: "Service charge",
       vat: "VAT",
@@ -255,16 +348,29 @@ export default function PosOrderDetailPage() {
       closeEmptyTableBody: "This table has no items. The empty order won't be recorded (it won't appear in the archive) and the table becomes available again.",
       keepTableOpen: "Keep table open",
       tableClosed: "Table closed",
+      closeTakeaway: "Discard order",
+      closeTakeawayTitle: "Discard this takeaway order opened by mistake?",
+      closeTakeawayBody: "This order has no items. The empty order won't be recorded (it won't appear in the archive).",
+      keepTakeawayOpen: "Keep order open",
+      takeawayClosed: "Order discarded",
       remove: "Remove",
       foodSubtotal: "Food subtotal",
       discount: "Discount",
       total: "Total",
       loadError: "Could not load order.",
       saveError: "Could not complete the action.",
+      billLoadError: "Could not open the bill.",
+      billReloadError: "Could not load the latest bill.",
+      paymentError: "Could not take payment.",
+      nothingToCharge: "There is nothing on this bill to charge.",
+      voidError: "Could not void the item.",
+      closeTableError: "Could not close the table.",
+      closeTakeawayError: "Could not discard the order.",
+      partialVoidToast: (done: number, total: number) => `Voided ${done} of ${total} items. Check the bill again.`,
       noMenu: "No menu items.",
       soldOut: "Sold out",
-      lowStockLeft: "Only",
-      servingUnit: "left",
+      lowStockLeft: (n: number) => `${n} left`,
+      noStockLimit: "No limit",
       leftToast: (n: number, name: string) => `Only ${n} left for ${name}`,
       soldOutToast: (name: string) => `${name} is sold out`,
     };
@@ -454,26 +560,40 @@ export default function PosOrderDetailPage() {
   const load = async ({ background = false }: { background?: boolean } = {}) => {
     if (!canTake || !orderNumber) return;
     if (background && actionInFlightRef.current) return;
+    const request = loadRequests.begin();
     if (!background) {
       setLoading(true);
       setError("");
     }
     try {
       const [orderRes, categoryRes, menuRes] = await Promise.all([getOrder(orderNumber), listCategories(), listMenuItems()]);
+      if (!loadRequests.isCurrent(request)) return;
       if (background && actionInFlightRef.current) return;
       setOrder(orderRes.data);
       setCategories(categoryRes.data.categories.filter((category) => category.is_active));
       setMenuItems(menuRes.data.menu_items);
+      // A background read that failed left its banner; the next one that lands
+      // takes it down. An action's own error stays until the user moves on.
+      setError((current) => (current === copy.loadError ? "" : current));
     } catch {
-      setError(copy.loadError);
+      if (loadRequests.isCurrent(request)) setError(copy.loadError);
     } finally {
-      setLoading(false);
+      if (loadRequests.isCurrent(request)) setLoading(false);
     }
+  };
+
+  // The order an action returns is newer than any read still in flight.
+  const applyActionOrder = (next: Order) => {
+    loadRequests.invalidate();
+    setOrder(next);
   };
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(loadTimer);
+    return () => {
+      window.clearTimeout(loadTimer);
+      loadRequests.invalidate();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canTake, orderNumber, order?.status]);
   const realtimeStatus = useOrderEvents(() => load({ background: true }), {
@@ -518,24 +638,26 @@ export default function PosOrderDetailPage() {
     };
   }, [modalScrollLocked]);
 
-  // The backend rejects an over-order with "only N left for <menu>" or
-  // "<menu> is sold out" (ensureMenuCapacity). Surface those as a warning toast
-  // with a localized message instead of the inline error banner, using the menu
-  // name we already know on the client (so we never parse Thai names out of the
-  // English backend string). Returns true when it handled the error as a toast.
+  // The backend rejects an over-order as sold out or with only N left
+  // (ensureMenuCapacity, read by stockRefusalOf). Surface those as a warning
+  // toast with a localized message, using the menu name we already know on the
+  // client (so we never show the name out of the English backend string).
+  // Returns true when it handled the error as a toast.
   const notifyCapacityError = (error: unknown, menuName: string): boolean => {
-    const raw = apiErrorMessage(error);
-    if (!raw) return false;
-    const leftMatch = raw.match(/only\s+(\d+)\s+left/i);
-    if (leftMatch) {
-      showToast({ tone: "warning", title: copy.leftToast(Number(leftMatch[1]), menuName) });
-      return true;
-    }
-    if (/sold out/i.test(raw)) {
-      showToast({ tone: "warning", title: copy.soldOutToast(menuName) });
-      return true;
-    }
-    return false;
+    const stock = stockRefusalOf(error);
+    if (!stock) return false;
+    showToast({
+      tone: "warning",
+      title: stock.kind === "only_left" ? copy.leftToast(stock.left, menuName) : copy.soldOutToast(menuName),
+    });
+    return true;
+  };
+
+  // An action's outcome is a toast. The header banner sits under the bill and
+  // every sheet on this page (z-20 under z-50), so a failure written there from
+  // inside one of them was never seen.
+  const showActionFailure = (error: unknown, fallback: string = copy.saveError) => {
+    showToast({ tone: "error", title: orderFailureText(error, language, fallback) });
   };
 
   const runAction = async (action: () => Promise<Order>, options?: { capacityMenuName?: string }) => {
@@ -544,12 +666,12 @@ export default function PosOrderDetailPage() {
     setError("");
     try {
       const next = await action();
-      setOrder(next);
+      applyActionOrder(next);
     } catch (error) {
       const capacityName = options?.capacityMenuName;
-      // A capacity rejection becomes a toast; anything else stays in the inline banner.
+      // A capacity rejection is a warning naming the dish; anything else an error.
       if (!capacityName || !notifyCapacityError(error, capacityName)) {
-        setError(apiErrorMessage(error) || copy.saveError);
+        showActionFailure(error);
       }
     } finally {
       actionInFlightRef.current = false;
@@ -575,11 +697,14 @@ export default function PosOrderDetailPage() {
 
   const requestCloseEmptyTable = async () => {
     if (!order || !canCloseEmptyTableOrder(order)) return;
+    // A takeaway has no table, so it reads as discarding the order, not freeing
+    // a table — same underlying action, different words.
+    const takeaway = order.order_type === "takeaway";
     const confirmed = await confirm({
-      title: copy.closeEmptyTableTitle,
-      message: copy.closeEmptyTableBody,
-      confirmLabel: copy.closeEmptyTable,
-      cancelLabel: copy.keepTableOpen,
+      title: takeaway ? copy.closeTakeawayTitle : copy.closeEmptyTableTitle,
+      message: takeaway ? copy.closeTakeawayBody : copy.closeEmptyTableBody,
+      confirmLabel: takeaway ? copy.closeTakeaway : copy.closeEmptyTable,
+      cancelLabel: takeaway ? copy.keepTakeawayOpen : copy.keepTableOpen,
       tone: "warning",
     });
     if (!confirmed) return;
@@ -589,10 +714,10 @@ export default function PosOrderDetailPage() {
     setError("");
     try {
       await closeEmptyTableOrder(order.ID);
-      showToast({ title: copy.tableClosed });
+      showToast({ title: takeaway ? copy.takeawayClosed : copy.tableClosed });
       router.replace("/pos/tables");
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      showActionFailure(error, takeaway ? copy.closeTakeawayError : copy.closeTableError);
     } finally {
       actionInFlightRef.current = false;
       setSubmitting(false);
@@ -610,8 +735,8 @@ export default function PosOrderDetailPage() {
   };
 
   const adjustPendingGroup = async (group: OrderItemGroup, delta: -1 | 1) => {
-    if (!order || !group.pendingItems.length) return;
-    const item = group.pendingItems[0];
+    const item = newestPendingItem(group);
+    if (!order || !item) return;
     // Only a quantity increase can exceed capacity; a decrease never does.
     await runAction(async () => {
       if (delta < 0 && item.quantity === 1) {
@@ -686,7 +811,7 @@ export default function PosOrderDetailPage() {
       const undelivered = res.data.items.filter((it) => it.status === "pending" || it.status === "cooking").length;
       setBillEditMode(undelivered > 0);
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      showActionFailure(error, copy.billLoadError);
     } finally {
       setSubmitting(false);
     }
@@ -697,15 +822,18 @@ export default function PosOrderDetailPage() {
 
   // Re-fetch the bill (and refresh the order in the background) after an in-bill
   // edit so the totals and item list stay in sync without reopening the modal.
-  const reloadBill = async () => {
-    if (!order) return;
+  // Returns the bill it put on screen, or null when the read failed.
+  const reloadBill = async (): Promise<Bill | null> => {
+    if (!order) return null;
     try {
       const res = await getOrderBill(order.ID);
       setBill(res.data);
       setPaymentComplete(res.data.payment_status === "paid");
       setLastPayment(res.data.payments.at(-1) ?? null);
+      return res.data;
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      showActionFailure(error, copy.billReloadError);
+      return null;
     }
   };
 
@@ -720,11 +848,13 @@ export default function PosOrderDetailPage() {
         serve_immediately: true,
         fulfillment_type: order.order_type === "takeaway" ? "takeaway" : "dine_in",
       });
-      setOrder(response.data);
+      applyActionOrder(response.data);
       await reloadBill();
       showToast({ title: copy.itemAddedToast });
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      if (!notifyCapacityError(error, item.name)) {
+        showActionFailure(error);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -738,7 +868,7 @@ export default function PosOrderDetailPage() {
 
   const adjustBillPendingGroup = async (group: OrderItemGroup, delta: -1 | 1) => {
     if (!order || submitting) return;
-    const item = group.pendingItems[0] ?? group.firstItem;
+    const item = newestPendingItem(group) ?? group.firstItem;
     setSubmitting(true);
     setError("");
     try {
@@ -751,7 +881,7 @@ export default function PosOrderDetailPage() {
       void load({ background: true });
     } catch (error) {
       if (!(delta > 0 && notifyCapacityError(error, item.menu_name))) {
-        setError(apiErrorMessage(error) || copy.saveError);
+        showActionFailure(error);
       }
     } finally {
       setSubmitting(false);
@@ -772,12 +902,12 @@ export default function PosOrderDetailPage() {
         fulfillment_type: item.fulfillment_type ?? (order.order_type === "takeaway" ? "takeaway" : "dine_in"),
         selected_option_ids: item.selected_options?.map((option) => option.menu_option_id) ?? [],
       });
-      setOrder(response.data);
+      applyActionOrder(response.data);
       await reloadBill();
       showToast({ title: copy.itemAddedToast });
     } catch (error) {
       if (!notifyCapacityError(error, item.menu_name)) {
-        setError(apiErrorMessage(error) || copy.saveError);
+        showActionFailure(error);
       }
     } finally {
       setSubmitting(false);
@@ -815,13 +945,16 @@ export default function PosOrderDetailPage() {
     }
     setSubmitting(true);
     setError("");
+    let voided = 0;
+    let lineTargets: OrderItem[] = [];
     try {
       if (billCancelMode === "unit") {
         await voidOrderItemUnits(order.ID, billCancelTarget.firstItem.ID, 1, reason);
       } else {
-        const targets = billCancelTarget.items.filter((it) => it.status !== "cancelled");
-        for (const target of targets) {
+        lineTargets = billCancelTarget.items.filter((it) => it.status !== "cancelled");
+        for (const target of lineTargets) {
           await updateOrderItemStatus(order.ID, target.ID, "cancelled", reason);
+          voided += 1;
         }
       }
       setBillCancelTarget(null);
@@ -831,7 +964,20 @@ export default function PosOrderDetailPage() {
       void load({ background: true });
       showToast({ title: copy.itemCancelledToast });
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      if (voided > 0) {
+        // Part of the line is already cancelled on the server. The dialog's group
+        // no longer matches it, and the bill has to show the new lines and total.
+        // Said over the bill, not in the header under it: with the dialog gone
+        // this would read as done, and the rest would be charged.
+        showToast({ tone: "warning", title: copy.partialVoidToast(unitCount(lineTargets.slice(0, voided)), unitCount(lineTargets)) });
+        setBillCancelTarget(null);
+        setBillCancelReason("");
+        setBillCancelMode("line");
+        await reloadBill();
+        void load({ background: true });
+      } else {
+        showActionFailure(error, copy.voidError);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -852,7 +998,16 @@ export default function PosOrderDetailPage() {
       // floor. The receipt can still be reprinted from the order archive.
       router.replace("/pos/tables");
     } catch (error) {
-      setError(apiErrorMessage(error) || copy.saveError);
+      // Still marked submitting, so the stale total cannot be confirmed again
+      // before the new one is on screen. The bill is read before the refusal
+      // is said: with every line voided on another screen the server only says
+      // the kitchen is not done, and the fresh bill is what shows it is empty.
+      // When that read fails too it has said so itself, and the refusal would
+      // only guess at a bill that is not on screen, so nothing more is said.
+      const stale = billIsStale(error);
+      const fresh = stale ? await reloadBill() : null;
+      if (fresh && !billHasCharge(fresh)) showToast({ tone: "error", title: copy.nothingToCharge });
+      else if (!stale || fresh) showActionFailure(error, copy.paymentError);
       actionInFlightRef.current = false;
       setSubmitting(false);
     }
@@ -871,12 +1026,12 @@ export default function PosOrderDetailPage() {
 
   return (
     <div className={`min-h-dvh w-full bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${showCurrentRoundAction ? "pb-24" : "pb-6"}`}>
-      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-slate-100/95 backdrop-blur dark:bg-gray-950/95 transition-[left] duration-300 ease-in-out lg:inset-auto">
+      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto">
         <div className="px-4 py-2 sm:px-6 lg:px-8">
           <div className="grid w-full gap-1.5 lg:h-[var(--dashboard-shell-row)] lg:min-h-[var(--dashboard-shell-row)] lg:grid-cols-[2.5rem_minmax(10rem,20rem)_minmax(8rem,10rem)_minmax(0,1fr)_auto] lg:items-center">
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-1.5 lg:contents">
-            <button type="button" onClick={() => router.push("/pos/tables")} aria-label={copy.back} title={copy.back} className="ui-press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white text-gray-600 shadow-(--dashboard-control-shadow) transition-[border-color,background-color] hover:border-[#d6dbe2] hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-[#2c3848] dark:hover:bg-gray-800 lg:order-1">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <button type="button" onClick={() => router.push("/pos/tables")} aria-label={copy.back} title={copy.back} className={`${BACK_CONTROL} lg:order-1`}>
+              <ArrowLeft className={BACK_ICON} aria-hidden="true" />
             </button>
             {order && (
               <div className="flex min-w-0 items-center justify-start gap-1.5 lg:order-5">
@@ -890,24 +1045,29 @@ export default function PosOrderDetailPage() {
                   <span className="flex min-w-0 items-center gap-1.5 px-2">
                     <ReceiptText className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
                     <span className="hidden xl:inline">{copy.orderLabel}</span>
-                    <span className="truncate">{order.order_number}</span>
+                    {/* On a phone only the day's running number ("001") fits
+                        beside the table; the full number is one tap away in
+                        the summary this chip opens. */}
+                    <span className="truncate sm:hidden">{order.order_number.split("-").pop()}</span>
+                    <span className="hidden truncate sm:inline">{order.order_number}</span>
                   </span>
                   <span className="h-4 w-px shrink-0 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
                   <span className="flex shrink-0 items-center gap-1.5 px-2">
                     <UtensilsCrossed className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
                     <span className="font-mono tabular-nums">{orderItemCount}</span>
-                    <span>{copy.itemsLabel}</span>
+                    <span className="hidden sm:inline">{copy.itemsLabel}</span>
                   </span>
                 </button>
                 {canCloseTable ? (
-                  <button type="button" disabled={submitting} onClick={() => { void requestCloseEmptyTable(); }} className="ui-press h-10 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 text-[13px] font-semibold text-red-700 shadow-(--dashboard-control-shadow) transition-[border-color,background-color,opacity] hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50">
-                    {copy.closeEmptyTable}
+                  <button type="button" disabled={submitting} onClick={() => { void requestCloseEmptyTable(); }} className="ui-press ml-auto h-10 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 text-[13px] font-semibold text-red-700 lg:ml-0 shadow-(--dashboard-control-shadow) transition-[border-color,background-color,opacity] hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:border-red-800 dark:hover:bg-red-950/50">
+                    {order.order_type === "takeaway" ? copy.closeTakeaway : copy.closeEmptyTable}
                   </button>
                 ) : null}
                 {pendingItemCount === 0 && !isTerminal && activeOrderItems.length > 0 ? (
-                  <button type="button" disabled={submitting} onClick={() => { void loadBill(); }} className="ui-press inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-[background-color,opacity] hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800">
+                  <button type="button" disabled={submitting} onClick={() => { void loadBill(); }} className="ui-press ml-auto inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-700 px-3 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-[background-color,opacity] lg:ml-0 hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800">
                     <WalletCards className="h-4 w-4" aria-hidden="true" />
-                    {copy.close}
+                    <span className="sm:hidden">{copy.closeShort}</span>
+                    <span className="hidden sm:inline">{copy.close}</span>
                   </button>
                 ) : null}
               </div>
@@ -960,17 +1120,16 @@ export default function PosOrderDetailPage() {
                 // remaining_servings === 0 means the queue already claimed the last
                 // portion, so block ordering even before the kitchen cooks it.
                 const soldOut = !item.is_available || item.remaining_servings === 0;
-                const lowStock = !soldOut && typeof item.remaining_servings === "number" && item.remaining_servings > 0 && item.remaining_servings <= 10;
+                // Every dish shows what is left (owner, 2026-09-22); ten or fewer
+                // turns the badge amber. A dish with no recipe is never counted.
+                const remaining = typeof item.remaining_servings === "number" ? item.remaining_servings : null;
+                const lowStock = !soldOut && remaining !== null && remaining <= 10;
 
                 return (
                   <button key={item.ID} type="button" disabled={isTerminal || submitting || soldOut} onClick={() => openMenuPicker(item)} className={`ui-press ${MENU_CARD_SHELL_CLASS} disabled:cursor-not-allowed disabled:opacity-50 sm:hover:-translate-y-0.5`}>
                     {soldOut ? (
                       <span className="absolute left-2 top-2 z-10 rounded-md bg-gray-900/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md dark:bg-gray-100/90 dark:text-gray-900">
                         {copy.soldOut}
-                      </span>
-                    ) : lowStock ? (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-md dark:bg-amber-400 dark:text-gray-950">
-                        {copy.lowStockLeft} {item.remaining_servings} {copy.servingUnit}
                       </span>
                     ) : null}
                     {orderedQuantity > 0 && (
@@ -985,7 +1144,14 @@ export default function PosOrderDetailPage() {
                     />
                     <div className="flex min-w-0 flex-1 flex-col p-3">
                       <p className="truncate text-[13px] font-semibold text-gray-900 dark:text-white">{item.name}</p>
-                      <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
+                      <div className="mt-0.5 flex items-center justify-between gap-2">
+                        <p className="font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
+                        {!soldOut ? (
+                          <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${lowStock ? "bg-amber-500 text-white dark:bg-amber-400 dark:text-gray-950" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"}`}>
+                            {remaining !== null ? copy.lowStockLeft(remaining) : copy.noStockLimit}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </button>
                 );
@@ -1029,8 +1195,8 @@ export default function PosOrderDetailPage() {
             </div>
             <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-                <h2 className="min-w-0 text-[15px] font-semibold text-gray-900 dark:text-white">{selectedMenu.name}</h2>
-                <p className="shrink-0 text-right font-mono text-[16px] font-semibold tabular-nums">฿{(selectedMenu.price + selectedOptionsTotal).toLocaleString()}</p>
+                <h2 className="min-w-0 text-[15px] font-semibold text-black dark:text-white">{selectedMenu.name}</h2>
+                <p className="shrink-0 text-right font-mono text-[16px] font-semibold tabular-nums text-black dark:text-white">฿{(selectedMenu.price + selectedOptionsTotal).toLocaleString()}</p>
               </div>
             </div>
             <div data-pos-modal-scroll className="space-y-3 overflow-y-auto p-4">
@@ -1043,7 +1209,7 @@ export default function PosOrderDetailPage() {
                     return (
                       <div key={group.ID}>
                         <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">{group.name}</span>
+                          <span className="text-[12px] font-medium text-black dark:text-gray-300">{group.name}</span>
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                               {optionLimitLabel(selectedCount, minSelect, maxSelect)}
@@ -1056,7 +1222,7 @@ export default function PosOrderDetailPage() {
                             const selected = selectedOptionIds.includes(option.ID);
                             const limitReached = maxSelect > 1 && selectedCount >= maxSelect && !selected;
                             return (
-                              <button key={option.ID} type="button" disabled={limitReached} aria-pressed={selected} onClick={() => toggleOption(options.map((current) => current.ID), option.ID, minSelect, maxSelect)} className={`grid min-h-10 grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 text-left text-[12px] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900" : "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}`}>
+                              <button key={option.ID} type="button" disabled={limitReached} aria-pressed={selected} onClick={() => toggleOption(options.map((current) => current.ID), option.ID, minSelect, maxSelect)} className={`grid min-h-10 grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 text-left text-[12px] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900" : "border-gray-200 text-black hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}`}>
                                 <span>{option.name}</span>
                                 <span className="font-mono tabular-nums">{option.price_delta ? `+฿${option.price_delta.toLocaleString()}` : ""}</span>
                               </button>
@@ -1069,15 +1235,19 @@ export default function PosOrderDetailPage() {
                 </div>
               ) : null}
               <label className="block">
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.quantity}</span>
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{copy.quantity}</span>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">-</button>
-                  <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[13px] dark:border-gray-700 dark:bg-gray-800" />
-                  <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold dark:border-gray-800">+</button>
+                  <button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold text-black dark:border-gray-800 dark:text-white">-</button>
+                  <NumberInput min={1} inputMode="numeric" value={quantity} onValue={setQuantity} className="h-10 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-center text-[16px] font-semibold tabular-nums text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                  <button type="button" onClick={() => setQuantity((current) => current + 1)} className="h-10 w-10 rounded-md border border-gray-200 text-lg font-semibold text-black dark:border-gray-800 dark:text-white">+</button>
                 </div>
               </label>
+              {/* A takeaway order is takeaway through and through: every item
+                  goes home, so there is nothing to choose. selectedFulfillment
+                  already defaults to takeaway for these orders. */}
+              {order?.order_type !== "takeaway" && (
               <div>
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{fulfillmentTitle}</span>
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{fulfillmentTitle}</span>
                 <div className="grid grid-cols-2 gap-2">
                   {(["dine_in", "takeaway"] as const).map((value) => (
                     <button
@@ -1086,7 +1256,7 @@ export default function PosOrderDetailPage() {
                       onClick={() => setSelectedFulfillment(value)}
                       className={`h-10 rounded-md border px-3 text-[12px] font-semibold transition-colors ${selectedFulfillment === value
                           ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900"
-                          : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+                          : "border-gray-200 text-black hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
                         }`}
                     >
                       {value === "takeaway" ? takeawayItemLabel : dineInItemLabel}
@@ -1094,9 +1264,10 @@ export default function PosOrderDetailPage() {
                   ))}
                 </div>
               </div>
+              )}
               <label className="block">
-                <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.note}</span>
-                <textarea value={note} onChange={(event) => setNote(event.target.value)} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800" />
+                <span className="mb-1.5 block text-[12px] font-medium text-black dark:text-gray-300">{copy.note}</span>
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} className="min-h-20 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] text-black outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
               </label>
             </div>
             <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-800">
@@ -1429,7 +1600,7 @@ export default function PosOrderDetailPage() {
                   </div>
                 ) : null}
                 <button type="button" onClick={() => printThermalReceipt("print-bill")} className={paymentComplete ? "ui-press inline-flex h-10 items-center gap-2 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800" : "h-10 rounded-md border border-gray-200 px-3 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"}>{paymentComplete ? <><Printer className="h-4 w-4" aria-hidden="true" />{receiptCopy.printReceipt}</> : copy.print}</button>
-                {!paymentComplete ? <button type="button" disabled={submitting || !canPay || billUndelivered > 0} onClick={confirmPayment} className="ui-press h-10 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-orange-700 dark:text-white">{copy.confirmPayment}</button> : null}
+                {!paymentComplete ? <button type="button" disabled={submitting || !canPay || billUndelivered > 0 || billGroups.length === 0} onClick={confirmPayment} className="ui-press h-10 rounded-md bg-orange-700 px-3 text-[12px] font-semibold text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-orange-700 dark:text-white">{copy.confirmPayment}</button> : null}
               </div>
             </div>
           </div>

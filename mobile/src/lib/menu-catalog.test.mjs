@@ -10,15 +10,16 @@ import {
   groupMenuByCategory,
   isMenuSoldOut,
   menuGridColumns,
+  menuStockBadge,
 } from './menu-catalog.ts';
 
 const mobileRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const catalog = [
-  { ID: 1, name: 'ข้าวผัดกุ้ง', description: 'จานเดียว', category_id: 10 },
-  { ID: 2, name: 'ต้มยำ', description: '', category_id: 20, categories: [{ category_id: 10 }] },
-  { ID: 3, name: 'ชาเย็น', description: 'Thai tea', category_id: 30 },
-  { ID: 4, name: 'น้ำเปล่า', description: null, category_id: 0 },
+  { ID: 1, name: 'ข้าวผัดกุ้ง', description: 'จานเดียว', category_id: 10, is_available: true },
+  { ID: 2, name: 'ต้มยำ', description: '', category_id: 20, categories: [{ category_id: 10 }], is_available: true },
+  { ID: 3, name: 'ชาเย็น', description: 'Thai tea', category_id: 30, is_available: true },
+  { ID: 4, name: 'น้ำเปล่า', description: null, category_id: 0, is_available: true },
 ];
 
 test('the catalog filter matches a category by its main or linked category', () => {
@@ -41,6 +42,73 @@ test('groups keep the menu order and name unknown categories once', () => {
     ['30', 'เครื่องดื่ม', [3]],
     ['0', 'ไม่ระบุหมวด', [4]],
   ]);
+});
+
+// The owner, 2026-09-24: on the order screen a sold-out dish goes to the bottom
+// of its own category. Switched off and out of stock both count.
+const dish = (ID, category_id, stock = {}) => ({ ID, name: `dish ${ID}`, category_id, is_available: true, ...stock });
+const OFF = { is_available: false };
+const NONE_LEFT = { remaining_servings: 0 };
+const itemIds = (groups) => groups.map((group) => [group.key, group.items.map((item) => item.ID)]);
+
+test('sold-out dishes sink to the bottom of their own category, each part in menu order', () => {
+  const groups = groupMenuByCategory([
+    dish(1, 10),
+    dish(2, 10, OFF),
+    dish(3, 10, { remaining_servings: 4 }),
+    dish(4, 10, NONE_LEFT),
+    dish(5, 10, { remaining_servings: null }),
+    dish(6, 10, { is_available: false, remaining_servings: 9 }),
+    dish(7, 10, { remaining_servings: 1 }),
+  ], [{ ID: 10, name: 'อาหาร' }], 'ไม่ระบุหมวด');
+  // Orderable 1, 3, 5, 7 keep their order; sold-out 2, 4, 6 keep theirs below.
+  assert.deepEqual(itemIds(groups), [['10', [1, 3, 5, 7, 2, 4, 6]]]);
+});
+
+test('a sold-out dish never leaves its category or jumps past another one', () => {
+  const groups = groupMenuByCategory([
+    dish(1, 10, OFF),
+    dish(2, 20),
+    dish(3, 10),
+    dish(4, 20, NONE_LEFT),
+    dish(5, 30),
+    dish(6, 20),
+  ], [{ ID: 10, name: 'อาหาร' }, { ID: 20, name: 'ของหวาน' }, { ID: 30, name: 'เครื่องดื่ม' }], 'ไม่ระบุหมวด');
+  // Category 10 stays first although the dish that opened it is sold out.
+  assert.deepEqual(itemIds(groups), [['10', [3, 1]], ['20', [2, 6, 4]], ['30', [5]]]);
+  assert.deepEqual(groups.map((group) => group.label), ['อาหาร', 'ของหวาน', 'เครื่องดื่ม']);
+});
+
+test('a category that is entirely sold out keeps its place in the menu', () => {
+  const groups = groupMenuByCategory([
+    dish(1, 10),
+    dish(2, 20, OFF),
+    dish(3, 30),
+    dish(4, 20, NONE_LEFT),
+    dish(5, 0, OFF),
+  ], [{ ID: 10, name: 'อาหาร' }, { ID: 20, name: 'ของหวาน' }, { ID: 30, name: 'เครื่องดื่ม' }], 'ไม่ระบุหมวด');
+  assert.deepEqual(itemIds(groups), [['10', [1]], ['20', [2, 4]], ['30', [3]], ['0', [5]]]);
+});
+
+test('sinking sold-out dishes leaves the loaded menu as it was', () => {
+  const menu = Object.freeze([dish(1, 10, OFF), dish(2, 10), dish(3, 10, NONE_LEFT), dish(4, 10)]);
+  const groups = groupMenuByCategory(menu, [{ ID: 10, name: 'อาหาร' }], 'ไม่ระบุหมวด');
+  assert.deepEqual(itemIds(groups), [['10', [2, 4, 1, 3]]]);
+  assert.deepEqual(menu.map((item) => item.ID), [1, 2, 3, 4]);
+  // The same dish objects, not copies: the grid and the tablet panel key off them.
+  assert.equal(groups[0].items[0], menu[1]);
+});
+
+test('the order screen and the served page both lay out the grid from the grouping', async () => {
+  // A call site that fed the grid its own list would skip the sold-out order.
+  const [detailSource, servedSource] = await Promise.all([
+    readFile(path.join(mobileRoot, 'app', 'order', '[id].tsx'), 'utf8'),
+    readFile(path.join(mobileRoot, 'app', 'order', 'served.tsx'), 'utf8'),
+  ]);
+  for (const [name, source] of [['[id].tsx', detailSource], ['served.tsx', servedSource]]) {
+    assert.match(source, /const menuGroups = useMemo\(\(\) => groupMenuByCategory\(/, `${name} groups the menu`);
+    assert.match(source, /<OrderMenuGrid\s+groups=\{menuGroups\}/, `${name} hands the grid the grouped menu`);
+  }
 });
 
 test('the served page counts only lines added since it opened', () => {
@@ -87,17 +155,19 @@ test('a tablet grid fills the column it is given, never fewer than two across', 
 });
 
 test('the order grid greys out a dish by the one sold-out rule, from what it loaded on open', async () => {
-  const [gridSource, detailSource] = await Promise.all([
+  const [gridSource, detailSource, tilePartsSource] = await Promise.all([
     readFile(path.join(mobileRoot, 'src', 'components', 'order-menu-grid.tsx'), 'utf8'),
     readFile(path.join(mobileRoot, 'app', 'order', '[id].tsx'), 'utf8'),
+    // The sold-out word lives in StockMark, which every menu layout shares.
+    readFile(path.join(mobileRoot, 'src', 'components', 'order-menu', 'menu-tile-parts.tsx'), 'utf8'),
   ]);
   // The grid greys a tile out and blocks the tap for either kind of sold out.
   assert.match(gridSource, /const soldOut = isMenuSoldOut\(item\);/);
   assert.match(gridSource, /disabled=\{soldOut\}/);
   assert.doesNotMatch(gridSource, /!item\.is_available/);
   // "หมด" is a plain grey word - no status chip with its dot and red frame.
-  assert.doesNotMatch(gridSource, /<StatusBadge/);
-  assert.match(gridSource, /color: palette\.neutral[^}]*\}\]\}>\s*\{copy\('หมด', 'Sold out'\)\}/);
+  for (const source of [gridSource, tilePartsSource]) assert.doesNotMatch(source, /<StatusBadge/);
+  assert.match(tilePartsSource, /color: palette\.neutral[^}]*\}\]\}>\s*\{copy\('หมด', 'Sold out'\)\}/);
   // The order screen's + on a line in this round stops at a sold-out dish too.
   assert.match(detailSource, /isMenuSoldOut\(/);
   // The owner, 2026-09-19: the order screen loads when it opens and then stays
@@ -228,4 +298,21 @@ test('on a tablet a dish opens in a phone-width panel beside the grid, split fro
     const at = detailSource.indexOf(hook);
     assert.ok(at > 0 && at < firstReturn, `${hook} sits after an early return`);
   }
+});
+
+test('every orderable dish carries a stock badge, amber at ten or fewer', () => {
+  // Same rule as the web POS tile (2026-09-22): every dish says what is left.
+  assert.deepEqual(menuStockBadge({ is_available: true, remaining_servings: 33 }), { kind: 'plenty', count: 33 });
+  assert.deepEqual(menuStockBadge({ is_available: true, remaining_servings: 10 }), { kind: 'low', count: 10 });
+  assert.deepEqual(menuStockBadge({ is_available: true, remaining_servings: 1 }), { kind: 'low', count: 1 });
+});
+
+test('a dish with no recipe says it is not limited instead of showing nothing', () => {
+  assert.deepEqual(menuStockBadge({ is_available: true, remaining_servings: null }), { kind: 'unlimited' });
+  assert.deepEqual(menuStockBadge({ is_available: true }), { kind: 'unlimited' });
+});
+
+test('a sold-out dish gets no stock badge; its sold-out word is the answer', () => {
+  assert.equal(menuStockBadge({ is_available: true, remaining_servings: 0 }), null);
+  assert.equal(menuStockBadge({ is_available: false, remaining_servings: 20 }), null);
 });

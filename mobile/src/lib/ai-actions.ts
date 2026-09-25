@@ -1,4 +1,5 @@
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
+import { orderRoutePermissions } from './permission-parity.ts';
 
 export type AIGuidedAction = {
   id: string;
@@ -36,11 +37,13 @@ export type AINavigationResolution =
 
 const navigationEntries: NavigationEntry[] = [
   { href: '/home', label: { th: 'ภาพรวม', en: 'Overview' }, permissions: ['view_dashboard'], aliases: ['home', 'overview', 'dashboard', 'summary', 'ภาพรวม', 'หน้าหลัก', 'แดชบอร์ด', 'สรุป'] },
-  { href: '/tables', label: { th: 'รับออเดอร์', en: 'Order taking' }, permissions: ['take_order'], aliases: ['pos', 'take order', 'order taking', 'รับออเดอร์', 'ขายหน้าร้าน'] },
+  // The live orders are the floor's: the tables in service and the takeaways.
+  { href: '/tables', label: { th: 'รับออเดอร์', en: 'Order taking' }, permissions: ['take_order'], aliases: ['pos', 'take order', 'order taking', 'active orders', 'รับออเดอร์', 'ขายหน้าร้าน', 'ออเดอร์ที่กำลังทำ'] },
   { href: '/kitchen', label: { th: 'จอครัว', en: 'Kitchen display' }, permissions: ['view_kitchen'], aliases: ['kitchen', 'kds', 'ครัว', 'จอครัว', 'หน้าครัว'] },
   { href: '/menu', label: { th: 'เมนูอาหาร', en: 'Menu' }, permissions: ['view_menu', 'manage_menu'], aliases: ['menu', 'food menu', 'dish', 'เมนู', 'เมนูอาหาร', 'รายการอาหาร'] },
   { href: '/table-management', label: { th: 'ผังโต๊ะ', en: 'Table layout' }, permissions: ['manage_table', 'view_tables'], aliases: ['tables', 'table layout', 'floor plan', 'ผังโต๊ะ', 'จัดการโต๊ะ'] },
-  { href: '/orders', label: { th: 'ออเดอร์', en: 'Orders' }, permissions: ['view_orders', 'take_order'], aliases: ['orders', 'active orders', 'order archive', 'ออเดอร์', 'ออเดอร์ที่กำลังทำ', 'รายการออเดอร์', 'คลังออเดอร์'] },
+  // The paid-order archive, behind the same gate as its tab.
+  { href: '/orders', label: { th: 'ออเดอร์', en: 'Orders' }, permissions: orderRoutePermissions, aliases: ['orders', 'order archive', 'ออเดอร์', 'รายการออเดอร์', 'คลังออเดอร์'] },
   { href: '/inventory', label: { th: 'คลังวัตถุดิบ', en: 'Inventory' }, permissions: ['manage_inventory', 'view_inventory'], aliases: ['inventory', 'stock', 'ingredients', 'คลัง', 'คลังวัตถุดิบ', 'วัตถุดิบ', 'สต๊อก', 'สต็อก'] },
   { href: '/ai-assistant', label: { th: 'AI ผู้ช่วย', en: 'AI assistant' }, ownerOnly: true, aliases: ['ai', 'assistant', 'ai assistant', 'ผู้ช่วย ai', 'ai ผู้ช่วย'] },
   { href: '/staff', label: { th: 'พนักงาน', en: 'Staff' }, permissions: ['manage_invites', 'manage_members', 'manage_roles', 'view_audit_log'], aliases: ['staff', 'team', 'employees', 'พนักงาน', 'ทีม', 'ทีมงาน', 'จัดการคน'] },
@@ -89,12 +92,29 @@ function canAccessNavigationEntry(
   return !entry.permissions?.length || entry.permissions.some(hasPermission);
 }
 
-function scoreEntry(input: string, entry: NavigationEntry): number {
+/** The aliases of `entry` that appear word for word in the input. */
+function aliasesIn(input: string, entry: NavigationEntry): string[] {
+  return entry.aliases
+    .map(normalize)
+    .filter((alias) => alias.length > 0 && input.includes(alias));
+}
+
+/**
+ * `alias` is only part of a longer alias another page owns, and that longer
+ * one is in the input: "orders" inside "active orders", "ออเดอร์" inside
+ * "ออเดอร์ที่กำลังทำ". The longer phrase names the page; the short word inside
+ * it is not a second match.
+ */
+function isInsideLongerAlias(alias: string, longerAliases: readonly string[]): boolean {
+  return longerAliases.some((longer) => longer.length > alias.length && longer.includes(alias));
+}
+
+function scoreEntry(input: string, entry: NavigationEntry, otherAliases: readonly string[] = []): number {
   let score = 0;
   for (const alias of entry.aliases) {
     const normalizedAlias = normalize(alias);
     if (input === normalizedAlias) score = Math.max(score, 120);
-    else if (input.includes(normalizedAlias)) {
+    else if (input.includes(normalizedAlias) && !isInsideLongerAlias(normalizedAlias, otherAliases)) {
       score = Math.max(score, 80 + Math.min(normalizedAlias.length, 20));
     }
     const tokens = normalizedAlias.split(' ');
@@ -117,9 +137,15 @@ export function resolveAINavigationRequest(
     return null;
   }
 
-  const matches = navigationEntries
-    .filter((entry) => canAccessNavigationEntry(entry, hasPermission, isOwner))
-    .map((entry) => ({ ...entry, score: scoreEntry(normalized, entry) }))
+  const accessible = navigationEntries
+    .filter((entry) => canAccessNavigationEntry(entry, hasPermission, isOwner));
+  const matches = accessible
+    .map((entry) => {
+      const otherAliases = accessible
+        .filter((other) => other !== entry)
+        .flatMap((other) => aliasesIn(normalized, other));
+      return { ...entry, score: scoreEntry(normalized, entry, otherAliases) };
+    })
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score);
   if (!matches.length) return null;

@@ -8,6 +8,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { MenuImageCropper } from '@/src/components/menu-image-cropper';
 import { ActionDock, Button, ChipGroup, Divider, EmptyState, Feedback, SectionHeader, Surface, TextField } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { toFloat, toInt } from '@/src/lib/forms';
 import {
   initialMenuCategoryIds,
@@ -35,7 +36,7 @@ const emptyGroup = (index: number): MenuOptionGroupDraft => ({ name: '', require
 export default function MenuItemEditorScreen() {
   const { width } = useWindowDimensions();
   const { activeMembership } = useAuth();
-  const { copy } = useDisplayPreferences();
+  const { copy, language } = useDisplayPreferences();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const routeId = parsePositiveRouteId(id);
   const itemId = routeId.kind === 'valid' ? routeId.id : null;
@@ -47,7 +48,8 @@ export default function MenuItemEditorScreen() {
   const [name, setName] = useState(''); const [price, setPrice] = useState(''); const [description, setDescription] = useState(''); const [imageUrl, setImageUrl] = useState(''); const [displayOrder, setDisplayOrder] = useState('1');
   const [available, setAvailable] = useState<'yes' | 'no'>('yes'); const [categoryIds, setCategoryIds] = useState<number[]>([]);
   const [optionGroups, setOptionGroups] = useState<MenuOptionGroupDraft[]>([]); const [ingredients, setIngredients] = useState<MenuIngredientDraft[]>([]); const [ingredientCandidate, setIngredientCandidate] = useState('none');
-  const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null); const [confirmDelete, setConfirmDelete] = useState(false);
+  // `error` is the step that failed, and the app's line under it when there is one.
+  const [saving, setSaving] = useState(false); const [error, setError] = useState<{ title: string; detail?: string } | null>(null); const [confirmDelete, setConfirmDelete] = useState(false);
   const [imageEditing, setImageEditing] = useState(false); const [uploadingImage, setUploadingImage] = useState(false); const [imageError, setImageError] = useState<string | null>(null);
   const [showOptionErrors, setShowOptionErrors] = useState(false);
   const [loading, setLoading] = useState(editing);
@@ -84,9 +86,9 @@ export default function MenuItemEditorScreen() {
       } else {
         setItemExists(false);
       }
-    }).catch((err) => setError(err instanceof Error ? err.message : copy('โหลดข้อมูลเมนูไม่สำเร็จ', 'Could not load menu item data.')))
+    }).catch((err) => setError({ title: copy('โหลดข้อมูลเมนูไม่สำเร็จ', 'Could not load menu item data'), detail: apiFailureDetail(err, language) }))
       .finally(() => setLoading(false));
-  }, [canManage, canViewInventory, copy, editing, invalidRoute, itemId]);
+  }, [canManage, canViewInventory, copy, editing, invalidRoute, itemId, language]);
 
   const ingredientOptions = useMemo(() => [{ label: copy('เลือกวัตถุดิบ', 'Choose an ingredient'), value: 'none' }, ...allIngredients.filter((item) => !ingredients.some((row) => row.ingredient_id === item.ID)).map((item) => ({ label: item.name, value: String(item.ID) }))], [allIngredients, copy, ingredients]);
   const optionValidation = useMemo(() => validateMenuOptionGroups(menuOptionGroupInputs(optionGroups)), [optionGroups]);
@@ -133,7 +135,7 @@ export default function MenuItemEditorScreen() {
     if (editing && (itemId === null || itemExists !== true)) return;
     if (imageEditing || uploadingImage) return;
     setShowOptionErrors(true);
-    if (!name.trim() || !price || !categoryIds.length) { setError(copy('กรอกชื่อ ราคา และเลือกอย่างน้อย 1 หมวด', 'Enter a name and price, then choose at least one category.')); return; }
+    if (!name.trim() || !price || !categoryIds.length) { setError({ title: copy('ทำรายการไม่ได้', 'Unable to complete the action'), detail: copy('กรอกชื่อ ราคา และเลือกอย่างน้อย 1 หมวด', 'Enter a name and price, then choose at least one category.') }); return; }
     if (optionValidation.issues.length) { setError(null); return; }
     setSaving(true); setError(null);
     try {
@@ -145,7 +147,7 @@ export default function MenuItemEditorScreen() {
         await createMenuItem(payload);
       }
       router.back();
-    } catch (err) { setError(err instanceof Error ? err.message : copy('บันทึกเมนูไม่สำเร็จ', 'Could not save the menu item.')); }
+    } catch (err) { setError({ title: copy('บันทึกเมนูไม่สำเร็จ', 'Could not save the menu item'), detail: apiFailureDetail(err, language) }); }
     finally { setSaving(false); }
   }
   async function uploadImage(file: MenuImageUploadFile, options: MenuImageBackgroundOptions): Promise<MenuImageUploadResult> {
@@ -178,7 +180,7 @@ export default function MenuItemEditorScreen() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setSaving(true); setError(null);
     try { await deleteMenuItem(itemId); router.back(); }
-    catch (err) { setError(err instanceof Error ? err.message : copy('ลบเมนูไม่สำเร็จ', 'Could not delete the menu item.')); setSaving(false); }
+    catch (err) { setError({ title: copy('ลบเมนูไม่สำเร็จ', 'Could not delete the menu item'), detail: apiFailureDetail(err, language) }); setSaving(false); }
   }
 
   if (invalidRoute) {
@@ -212,7 +214,7 @@ export default function MenuItemEditorScreen() {
         : copy('ไม่พบเมนู', 'Menu item not found');
     const detail = loading
       ? copy('กำลังตรวจสอบข้อมูลรายการนี้', 'Checking this item now.')
-      : error || copy(
+      : error ? error.detail : copy(
         'เมนูนี้อาจถูกลบไปแล้ว กรุณากลับไปเลือกรายการจากหน้าเมนู',
         'This menu item may have been deleted. Go back and choose an item from the menu.',
       );
@@ -434,7 +436,7 @@ export default function MenuItemEditorScreen() {
         </ActionDock>
       )}
     >
-      {error ? <Feedback title={copy('ทำรายการไม่ได้', 'Unable to complete the action')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
       <View style={{ flexDirection: tabletWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
         <View style={{ minWidth: 0, width: tabletWorkspace ? undefined : '100%', flex: tabletWorkspace ? 0.9 : undefined, gap: spacing.lg }}>
           {detailsPanel}

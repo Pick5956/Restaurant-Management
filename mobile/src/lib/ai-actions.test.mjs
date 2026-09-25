@@ -60,21 +60,59 @@ test('navigation requests stay client-side and respect route permissions', () =>
   assert.equal(resolveAINavigationRequest('เมนูไหนขายดี', allowed, '/ai-assistant', 'th', true), null);
 });
 
-test('order takers can navigate back to active orders without receiving archive permission', () => {
-  const resolution = resolveAINavigationRequest(
-    'open active orders',
-    permissions('take_order'),
-    '/tables',
-    'en',
-    true,
-  );
-  assert.equal(resolution?.kind, 'navigate');
-  assert.equal(resolution?.href, '/orders');
-  assert.equal(resolution?.label, 'Orders');
+// The archive (/orders) is paid orders and needs view_orders, the gate its tab
+// uses (orderRoutePermissions); the backend lets take_order read the active
+// list only. The live orders are on the floor, so that is where "active orders"
+// goes.
+test('active orders lead to the floor, and take_order alone never opens the archive', () => {
+  for (const request of ['open active orders', 'เปิดหน้าออเดอร์ที่กำลังทำ']) {
+    const resolution = resolveAINavigationRequest(request, permissions('take_order'), '/home', 'en', true);
+    assert.equal(resolution?.kind, 'navigate', request);
+    assert.equal(resolution?.href, '/tables', request);
+    assert.equal(resolution?.label, 'Order taking', request);
+  }
+  for (const request of ['open orders', 'open order archive', 'เปิดหน้าคลังออเดอร์']) {
+    const resolution = resolveAINavigationRequest(request, permissions('take_order'), '/tables', 'en', true);
+    assert.notEqual(resolution?.kind === 'navigate' ? resolution.href : null, '/orders', request);
+    assert.ok(!(resolution?.kind === 'suggest' && resolution.options.some((option) => option.href === '/orders')), request);
+  }
   assert.equal(
     resolveAINavigationRequest('open reports', permissions('take_order'), '/tables', 'en', true),
     null,
   );
+});
+
+// An owner can open both pages, so "orders" inside "active orders" used to score
+// the archive close enough to turn a clear request into a two-way question.
+test('for an owner with every permission, the longer alias decides between the floor and the archive', () => {
+  const everything = () => true;
+  for (const request of ['open active orders', 'เปิดหน้าออเดอร์ที่กำลังทำ']) {
+    const resolution = resolveAINavigationRequest(request, everything, '/home', 'en', true);
+    assert.equal(resolution?.kind, 'navigate', request);
+    assert.equal(resolution?.href, '/tables', request);
+  }
+  // A short alias with no longer one around it still counts.
+  for (const request of ['open orders', 'open order archive', 'เปิดหน้าคลังออเดอร์']) {
+    const resolution = resolveAINavigationRequest(request, everything, '/home', 'en', true);
+    assert.equal(resolution?.kind, 'navigate', request);
+    assert.equal(resolution?.href, '/orders', request);
+  }
+});
+
+test('view_orders opens the archive', () => {
+  for (const request of ['open orders', 'open order archive', 'เปิดหน้าคลังออเดอร์']) {
+    const resolution = resolveAINavigationRequest(request, permissions('view_orders'), '/home', 'en', true);
+    assert.equal(resolution?.kind, 'navigate', request);
+    assert.equal(resolution?.href, '/orders', request);
+  }
+});
+
+test('the archive entry is gated by the tab\'s own permission list, not a copy of it', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('./ai-actions.ts', import.meta.url), 'utf8');
+  const entry = source.split(/\r?\n/).find((line) => line.includes("href: '/orders'")) ?? '';
+  assert.match(entry, /permissions: orderRoutePermissions\b/);
+  assert.doesNotMatch(entry, /'take_order'/);
 });
 
 test('short ambiguous topics offer clarification actions before calling the model', () => {

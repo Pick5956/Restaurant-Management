@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode"
 
+	"Project-M/internal/service"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -37,6 +39,17 @@ func publicAPIError(status int, err error) (int, string, string) {
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return http.StatusNotFound, "resource not found", "not_found"
+	}
+	if errors.Is(err, service.ErrMemberRoleUnavailable) {
+		// A removed member whose role has since been deleted comes back through
+		// an invitation, not a restore, so clients need to tell this refusal
+		// apart from every other 400 by its code.
+		return status, service.ErrMemberRoleUnavailable.Error(), "role_unavailable"
+	}
+	if errors.Is(err, service.ErrIngredientUnitLocked) {
+		// A recipe still measures this ingredient in its current unit. Staff
+		// can act on that, so clients tell it apart by its code.
+		return status, service.ErrIngredientUnitLocked.Error(), "ingredient_unit_locked"
 	}
 
 	raw := ""

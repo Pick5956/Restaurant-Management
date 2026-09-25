@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Switch, View, type KeyboardTypeOptions, type TextInput as NativeTextInput } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
@@ -6,6 +6,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { SheetTitle } from '@/src/components/inventory/parts';
+import { chipRevealOffset } from '@/src/lib/chip-row-reveal';
 import { calendarWeeks, monthTitle } from '@/src/lib/report-view';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
 import { ActionDock, Button } from '@/src/components/ui';
@@ -84,7 +85,7 @@ export const Field = forwardRef<NativeTextInput, {
   return (
     <View style={{ gap: 4, ...(grow ? { flex: 1, minWidth: 0 } : {}) }}>
       {label ? <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{label}</Text> : null}
-      <View style={{ flexDirection: 'row', alignItems: multiline ? 'flex-start' : 'center', gap: 8, minHeight: multiline ? 84 : 44, paddingHorizontal: 12, paddingVertical: multiline ? 10 : 0, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: focused ? palette.primary : palette.divider, backgroundColor: editable ? palette.surface : '#FAF7F4' }}>
+      <View style={{ flexDirection: 'row', alignItems: multiline ? 'flex-start' : 'center', gap: 8, minHeight: multiline ? 84 : 44, paddingHorizontal: 12, paddingVertical: multiline ? 10 : 0, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: focused ? palette.primary : palette.fieldBorder, backgroundColor: editable ? palette.fieldFill : '#FAF7F4' }}>
         {icon ? <AppIcon name={icon} size={18} color={focused ? palette.primaryInk : palette.placeholder} /> : null}
         <TextInput
           ref={ref}
@@ -190,14 +191,107 @@ export function ActionRow({ icon, title, detail, onPress, first, trailing, tone 
   );
 }
 
+/**
+ * One sideways offset shared by two rows of the same chips - the menu's
+ * filter bar and the compact header's row - so the row that comes into view
+ * is where the other one was left. Each row registers a follower; a scroll on
+ * one row moves the others, clamped to their own range.
+ */
+/**
+ * Rows of the same chips that scroll sideways as one. `placed` is set once any
+ * of them has moved: a row laid out after that takes the shared position
+ * instead of revealing its chosen chip on its own.
+ */
+export type ChipRowSync = { x: number; placed: boolean; followers: Set<(x: number) => void> };
+
+export function createChipRowSync(): ChipRowSync {
+  return { x: 0, placed: false, followers: new Set() };
+}
+
 /** Chips that turn black when chosen, wrapping onto more lines as needed. */
-export function ChoiceChips<T extends string | number>({ options, value, onChange, scroll }: {
+export function ChoiceChips<T extends string | number>({ options, value, onChange, scroll, sync }: {
   options: { key: T; label: string; icon?: AppIconName; tint?: { wash: string; ink: string } }[];
   value: T;
   onChange: (key: T) => void;
   /** One row that scrolls sideways instead of wrapping. */
   scroll?: boolean;
+  /** Scroll as one with the other rows sharing this. */
+  sync?: ChipRowSync;
 }) {
+  // A row that scrolls keeps its chosen chip in view. The menu draws these
+  // chips twice, in its filter bar and in the compact header's row, each
+  // scrolled on its own: a chip picked in one would otherwise sit past the edge
+  // of the other, and that row would read as nothing chosen. With `sync` the
+  // two also share every sideways drag, so the bar's row takes over from the
+  // page's exactly where the reader left it.
+  const rowRef = useRef<ScrollView>(null);
+  const chipBoxes = useRef(new Map<T, { x: number; width: number }>());
+  const rowBox = useRef({ offset: 0, viewport: 0, content: 0 });
+  // Whether this is the row the reader is moving: from the finger going down
+  // until its fling has stopped, and never once another row leads. Only that
+  // row moves the others. A row moved by code - a follow, a reveal - used to
+  // lead too: its scroll events arrived after the next follow had gone out,
+  // read as a drag of its own, and pulled the dragged row back under the
+  // finger. That was the wobble at the ends of the menu's chips (owner,
+  // 2026-09-25); a lone row, as on the order screen, never had it. The row
+  // still stretches past its ends like any list - that bounce is the reader's.
+  const touching = useRef(false);
+  // This row's own entry in `sync.followers`, which a lead skips.
+  const ownFollow = useRef<((x: number) => void) | null>(null);
+  const revealChosen = (animated: boolean) => {
+    const target = chipRevealOffset({ chip: chipBoxes.current.get(value), ...rowBox.current });
+    if (target !== null) rowRef.current?.scrollTo({ x: target, animated });
+  };
+  const revealChosenRef = useRef(revealChosen);
+  revealChosenRef.current = revealChosen;
+  // The shared position, clamped to this row's own range.
+  const followTo = (x: number) => {
+    const { offset, viewport, content } = rowBox.current;
+    if (!(viewport > 0) || !(content > 0)) return;
+    const target = Math.min(Math.max(0, content - viewport), Math.max(0, x));
+    if (Math.abs(target - offset) < 1) return;
+    rowRef.current?.scrollTo({ x: target, animated: false });
+  };
+  const followToRef = useRef(followTo);
+  followToRef.current = followTo;
+  // Laid out, or its content or chosen chip measured: a row nobody has moved
+  // yet shows its chosen chip; one laid out after the reader moved another
+  // (the bar's, back after a search) takes that position instead of jumping
+  // to its own choice.
+  const settle = () => {
+    if (sync?.placed) followToRef.current(sync.x);
+    else revealChosenRef.current(false);
+  };
+  useEffect(() => {
+    if (scroll) revealChosenRef.current(true);
+  }, [scroll, value]);
+  useEffect(() => {
+    if (!scroll || !sync) return undefined;
+    const follow = (x: number) => {
+      touching.current = false;
+      followToRef.current(x);
+    };
+    ownFollow.current = follow;
+    sync.followers.add(follow);
+    if (sync.placed) follow(sync.x);
+    return () => {
+      sync.followers.delete(follow);
+      ownFollow.current = null;
+    };
+  }, [scroll, sync]);
+  const lead = (x: number) => {
+    if (!sync || !touching.current) return;
+    // Past either end is this row's own stretch; the others hold their edge.
+    const { viewport, content } = rowBox.current;
+    const clamped = Math.min(Math.max(0, content - viewport), Math.max(0, x));
+    sync.placed = true;
+    if (Math.abs(sync.x - clamped) < 1) return;
+    sync.x = clamped;
+    sync.followers.forEach((follow) => {
+      if (follow !== ownFollow.current) follow(clamped);
+    });
+  };
+
   const chips = options.map((option) => {
     const on = option.key === value;
     return (
@@ -206,6 +300,11 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
         accessibilityRole="button"
         accessibilityState={{ selected: on }}
         onPress={() => onChange(option.key)}
+        onLayout={scroll ? (event) => {
+          const { x, width } = event.nativeEvent.layout;
+          chipBoxes.current.set(option.key, { x, width });
+          if (on) settle();
+        } : undefined}
         hitSlop={4}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: on ? palette.textStrong : palette.divider, backgroundColor: on ? palette.textStrong : palette.surface, opacity: pressed ? 0.7 : 1 })}
       >
@@ -216,7 +315,34 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
   });
   if (scroll) {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, flexShrink: 0, maxWidth: '100%' }} contentContainerStyle={{ gap: 7 }}>
+      <ScrollView
+        ref={rowRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={{ flexGrow: 0, flexShrink: 0, maxWidth: '100%' }}
+        contentContainerStyle={{ gap: 7 }}
+        // Whichever of the row, its content and the chosen chip is measured
+        // last settles the row (see `settle`); each call is a no-op until all
+        // three are known. No `bounces={false}`: the stretch past either end is
+        // what every scrolling list does (owner, 2026-09-25).
+        onLayout={(event) => {
+          rowBox.current = { ...rowBox.current, viewport: event.nativeEvent.layout.width };
+          settle();
+        }}
+        onContentSizeChange={(contentWidth) => {
+          rowBox.current = { ...rowBox.current, content: contentWidth };
+          settle();
+        }}
+        onScrollBeginDrag={() => { touching.current = true; }}
+        onMomentumScrollEnd={() => { touching.current = false; }}
+        onScroll={(event) => {
+          const x = event.nativeEvent.contentOffset.x;
+          rowBox.current = { ...rowBox.current, offset: x };
+          lead(x);
+        }}
+        scrollEventThrottle={16}
+      >
         {chips}
       </ScrollView>
     );
@@ -266,7 +392,7 @@ export function Note({ icon = 'information-circle-outline', text, tone = 'accent
  * entry. A tap turns it into the question with two buttons; nothing happens
  * until the red one is tapped.
  */
-export function DangerAction({ icon, label, confirmLabel, message, error, onConfirm, onCancel, cancelLabel, loading, open, onOpen }: {
+export function DangerAction({ icon, label, confirmLabel, message, error, onConfirm, onCancel, cancelLabel, loading, open, onOpen, confirmVariant = 'danger', confirmIcon }: {
   icon: AppIconName;
   label: string;
   confirmLabel: string;
@@ -278,6 +404,13 @@ export function DangerAction({ icon, label, confirmLabel, message, error, onConf
   loading?: boolean;
   open: boolean;
   onOpen: () => void;
+  /**
+   * The confirm button's look. 'secondary' is for a question whose answer is
+   * not the destructive act itself - a zone that still has tables leads on to
+   * choosing them rather than deleting anything.
+   */
+  confirmVariant?: 'danger' | 'secondary';
+  confirmIcon?: AppIconName;
 }) {
   if (!open) {
     return (
@@ -296,7 +429,7 @@ export function DangerAction({ icon, label, confirmLabel, message, error, onConf
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button variant="secondary" label={cancelLabel} onPress={onCancel} disabled={loading} style={{ flex: 1 }} />
-          <Button variant="danger" icon={icon} label={confirmLabel} onPress={onConfirm} loading={loading} style={{ flex: 1 }} />
+          <Button variant={confirmVariant} icon={confirmIcon ?? icon} label={confirmLabel} onPress={onConfirm} loading={loading} style={{ flex: 1 }} />
         </View>
       </View>
     </ReportCard>

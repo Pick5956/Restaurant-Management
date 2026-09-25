@@ -17,6 +17,7 @@ import {
   canManageRoles,
   roleLabel,
   roleListMeta,
+  staffFailureDetail,
   teamRoleGroups,
   userDisplayName,
 } from '@/src/lib/staff-workflow';
@@ -40,7 +41,8 @@ export default function RolesScreen() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [members, setMembers] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The app's line under "โหลดบทบาทไม่ได้" when there is one, never the server's words.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const tablet = width >= breakpoints.tabletWorkspace;
 
   const load = useCallback(async () => {
@@ -61,13 +63,11 @@ export default function RolesScreen() {
       );
       setMembers(memberResponse.members || []);
     } catch (err) {
-      setError(err instanceof Error
-        ? err.message
-        : copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load roles'));
+      setError({ detail: staffFailureDetail(err, 'load', language) });
     } finally {
       setLoading(false);
     }
-  }, [activeMembership, actorRole, allowed, copy, restaurantId]);
+  }, [activeMembership, actorRole, allowed, language, restaurantId]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -99,7 +99,7 @@ export default function RolesScreen() {
       contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}
       action={<HeadingAction compact={!tablet} icon="add" label={copy('เพิ่มบทบาท', 'Add role')} onPress={() => router.push('/staff/role' as never)} />}
     >
-      {error ? <Feedback title={copy('โหลดบทบาทไม่ได้', 'Unable to load roles')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={copy('โหลดบทบาทไม่ได้', 'Unable to load roles')} detail={error.detail} tone="danger" /> : null}
       {loading && !roles.length ? (
         <SkeletonReveal label={copy('กำลังโหลดบทบาท', 'Loading roles')} style={{ gap: spacing.md }}>
           <Bone height={280} radius={18} />

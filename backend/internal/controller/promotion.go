@@ -12,7 +12,8 @@ import (
 )
 
 // orderRepricedAction tells every till that an order's price moved because a
-// promotion changed, not because anyone touched the order.
+// promotion or the restaurant's service charge/VAT changed, not because anyone
+// touched the order.
 const orderRepricedAction = "order.repriced"
 
 type PromotionController struct {
@@ -31,11 +32,17 @@ func ProvidePromotionController(db *gorm.DB, orderEvents *realtime.OrderHub) *Pr
 }
 
 func (ctrl *PromotionController) publishRepriced(restaurantID uint, orderIDs []uint) {
-	if ctrl.orderEvents == nil {
+	publishOrdersRepriced(ctrl.orderEvents, restaurantID, orderIDs)
+}
+
+// publishOrdersRepriced tells every till which orders a price change moved,
+// whether it came from a promotion or from the restaurant's bill settings.
+func publishOrdersRepriced(orderEvents *realtime.OrderHub, restaurantID uint, orderIDs []uint) {
+	if orderEvents == nil {
 		return
 	}
 	for _, orderID := range orderIDs {
-		ctrl.orderEvents.Publish(restaurantID, orderRepricedAction, orderID)
+		orderEvents.Publish(restaurantID, orderRepricedAction, orderID)
 	}
 }
 

@@ -26,6 +26,7 @@ import {
   shortTime,
 } from '@/src/components/inventory/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { can } from '@/src/lib/rbac';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
@@ -90,7 +91,8 @@ export default function InventoryHistoryScreen() {
   const [term, setTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the panel's title names it, `detail` is the app's line under it when there is one.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setTerm(search.trim()), 350);
@@ -115,12 +117,12 @@ export default function InventoryHistoryScreen() {
       setTotal(response.total ?? list.length);
       setPage(nextPage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('โหลดประวัติไม่สำเร็จ', 'Could not load the history.'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       setLoading(false);
       setMore(false);
     }
-  }, [canView, kind, category, range, term, t]);
+  }, [canView, kind, category, range, term, language]);
 
   // A new filter is a new list, from the first page.
   useEffect(() => { void load(1); }, [load]);
@@ -204,7 +206,7 @@ export default function InventoryHistoryScreen() {
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true, true), paddingHorizontal: 12, paddingBottom: insets.bottom + 24, gap: 10 }}
       >
-        {error ? <Feedback title={t('โหลดประวัติไม่ได้', 'Could not load')} detail={error} tone="danger" /> : null}
+        {error ? <Feedback title={t('โหลดประวัติไม่ได้', 'Could not load')} detail={error.detail} tone="danger" /> : null}
         {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
 
         {!loading && !rows.length && !error ? (

@@ -19,6 +19,7 @@ import {
   INVITATION_EXPIRY_DAY_OPTIONS,
   roleLabel,
   roleListMeta,
+  staffFailureDetail,
 } from '@/src/lib/staff-workflow';
 import { invitationUrl } from '@/src/lib/public-web-url';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -57,7 +58,9 @@ export default function InviteStaffScreen() {
   const [shareMessage, setShareMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [loadingRoles, setLoadingRoles] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // A step's own title, and the app's line under it when there is one - never
+  // the server's words.
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
 
   useEffect(() => {
     if (!allowed || !restaurantId) {
@@ -77,12 +80,10 @@ export default function InviteStaffScreen() {
         );
       })
       .catch((err) => {
-        setError(err instanceof Error
-          ? err.message
-          : copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load roles'));
+        setError({ title: copy('โหลดบทบาทไม่สำเร็จ', 'Unable to load roles'), detail: staffFailureDetail(err, 'load', language) });
       })
       .finally(() => setLoadingRoles(false));
-  }, [activeMembership, actorRole, allowed, copy, restaurantId]);
+  }, [activeMembership, actorRole, allowed, copy, language, restaurantId]);
 
   const selectedRole = roles.find((role) => role.ID === roleId);
   const roleSummary = useMemo(() => {
@@ -94,7 +95,7 @@ export default function InviteStaffScreen() {
 
   async function create() {
     if (!restaurantId || !roleId) {
-      setError(copy('เลือกบทบาทก่อนสร้างคำเชิญ', 'Choose a role before creating an invitation.'));
+      setError({ title: copy('สร้างคำเชิญไม่ได้', 'Unable to create invitation'), detail: copy('เลือกบทบาทก่อนสร้างคำเชิญ', 'Choose a role before creating an invitation.') });
       return;
     }
     setSaving(true);
@@ -116,7 +117,7 @@ export default function InviteStaffScreen() {
         `You have been invited to join ${restaurantName} as ${roleLabel(selectedRole, language)}.\n${invitationLink}`,
       ));
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy('สร้างคำเชิญไม่สำเร็จ', 'Unable to create invitation'));
+      setError({ title: copy('สร้างคำเชิญไม่สำเร็จ', 'Unable to create invitation'), detail: staffFailureDetail(err, 'create_invitation', language) });
     } finally {
       setSaving(false);
     }
@@ -181,7 +182,7 @@ export default function InviteStaffScreen() {
       contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}
       footer={!tablet ? <SaveDock icon="link-outline" label={copy('สร้างลิงก์เชิญ', 'Create the link')} onPress={create} loading={saving || loadingRoles} disabled={!roleId} /> : undefined}
     >
-      {error ? <Feedback title={copy('สร้างคำเชิญไม่ได้', 'Unable to create invitation')} detail={error} tone="danger" /> : null}
+      {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
       <View style={{ gap: spacing.md }}>
         <FormCard title={copy('บทบาทที่จะได้รับ', 'Role they will get')}>
           <FormBody>

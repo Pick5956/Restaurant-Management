@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupOrderItems } from "../orderItemGroups";
+import { groupOrderItems, newestPendingItem } from "../orderItemGroups";
 import type { OrderItem } from "../../types/order";
 
 const item = (id: number, name: string, updatedAt: string, menuId = id): OrderItem => ({
@@ -41,5 +41,46 @@ describe("groupOrderItems", () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ quantity: 2, subtotal: 100 });
+  });
+});
+
+describe("newestPendingItem", () => {
+  const beer = (id: number, createdAt: string | undefined, extra: Partial<OrderItem> = {}): OrderItem => ({
+    ...item(id, "Beer", "2026-09-24T12:00:00Z", 7),
+    CreatedAt: createdAt,
+    ...extra,
+  });
+
+  it("takes the unit off the line taken last, so a happy-hour line keeps its price", () => {
+    // 17:55 in happy hour (20 off), then 18:05 at full price: one group, since
+    // the key has no time in it.
+    const happyHour = beer(1, "2026-09-24T10:55:00Z", { discount_amount: 20 });
+    const fullPrice = beer(2, "2026-09-24T11:05:00Z");
+    const [group] = groupOrderItems([happyHour, fullPrice]);
+
+    expect(group.pendingItems).toHaveLength(2);
+    expect(group.pendingItems[0]).toBe(happyHour);
+    expect(newestPendingItem(group)).toBe(fullPrice);
+  });
+
+  it("reads the time it was taken, not the order the API listed it in", () => {
+    const later = beer(3, "2026-09-24T11:30:00Z");
+    const earlier = beer(9, "2026-09-24T10:00:00Z");
+
+    expect(newestPendingItem({ pendingItems: [later, earlier] })).toBe(later);
+  });
+
+  it("falls back to the higher id when the times are equal or missing", () => {
+    expect(newestPendingItem({ pendingItems: [beer(4, "2026-09-24T11:00:00Z"), beer(5, "2026-09-24T11:00:00Z")] })?.ID).toBe(5);
+    expect(newestPendingItem({ pendingItems: [beer(8, undefined), beer(6, undefined)] })?.ID).toBe(8);
+  });
+
+  it("skips served lines and has nothing to offer a group with no pending line", () => {
+    const pending = beer(1, "2026-09-24T10:00:00Z");
+    const served = beer(2, "2026-09-24T11:00:00Z", { status: "served" });
+    const [group] = groupOrderItems([pending, served]);
+
+    expect(newestPendingItem(group)).toBe(pending);
+    expect(newestPendingItem({ pendingItems: [] })).toBeUndefined();
   });
 });

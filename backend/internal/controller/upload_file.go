@@ -109,29 +109,46 @@ func removeSavedUpload(destination string) {
 	}
 }
 
-func removeReplacedUpload(previousURL, expectedPublicPrefix, currentDestination string) {
-	parsed, err := url.Parse(strings.TrimSpace(previousURL))
-	if err != nil || expectedPublicPrefix == "" || currentDestination == "" {
-		return
+// uploadPathFromURL maps a stored public image URL back to its file under
+// directory. It returns "" for anything that is not a plain image file this
+// tenant uploaded there: another tenant's prefix, a nested or traversing
+// path, an external host's image.
+func uploadPathFromURL(imageURL, expectedPublicPrefix, directory string) string {
+	parsed, err := url.Parse(strings.TrimSpace(imageURL))
+	if err != nil || expectedPublicPrefix == "" || directory == "" {
+		return ""
 	}
 	if !strings.HasSuffix(expectedPublicPrefix, "/") {
 		expectedPublicPrefix += "/"
 	}
-	if !strings.HasPrefix(parsed.Path, expectedPublicPrefix) {
-		return
+	// "uploads/menu/7/x.jpg" with no leading slash is the same file: the
+	// clients accept that form (frontend mediaUrl.ts), so a reference stored
+	// that way must still count, or the file under it could be deleted.
+	path := parsed.Path
+	if parsed.Scheme == "" && parsed.Host == "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if !strings.HasPrefix(path, expectedPublicPrefix) {
+		return ""
 	}
 
-	filename := strings.TrimPrefix(parsed.Path, expectedPublicPrefix)
+	filename := strings.TrimPrefix(path, expectedPublicPrefix)
 	if filename == "" || strings.ContainsAny(filename, `/\`) || filepath.Base(filename) != filename {
-		return
+		return ""
 	}
 	extension := strings.ToLower(filepath.Ext(filename))
 	if extension != ".jpg" && extension != ".jpeg" && extension != ".png" && extension != ".webp" {
+		return ""
+	}
+	return filepath.Join(directory, filename)
+}
+
+func removeReplacedUpload(previousURL, expectedPublicPrefix, currentDestination string) {
+	if currentDestination == "" {
 		return
 	}
-
-	previousDestination := filepath.Join(filepath.Dir(currentDestination), filename)
-	if filepath.Clean(previousDestination) == filepath.Clean(currentDestination) {
+	previousDestination := uploadPathFromURL(previousURL, expectedPublicPrefix, filepath.Dir(currentDestination))
+	if previousDestination == "" || filepath.Clean(previousDestination) == filepath.Clean(currentDestination) {
 		return
 	}
 	removeSavedUpload(previousDestination)

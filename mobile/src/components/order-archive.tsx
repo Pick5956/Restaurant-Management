@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View, type PressableProps } from 'react-native';
 
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { calendarMonthOf, MonthCalendar, stepCalendarMonth } from '@/src/components/month-calendar';
-import { EdgeRow, GlassLayer } from '@/src/components/ui';
+import { EdgeRow, GlassLayer, IconButton } from '@/src/components/ui';
+import { COMPACT_BUTTON } from '@/src/lib/compact-header';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { money } from '@/src/lib/format';
 import {
@@ -31,36 +32,77 @@ const DETAIL_GREY = '#6B7280';
 // ---------------------------------------------------------------- day filter
 
 /** The day control under the search: the assistant screen's glass in a pill, its pale orange wash elsewhere. */
-export function ArchiveDayButton({ label, onPress, accessibilityLabel }: { label: string; onPress: () => void; accessibilityLabel: string }) {
+export function ArchiveDayButton({ label, onPress, accessibilityLabel, compact = false, ...rest }: Omit<PressableProps, 'children' | 'style' | 'onPress' | 'accessibilityLabel' | 'accessibilityRole'> & {
+  label: string;
+  onPress: () => void;
+  accessibilityLabel: string;
+  /** The compact header's row: the bar's 40 and no glass, because the row
+   *  fades in and glass under a fading parent renders flat. The same wash and
+   *  edge the glass falls back to, so it reads as the same control. */
+  compact?: boolean;
+}) {
+  const face = (
+    // 52 to sit level with the search field it shares a row with.
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: compact ? COMPACT_BUTTON : 52, paddingLeft: compact ? 12 : 14, paddingRight: compact ? 10 : 12 }}>
+      <AppIcon name="calendar-outline" size={compact ? 17 : 18} color={palette.primaryInk} />
+      <Text numberOfLines={1} style={[{ fontSize: 14, fontWeight: '700', color: palette.primaryInk }, compact ? { flexShrink: 1 } : null]}>{label}</Text>
+      <AppIcon name="chevron-down" size={16} color={palette.primaryInk} />
+    </View>
+  );
   return (
-    <View style={{ flexDirection: 'row' }}>
+    <View style={[{ flexDirection: 'row' }, compact ? { flexShrink: 1, minWidth: 0 } : null]}>
       <Pressable
+        {...rest}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         onPress={onPress}
         style={({ pressed }) => ({
+          ...(compact ? { flexShrink: 1, minWidth: 0 } : null),
           borderRadius: radius.full,
           ...controlShadow,
           opacity: pressed ? 0.78 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],
         })}
       >
-        <GlassLayer
-          style={{ borderRadius: radius.full }}
-          // The glass Button's wash: pale orange with the orange ink on it, and
-          // a real border where there is no material to give the pill an edge.
-          tint={palette.primaryWash}
-          fallback={palette.primaryWash}
-          fallbackBorder={palette.controlBorder}
-        >
-          {/* 52 to sit level with the search field it shares a row with. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 52, paddingLeft: 14, paddingRight: 12 }}>
-            <AppIcon name="calendar-outline" size={18} color={palette.primaryInk} />
-            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '700', color: palette.primaryInk }}>{label}</Text>
-            <AppIcon name="chevron-down" size={16} color={palette.primaryInk} />
+        {compact ? (
+          <View style={{ borderRadius: radius.full, borderWidth: 1, borderColor: palette.controlBorder, backgroundColor: palette.primaryWash }}>
+            {face}
           </View>
-        </GlassLayer>
+        ) : (
+          <GlassLayer
+            style={{ borderRadius: radius.full }}
+            // The glass Button's wash: pale orange with the orange ink on it, and
+            // a real border where there is no material to give the pill an edge.
+            tint={palette.primaryWash}
+            fallback={palette.primaryWash}
+            fallbackBorder={palette.controlBorder}
+          >
+            {face}
+          </GlassLayer>
+        )}
       </Pressable>
+    </View>
+  );
+}
+
+/**
+ * The compact header's row for the archive (the owner's Grab reference, 23
+ * ก.ย. 2569): the day control and a round search button, the two things a
+ * reader deep in the list reaches for. Both act on the page's own state - the
+ * day opens the screen's one day sheet, search goes back to the page's field -
+ * so nothing here can drift from the full controls at the top.
+ */
+export function ArchiveCompactRow({ dayLabel, dayAccessibilityLabel, onDayPress, searchLabel, onSearchPress }: {
+  dayLabel: string;
+  dayAccessibilityLabel: string;
+  onDayPress: () => void;
+  searchLabel: string;
+  onSearchPress: () => void;
+}) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
+      <ArchiveDayButton compact label={dayLabel} accessibilityLabel={dayAccessibilityLabel} onPress={onDayPress} />
+      <IconButton icon="search-outline" accessibilityLabel={searchLabel} onPress={onSearchPress} size={COMPACT_BUTTON} />
     </View>
   );
 }

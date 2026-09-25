@@ -3,6 +3,7 @@ package routes
 import (
 	"Project-M/config"
 	"Project-M/internal/controller"
+	"Project-M/internal/realtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +12,11 @@ import (
 // SetupRestaurantRoutes registers the multi-restaurant feature routes.
 //   - public  : GET /api/invitations/:token (preview)
 //   - private : everything under /api/v1/restaurants and /api/v1/invitations
-func SetupRestaurantRoutes(api *gin.RouterGroup, v1 *gin.RouterGroup) {
-	ctrl := controller.ProvideRestaurantController(config.DB())
+//
+// orderEvents carries order.repriced when a settings save changes the service
+// charge or VAT that open orders are priced with.
+func SetupRestaurantRoutes(api *gin.RouterGroup, v1 *gin.RouterGroup, orderEvents *realtime.OrderHub) {
+	ctrl := controller.ProvideRestaurantController(config.DB(), orderEvents)
 
 	// public preview — invitee can see invitation details before logging in
 	api.GET("/invitations/:token", rateLimitRequests(60, time.Minute), ctrl.GetInvitationByToken)

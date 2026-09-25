@@ -119,7 +119,3 @@ func (r *RestaurantMemberRepository) FindAllByRestaurant(restaurantID uint) ([]e
 	}
 	return members, nil
 }
-
-func (r *RestaurantMemberRepository) DeleteByRestaurant(restaurantID uint) error {
-	return r.db.Where("restaurant_id = ?", restaurantID).Delete(&entity.RestaurantMember{}).Error
-}

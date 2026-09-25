@@ -32,10 +32,7 @@ type AIOperationsService interface {
 	RestoreConversationForOwner(actor service.AIActorContext, conversationID string) error
 	PurgeConversationForOwner(actor service.AIActorContext, conversationID string) error
 	PurgeAllTrashedForOwner(actor service.AIActorContext) (int64, error)
-	AIUsageForOwner(actor service.AIActorContext) (*service.AIUsageSnapshot, error)
 	ProactiveInsightsForOwner(actor service.AIActorContext) ([]service.AIInsight, error)
-	ExtractReceiptForOwner(actor service.AIActorContext, imageBase64, mimeType string) (*service.ReceiptDraft, error)
-	TranscribeForOwner(actor service.AIActorContext, audioBase64, mimeType, language string) (string, error)
 	ConfirmAIActionForOwner(actor service.AIActorContext, previewID, confirmationToken string) (*service.AIActionConfirmationResponse, error)
 	CancelAIActionForOwner(actor service.AIActorContext, previewID string) error
 	AIActionsSettingForOwner(restaurantID uint) (service.AIActionsSettingView, error)
@@ -48,13 +45,6 @@ type AIOperationsService interface {
 }
 
 const maxAIActionConfirmationBodyBytes int64 = 1024
-
-// A 1.5 MB image is ~2 MB of base64 plus JSON overhead. Capping here stops an
-// oversized upload before it is parsed, instead of leaning on the global 8 MB limit.
-const maxReceiptRequestBodyBytes int64 = 3 << 20
-
-// Base64 inflates by a third, so the body cap sits above the audio cap.
-const maxTranscribeRequestBodyBytes int64 = 9 << 20
 
 func requireAIOwner(c *gin.Context) bool {
 	member, ok := contextMember(c)
@@ -403,110 +393,6 @@ func (ctrl *AIController) UpdateAISettings(c *gin.Context) {
 	c.JSON(http.StatusOK, view)
 }
 
-// ExtractReceipt reads a bill photo into a draft expense (owner reviews before saving).
-func (ctrl *AIController) ExtractReceipt(c *gin.Context) {
-	restaurantID, ok := requireRestaurant(c)
-	if !ok {
-		return
-	}
-	if !requireAIOwner(c) {
-		return
-	}
-	userID, ok := contextUserID(c)
-	if !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated owner is required"})
-		return
-	}
-	var req struct {
-		Image    string `json:"image"`
-		MimeType string `json:"mime_type"`
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxReceiptRequestBodyBytes)
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondInvalidRequest(c)
-		return
-	}
-	draft, err := ctrl.svc.ExtractReceiptForOwner(service.AIActorContext{
-		RestaurantID: restaurantID,
-		OwnerUserID:  userID,
-		Role:         "owner",
-	}, req.Image, req.MimeType)
-	if err != nil {
-		if errors.Is(err, service.ErrAIQuotaExceeded) {
-			respondAPIError(c, http.StatusTooManyRequests, err)
-			return
-		}
-		respondAPIError(c, http.StatusBadRequest, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"draft": draft})
-}
-
-// Transcribe turns a short voice note into text for the composer. Nothing is
-// asked or saved here — the owner reads what was heard and edits it first.
-func (ctrl *AIController) Transcribe(c *gin.Context) {
-	restaurantID, ok := requireRestaurant(c)
-	if !ok {
-		return
-	}
-	if !requireAIOwner(c) {
-		return
-	}
-	userID, ok := contextUserID(c)
-	if !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated owner is required"})
-		return
-	}
-	var req struct {
-		Audio    string `json:"audio"`
-		MimeType string `json:"mime_type"`
-		Language string `json:"language"`
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxTranscribeRequestBodyBytes)
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondInvalidRequest(c)
-		return
-	}
-	text, err := ctrl.svc.TranscribeForOwner(service.AIActorContext{
-		RestaurantID: restaurantID,
-		OwnerUserID:  userID,
-		Role:         "owner",
-	}, req.Audio, req.MimeType, req.Language)
-	if err != nil {
-		if errors.Is(err, service.ErrAIQuotaExceeded) {
-			respondAPIError(c, http.StatusTooManyRequests, err)
-			return
-		}
-		respondAPIError(c, http.StatusBadRequest, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"text": text})
-}
-
-func (ctrl *AIController) UsageMetrics(c *gin.Context) {
-	restaurantID, ok := requireRestaurant(c)
-	if !ok {
-		return
-	}
-	if !requireAIOwner(c) {
-		return
-	}
-	userID, ok := contextUserID(c)
-	if !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated owner is required"})
-		return
-	}
-	result, err := ctrl.svc.AIUsageForOwner(service.AIActorContext{
-		RestaurantID: restaurantID,
-		OwnerUserID:  userID,
-		Role:         "owner",
-	})
-	if err != nil {
-		respondAPIError(c, http.StatusBadRequest, err)
-		return
-	}
-	c.JSON(http.StatusOK, result)
-}
 
 func (ctrl *AIController) ConfirmAction(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, private")

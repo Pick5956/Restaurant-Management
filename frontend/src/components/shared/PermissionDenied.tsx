@@ -4,15 +4,15 @@ import Link from "next/link";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { useAuth } from "@/src/providers/AuthProvider";
-import { firstAccessibleHref } from "@/src/components/shared/Sidebar";
+import { getDefaultWorkspaceRoute } from "@/src/lib/workMode";
 
 export default function PermissionDenied({ title }: { title?: string }) {
   const { language } = useLanguage();
   const { href: restaurantPageHref } = useRestaurantNav();
   const { activeMembership } = useAuth();
-  // Send them somewhere they can actually open — a chef denied here would loop
-  // if the button pointed back at the overview.
-  const backHref = firstAccessibleHref(activeMembership);
+  // Send them to their default workspace — a chef denied here would loop if the
+  // button pointed back at the overview.
+  const backHref = getDefaultWorkspaceRoute(activeMembership);
   const backLabel = backHref === "/home"
     ? (language === "th" ? "กลับหน้าภาพรวม" : "Back to overview")
     : (language === "th" ? "กลับหน้าหลัก" : "Back to app");

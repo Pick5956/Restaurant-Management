@@ -11,6 +11,7 @@ import { HeadingAction } from '@/src/components/heading-action';
 import { CardHeading, PeriodButton, PeriodSheet, ReportCard } from '@/src/components/reports/parts';
 import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
+import { apiFailureDetail } from '@/src/lib/api-failure';
 import { elapsedDays, expenseChipCategories, expenseShares, groupExpensesByDay } from '@/src/lib/expense-view';
 import { money } from '@/src/lib/format';
 import { formatBangkokDate } from '@/src/lib/order-query';
@@ -53,7 +54,8 @@ export default function ExpensesScreen() {
   const [category, setCategory] = useState<ExpenseCategory | 'all'>('all');
   const [data, setData] = useState<ExpenseData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // A failed load: the panel's title names it, `detail` is the app's line under it when there is one.
+  const [error, setError] = useState<{ detail?: string } | null>(null);
   const requestGenerationRef = useRef(createRequestGeneration());
 
   // The period and the category are both server-side filters, so changing one
@@ -78,11 +80,11 @@ export default function ExpensesScreen() {
       setToday(formatBangkokDate());
     } catch (err) {
       if (!requestGenerationRef.current.isCurrent(request)) return;
-      setError(err instanceof Error ? err.message : copy('โหลดค่าใช้จ่ายไม่สำเร็จ', 'Could not load expenses.'));
+      setError({ detail: apiFailureDetail(err, language) });
     } finally {
       if (requestGenerationRef.current.isCurrent(request)) setLoading(false);
     }
-  }, [canView, category, copy, range.from, range.to]);
+  }, [canView, category, language, range.from, range.to]);
 
   // Reload on focus: coming back from adding or editing an entry.
   useFocusEffect(useCallback(() => {
@@ -223,7 +225,7 @@ export default function ExpensesScreen() {
             {canEdit ? <HeadingAction compact={false} icon="add" label={copy('เพิ่มค่าใช้จ่าย', 'Add expense')} onPress={addExpense} /> : null}
           </View>
         ) : periodButton}
-        {error ? <Feedback title={copy('โหลดค่าใช้จ่ายไม่ได้', 'Could not load expenses')} detail={error} tone="danger" /> : null}
+        {error ? <Feedback title={copy('โหลดค่าใช้จ่ายไม่ได้', 'Could not load expenses')} detail={error.detail} tone="danger" /> : null}
         {loading && !data ? skeleton : body}
       </View>
       <PeriodSheet open={periodOpen} onClose={() => setPeriodOpen(false)} range={range} today={today} onApply={setRange} language={language} />
