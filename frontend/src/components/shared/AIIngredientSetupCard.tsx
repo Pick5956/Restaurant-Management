@@ -356,9 +356,10 @@ export default function AIIngredientSetupCard({
     );
   }
 
+  // What has been answered, each one a way back to its question. The amount
+  // that was said ("2 ขวด") is not an answer, so it sits in the header instead.
   const answered: { key: Step; text: string }[] = [];
-  if (setup.said_quantity > 0) answered.push({ key: "unit", text: `${fmt(setup.said_quantity)} ${setup.said_unit ?? ""}`.trim() });
-  if (setup.unit) answered.push({ key: "unit", text: setup.unit });
+  if (setup.unit) answered.push({ key: "unit", text: `นับเป็น${setup.unit}` });
   if (setup.pack_size && setup.unit) answered.push({ key: "pack", text: `${setup.pack_unit}ละ ${fmt(setup.pack_size)} ${setup.unit}` });
   if (setup.no_pack) answered.push({ key: "pack", text: "ไม่รู้ขนาด" });
   if (setup.price) answered.push({ key: "price", text: `฿${fmt(setup.price)}${setup.price_mode === "per_pack" ? `/${setup.pack_unit}` : ""}` });
@@ -378,7 +379,7 @@ export default function AIIngredientSetupCard({
           tag="required"
         />
         <div className="flex flex-wrap gap-1.5">
-          {setup.units.map((unit) => (
+          {(setup.units ?? []).map((unit) => (
             <Chip key={unit} active={setup.unit === unit} disabled={busy} onClick={() =>
               // A different unit makes the pack size and price mean something
               // else, so they are asked again; the same unit keeps them.
@@ -409,7 +410,7 @@ export default function AIIngredientSetupCard({
         </button>
         {changePack && (
           <div className="mb-3 flex flex-wrap gap-1.5">
-            {setup.pack_units.map((word) => (
+            {(setup.pack_units ?? []).map((word) => (
               <Chip key={word} active={setup.pack_unit === word} disabled={busy} onClick={() => send({ pack_unit: word }, false)}>
                 {word}
               </Chip>
@@ -488,7 +489,7 @@ export default function AIIngredientSetupCard({
           <div>
             <p className="mb-1 text-[11.5px] text-gray-500">การเก็บ</p>
             <div className="flex flex-wrap gap-1.5">
-              {setup.storage_types.map((storage) => (
+              {(setup.storage_types ?? []).map((storage) => (
                 <Chip key={storage} active={setup.storage_type === storage} disabled={busy} onClick={() => send({ storage_type: storage }, false)}>
                   {STORAGE_LABELS[storage] ?? storage}
                 </Chip>
@@ -519,7 +520,9 @@ export default function AIIngredientSetupCard({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            เพิ่มวัตถุดิบใหม่{setupSeqs.length > 1 ? ` · ${cursor + 1}/${setupSeqs.length}` : ""}
+            เพิ่มวัตถุดิบใหม่
+            {setup.said_quantity > 0 ? ` · สั่งมา ${fmt(setup.said_quantity)} ${setup.said_unit ?? ""}`.trimEnd() : ""}
+            {setupSeqs.length > 1 ? ` · ${cursor + 1}/${setupSeqs.length}` : ""}
           </p>
           <p className="truncate text-[15px] font-semibold text-gray-950 dark:text-white">{setup.name}</p>
         </div>

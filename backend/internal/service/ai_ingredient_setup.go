@@ -132,6 +132,9 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		PackUnits:    aiSetupPackUnitsFor(said),
 		PriceMode:    aiSetupPriceTotal,
 		StorageType:  "room_temp",
+		// Left out at first, and the card's last step crashed the chat page
+		// drawing a list that was null (25 ก.ย. 2569).
+		StorageTypes: append([]string(nil), aiSetupStorageTypes...),
 	}
 
 	// The opening stock, in the chosen unit.

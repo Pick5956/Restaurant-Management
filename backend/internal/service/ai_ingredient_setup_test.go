@@ -23,6 +23,10 @@ func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 	if payload.Unit != "" || preview.Setup == nil || preview.Setup.Unit != "" {
 		t.Fatalf("a sealed container word must leave the unit to the card's first question: %+v", payload)
 	}
+	// Every list the card draws chips from must be there.
+	if len(preview.Setup.Units) == 0 || len(preview.Setup.PackUnits) == 0 || len(preview.Setup.StorageTypes) == 0 {
+		t.Fatalf("a chip list is empty: %+v", preview.Setup)
+	}
 
 	answers := AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackSize: 700, Price: 70}
 	payload, preview, err = buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", answers)
