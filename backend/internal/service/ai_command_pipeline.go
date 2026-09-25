@@ -518,6 +518,16 @@ func ResolveMenuCommand(menus []entity.MenuItem, draft AIStockCommandDraft) AICo
 // exist yet.
 func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) AICommandResolution {
 	title := strings.TrimSpace(draft.Name)
+	if title == "" && strings.EqualFold(strings.TrimSpace(draft.Kind), "create") {
+		// "เพิ่มวัตถุดิบ" with no name. Asked here rather than left to the chat
+		// model, which wrote "ชื่ออะไรและราคาต้นทุนเท่าไหร่" — a price the command
+		// does not need yet — and whose question the next turn could not rebuild
+		// a command from (25 ก.ย. 2569).
+		return AICommandResolution{
+			Kind:     AICommandOutcomeAsk,
+			Question: "จะเพิ่มวัตถุดิบชื่ออะไรครับ บอกชื่อกับจำนวนมาได้เลย เช่น น้ำปลา 2 ขวด",
+		}
+	}
 	if title == "" {
 		// The extractor sends the owner's own words along when it could tell a
 		// command was there but not what it was about ("เพิ่มของอีกอย่างที่ใกล้หมด").
@@ -536,15 +546,18 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 	// Adding a new ingredient is the one command that must not resolve against
 	// the shelf — it is precisely for something the shelf does not have.
 	if kind == "create" {
-		if question, bad := aiCreateUnitQuestion(title, draft.Unit); bad {
-			return question
-		}
+		// Already on the shelf is checked before the unit: "หมาล่า" (45.49
+		// กิโลกรัม in stock) was asked "นับเป็นหน่วยอะไรครับ" as though it were
+		// new, under an answer quoting its stock (25 ก.ย. 2569).
 		if match := ResolveIngredientName(shelf, title); match.Exact != nil {
 			return AICommandResolution{
 				Kind:     AICommandOutcomeAsk,
 				Title:    title,
 				Question: fmt.Sprintf("มี “%s” ในคลังอยู่แล้วครับ ต้องการรับเข้าเพิ่มหรือแก้ข้อมูลแทนไหม", match.Exact.Name),
 			}
+		}
+		if question, bad := aiCreateUnitQuestion(title, draft.Unit); bad {
+			return question
 		}
 		return AICommandResolution{
 			Kind:  AICommandOutcomeReady,

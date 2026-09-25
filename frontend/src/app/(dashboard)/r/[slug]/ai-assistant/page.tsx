@@ -45,6 +45,7 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import type { AIActionPreview, AIActionPlan, AIConversationMessage, AIForecastResult, AIChartData } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
 import AISettingsModal from "@/src/components/shared/AISettingsModal";
 import ForecastChart from "@/src/components/shared/ForecastChart";
@@ -711,7 +712,22 @@ export default function AIAssistantPage() {
   // Dropping it instead would be the worse bug, because the server still refuses
   // every other command until this card is confirmed or cancelled.
   const planCard =
-    pendingActionPlan && pendingActionPlan.items.length > 0 ? (
+    pendingActionPlan && planNeedsSetup(pendingActionPlan) ? (
+      <AIIngredientSetupCard
+        key={pendingActionPlan.id}
+        plan={pendingActionPlan}
+        onPlanChange={setPendingActionPlan}
+        onConfirm={handlePlanConfirm}
+        onCancel={handlePlanCancel}
+        onReissue={handlePlanReissue}
+        initialState={planCardState}
+        onResolved={(resolved) => {
+          actionResolvedRef.current = true;
+          if (resolved !== "confirming") setPlanCardState(resolved);
+        }}
+        language={language}
+      />
+    ) : pendingActionPlan && pendingActionPlan.items.length > 0 ? (
       <InlineDbConfirmBar
         key={pendingActionPlan.id}
         summary={pendingActionPlan.summary}

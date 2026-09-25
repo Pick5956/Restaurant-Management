@@ -256,6 +256,16 @@ func joyboyIngredientDetailBody(shelf []entity.Ingredient, menus []entity.MenuIt
 	if partial {
 		lines = append(lines, "note=รายการด้านล่างคือตัวที่ชื่อใกล้เคียงกับที่ถาม เรียงจากใกล้ที่สุด "+
 			"ให้เลือกตัวที่ตรงกับคำถามแล้วตอบเฉพาะตัวนั้น ถ้าไม่แน่ใจให้ถามกลับว่าหมายถึงตัวไหน")
+	} else if !aiQuestionNamesARow(names, question) {
+		// The rows came from earlier in the thread, not from this sentence. Unsaid,
+		// the model read them as the answer: "ไข่นกนางแอ่น" — not on the shelf —
+		// was answered with หมาล่า's stock, the one thing the thread had named
+		// (25 ก.ย. 2569).
+		lines = append(lines, "note=ข้อความล่าสุดไม่ได้พิมพ์ชื่อวัตถุดิบที่มีในคลัง "+
+			"รายการด้านล่างคือตัวที่คุยกันก่อนหน้าในบทสนทนานี้ ไม่ใช่ตัวที่ถามแน่นอน "+
+			"ถ้าข้อความล่าสุดเอ่ยชื่อของอย่างอื่นที่ไม่อยู่ในรายการนี้ แปลว่าของนั้นยังไม่มีในคลัง "+
+			"ให้บอกตรง ๆ ว่ายังไม่มี ห้ามตอบข้อมูลของตัวด้านล่างแทน "+
+			"ถ้าข้อความล่าสุดหมายถึงของที่คุยกันอยู่ (เช่น \"อันนั้น\" \"ตัวเมื่อกี้\") ให้ตอบตัวนั้น")
 	}
 	for _, index := range found {
 		item := shelf[index]

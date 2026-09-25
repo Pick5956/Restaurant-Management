@@ -34,6 +34,7 @@ describe("AI conversation API", () => {
       question: "แล้วเมื่อวานล่ะ",
       history: [{ id: "turn-1-assistant", role: "assistant", content: "วันนี้ขายได้ 10,000 บาท" }],
       conversation_id: "conversation-123",
+      ingredient_card: true,
     });
   });
 
@@ -43,6 +44,7 @@ describe("AI conversation API", () => {
     expect(apiClient.post).toHaveBeenCalledWith("/api/v1/ai/operations/ask", {
       question: "สรุปยอดขาย",
       history: [],
+      ingredient_card: true,
     });
   });
 

@@ -65,6 +65,7 @@ import { useTheme } from "@/src/providers/ThemeProvider";
 import type { AIActionPlan, AIActionPreview, AIAskResponse, AIChartData, AIConversationMessage, AIForecastResult } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
 
@@ -806,7 +807,20 @@ export default function AIOperationsFloatingChat() {
   // before, because the server still refuses every other command until it is
   // confirmed or cancelled, and a card nobody can see is a deadlock.
   const planCard =
-    pendingActionPlan && pendingActionPlan.items.length > 0 ? (
+    pendingActionPlan && planNeedsSetup(pendingActionPlan) ? (
+      <AIIngredientSetupCard
+        key={pendingActionPlan.id}
+        plan={pendingActionPlan}
+        onPlanChange={setPendingActionPlan}
+        onConfirm={handlePlanConfirm}
+        onCancel={handlePlanCancel}
+        initialState={planCardState}
+        onResolved={(resolved) => {
+          if (resolved !== "confirming") setPlanCardState(resolved);
+        }}
+        language={language}
+      />
+    ) : pendingActionPlan && pendingActionPlan.items.length > 0 ? (
       <InlineDbConfirmBar
         key={pendingActionPlan.id}
         summary={pendingActionPlan.summary}

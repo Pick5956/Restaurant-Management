@@ -127,6 +127,10 @@ type AIAdjustStockCommand struct {
 	// resolved to a row of this restaurant, and its name for the preview.
 	CategoryID   uint
 	CategoryName string
+	// Setup marks a create the web card fills in step by step (25 ก.ย. 2569):
+	// Quantity and Unit are then the amount as said ("2 ขวด"), not yet the
+	// opening stock. See ai_ingredient_setup.go.
+	Setup bool
 }
 
 // AIActionItemPayload is what gets persisted for an item. It is deliberately
@@ -152,6 +156,20 @@ type AIActionItemPayload struct {
 	Date     string `json:"date,omitempty"`
 	// Used by create_menu_item.
 	CategoryID uint `json:"category_id,omitempty"`
+	// Used by create_ingredient when the card sets it up (ai_ingredient_setup.go):
+	// the amount as said, and the card's answers. Quantity and CostPerUnit
+	// above are then what those answers computed.
+	Setup        bool    `json:"setup,omitempty"`
+	SaidQuantity float64 `json:"said_quantity,omitempty"`
+	SaidUnit     string  `json:"said_unit,omitempty"`
+	PackUnit     string  `json:"pack_unit,omitempty"`
+	PackSize     float64 `json:"pack_size,omitempty"`
+	NoPack       bool    `json:"no_pack,omitempty"`
+	PriceMode    string  `json:"price_mode,omitempty"`
+	Price        float64 `json:"price,omitempty"`
+	NoPrice      bool    `json:"no_price,omitempty"`
+	StorageType  string  `json:"storage_type,omitempty"`
+	MinPercent   float64 `json:"min_percent,omitempty"`
 
 	// What the row held when the preview was written, for the action types that
 	// overwrite a value outright. The owner confirms "5000 → 3000" having read
@@ -215,6 +233,9 @@ type AIActionItemPreview struct {
 	Delta string `json:"delta,omitempty"`
 	// Facts is what a create action will write, one line per value.
 	Facts []AIActionPreviewFact `json:"facts,omitempty"`
+	// Setup is the step-by-step card's state for a new ingredient; nil for
+	// every other item.
+	Setup *AIIngredientSetupView `json:"setup,omitempty"`
 }
 
 // AIActionPreviewFact is one "label: value" line of a create preview.
@@ -672,6 +693,11 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 		if err != nil {
 			return AIActionItemPayload{}, AIActionItemPreview{}, "", err
 		}
+		if command.Setup {
+			payload, preview, err := buildIngredientSetup(shelf, command.Name, command.Quantity, command.Unit,
+				AIIngredientSetupAnswers{Unit: aiSetupFirstUnit(command.Unit)})
+			return payload, preview, entity.AIActionTypeCreateIngredient, err
+		}
 		payload, preview, err := validateCreateIngredient(shelf, command.Name, command.Unit, command.Quantity, 0, 0)
 		return payload, preview, entity.AIActionTypeCreateIngredient, err
 	default:
@@ -936,13 +962,31 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 		if err := json.Unmarshal([]byte(item.PayloadJSON), &payload); err != nil {
 			return errors.New("คำสั่งเสียหาย")
 		}
-		_, err := ports.Ingredients.Create(restaurantID, actorUserID, &IngredientRequest{
+		request := &IngredientRequest{
 			Name:        payload.Name,
 			Unit:        payload.Unit,
 			Stock:       payload.Quantity,
 			MinStock:    payload.MinStock,
 			CostPerUnit: payload.CostPerUnit,
-		})
+		}
+		if payload.Setup {
+			// The card's first question. Confirming before it is answered
+			// would create an ingredient no recipe can be measured against.
+			if strings.TrimSpace(payload.Unit) == "" {
+				return errors.New("ยังไม่ได้เลือกหน่วยนับ")
+			}
+			request.StorageType = payload.StorageType
+			if payload.MinPercent > 0 {
+				percent := payload.MinPercent
+				request.MinPercent = &percent
+			}
+			if payload.PackUnit != "" && payload.PackSize > 0 {
+				packUnit, packSize := payload.PackUnit, payload.PackSize
+				request.PackUnit = &packUnit
+				request.PackSize = &packSize
+			}
+		}
+		_, err := ports.Ingredients.Create(restaurantID, actorUserID, request)
 		return err
 
 	default:

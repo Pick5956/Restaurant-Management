@@ -101,6 +101,10 @@ const aiStockExtractionPrompt = `คุณคือตัวแปลงคำ�
   ต่างจาก "ปรับราคาเมนูY เป็น 139" หรือ "ของA ขึ้นราคาเป็นกิโลละ 180" ที่บอกให้ทำเลย ไม่ได้ถามผล
 - **ถ้าข้อความมีแต่ชื่อของอย่างเดียว ไม่มีคำสั่งและไม่มีตัวเลข ให้ตอบ []**
   นั่นคือเขาอยากรู้ข้อมูลของสิ่งนั้น ไม่ใช่สั่งให้แก้
+  **ยกเว้น** ข้อความก่อนหน้าของผู้ช่วยเพิ่งถามชื่อของที่จะเพิ่ม (เช่น "จะเพิ่มวัตถุดิบชื่ออะไรครับ")
+  แล้วผู้ใช้ตอบมาแค่ชื่อ — นั่นคือการตอบคำถาม ให้ส่งเป็น "create" พร้อมชื่อนั้น
+- **สั่งเพิ่มวัตถุดิบแต่ยังไม่บอกชื่อ ก็ยังเป็นคำสั่ง** เช่น "เพิ่มวัตถุดิบ" "เพิ่มวัตถุดิบอื่น" "เพิ่มของเข้าคลังหน่อย"
+  ให้ส่ง name="" kind="create" ห้ามตอบ [] ระบบจะถามชื่อเอง
 - **ประโยคที่บอกให้ "ยังอย่าเพิ่งทำ" หรือ "อย่าทำ" ไม่ใช่คำสั่ง ให้ตอบ []**
   เช่น "อย่าเพิ่งปิดขาย..." "ยังไม่ต้องเพิ่ม..." "ไม่ต้องปิด..." "อย่าเพิ่งสั่งของ..."
   ระวังเป็นพิเศษ อย่าเห็นคำว่า "ปิดขาย" หรือ "เพิ่ม" ในประโยคแล้วรีบแปลงเป็นคำสั่ง
@@ -132,6 +136,13 @@ const aiStockExtractionPrompt = `คุณคือตัวแปลงคำ�
 
 ข้อความ: "เพิ่มของC เข้าคลังหน่อย หน่วยกรัม"
 ตอบ: [{"name":"ของC","kind":"create","quantity":0,"unit":"กรัม"}]
+
+ข้อความ: "เพิ่มวัตถุดิบ"
+ตอบ: [{"name":"","kind":"create","quantity":0,"unit":""}]
+
+ผู้ช่วยเพิ่งถาม: "จะเพิ่มวัตถุดิบชื่ออะไรครับ บอกชื่อกับจำนวนมาได้เลย"
+ข้อความ: "ของD"
+ตอบ: [{"name":"ของD","kind":"create","quantity":0,"unit":""}]
 
 ข้อความ: "เมื่อวานจ่ายค่าแรงพนักงาน 2 คน 1,200 บาท แล้วก็ซื้อกระทะใหม่ 1500"
 ตอบ: [{"name":"ค่าแรงพนักงาน","kind":"expense","quantity":1200,"unit":"","category":"labor","date":"","note":"ค่าแรงพนักงาน 2 คน"},{"name":"กระทะ","kind":"expense","quantity":1500,"unit":"","category":"equipment","date":"","note":"ซื้อกระทะใหม่"}]
@@ -297,7 +308,9 @@ func ParseStockCommandDrafts(raw string) ([]AIStockCommandDraft, error) {
 		// ใกล้หมดด้วย" — and dropping it here is what made the second half vanish
 		// with nothing said. It becomes a question to the owner further down, never
 		// a write: nothing can be written without a resolved name.
-		if draft.Name == "" && draft.Note == "" {
+		// A nameless "create" is kept too: "เพิ่มวัตถุดิบ" is a whole command
+		// missing only its name, and Go asks for it (25 ก.ย. 2569).
+		if draft.Name == "" && draft.Note == "" && !strings.EqualFold(draft.Kind, "create") {
 			continue
 		}
 		// A negative number is kept, not flattened to zero.

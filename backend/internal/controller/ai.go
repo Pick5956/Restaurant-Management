@@ -43,6 +43,7 @@ type AIOperationsService interface {
 	ApplyAISettingsPatchForOwner(restaurantID uint, patch service.AISettingsPatch) error
 	DeleteAllConversationsForOwner(actor service.AIActorContext) (int64, error)
 	ConfirmAIActionPlanForOwner(actor service.AIActorContext, planID, confirmationToken string) (*service.AIActionPlanConfirmation, error)
+	SetupAIPlanIngredientForOwner(actor service.AIActorContext, planID string, seq int, request service.AIIngredientSetupRequest) (*service.AIActionPlanResponse, error)
 	CancelAIActionPlanForOwner(actor service.AIActorContext, planID string) error
 }
 
@@ -264,6 +265,45 @@ func (ctrl *AIController) ConfirmAIActionPlan(c *gin.Context) {
 		OwnerUserID:  userID,
 		Role:         "owner",
 	}, c.Param("planID"), input.ConfirmationToken)
+	if err != nil {
+		respondAIActionPlanError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store, private")
+	c.JSON(http.StatusOK, result)
+}
+
+// SetupAIPlanIngredient applies one answer from the new-ingredient card (its
+// unit, pack size, price) to a pending plan and returns the card redrawn.
+func (ctrl *AIController) SetupAIPlanIngredient(c *gin.Context) {
+	restaurantID, ok := requireRestaurant(c)
+	if !ok {
+		return
+	}
+	if !requireAIOwner(c) {
+		return
+	}
+	userID, ok := contextUserID(c)
+	if !ok || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated owner is required"})
+		return
+	}
+	seq, err := strconv.Atoi(c.Param("seq"))
+	if err != nil || seq < 0 {
+		respondInvalidRequest(c)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAIActionConfirmationBodyBytes)
+	var input service.AIIngredientSetupRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		respondInvalidRequest(c)
+		return
+	}
+	result, err := ctrl.svc.SetupAIPlanIngredientForOwner(service.AIActorContext{
+		RestaurantID: restaurantID,
+		OwnerUserID:  userID,
+		Role:         "owner",
+	}, c.Param("planID"), seq, input)
 	if err != nil {
 		respondAIActionPlanError(c, err)
 		return

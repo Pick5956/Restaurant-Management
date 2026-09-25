@@ -1,0 +1,165 @@
+package service
+
+import (
+	"encoding/json"
+	"math"
+	"strings"
+	"testing"
+
+	"Project-M/internal/entity"
+
+	"gorm.io/gorm"
+)
+
+// "เพิ่มน้ำปลา 2 ขวด", answered on the card: มิลลิลิตร, 700 a bottle, 70 บาท
+// for both. The stock, the price per ml and the expense are Go's numbers.
+func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "หมูสับ", Unit: "กรัม"}}
+
+	payload, preview, err := buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: aiSetupFirstUnit("ขวด")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Unit != "" || preview.Setup == nil || preview.Setup.Unit != "" {
+		t.Fatalf("a sealed container word must leave the unit to the card's first question: %+v", payload)
+	}
+
+	answers := AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackSize: 700, Price: 70}
+	payload, preview, err = buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", answers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Setup.NeedsPack || payload.PackUnit != "ขวด" || payload.PackSize != 700 {
+		t.Fatalf("ขวด does not convert to มิลลิลิตร, so it is the pack: %+v", payload)
+	}
+	if payload.Quantity != 1400 {
+		t.Fatalf("2 ขวด × 700 = 1400 มิลลิลิตร, got %v", payload.Quantity)
+	}
+	if math.Abs(payload.CostPerUnit-0.05) > 1e-9 {
+		t.Fatalf("70 บาท / 1400 = 0.05 บาท/มล., got %v", payload.CostPerUnit)
+	}
+	if effects := strings.Join(preview.SideEffects, " | "); !strings.Contains(effects, "บันทึกรายจ่าย 70 บาท") {
+		t.Fatalf("the expense line is missing: %q", effects)
+	}
+
+	answers.PriceMode = aiSetupPricePerPack
+	answers.Price = 35
+	payload, _, err = buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", answers)
+	if err != nil || math.Abs(payload.CostPerUnit-0.05) > 1e-9 {
+		t.Fatalf("35 บาท a bottle is the same 70 บาท: %v / %v", payload.CostPerUnit, err)
+	}
+}
+
+func TestIngredientSetupRefusesWhatTheSaveWouldRefuse(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "น้ำปลา", Unit: "มิลลิลิตร"}}
+	if _, _, err := buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{}); err == nil {
+		t.Fatal("an ingredient already on the shelf must be refused")
+	}
+	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ลัง"}); err == nil {
+		t.Fatal("ลัง is not a stock unit")
+	}
+	// No pack size: the stock is 0, so a price has nothing to divide by.
+	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", NoPack: true, Price: 70}); err == nil {
+		t.Fatal("a price over zero stock must be refused")
+	}
+	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackUnit: "ลิตร", PackSize: 1}); err == nil {
+		t.Fatal("ลิตร already converts to มิลลิลิตร, it cannot be the pack")
+	}
+	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด", StorageType: "oven"}); err == nil {
+		t.Fatal("an unknown storage type must be refused")
+	}
+}
+
+// A unit the shelf can measure by carries over: 3 กก. counted in กรัม is 3000,
+// with no pack question.
+func TestIngredientSetupConvertsAMeasuredAmount(t *testing.T) {
+	if unit := aiSetupFirstUnit("กก."); unit != "กิโลกรัม" {
+		t.Fatalf("กก. starts the card on กิโลกรัม, got %q", unit)
+	}
+	payload, preview, err := buildIngredientSetup(nil, "หมูสามชั้น", 3, "กก.", AIIngredientSetupAnswers{Unit: "กรัม"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Quantity != 3000 || preview.Setup.NeedsPack {
+		t.Fatalf("3 กก. = 3000 กรัม without a pack, got %v needsPack=%v", payload.Quantity, preview.Setup.NeedsPack)
+	}
+}
+
+// The card path is taken only for something new, and only when the client
+// draws the card; an ingredient already on the shelf goes the old way.
+func TestCardCreateResolutionTakesOnlyNewIngredients(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "หมูสับ", Unit: "กรัม"}}
+	card, ok := aiCardCreateResolution(shelf, AIStockCommandDraft{Name: "น้ำปลา", Kind: "create", Quantity: 2, Unit: "ลัง"})
+	if !ok || !card.Command.Setup || card.Command.Unit != "ลัง" || card.Command.Quantity != 2 {
+		t.Fatalf("a new ingredient in ลัง should become a card: %+v", card)
+	}
+	if _, ok := aiCardCreateResolution(shelf, AIStockCommandDraft{Name: "น้ำปลา", Kind: "in", Quantity: 2, Unit: "ขวด"}); !ok {
+		t.Fatal("a restock of something not on the shelf, with a unit, is a new ingredient")
+	}
+	if _, ok := aiCardCreateResolution(shelf, AIStockCommandDraft{Name: "หมูสับ", Kind: "in", Quantity: 2, Unit: "กิโล"}); ok {
+		t.Fatal("หมูสับ is on the shelf — that is a restock")
+	}
+	if _, ok := aiCardCreateResolution(shelf, AIStockCommandDraft{Name: "น้ำปลา", Kind: "in", Quantity: 2}); ok {
+		t.Fatal("no unit on a restock of an unknown name is still asked in the chat")
+	}
+}
+
+// Confirming runs the card's answers through the inventory form's Create:
+// the pack, the storage and the reorder percentage all arrive.
+func TestExecuteCardCreateCarriesTheAnswers(t *testing.T) {
+	port := &fakeAIActionIngredientPort{items: map[uint]*entity.Ingredient{}}
+	payload, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด",
+		AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackSize: 700, Price: 70, StorageType: "dry", MinPercent: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(payload)
+	item := entity.AIActionPlanItem{ActionType: entity.AIActionTypeCreateIngredient, PayloadJSON: string(raw)}
+	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err != nil {
+		t.Fatal(err)
+	}
+	if len(port.created) != 1 {
+		t.Fatalf("expected one create, got %d", len(port.created))
+	}
+	got := port.created[0]
+	if got.Unit != "มิลลิลิตร" || got.Stock != 1400 || got.StorageType != "dry" ||
+		got.PackUnit == nil || *got.PackUnit != "ขวด" || got.PackSize == nil || *got.PackSize != 700 ||
+		got.MinPercent == nil || *got.MinPercent != 20 {
+		t.Fatalf("the card's answers did not reach Create: %+v", got)
+	}
+
+	unanswered, _, _ := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{})
+	raw, _ = json.Marshal(unanswered)
+	item.PayloadJSON = string(raw)
+	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err == nil {
+		t.Fatal("a card confirmed before its unit was chosen must not create anything")
+	}
+}
+
+// The chat of 25 ก.ย. 2569 16:05–16:08, turn by turn.
+func TestAddIngredientChatFromTheOwnersLog(t *testing.T) {
+	shelf := []entity.Ingredient{{Model: gorm.Model{ID: 40}, Name: "หมาล่า", Unit: "กิโลกรัม", Stock: 45.49}}
+
+	// "เพิ่มวัตถุดิบ" — no name: Go asks for the name, and only the name.
+	asked := ResolveStockCommand(shelf, AIStockCommandDraft{Kind: "create"})
+	if asked.Kind != AICommandOutcomeAsk || !strings.Contains(asked.Question, "ชื่ออะไร") || strings.Contains(asked.Question, "ราคา") {
+		t.Fatalf("a nameless create should ask for the name: %+v", asked)
+	}
+
+	// "หมาล่า" — already on the shelf: said so, not asked for a unit.
+	existing := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "หมาล่า", Kind: "create"})
+	if !strings.Contains(existing.Question, "ในคลังอยู่แล้ว") || len(existing.Options) != 0 {
+		t.Fatalf("an existing ingredient must not be asked its unit: %+v", existing)
+	}
+
+	// "ไข่นกนางแอ่น" — not on the shelf; the sheet offers หมาล่า from the
+	// thread only as an earlier topic, never as the answer.
+	history := []AIConversationMessage{{Role: "user", Content: "หมาล่า"}, {Role: "assistant", Content: "วัตถุดิบหมาล่าตอนนี้มีสต๊อกอยู่ 45.49 กิโลกรัม"}}
+	body := joyboyIngredientDetailBody(shelf, nil, nil, "ไข่นกนางแอ่น", history)
+	if !strings.Contains(body, "ingredient=หมาล่า") || !strings.Contains(body, "ยังไม่มีในคลัง") {
+		t.Fatalf("the sheet must say หมาล่า comes from the thread: %s", body)
+	}
+	if named := joyboyIngredientDetailBody(shelf, nil, nil, "หมาล่าเหลือเท่าไหร่", history); strings.Contains(named, "ยังไม่มีในคลัง") {
+		t.Fatalf("a sentence naming the row gets no thread note: %s", named)
+	}
+}

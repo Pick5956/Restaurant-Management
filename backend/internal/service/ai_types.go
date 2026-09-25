@@ -25,6 +25,11 @@ type AIAskRequest struct {
 	Question       string                  `json:"question" binding:"required"`
 	History        []AIConversationMessage `json:"history"`
 	ConversationID string                  `json:"conversation_id,omitempty" binding:"omitempty,max=64"`
+	// IngredientCard says the client draws the step-by-step card for a new
+	// ingredient (the web, 25 ก.ย. 2569), so "เพิ่มน้ำปลา 2 ขวด" goes straight
+	// to a card that asks its unit instead of asking in the chat first. The
+	// app does not send it and keeps the chat question.
+	IngredientCard bool `json:"ingredient_card,omitempty"`
 	// OnDraft is set by a caller that wants the answer as it is written (the
 	// SSE route). Server-side only; nil means answer when done.
 	OnDraft func(text string) `json:"-"`

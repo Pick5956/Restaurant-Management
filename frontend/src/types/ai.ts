@@ -95,6 +95,10 @@ export type AIAskRequest = {
   question: string;
   history: AIConversationMessage[];
   conversation_id?: string;
+  /** This client draws the step-by-step card for a new ingredient
+   * (AIIngredientSetupCard), so the server sends the card instead of asking
+   * the unit in the chat first. */
+  ingredient_card?: boolean;
 };
 
 export type AIResolvedPlan = {
@@ -232,6 +236,48 @@ export type AIActionPlanItem = {
   change: string;
   unit?: string;
   side_effects?: string[];
+  kind?: string;
+  facts?: { label: string; value: string }[];
+  /** Set on a new ingredient the card asks about one step at a time. */
+  setup?: AIIngredientSetup;
+};
+
+// The new-ingredient card's state, computed in Go (ai_ingredient_setup.go).
+// The lists are the only values the server accepts.
+export type AIIngredientSetup = {
+  name: string;
+  said_quantity: number;
+  said_unit?: string;
+  unit: string;
+  units: string[];
+  needs_pack: boolean;
+  pack_unit?: string;
+  pack_units: string[];
+  pack_size?: number;
+  no_pack?: boolean;
+  stock: number;
+  can_price: boolean;
+  price_mode: "total" | "per_pack";
+  price?: number;
+  no_price?: boolean;
+  cost_per_unit?: number;
+  total?: number;
+  storage_type: string;
+  storage_types: string[];
+  min_percent: number;
+};
+
+// One answer from the card, sent with every answer so far.
+export type AIIngredientSetupAnswers = {
+  unit: string;
+  pack_unit: string;
+  pack_size: number;
+  no_pack: boolean;
+  price_mode: "total" | "per_pack";
+  price: number;
+  no_price: boolean;
+  storage_type: string;
+  min_percent: number;
 };
 
 export type AIActionPlan = {

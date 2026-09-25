@@ -126,6 +126,10 @@ func (f *fakeAIOperationsService) ConfirmAIActionPlanForOwner(service.AIActorCon
 	return &service.AIActionPlanConfirmation{}, f.askErr
 }
 
+func (f *fakeAIOperationsService) SetupAIPlanIngredientForOwner(service.AIActorContext, string, int, service.AIIngredientSetupRequest) (*service.AIActionPlanResponse, error) {
+	return &service.AIActionPlanResponse{}, f.askErr
+}
+
 func (f *fakeAIOperationsService) CancelAIActionPlanForOwner(service.AIActorContext, string) error {
 	return f.askErr
 }

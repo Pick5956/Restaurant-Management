@@ -41,6 +41,8 @@ type AIActionPlanItemResponse struct {
 	ValueUnit string                `json:"value_unit,omitempty"`
 	Delta     string                `json:"delta,omitempty"`
 	Facts     []AIActionPreviewFact `json:"facts,omitempty"`
+	// Setup is the new-ingredient card's state; see ai_ingredient_setup.go.
+	Setup *AIIngredientSetupView `json:"setup,omitempty"`
 }
 
 // maybeHandleJoyboyStockCommand answers an inventory command. It reports handled
@@ -153,6 +155,14 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 			continue
 		}
 		resolution := ResolveStockCommand(shelf, draft)
+		// The web draws a step-by-step card for a new ingredient, so what used
+		// to be a chat question about its unit becomes the card's first step.
+		// Clients without the card still get the question.
+		if request.IngredientCard {
+			if card, ok := aiCardCreateResolution(shelf, draft); ok {
+				resolution = card
+			}
+		}
 		switch {
 		case AIMenuCreateKind(draft.Kind):
 			resolution = ResolveMenuCreateCommand(menus, categories, draft)
@@ -305,19 +315,7 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 
 	items := make([]AIActionPlanItemResponse, 0, len(draft.Previews))
 	for _, preview := range draft.Previews {
-		items = append(items, AIActionPlanItemResponse{
-			Title:       preview.Title,
-			Change:      preview.Change,
-			Unit:        preview.Unit,
-			SideEffects: preview.SideEffects,
-			Kind:        preview.Kind,
-			Field:       preview.Field,
-			From:        preview.From,
-			To:          preview.To,
-			ValueUnit:   preview.ValueUnit,
-			Delta:       preview.Delta,
-			Facts:       preview.Facts,
-		})
+		items = append(items, aiPlanItemResponse(preview))
 	}
 
 	answer := fmt.Sprintf("ผมเตรียม%sแล้ว ยังไม่ได้แก้ข้อมูล กดยืนยันภายใน 1 นาทีครับ", summary)

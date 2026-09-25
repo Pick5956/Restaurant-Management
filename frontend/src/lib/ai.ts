@@ -2,12 +2,14 @@ import { apiClient } from "./apiClient";
 import type { AIOutage } from "../components/shared/AIOutageNotice";
 import type {
   AIActionConfirmation,
+  AIActionPlan,
   AIAskRequest,
   AIAskResponse,
   AIActionPlanConfirmation,
   AIConversationMessage,
   AIConversationSummary,
   AIConversationTurn,
+  AIIngredientSetupAnswers,
   AIInsight,
   AISnapshot,
 } from "../types/ai";
@@ -43,7 +45,7 @@ export const askOperationsAI = (
   history: AIConversationMessage[] = [],
   conversationId?: string | null,
 ) => {
-  const request: AIAskRequest = { question, history };
+  const request: AIAskRequest = { question, history, ingredient_card: true };
   const normalizedConversationId = conversationId?.trim();
   if (normalizedConversationId) request.conversation_id = normalizedConversationId;
   return apiClient.post<AIAskResponse>("/api/v1/ai/operations/ask", request);
@@ -95,6 +97,19 @@ export const confirmAIActionPlan = (planId: string, confirmationToken: string) =
   apiClient.post<AIActionPlanConfirmation>(
     `/api/v1/ai/operations/plans/${encodeURIComponent(planId)}/confirm`,
     { confirmation_token: confirmationToken },
+  );
+
+// One answer from the new-ingredient card. The plan comes back without its
+// token (the server keeps only a digest); the caller keeps the one it has.
+export const setupAIPlanIngredient = (
+  planId: string,
+  seq: number,
+  confirmationToken: string,
+  answers: AIIngredientSetupAnswers,
+) =>
+  apiClient.post<Omit<AIActionPlan, "confirmation_token">>(
+    `/api/v1/ai/operations/plans/${encodeURIComponent(planId)}/items/${seq}/ingredient`,
+    { confirmation_token: confirmationToken, ...answers },
   );
 
 export const cancelAIActionPlan = (planId: string) =>
