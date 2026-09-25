@@ -12,13 +12,51 @@
 // The last step is the ordinary confirm bar, so confirming, cancelling and
 // expiring behave exactly as they do for every other change.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, Package } from "lucide-react";
 import InlineDbConfirmBar, { isTerminal, type InlineDbConfirmState } from "@/src/components/shared/InlineDbConfirmBar";
 import { setupAIPlanIngredient } from "@/src/lib/ai";
 import type { AIActionPlan, AIIngredientPriceMode, AIIngredientSetup, AIIngredientSetupAnswers } from "@/src/types/ai";
 
 type Step = "unit" | "stock" | "pack" | "price" | "extras" | "review";
+const STEP_ORDER: Step[] = ["unit", "stock", "pack", "price", "extras", "review"];
+
+// How each question enters: from the right going forward, from the left going
+// back, with the card's height following instead of jumping (25 ก.ย. 2569).
+const MOTION_CSS = `
+@keyframes aisc-in-fwd { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes aisc-in-back { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes aisc-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.aisc-in-fwd { animation: aisc-in-fwd .28s cubic-bezier(.2,.9,.3,1) both; }
+.aisc-in-back { animation: aisc-in-back .28s cubic-bezier(.2,.9,.3,1) both; }
+.aisc-fade { animation: aisc-fade .3s cubic-bezier(.2,.9,.3,1) both; }
+.aisc-height { transition: height .28s cubic-bezier(.2,.9,.3,1); }
+@media (prefers-reduced-motion: reduce) {
+  .aisc-in-fwd, .aisc-in-back, .aisc-fade { animation: none; }
+  .aisc-height { transition: none; }
+}`;
+
+// AutoHeight animates its own height to whatever its content measures, so a
+// short question after a long one shrinks the card smoothly.
+function AutoHeight({ children }: { children: ReactNode }) {
+  const inner = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = inner.current;
+    if (!el) return;
+    const measure = () => setHeight(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div className="aisc-height overflow-hidden" style={{ height }}>
+      <div ref={inner}>{children}</div>
+    </div>
+  );
+}
 
 const STORAGE_LABELS: Record<string, string> = {
   room_temp: "อุณหภูมิห้อง",
@@ -232,6 +270,11 @@ export default function AIIngredientSetupCard({
     return first ? firstOpenStep(first) : "review";
   });
   const [endedAs, setEndedAs] = useState<InlineDbConfirmState | undefined>(initialState);
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const goTo = (next: Step, forced?: 1 | -1) => {
+    setDirection(forced ?? (STEP_ORDER.indexOf(next) >= STEP_ORDER.indexOf(step) ? 1 : -1));
+    setStep(next);
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [changePack, setChangePack] = useState(false);
@@ -272,17 +315,17 @@ export default function AIIngredientSetupCard({
       const updated = next.items[seq]?.setup;
       const after = updated ? nextStep(step, updated) : null;
       if (after) {
-        setStep(after);
+        goTo(after);
       } else if (cursor + 1 < setupSeqs.length) {
         const following = next.items[setupSeqs[cursor + 1]]?.setup;
         setCursor(cursor + 1);
-        setStep(following ? firstOpenStep(following) : "review");
+        goTo(following ? firstOpenStep(following) : "review", 1);
       } else {
-        setStep("review");
+        goTo("review");
       }
     } catch (err) {
       const { text, gone } = errorText(err);
-      if (gone) setStep("review");
+      if (gone) goTo("review");
       else setError(text);
     } finally {
       setBusy(false);
@@ -293,19 +336,20 @@ export default function AIIngredientSetupCard({
     if (!setup) return;
     const steps = stepsFor(setup);
     const index = steps.indexOf(step);
-    if (index > 0) setStep(steps[index - 1]);
+    if (index > 0) goTo(steps[index - 1]);
   };
 
   const cancelHere = () => {
     onCancel();
     setEndedAs("cancelled");
-    setStep("review");
+    goTo("review");
     onResolved?.("cancelled");
   };
 
   if (step === "review" || !setup) {
     return (
-      <div className="mt-2 space-y-2">
+      <div className="aisc-fade mt-2 space-y-2">
+        <style>{MOTION_CSS}</style>
         {!endedAs &&
           setupSeqs.map((index) => {
             const facts = plan.items[index]?.facts ?? [];
@@ -325,7 +369,7 @@ export default function AIIngredientSetupCard({
                   type="button"
                   onClick={() => {
                     setCursor(setupSeqs.indexOf(index));
-                    setStep("unit");
+                    goTo("unit");
                   }}
                   className="mt-2 text-[12px] font-medium text-orange-700 underline-offset-2 hover:underline dark:text-orange-300"
                 >
@@ -387,7 +431,7 @@ export default function AIIngredientSetupCard({
             </Chip>
           ))}
         </div>
-        <Actions busy={busy} onNext={setup.unit ? () => setStep(nextStep("unit", setup) ?? "review") : undefined} />
+        <Actions busy={busy} onNext={setup.unit ? () => goTo(nextStep("unit", setup) ?? "review") : undefined} />
       </>
     );
   } else if (step === "stock") {
@@ -447,7 +491,7 @@ export default function AIIngredientSetupCard({
             size > 0
               ? () => send({ pack_size: size }, true)
               : setup.pack_size
-                ? () => setStep(nextStep("pack", setup) ?? "review")
+                ? () => goTo(nextStep("pack", setup) ?? "review")
                 : undefined
           }
         />
@@ -547,7 +591,7 @@ export default function AIIngredientSetupCard({
       </div>
       <div className="flex gap-1 px-4 pt-3" aria-hidden="true">
         {steps.map((name, index) => (
-          <span key={name} className={`h-1 flex-1 rounded-full ${index <= stepIndex ? "bg-gradient-to-r from-orange-500 to-amber-500" : "bg-gray-200 dark:bg-gray-700"}`} />
+          <span key={name} className={`h-1 flex-1 rounded-full ${index <= stepIndex ? "bg-orange-500" : "bg-gray-200 dark:bg-gray-700"} transition-colors duration-300`} />
         ))}
       </div>
       {answered.length > 0 && (
@@ -556,7 +600,7 @@ export default function AIIngredientSetupCard({
             <button
               key={`${entry.key}-${index}`}
               type="button"
-              onClick={() => steps.includes(entry.key) && setStep(entry.key)}
+              onClick={() => steps.includes(entry.key) && goTo(entry.key)}
               className="rounded-full bg-gray-100 px-2 py-0.5 text-[11.5px] text-gray-600 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300"
             >
               {entry.text}
@@ -564,8 +608,12 @@ export default function AIIngredientSetupCard({
           ))}
         </div>
       )}
+      <style>{MOTION_CSS}</style>
+      <AutoHeight>
       <div className="px-4 pb-4 pt-3">
-        {body}
+        <div key={`${seq}-${step}`} className={direction > 0 ? "aisc-in-fwd" : "aisc-in-back"}>
+          {body}
+        </div>
         {error && <p role="alert" className="mt-2 text-[12px] text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="button"
@@ -576,6 +624,7 @@ export default function AIIngredientSetupCard({
           ยกเลิกคำสั่งนี้
         </button>
       </div>
+      </AutoHeight>
     </section>
   );
 }
