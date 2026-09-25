@@ -272,6 +272,24 @@ export default function AIIngredientSetupCard({
   });
   const [endedAs, setEndedAs] = useState<InlineDbConfirmState | undefined>(initialState);
   const [direction, setDirection] = useState<1 | -1>(1);
+  // A new question can be taller than the last, and the card sits at the
+  // bottom of the chat, so its buttons ended up below the screen and had to be
+  // scrolled to by hand (เจ้าของเจอบน iPhone 25 ก.ย. 2569). After each step
+  // change, once the height has finished growing, the whole card is brought
+  // into view. Not on the first render: a card restored with the thread must
+  // not pull the page away from where the owner is reading.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const firstStepRef = useRef(true);
+  useEffect(() => {
+    if (firstStepRef.current) {
+      firstStepRef.current = false;
+      return;
+    }
+    const id = window.setTimeout(() => {
+      cardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 320);
+    return () => window.clearTimeout(id);
+  }, [step, cursor]);
   const goTo = (next: Step, forced?: 1 | -1) => {
     setDirection(forced ?? (STEP_ORDER.indexOf(next) >= STEP_ORDER.indexOf(step) ? 1 : -1));
     setStep(next);
@@ -296,7 +314,7 @@ export default function AIIngredientSetupCard({
     setError("");
     // Only when the question or the item changes, not on every server reply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, seq]);
+  }, [step, cursor]);
 
   // No countdown while the questions are being answered (เจ้าของขอ 25 ก.ย.
   // 2569): the server keeps the card open for ten minutes, and the minute to
@@ -349,7 +367,7 @@ export default function AIIngredientSetupCard({
 
   if (step === "review" || !setup) {
     return (
-      <div className="aisc-fade mt-2 space-y-2">
+      <div ref={cardRef} className="aisc-fade mt-2 scroll-mb-4 space-y-2">
         <style>{MOTION_CSS}</style>
         {!endedAs &&
           setupSeqs.map((index) => {
@@ -442,14 +460,14 @@ export default function AIIngredientSetupCard({
       <>
         <Question
           title={`ตอนนี้มี${setup.name}อยู่กี่${setup.unit}?`}
-          note="เป็นสต๊อกเริ่มต้นในคลัง · ยังไม่มีของ ใส่ 0 ได้"
+          note="เป็นสต๊อกเริ่มต้นในคลัง · ต้องมากกว่า 0"
           tag="required"
         />
         <NumberField value={stockText} onChange={setStockText} placeholder="จำนวน" suffix={setup.unit} />
         <Actions
           busy={busy}
           onBack={back}
-          onNext={Number.isFinite(amount) && amount >= 0 ? () => send({ stock: amount }, true) : undefined}
+          onNext={Number.isFinite(amount) && amount > 0 ? () => send({ stock: amount }, true) : undefined}
         />
       </>
     );
@@ -574,7 +592,7 @@ export default function AIIngredientSetupCard({
   }
 
   return (
-    <section className="mt-2 w-full max-w-[380px] overflow-hidden rounded-2xl rounded-tl-md border border-gray-200/70 bg-white text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100">
+    <section ref={cardRef} className="mt-2 w-full max-w-[380px] scroll-mb-4 overflow-hidden rounded-2xl rounded-tl-md border border-gray-200/70 bg-white text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100">
       <div className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-3 dark:border-gray-700/60">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-300">
           <Package className="h-4 w-4" aria-hidden="true" />
