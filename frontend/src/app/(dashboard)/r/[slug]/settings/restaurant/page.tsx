@@ -16,21 +16,7 @@ import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useDialogFocus } from "@/src/hooks/useDialogFocus";
 import { restaurantRepository } from "@/src/app/repositories/restaurantRepository";
 import { createSerialQueue } from "@/src/lib/serialQueue";
-import {
-  ACTION_WIDTH,
-  FOCUS_RING,
-  SettingsActionRow,
-  SettingsButton,
-  SettingsField,
-  SettingsInput,
-  SettingsItem,
-  SettingsMediaRow,
-  SettingsSelect,
-  SettingsSkeleton,
-  SettingsSwitch,
-  SettingsTextArea,
-  settingsButtonClass,
-} from "../_components/SettingsPrimitives";
+import { ACTION_WIDTH, FOCUS_RING, SettingsActionRow, SettingsButton, SettingsField, SettingsInput, SettingsItem, SettingsMediaRow, SettingsSelect, SettingsSkeleton, SettingsSwitch, SettingsTextArea, settingsButtonClass, SettingsGroup } from "../_components/SettingsPrimitives";
 import {
   GEOFENCE_FIELDS,
   buildRestaurantPayload,
@@ -519,6 +505,7 @@ export default function RestaurantSettingsPage() {
   return (
     <>
       <div>
+        <SettingsGroup id="identity" title={copy.identity}>
         <SettingsMediaRow
           title={copy.logo}
           description={copy.logoHint}
@@ -552,13 +539,19 @@ export default function RestaurantSettingsPage() {
         />
         <SettingsField label={copy.phone} description={copy.phoneHint} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commit(["phone"])} error={errors.phone} inputMode="tel" autoComplete="tel" />
         <SettingsTextArea label={copy.address} description={copy.addressHint} value={form.address} onChange={(value) => setField("address", value)} onCommit={() => commit(["address"])} />
+        </SettingsGroup>
+        <SettingsGroup id="operations" title={copy.operations}>
         <SettingsField label={copy.openTime} description={copy.openHint} type="time" value={form.open_time} onChange={(value) => commit(["open_time"], { open_time: value })} error={errors.open_time} />
         <SettingsField label={copy.closeTime} description={copy.closeHint} type="time" value={form.close_time} onChange={(value) => commit(["close_time"], { close_time: value })} error={errors.close_time} />
         <SettingsField label={copy.tableCount} description={copy.tablesHint} value={form.table_count} onChange={(value) => setField("table_count", value)} onCommit={() => commit(["table_count"])} error={errors.table_count} inputMode="numeric" />
+        </SettingsGroup>
+        <SettingsGroup id="billing" title={copy.billing}>
         <SettingsSwitch label={copy.service} description={copy.serviceHint} checked={form.service_charge_enabled} onChange={(value) => commitSwitch("service_charge_enabled", value)} />
         <SettingsField label={`${copy.service} (%)`} description={copy.serviceRateHint} value={form.service_charge_rate} onChange={(value) => setField("service_charge_rate", value)} onCommit={() => commit(["service_charge_rate"])} error={errors.service_charge_rate} inputMode="decimal" />
         <SettingsSwitch label={copy.vat} description={copy.vatHint} checked={form.vat_enabled} onChange={(value) => commitSwitch("vat_enabled", value)} />
         <SettingsField label={`${copy.vat} (%)`} description={copy.vatRateHint} value={form.vat_rate} onChange={(value) => setField("vat_rate", value)} onCommit={() => commit(["vat_rate"])} error={errors.vat_rate} inputMode="decimal" />
+        </SettingsGroup>
+        <SettingsGroup id="promptpay" title={copy.promptpay}>
         <SettingsField label={copy.promptpayName} description={copy.promptpayNameHint} value={form.promptpay_name} onChange={(value) => setField("promptpay_name", value)} onCommit={() => commit(["promptpay_name"])} />
         <SettingsMediaRow
           title={copy.promptpayQr}
@@ -572,6 +565,8 @@ export default function RestaurantSettingsPage() {
           busy={uploadingQr}
           onFile={uploadQr}
         />
+        </SettingsGroup>
+        <SettingsGroup id="qr" title={copy.qrOrdering}>
         {/* Turning the check on with no coordinates yet cannot be saved: the
             switch stays on here, the missing value is said under its field,
             and the check saves once the coordinates are in. */}
@@ -586,11 +581,13 @@ export default function RestaurantSettingsPage() {
             </SettingsActionRow>
           </>
         ) : null}
+        </SettingsGroup>
       </div>
 
       {/* Only the owner can delete a restaurant, so nobody else is shown the
           control at all. */}
       {isOwner ? (
+        <SettingsGroup id="delete" title={copy.dangerZone}>
         <SettingsActionRow
           title={copy.deleteTitle}
           description={copy.deleteWarning}
@@ -603,6 +600,7 @@ export default function RestaurantSettingsPage() {
         >
           {copy.deleteAction}
         </SettingsActionRow>
+        </SettingsGroup>
       ) : null}
 
       {deleteModalOpen && (

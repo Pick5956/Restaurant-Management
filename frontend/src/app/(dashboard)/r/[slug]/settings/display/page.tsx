@@ -2,7 +2,7 @@
 
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
-import { SettingsSelect, SettingsSwitch } from "../_components/SettingsPrimitives";
+import { SettingsSelect, SettingsSwitch, SettingsGroup } from "../_components/SettingsPrimitives";
 
 export default function DisplaySettingsPage() {
   const { language, setLanguage } = useLanguage();
@@ -13,6 +13,7 @@ export default function DisplaySettingsPage() {
 
   const copy = language === "th"
     ? {
+        groupTitle: "ภาษาและการแสดงผล",
         language: "ภาษา",
         languageHint: "ภาษาที่ใช้แสดงเมนู ปุ่ม และข้อความทั้งหมดในระบบ",
         thai: "ไทย",
@@ -25,6 +26,7 @@ export default function DisplaySettingsPage() {
         aiAssistantHint: "แสดงปุ่มลอยสำหรับเรียกผู้ช่วย AI มุมล่างของหน้าจอ มีผลเฉพาะเครื่องนี้",
       }
     : {
+        groupTitle: "Language and display",
         language: "Language",
         languageHint: "The language used for menus, buttons and every message in the system.",
         thai: "Thai",
@@ -38,7 +40,7 @@ export default function DisplaySettingsPage() {
       };
 
   return (
-    <>
+    <SettingsGroup id="display" title={copy.groupTitle}>
       <SettingsSelect
         label={copy.language}
         description={copy.languageHint}
@@ -62,6 +64,6 @@ export default function DisplaySettingsPage() {
         ]}
       />
       <SettingsSwitch label={copy.aiAssistant} description={copy.aiAssistantHint} checked={showAIAssistant} onChange={setShowAIAssistant} />
-    </>
+    </SettingsGroup>
   );
 }

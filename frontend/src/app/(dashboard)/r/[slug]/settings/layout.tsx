@@ -34,8 +34,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   const isViewAll = pagePath === "/settings";
 
   const copy = language === "th"
-    ? { title: "ตั้งค่า", back: "ย้อนกลับ", search: "ค้นหา", searchLabel: "ค้นหาการตั้งค่า", clear: "ล้างคำค้นหา", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`, account: "บัญชี", display: "ภาษาและการแสดงผล", restaurant: "ร้านอาหาร" }
-    : { title: "Settings", back: "Back", search: "Search", searchLabel: "Search settings", clear: "Clear search", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”`, account: "Account", display: "Language and display", restaurant: "Restaurant" };
+    ? { title: "ตั้งค่า", back: "ย้อนกลับ", search: "ค้นหา", searchLabel: "ค้นหาการตั้งค่า", clear: "ล้างคำค้นหา", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`, account: "บัญชี", display: "ภาษาและการแสดงผล", restaurant: "ร้านอาหาร", openSearch: "เปิดช่องค้นหา", groups: { account: "บัญชี", display: "การแสดงผล", identity: "ข้อมูลร้าน", operations: "เวลาและโต๊ะ", billing: "การคิดเงิน", promptpay: "พร้อมเพย์", qr: "สั่งผ่าน QR", delete: "ลบร้าน" } }
+    : { title: "Settings", back: "Back", search: "Search", searchLabel: "Search settings", clear: "Clear search", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”`, account: "Account", display: "Language and display", restaurant: "Restaurant", openSearch: "Open search", groups: { account: "Account", display: "Display", identity: "Restaurant", operations: "Hours and tables", billing: "Billing", promptpay: "PromptPay", qr: "QR ordering", delete: "Delete" } };
 
   // One list, no groups: the owner moved the restaurant in beside the personal
   // categories on 2026-09-21, when the team entry was dropped (staff and their
@@ -50,6 +50,100 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
   // On a phone the list is a strip that scrolls sideways; bring the open
   // category into it instead of leaving it past the right edge.
+  // On a phone every group gets a chip in one strip that stays at the top
+  // (แบบ B, chosen 25 ก.ย. 2569): the three categories hid six groups of the
+  // restaurant's settings behind one word. A chip scrolls to its group; from
+  // a single category's page it goes to "all settings" first.
+  const canRestaurant = can(activeMembership, "manage_restaurant_settings");
+  const isOwner = activeMembership?.role?.name === "owner";
+  const groups: { id: keyof typeof copy.groups; label: string }[] = (
+    ["account", "display", ...(canRestaurant ? ["identity", "operations", "billing", "promptpay", "qr"] : []), ...(canRestaurant && isOwner ? ["delete"] : [])] as (keyof typeof copy.groups)[]
+  ).map((id) => ({ id, label: copy.groups[id] }));
+  const [activeGroup, setActiveGroup] = useState<string>("account");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const pendingGroupRef = useRef<string | null>(null);
+  // On a phone the header and the strip are one fixed bar, the way the stock
+  // and menu pages hold their toolbars there: html and body clip overflow-x,
+  // which makes the body the sticky container, so position: sticky never
+  // sticks on a phone. A spacer of the bar's measured height keeps the first
+  // row out from under it, and the same height is where a group lands.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const measure = () => setBarHeight(window.matchMedia("(min-width: 768px)").matches ? 0 : bar.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  const chipsRef = useRef<HTMLUListElement>(null);
+
+  const scrollToGroup = (id: string) => {
+    const target = document.querySelector<HTMLElement>(`[data-settings-group="${id}"]`);
+    if (!target) return false;
+    setActiveGroup(id);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  };
+  const goToGroup = (id: string) => {
+    setQuery("");
+    if (scrollToGroup(id)) return;
+    pendingGroupRef.current = id;
+    router.push("/settings");
+  };
+
+  // After a chip took the page to "all settings", wait for the group to
+  // render (the restaurant's rows load from the server) and then go to it.
+  useEffect(() => {
+    const id = pendingGroupRef.current;
+    if (!isViewAll || !id) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      if (scrollToGroup(id) || tries > 30) {
+        pendingGroupRef.current = null;
+        window.clearInterval(timer);
+      }
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isViewAll]);
+
+  // The chip lit is the last group whose heading has passed under the strip.
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-settings-group]"));
+        if (sections.length === 0) return;
+        let current = sections[0].dataset.settingsGroup ?? "account";
+        for (const section of sections) {
+          if (section.getBoundingClientRect().top <= (barRef.current?.offsetHeight ?? 0) + 16) current = section.dataset.settingsGroup ?? current;
+        }
+        setActiveGroup(current);
+      });
+    };
+    measure();
+    document.addEventListener("scroll", measure, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("scroll", measure, { capture: true });
+    };
+  }, [pagePath]);
+
+  useEffect(() => {
+    const strip = chipsRef.current;
+    const chip = strip?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!strip || !chip) return;
+    strip.scrollTo({ left: chip.offsetLeft - strip.clientWidth / 2 + chip.offsetWidth / 2, behavior: "smooth" });
+  }, [activeGroup]);
+
   const navRef = useRef<HTMLUListElement>(null);
   useEffect(() => {
     const strip = navRef.current;
@@ -109,8 +203,16 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     // The reference's page container: at most 1440 wide and centred, 16px
     // sides and 32px below. The top is deeper than the reference's 8px, which
     // sits under its 64px header bar; this page has no bar above it.
-    <div data-settings-root="" className="mx-auto min-h-dvh pt-4 lg:pt-10 w-full max-w-[1440px] bg-white px-4 pb-8 text-gray-950 dark:bg-gray-950 dark:text-white">
-      <div className="mb-6 flex h-11 items-center">
+    <div
+      data-settings-root=""
+      style={{ ["--settings-bar" as string]: `${barHeight + 8}px` }}
+      className="mx-auto min-h-dvh pt-4 max-md:pt-0 lg:pt-10 w-full max-w-[1440px] bg-white px-4 pb-8 text-gray-950 dark:bg-gray-950 dark:text-white"
+    >
+      <div
+        ref={barRef}
+        className="max-md:fixed max-md:inset-x-0 max-md:top-0 max-md:z-30 max-md:bg-white/95 max-md:px-4 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:shadow-[0_1px_0_rgba(0,0,0,0.06)] max-md:backdrop-blur dark:max-md:bg-gray-950/95"
+      >
+      <div className="mb-6 flex h-11 items-center max-md:mb-2">
         <button
           type="button"
           onClick={goBack}
@@ -119,10 +221,19 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         >
           <ArrowLeft aria-hidden="true" className={BACK_ICON} />
         </button>
-        <h1 className="text-[24px] font-semibold leading-8">{copy.title}</h1>
+        <h1 className="text-[24px] font-semibold leading-8 max-md:text-[22px]">{copy.title}</h1>
+        <button
+          type="button"
+          onClick={() => setSearchOpen((open) => !open)}
+          aria-label={copy.openSearch}
+          aria-expanded={searchOpen || Boolean(query)}
+          className={`ml-auto inline-flex h-11 w-11 items-center justify-center rounded-xl ${RAISED} text-gray-700 md:hidden dark:text-gray-200 ${FOCUS_RING}`}
+        >
+          <Search aria-hidden="true" className="h-5 w-5" />
+        </button>
       </div>
 
-      <div role="search" className="relative mb-4">
+      <div role="search" className={`relative mb-4 max-md:mb-1 ${searchOpen || query ? "" : "max-md:hidden"}`}>
         <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-600 dark:text-gray-300" />
         <input
           type="search"
@@ -149,10 +260,37 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         ) : null}
       </div>
 
-      <hr className="my-4 border border-[color:var(--dashboard-shell-border)]" />
+      <hr className="my-4 border border-[color:var(--dashboard-shell-border)] max-md:hidden" />
+
+      <nav aria-label={copy.categories} className="-mx-4 py-2 md:hidden">
+        <div className="relative">
+          <ul ref={chipsRef} className="flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {groups.map((group) => {
+              const active = activeGroup === group.id;
+              return (
+                <li key={group.id} className="shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => goToGroup(group.id)}
+                    aria-current={active ? "true" : undefined}
+                    className={`h-9 rounded-full px-3.5 text-[14px] transition-colors ${FOCUS_RING} ${
+                      active ? "bg-orange-600 font-semibold text-white" : `${RAISED} text-gray-700 dark:text-gray-200`
+                    }`}
+                  >
+                    {group.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-white dark:from-gray-950" />
+        </div>
+      </nav>
+      </div>
+      <div aria-hidden="true" className="md:hidden" style={{ height: barHeight }} />
 
       <div className="md:flex md:items-stretch">
-        <nav aria-label={copy.categories} className="md:shrink-0">
+        <nav aria-label={copy.categories} className="hidden md:block md:shrink-0">
           <ul ref={navRef} className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
             {items.map((item) => {
               const active = pagePath === item.href;
@@ -180,7 +318,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
           </ul>
         </nav>
 
-        <hr className="my-4 border border-[color:var(--dashboard-shell-border)] md:hidden" />
+
         <div aria-hidden="true" className={`mx-4 hidden w-px shrink-0 md:block ${RAISED}`} />
 
         <div ref={contentRef} className="min-w-0 flex-1">

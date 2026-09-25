@@ -60,6 +60,9 @@ export default function MobileNavHandle() {
   // height from page to page and grow once their data loads, so the header
   // is found again on every navigation and watched for size changes.
   const pathname = usePathname();
+  // The settings pages have their own back arrow in the header, and the tab
+  // sat over their first row (25 ก.ย. 2569), so it steps aside there.
+  const onSettings = Boolean(pathname?.includes('/settings'));
   useEffect(() => {
     const button = buttonRef.current;
     if (!button) return;
@@ -213,7 +216,7 @@ export default function MobileNavHandle() {
         dragging
           ? 'scale-110 border-orange-300 shadow-xl dark:border-orange-700'
           : 'border-gray-200 shadow-md dark:border-gray-800'
-      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
+      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'} ${onSettings ? 'hidden' : ''}`}
     >
       <Menu className="h-5 w-5" strokeWidth={2.25} />
     </button>

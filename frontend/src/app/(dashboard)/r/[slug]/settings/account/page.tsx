@@ -13,13 +13,7 @@ import type { User } from "@/src/types/auth";
 import { updateProfile, uploadProfileImage } from "@/src/lib/auth";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { roleLabel } from "@/src/lib/roleLabels";
-import {
-  SettingsBadge,
-  SettingsButton,
-  SettingsField,
-  SettingsItem,
-  SettingsValue,
-} from "../_components/SettingsPrimitives";
+import { SettingsBadge, SettingsButton, SettingsField, SettingsItem, SettingsValue, SettingsGroup } from "../_components/SettingsPrimitives";
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d+\-\s]/g, "").slice(0, 24);
@@ -63,6 +57,7 @@ export default function AccountSettingsPage() {
 
   const copy = language === "th"
     ? {
+        groupTitle: "บัญชี",
         photo: "รูปโปรไฟล์",
         photoHint: "รูปที่แสดงคู่กับชื่อของคุณในแถบเมนูและรายชื่อพนักงาน ใช้ไฟล์ jpg, png หรือ webp ไม่เกิน 5MB",
         upload: "อัปโหลดรูป",
@@ -92,6 +87,7 @@ export default function AccountSettingsPage() {
         unnamed: "ไม่ระบุชื่อร้าน",
       }
     : {
+        groupTitle: "Account",
         photo: "Profile photo",
         photoHint: "Shown beside your name in the menu bar and the staff list. Use a jpg, png or webp file up to 5MB.",
         upload: "Upload photo",
@@ -199,7 +195,7 @@ export default function AccountSettingsPage() {
   const photoAction = user?.profile_image ? copy.replace : copy.upload;
 
   return (
-    <>
+    <SettingsGroup id="account" title={copy.groupTitle}>
       <div>
         <SettingsItem title={copy.photo} description={copy.photoHint}>
           <div className="flex items-center gap-4">
@@ -273,6 +269,6 @@ export default function AccountSettingsPage() {
           {null}
         </SettingsItem>
       )}
-    </>
+    </SettingsGroup>
   );
 }

@@ -53,7 +53,11 @@ export const TEXT_FOCUS = FLAT_FIELD_EDGE;
  */
 function fieldClass(error: boolean, fullWidth = false, multiline = false) {
   return [
-    multiline ? "block min-w-0 rounded p-2" : "block h-10 min-w-0 rounded px-2 leading-10",
+    // A phone gets a 46px field with rounder corners - a thumb target, the
+    // layout the owner chose for settings on a phone (แบบ B, 25 ก.ย. 2569).
+    multiline
+      ? "block min-w-0 rounded p-2 max-md:rounded-xl max-md:px-3"
+      : "block h-10 min-w-0 rounded px-2 leading-10 max-md:h-[46px] max-md:rounded-xl max-md:px-3 max-md:leading-[46px]",
     "text-[16px] text-gray-950 transition-colors",
     RAISED,
     fullWidth ? "w-full" : FIELD_WIDTH,
@@ -104,7 +108,9 @@ type RowProps = {
  */
 export function SettingsItem({ title, description, children, htmlFor, titleId }: RowProps) {
   const query = useContext(SettingsSearchContext);
-  const titleClass = "block text-[18px] leading-7 text-gray-950 dark:text-white";
+  // On a phone (แบบ B): a 15px label over its control, the description cut to
+  // two short grey lines, and no hairline - the group headings divide instead.
+  const titleClass = "block text-[18px] leading-7 text-gray-950 dark:text-white max-md:text-[15px] max-md:font-medium max-md:leading-6";
   const titleNode = htmlFor ? (
     <label htmlFor={htmlFor} id={titleId} className={titleClass}>{title}</label>
   ) : (
@@ -112,24 +118,45 @@ export function SettingsItem({ title, description, children, htmlFor, titleId }:
   );
   const control = <div className="min-w-0 md:shrink-0">{children}</div>;
   return (
-    <div data-setting-row hidden={!matchesSetting(query, title, description)} className={`mb-2 border-b pb-4 ${HAIRLINE}`}>
+    <div data-setting-row hidden={!matchesSetting(query, title, description)} className={`mb-2 border-b pb-4 ${HAIRLINE} max-md:mb-4 max-md:border-b-0 max-md:pb-0`}>
       {description ? (
         <>
           {titleNode}
-          <div className="mt-1 flex flex-col justify-between gap-4 md:flex-row md:items-start">
-            <p className="text-[14px] leading-5 text-gray-950 opacity-80 md:max-w-[50%] dark:text-white">{description}</p>
+          <div className="mt-1 flex flex-col justify-between gap-4 max-md:mt-0.5 max-md:gap-2 md:flex-row md:items-start">
+            <p className="text-[14px] leading-5 text-gray-950 opacity-80 md:max-w-[50%] dark:text-white max-md:line-clamp-2 max-md:text-[12.5px] max-md:leading-[18px] max-md:text-gray-500 max-md:opacity-100 max-md:dark:text-gray-400">{description}</p>
             {control}
           </div>
         </>
       ) : (
         // The title never moves: it sits at the top of every row, described or
         // not. Here the control comes up to that same top line.
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4">
+        <div className="flex flex-col gap-2 max-md:gap-1.5 md:flex-row md:items-start md:justify-between md:gap-4">
           {titleNode}
           {control}
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+
+/**
+ * A named group of rows that the phone's category strip scrolls to. The
+ * heading shows only on a phone (แบบ B, 25 ก.ย. 2569): a computer keeps the
+ * reference's plain list, where the side menu already names the category.
+ * While a search is typed the heading steps aside with the rows it held.
+ */
+export function SettingsGroup({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  const query = useContext(SettingsSearchContext);
+  return (
+    <section data-settings-group={id} aria-label={title} className="max-md:scroll-mt-(--settings-bar)">
+      {query.trim() ? null : (
+        <h2 className="mb-3 pt-2 text-[13px] font-bold tracking-wide text-orange-800 md:hidden dark:text-orange-300">{title}</h2>
+      )}
+      {children}
+    </section>
   );
 }
 
