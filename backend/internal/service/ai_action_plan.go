@@ -314,7 +314,7 @@ func validateAdjustStock(port AIActionIngredientPort, restaurantID uint, command
 	}
 	if amount > 0 {
 		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(amount)))
+			aiExpenseSideEffect(amount))
 	}
 	if next <= 0 && ingredient.Stock > 0 {
 		preview.SideEffects = append(preview.SideEffects, "สต๊อกเหลือ 0 · เมนูที่ใช้วัตถุดิบนี้จะถูกปิดขายอัตโนมัติ")
@@ -451,7 +451,7 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	}
 	if stock > 0 && cost > 0 {
 		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(roundBaht(stock*cost))))
+			aiExpenseSideEffect(roundBaht(stock*cost)))
 	}
 	if sealedStockUnits[cleanUnit] {
 		preview.SideEffects = append(preview.SideEffects,

@@ -105,7 +105,7 @@ func TestValidateAdjustStockShowsSideEffects(t *testing.T) {
 		t.Fatalf("stock-in should validate: %v", err)
 	}
 	joined := strings.Join(preview.SideEffects, " | ")
-	if !strings.Contains(joined, "บันทึกรายจ่าย") || !strings.Contains(joined, "แก้หรือลบไม่ได้") {
+	if !strings.Contains(joined, "รายจ่าย ฿") || !strings.Contains(joined, "ลบไม่ได้") {
 		t.Errorf("a valued stock-in must warn about the linked expense: %q", joined)
 	}
 
@@ -384,7 +384,7 @@ func TestPlanPricesARestockAtACostChangedEarlierInThePlan(t *testing.T) {
 		t.Fatalf("both items should validate, rejected: %+v", draft.Rejected)
 	}
 	effects := strings.Join(draft.Previews[1].SideEffects, " | ")
-	if !strings.Contains(effects, "1000 บาท") {
+	if !strings.Contains(effects, "฿1,000") {
 		t.Fatalf("restock expense should be at the new cost (1000), got %q", effects)
 	}
 }

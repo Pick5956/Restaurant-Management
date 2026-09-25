@@ -42,7 +42,7 @@ func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 	if math.Abs(payload.CostPerUnit-0.05) > 1e-9 {
 		t.Fatalf("70 บาท / 1400 = 0.05 บาท/มล., got %v", payload.CostPerUnit)
 	}
-	if effects := strings.Join(preview.SideEffects, " | "); !strings.Contains(effects, "บันทึกรายจ่าย 70 บาท") {
+	if effects := strings.Join(preview.SideEffects, " | "); !strings.Contains(effects, "รายจ่าย ฿70 · ลบไม่ได้") {
 		t.Fatalf("the expense line is missing: %q", effects)
 	}
 

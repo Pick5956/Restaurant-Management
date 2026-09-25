@@ -357,7 +357,7 @@ func aiIngredientSetupPreview(view AIIngredientSetupView) AIActionItemPreview {
 
 	if view.Total > 0 {
 		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(view.Total)))
+			aiExpenseSideEffect(view.Total))
 	}
 	if sealedStockUnits[unit] {
 		preview.SideEffects = append(preview.SideEffects,
@@ -558,4 +558,25 @@ func aiPlanWindow(items []repository.CreateAIActionPlanItemParams) time.Duration
 		}
 	}
 	return 0
+}
+
+// aiExpenseSideEffect is the confirm bar's money line: "รายจ่าย ฿2,500 · ลบไม่ได้".
+// It was "บันทึกรายจ่าย 2500 บาท (แก้หรือลบไม่ได้)"; the owner found the bar too
+// wordy on a phone and chose a two-line layout (แบบ B, 25 ก.ย. 2569).
+func aiExpenseSideEffect(amount float64) string {
+	return fmt.Sprintf("รายจ่าย ฿%s · ลบไม่ได้", aiBahtText(amount))
+}
+
+// aiBahtText writes baht with thousands separators, and satang only when
+// there are some: 2500 → "2,500", 70.5 → "70.50".
+func aiBahtText(amount float64) string {
+	satang := int64(math.Round(amount * 100))
+	whole := formatInt(satang / 100)
+	if rest := satang % 100; rest != 0 {
+		if rest < 0 {
+			rest = -rest
+		}
+		return fmt.Sprintf("%s.%02d", whole, rest)
+	}
+	return whole
 }

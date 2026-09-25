@@ -17,7 +17,7 @@ import {
 import { getUnclearRequestActions, resolveClarificationRequest } from "@/src/lib/aiClarification";
 import { getAnswerChips, getGuidedActions, type AIGuidedAction } from "@/src/lib/aiGuidedActions";
 import { useAutoGrowTextarea } from "@/src/lib/chatComposer";
-import { loadPendingPlan, savePendingPlan, type StoredPlanState } from "@/src/lib/aiPendingPlan";
+import { loadPendingPlan, questionBehindPlan, savePendingPlan, type StoredPlanState } from "@/src/lib/aiPendingPlan";
 import { resolveNavigationRequest } from "@/src/lib/aiNavigation";
 import {
   chatStorageKey,
@@ -45,6 +45,7 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import type { AIActionPreview, AIActionPlan, AIConversationMessage, AIForecastResult, AIChartData } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
 import AISettingsModal from "@/src/components/shared/AISettingsModal";
@@ -641,7 +642,7 @@ export default function AIAssistantPage() {
   // Put the original sentence back in the input, cursor at the end, so the owner
   // changes the part that was wrong instead of retyping the whole command.
   const reissuePendingCommand = () => {
-    const question = pendingActionQuestion;
+    const question = pendingActionQuestion || questionBehindPlan(messages, pendingActionPlan?.id);
     if (!question) return;
     setInput(question);
     requestAnimationFrame(() => {
@@ -733,6 +734,7 @@ export default function AIAssistantPage() {
         summary={pendingActionPlan.summary}
         items={pendingActionPlan.items.map((planItem) => ({
           title: planItem.title,
+          headline: planItemHeadline(planItem),
           change: planItem.change,
           unit: planItem.unit,
           sideEffects: planItem.side_effects,

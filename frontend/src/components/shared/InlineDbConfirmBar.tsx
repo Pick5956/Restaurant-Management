@@ -18,6 +18,8 @@ export type InlineDbConfirmState = "pending" | "confirming" | "done" | "cancelle
 export type InlineDbConfirmItem = {
   title: string;
   change: string;
+  /** The line the bar leads with ("เพิ่มขิง 50 กิโลกรัม"); planItemHeadline. */
+  headline?: string;
   unit?: string;
   sideEffects?: string[];
 };
@@ -246,11 +248,19 @@ export default function InlineDbConfirmBar({
   const dashoffset = ringDashoffset(state, remaining, totalMs);
   const secondsLeft = Math.max(0, Math.ceil(remaining / 1000));
 
+  // แบบ B (chosen 25 ก.ย. 2569): one ring, two lines, two equal buttons. The
+  // countdown used to be said twice — the ring's number and "กดยืนยันภายใน
+  // 0:54" — and a four-line block explained the change; the owner read it on a
+  // phone and asked for less. The time now lives only in the ring (the spoken
+  // status keeps it for screen readers), and each item leads with a headline.
+  const effects = Array.from(new Set(planItems.flatMap((planItem) => planItem.sideEffects ?? [])));
+  const showStatus = state !== "pending" || Boolean(error);
+
   return (
     <div
       role="group"
       aria-label={t.aria}
-      className="idcb mt-2 flex flex-wrap items-center gap-3 rounded-3xl border bg-white px-3 py-2.5 dark:bg-gray-950"
+      className="idcb mt-2 flex flex-col gap-3 rounded-3xl border bg-white p-4 dark:bg-gray-950"
       style={{ borderColor: view.borderColor, ["--idcb-muted" as string]: "#64748b" }}
     >
       <style>{`
@@ -282,132 +292,129 @@ export default function InlineDbConfirmBar({
         }
       `}</style>
 
-      {/* Countdown ring */}
-      <span className="relative grid h-10 w-10 shrink-0 place-items-center" aria-hidden="true">
-        <svg width="40" height="40" viewBox="0 0 40 40" style={{ transform: "rotate(-90deg)" }}>
-          <circle cx="20" cy="20" r="18" fill="none" stroke="#e5e7eb" strokeWidth="4" className="dark:opacity-30" />
-          <circle
-            cx="20" cy="20" r="18" fill="none" stroke={view.ringColor} strokeWidth="4" strokeLinecap="round"
-            strokeDasharray={RING_CIRCUMFERENCE} strokeDashoffset={dashoffset}
-            className={`${isTerminal(state) ? "idcb-progress-settle" : "idcb-progress"}${view.glow ? (view.urgent ? " idcb-glow-urgent" : " idcb-glow") : ""}`}
-          />
-        </svg>
-        <span className="absolute grid place-items-center">
-          {view.icon === "none" && (
-            // Seconds left, in the middle of the ring — the part of the countdown
-            // the eye can actually read second to second.
-            <span
-              key={secondsLeft}
-              className="idcb-tick text-[12px] font-semibold tabular-nums"
-              style={{ color: view.ringColor }}
-            >
-              {secondsLeft}
-            </span>
-          )}
-          {view.icon === "check" && (
-            <svg className="idcb-mark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={GREEN_ICON} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-          )}
-          {view.icon === "x" && (
-            <svg className="idcb-mark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={DANGER} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          )}
-          {view.icon === "spinner" && (
-            <svg className="idcb-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="3" strokeLinecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
-          )}
-        </span>
-      </span>
-
-      {/* Centre block */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {isPlan ? (
-          <>
-            <span className="truncate text-[15px] font-semibold text-gray-900 dark:text-gray-100">
-              {summary || itemName}
-            </span>
-            <ul className="mt-0.5 space-y-0.5">
-              {planItems.slice(0, 3).map((planItem, index) => (
-                <li key={index} className="text-[13px] text-gray-600 dark:text-gray-300">
-                  <span className="font-medium text-gray-800 dark:text-gray-100">{planItem.title}</span>
-                  {" · "}
-                  <span className="tabular-nums">{planItem.change}</span>
-                  {planItem.unit ? ` ${planItem.unit}` : ""}
-                  {(planItem.sideEffects ?? []).map((effect, effectIndex) => (
-                    <span key={effectIndex} className="ml-1.5 text-[12px] text-amber-700 dark:text-amber-400">
-                      · {effect}
-                    </span>
-                  ))}
-                </li>
-              ))}
-              {planItems.length > 3 && (
-                <li className="text-[12px] text-gray-400">+ อีก {planItems.length - 3} รายการ</li>
-              )}
-            </ul>
-            {(warnings ?? []).length > 0 && (
-              <span className="mt-0.5 text-[12px] text-red-600 dark:text-red-400">
-                ทำให้ไม่ได้: {(warnings ?? []).join(" · ")}
+      <div className="flex items-center gap-3">
+        {/* Countdown ring — the only place the time is shown */}
+        <span className="relative grid h-11 w-11 shrink-0 place-items-center" aria-hidden="true">
+          <svg width="44" height="44" viewBox="0 0 40 40" style={{ transform: "rotate(-90deg)" }}>
+            <circle cx="20" cy="20" r="18" fill="none" stroke="#fde2cc" strokeWidth="4" className="dark:opacity-30" />
+            <circle
+              cx="20" cy="20" r="18" fill="none" stroke={view.ringColor} strokeWidth="4" strokeLinecap="round"
+              strokeDasharray={RING_CIRCUMFERENCE} strokeDashoffset={dashoffset}
+              className={`${isTerminal(state) ? "idcb-progress-settle" : "idcb-progress"}${view.glow ? (view.urgent ? " idcb-glow-urgent" : " idcb-glow") : ""}`}
+            />
+          </svg>
+          <span className="absolute grid place-items-center">
+            {view.icon === "none" && (
+              <span key={secondsLeft} className="idcb-tick text-[13px] font-semibold tabular-nums" style={{ color: view.ringColor }}>
+                {secondsLeft}
               </span>
             )}
-          </>
-        ) : (
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="truncate text-[15px] font-semibold text-gray-900 dark:text-gray-100">{itemName}</span>
-          <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
-            {(["from", "to"] as const).map((cell) => {
-              const on = view.highlight === cell;
-              return (
-                <span
-                  key={cell}
-                  className="rounded-full px-[11px] py-[3px] text-[12.5px] font-semibold transition-[background-color,color] duration-200"
-                  style={on
-                    ? { backgroundColor: view.highlightColor, color: "#ffffff" }
-                    : { color: "#94a3b8" }}
-                >
-                  {cell === "from" ? fromLabel : toLabel}
+            {view.icon === "check" && (
+              <svg className="idcb-mark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={GREEN_ICON} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+            )}
+            {view.icon === "x" && (
+              <svg className="idcb-mark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={DANGER} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            )}
+            {view.icon === "spinner" && (
+              <svg className="idcb-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="3" strokeLinecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+            )}
+          </span>
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {isPlan ? (
+            <>
+              <span className="text-[16px] font-semibold leading-snug text-gray-900 dark:text-gray-100">
+                {planItems.length === 1 ? planItems[0].headline ?? `${planItems[0].title} · ${planItems[0].change}` : summary || itemName}
+              </span>
+              {planItems.length > 1 && (
+                <ul className="space-y-0.5">
+                  {planItems.slice(0, 3).map((planItem, index) => (
+                    <li key={index} className="text-[13.5px] tabular-nums text-gray-600 dark:text-gray-300">
+                      {planItem.headline ?? `${planItem.title} · ${planItem.change}`}
+                    </li>
+                  ))}
+                  {planItems.length > 3 && (
+                    <li className="text-[12.5px] text-gray-400">+ อีก {planItems.length - 3} รายการ</li>
+                  )}
+                </ul>
+              )}
+              {effects.map((effect) => (
+                <span key={effect} className="text-[13.5px] leading-snug text-orange-700 dark:text-orange-400">{effect}</span>
+              ))}
+              {(warnings ?? []).length > 0 && (
+                <span className="text-[13px] text-red-600 dark:text-red-400">
+                  ทำให้ไม่ได้: {(warnings ?? []).join(" · ")}
                 </span>
-              );
-            })}
+              )}
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span className="truncate text-[16px] font-semibold text-gray-900 dark:text-gray-100">{itemName}</span>
+              <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
+                {(["from", "to"] as const).map((cell) => {
+                  const on = view.highlight === cell;
+                  return (
+                    <span
+                      key={cell}
+                      className="rounded-full px-[11px] py-[3px] text-[12.5px] font-semibold transition-[background-color,color] duration-200"
+                      style={on
+                        ? { backgroundColor: view.highlightColor, color: "#ffffff" }
+                        : { color: "#94a3b8" }}
+                    >
+                      {cell === "from" ? fromLabel : toLabel}
+                    </span>
+                  );
+                })}
+              </span>
+            </div>
+          )}
+          <span
+            role="status"
+            aria-live="polite"
+            className={showStatus ? "text-[13.5px]" : "sr-only"}
+            style={showStatus ? { color: view.statusTone } : undefined}
+          >
+            {view.statusText}
           </span>
         </div>
-        )}
-        <span role="status" aria-live="polite" className="text-[13px]" style={{ color: view.statusTone }}>
-          {view.statusText}
-        </span>
       </div>
 
-      {/* Actions — full-width row under the text on a phone (the plan text wraps
-          tall there), back inline on the right from sm up. */}
-      <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:ml-auto sm:w-auto">
-        {view.buttons === "confirm" && (
-          <>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={state === "confirming"}
-              className="idcb-focus inline-flex min-h-[36px] items-center rounded-full px-4 text-[14.5px] font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ backgroundColor: ACCENT_DEEP }}
-            >
-              {t.confirm}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={state === "confirming"}
-              className="idcb-focus inline-flex min-h-[36px] items-center rounded-full px-3 text-[14px] font-medium text-gray-600 transition hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {t.cancel}
-            </button>
-          </>
-        )}
-        {view.buttons === "undo" && onUndo && (
+      {view.buttons === "confirm" && (
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={state === "confirming"}
+            className="idcb-focus min-h-[44px] rounded-full border border-red-200 bg-white text-[15px] font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/40"
+          >
+            {t.cancel}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={state === "confirming"}
+            className="idcb-focus min-h-[44px] rounded-full text-[15.5px] font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ backgroundColor: ACCENT_DEEP }}
+          >
+            {t.confirm}
+          </button>
+        </div>
+      )}
+      {view.buttons === "undo" && onUndo && (
+        <div className="flex justify-end">
           <button type="button" onClick={onUndo} className="idcb-focus inline-flex min-h-[36px] items-center rounded-full px-3 text-[13.5px] font-medium text-gray-500 underline-offset-2 hover:underline dark:text-gray-400">
             {t.undo}
           </button>
-        )}
-        {view.buttons === "reissue" && onReissue && (
+        </div>
+      )}
+      {view.buttons === "reissue" && onReissue && (
+        <div className="flex justify-end">
           <button type="button" onClick={onReissue} className="idcb-focus inline-flex min-h-[36px] items-center rounded-full px-3 text-[13.5px] font-medium text-gray-500 underline-offset-2 hover:underline dark:text-gray-400">
             {t.reissue}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

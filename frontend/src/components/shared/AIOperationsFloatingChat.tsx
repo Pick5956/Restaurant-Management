@@ -65,6 +65,7 @@ import { useTheme } from "@/src/providers/ThemeProvider";
 import type { AIActionPlan, AIActionPreview, AIAskResponse, AIChartData, AIConversationMessage, AIForecastResult } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
@@ -826,6 +827,7 @@ export default function AIOperationsFloatingChat() {
         summary={pendingActionPlan.summary}
         items={pendingActionPlan.items.map((planItem) => ({
           title: planItem.title,
+          headline: planItemHeadline(planItem),
           change: planItem.change,
           unit: planItem.unit,
           sideEffects: planItem.side_effects,

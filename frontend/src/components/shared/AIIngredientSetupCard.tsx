@@ -16,6 +16,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Check, ChevronLeft, Package } from "lucide-react";
 import InlineDbConfirmBar, { isTerminal, type InlineDbConfirmState } from "@/src/components/shared/InlineDbConfirmBar";
 import { setupAIPlanIngredient } from "@/src/lib/ai";
+import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import type { AIActionPlan, AIIngredientPriceMode, AIIngredientSetup, AIIngredientSetupAnswers } from "@/src/types/ai";
 
 type Step = "unit" | "stock" | "pack" | "price" | "extras" | "review";
@@ -382,6 +383,7 @@ export default function AIIngredientSetupCard({
           summary={plan.summary}
           items={plan.items.map((planItem) => ({
             title: planItem.title,
+            headline: planItemHeadline(planItem),
             change: planItem.change,
             unit: planItem.unit,
             sideEffects: planItem.side_effects,

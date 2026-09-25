@@ -237,6 +237,10 @@ export type AIActionPlanItem = {
   unit?: string;
   side_effects?: string[];
   kind?: string;
+  /** The change in parts, for a value that moves ("5,000" → "7,000" กรัม). */
+  from?: string;
+  to?: string;
+  value_unit?: string;
   facts?: { label: string; value: string }[];
   /** Set on a new ingredient the card asks about one step at a time. */
   setup?: AIIngredientSetup;
