@@ -164,10 +164,12 @@ type AIActionItemPayload struct {
 	SaidUnit     string  `json:"said_unit,omitempty"`
 	PackUnit     string  `json:"pack_unit,omitempty"`
 	PackSize     float64 `json:"pack_size,omitempty"`
-	NoPack       bool    `json:"no_pack,omitempty"`
+	StockAnswer  *float64 `json:"stock_answer,omitempty"`
 	PriceMode    string  `json:"price_mode,omitempty"`
 	Price        float64 `json:"price,omitempty"`
-	NoPrice      bool    `json:"no_price,omitempty"`
+	// Missing is what the card still has to ask; execution refuses a
+	// non-empty list.
+	Missing []string `json:"missing,omitempty"`
 	StorageType  string  `json:"storage_type,omitempty"`
 	MinPercent   float64 `json:"min_percent,omitempty"`
 
@@ -987,6 +989,9 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 			// would create an ingredient no recipe can be measured against.
 			if strings.TrimSpace(payload.Unit) == "" {
 				return errors.New("ยังไม่ได้เลือกหน่วยนับ")
+			}
+			if len(payload.Missing) > 0 {
+				return fmt.Errorf("ยังกรอกไม่ครบ: %s", strings.Join(payload.Missing, " · "))
 			}
 			request.StorageType = payload.StorageType
 			if payload.MinPercent > 0 {

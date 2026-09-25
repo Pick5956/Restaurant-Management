@@ -250,34 +250,42 @@ export type AIIngredientSetup = {
   said_unit?: string;
   unit: string;
   units: string[];
+  /** No amount was said, so the card asks what is on hand. */
+  needs_stock: boolean;
+  stock_set: boolean;
   needs_pack: boolean;
   pack_unit?: string;
   pack_units: string[];
   pack_size?: number;
-  no_pack?: boolean;
   stock: number;
-  can_price: boolean;
-  price_mode: "total" | "per_pack";
+  /** The price modes Go accepts for this state, in the order to offer them. */
+  price_modes: AIIngredientPriceMode[];
+  price_mode: AIIngredientPriceMode | "";
   price?: number;
-  no_price?: boolean;
   cost_per_unit?: number;
   total?: number;
   storage_type: string;
   storage_types: string[];
   min_percent: number;
+  /** What the inventory still needs; confirming is refused until empty. */
+  missing?: string[];
 };
+
+export type AIIngredientPriceMode = "total" | "per_pack" | "per_unit";
 
 // One answer from the card, sent with every answer so far.
 export type AIIngredientSetupAnswers = {
   unit: string;
+  /** Opening stock typed on the card; left out until answered. */
+  stock?: number;
   pack_unit: string;
   pack_size: number;
-  no_pack: boolean;
-  price_mode: "total" | "per_pack";
+  price_mode: AIIngredientPriceMode | "";
   price: number;
-  no_price: boolean;
   storage_type: string;
   min_percent: number;
+  /** The last answer: the confirm bar's minute starts here. */
+  finish?: boolean;
 };
 
 export type AIActionPlan = {

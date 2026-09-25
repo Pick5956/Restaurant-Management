@@ -314,6 +314,7 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 		OwnerUserID:  actor.OwnerUserID,
 		Summary:      summary,
 		Items:        draft.Items,
+		TTL:          aiPlanWindow(draft.Items),
 	})
 	if err != nil {
 		aiStage("warn", "joyboy command: creating the plan failed (%v)", err)
@@ -330,6 +331,9 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 	}
 
 	answer := fmt.Sprintf("ผมเตรียม%sแล้ว ยังไม่ได้แก้ข้อมูล กดยืนยันภายใน 1 นาทีครับ", summary)
+	if aiPlanWindow(draft.Items) > 0 {
+		answer = fmt.Sprintf("ผมเตรียม%sแล้ว ยังไม่ได้แก้ข้อมูล ตอบคำถามในการ์ดให้ครบ แล้วกดยืนยันครับ", summary)
+	}
 	if len(switchedOff) > 0 {
 		notices = append(notices, aiActionTypesOffSentence(switchedOff))
 	}

@@ -62,9 +62,10 @@ func TestIngredientSetupRefusesWhatTheSaveWouldRefuse(t *testing.T) {
 	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ลัง"}); err == nil {
 		t.Fatal("ลัง is not a stock unit")
 	}
-	// No pack size: the stock is 0, so a price has nothing to divide by.
-	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", NoPack: true, Price: 70}); err == nil {
-		t.Fatal("a price over zero stock must be refused")
+	// No bottle size yet: the stock is 0, so only a price per ml can be taken.
+	_, preview, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร"})
+	if err != nil || strings.Join(preview.Setup.PriceModes, ",") != "per_unit" {
+		t.Fatalf("with no stock only per_unit is offered: %v / %v", preview.Setup.PriceModes, err)
 	}
 	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackUnit: "ลิตร", PackSize: 1}); err == nil {
 		t.Fatal("ลิตร already converts to มิลลิลิตร, it cannot be the pack")
@@ -186,5 +187,37 @@ func TestNewIngredientIsCheckedAgainstTheShelf(t *testing.T) {
 	item := entity.AIActionPlanItem{ActionType: entity.AIActionTypeCreateIngredient, PayloadJSON: string(raw)}
 	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err == nil || len(port.created) != 0 {
 		t.Fatalf("added while the card waited — must not create a second row: err=%v created=%d", err, len(port.created))
+	}
+}
+
+// "เพิ่มวัตถุดิบใหม่หน่อย ขิง" — no amount. The card asks what is on hand
+// and a price, and cannot be confirmed without them (เจ้าของสั่ง 25 ก.ย. 2569).
+func TestIngredientSetupAsksEverythingTheInventoryNeeds(t *testing.T) {
+	payload, preview, err := buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Setup.NeedsStock || strings.Join(payload.Missing, ",") != "จำนวนที่มีตอนนี้,ราคา" {
+		t.Fatalf("stock and price must be missing: %v", payload.Missing)
+	}
+	raw, _ := json.Marshal(payload)
+	port := &fakeAIActionIngredientPort{items: map[uint]*entity.Ingredient{}}
+	item := entity.AIActionPlanItem{ActionType: entity.AIActionTypeCreateIngredient, PayloadJSON: string(raw)}
+	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err == nil || len(port.created) != 0 {
+		t.Fatalf("an unfinished card must not create: %v", err)
+	}
+
+	onHand := 3.0
+	payload, preview, err = buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &onHand, PriceMode: "per_unit", Price: 60})
+	if err != nil || len(payload.Missing) != 0 {
+		t.Fatalf("answered in full: %v / %v", payload.Missing, err)
+	}
+	if payload.Quantity != 3 || payload.CostPerUnit != 60 || preview.Setup.Total != 180 {
+		t.Fatalf("3 กก. × 60 = 180 บาท, got stock %v cost %v total %v", payload.Quantity, payload.CostPerUnit, preview.Setup.Total)
+	}
+	zero := 0.0
+	payload, preview, _ = buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &zero, PriceMode: "per_unit", Price: 60})
+	if len(payload.Missing) != 0 || preview.Setup.Total != 0 {
+		t.Fatalf("none on hand yet is an answer, and books no expense: %v total %v", payload.Missing, preview.Setup.Total)
 	}
 }

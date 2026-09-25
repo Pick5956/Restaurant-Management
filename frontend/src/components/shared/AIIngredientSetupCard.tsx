@@ -16,9 +16,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, Package } from "lucide-react";
 import InlineDbConfirmBar, { isTerminal, type InlineDbConfirmState } from "@/src/components/shared/InlineDbConfirmBar";
 import { setupAIPlanIngredient } from "@/src/lib/ai";
-import type { AIActionPlan, AIIngredientSetup, AIIngredientSetupAnswers } from "@/src/types/ai";
+import type { AIActionPlan, AIIngredientPriceMode, AIIngredientSetup, AIIngredientSetupAnswers } from "@/src/types/ai";
 
-type Step = "unit" | "pack" | "price" | "extras" | "review";
+type Step = "unit" | "stock" | "pack" | "price" | "extras" | "review";
 
 const STORAGE_LABELS: Record<string, string> = {
   room_temp: "อุณหภูมิห้อง",
@@ -37,33 +37,41 @@ export function planNeedsSetup(plan: AIActionPlan | null): boolean {
 export function answersFrom(setup: AIIngredientSetup): AIIngredientSetupAnswers {
   return {
     unit: setup.unit,
+    ...(setup.stock_set ? { stock: setup.stock } : {}),
     pack_unit: setup.pack_unit ?? "",
     pack_size: setup.pack_size ?? 0,
-    no_pack: Boolean(setup.no_pack),
     price_mode: setup.price_mode,
     price: setup.price ?? 0,
-    no_price: Boolean(setup.no_price),
     storage_type: setup.storage_type,
     min_percent: setup.min_percent,
   };
 }
 
-// The questions this item still has, in order. The pack is asked only when
-// the amount was said in a word that does not convert to the unit, and the
-// price only once there is a stock to divide it by.
+// The questions this item has, in order. Every one the inventory needs is
+// asked and none can be skipped (เจ้าของสั่ง 25 ก.ย. 2569): the amount on hand
+// when the command said none, the pack size when it was said in packs, and a
+// price.
 export function stepsFor(setup: AIIngredientSetup): Step[] {
   const steps: Step[] = ["unit"];
+  if (setup.unit && setup.needs_stock) steps.push("stock");
   if (setup.unit && setup.needs_pack) steps.push("pack");
-  if (setup.unit && setup.can_price) steps.push("price");
+  if (setup.unit) steps.push("price");
   steps.push("extras");
   return steps;
 }
 
 export function firstOpenStep(setup: AIIngredientSetup): Step {
   if (!setup.unit) return "unit";
-  if (setup.needs_pack && !setup.pack_size && !setup.no_pack) return "pack";
-  if (setup.can_price && !setup.price && !setup.no_price) return "price";
+  if (setup.needs_stock && !setup.stock_set) return "stock";
+  if (setup.needs_pack && !setup.pack_size) return "pack";
+  if (!setup.cost_per_unit) return "price";
   return "extras";
+}
+
+export function priceModeLabel(mode: AIIngredientPriceMode, setup: AIIngredientSetup): string {
+  if (mode === "total") return "จ่ายไปทั้งหมด";
+  if (mode === "per_pack") return `ราคาต่อ${setup.pack_unit ?? ""}`;
+  return `ราคาต่อ${setup.unit}`;
 }
 
 export function nextStep(current: Step, setup: AIIngredientSetup): Step | null {
@@ -235,30 +243,22 @@ export default function AIIngredientSetupCard({
   // Text fields hold what is being typed until "ถัดไป" sends it.
   const [sizeText, setSizeText] = useState("");
   const [priceText, setPriceText] = useState("");
+  const [stockText, setStockText] = useState("");
   useEffect(() => {
     // A new question starts from what the server holds for it.
     setSizeText(setup?.pack_size && !sizeOptions(setup.unit).includes(setup.pack_size) ? String(setup.pack_size) : "");
     setPriceText(setup?.price ? String(setup.price) : "");
+    setStockText(setup?.stock_set ? String(setup.stock) : "");
     setError("");
     // Only when the question or the item changes, not on every server reply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, seq]);
 
-  // The window restarts with every answer; a card left alone still runs out.
-  // When it does, the confirm bar takes over and shows the expiry.
-  const expiryMs = Date.parse(plan.expires_at);
-  const [remaining, setRemaining] = useState(() => Math.max(0, expiryMs - Date.now()));
-  useEffect(() => {
-    if (step === "review") return;
-    const tick = () => {
-      const left = Math.max(0, expiryMs - Date.now());
-      setRemaining(left);
-      if (left <= 0) setStep("review");
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [expiryMs, step]);
+  // No countdown while the questions are being answered (เจ้าของขอ 25 ก.ย.
+  // 2569): the server keeps the card open for ten minutes, and the minute to
+  // confirm starts on the last answer, where the confirm bar counts it down.
+  // A card left past its window comes back from the server as gone, and the
+  // confirm bar shows the expiry then.
 
   const send = async (patch: Partial<AIIngredientSetupAnswers>, advance: boolean) => {
     if (!setup || busy) return;
@@ -360,14 +360,12 @@ export default function AIIngredientSetupCard({
   // that was said ("2 ขวด") is not an answer, so it sits in the header instead.
   const answered: { key: Step; text: string }[] = [];
   if (setup.unit) answered.push({ key: "unit", text: `นับเป็น${setup.unit}` });
+  if (setup.stock_set) answered.push({ key: "stock", text: `มี ${fmt(setup.stock)} ${setup.unit}` });
   if (setup.pack_size && setup.unit) answered.push({ key: "pack", text: `${setup.pack_unit}ละ ${fmt(setup.pack_size)} ${setup.unit}` });
-  if (setup.no_pack) answered.push({ key: "pack", text: "ไม่รู้ขนาด" });
   if (setup.price) answered.push({ key: "price", text: `฿${fmt(setup.price)}${setup.price_mode === "per_pack" ? `/${setup.pack_unit}` : ""}` });
-  if (setup.no_price) answered.push({ key: "price", text: "ไม่มีราคา" });
 
   const steps = stepsFor(setup);
   const stepIndex = steps.indexOf(step);
-  const seconds = Math.ceil(remaining / 1000);
 
   let body: ReactNode = null;
   if (step === "unit") {
@@ -383,7 +381,7 @@ export default function AIIngredientSetupCard({
             <Chip key={unit} active={setup.unit === unit} disabled={busy} onClick={() =>
               // A different unit makes the pack size and price mean something
               // else, so they are asked again; the same unit keeps them.
-              send(unit === setup.unit ? {} : { unit, pack_size: 0, no_pack: false, price: 0, no_price: false }, true)
+              send(unit === setup.unit ? {} : { unit, stock: undefined, pack_size: 0, price: 0 }, true)
             }>
               {unit}
             </Chip>
@@ -392,14 +390,31 @@ export default function AIIngredientSetupCard({
         <Actions busy={busy} onNext={setup.unit ? () => setStep(nextStep("unit", setup) ?? "review") : undefined} />
       </>
     );
+  } else if (step === "stock") {
+    const amount = stockText.trim() === "" ? NaN : Number(stockText);
+    body = (
+      <>
+        <Question
+          title={`ตอนนี้มี${setup.name}อยู่กี่${setup.unit}?`}
+          note="เป็นสต๊อกเริ่มต้นในคลัง · ยังไม่มีของ ใส่ 0 ได้"
+          tag="required"
+        />
+        <NumberField value={stockText} onChange={setStockText} placeholder="จำนวน" suffix={setup.unit} />
+        <Actions
+          busy={busy}
+          onBack={back}
+          onNext={Number.isFinite(amount) && amount >= 0 ? () => send({ stock: amount }, true) : undefined}
+        />
+      </>
+    );
   } else if (step === "pack") {
     const size = Number(sizeText);
     body = (
       <>
         <Question
           title={`1 ${setup.pack_unit}กี่${setup.unit}?`}
-          note={`ใช้แปลง ${fmt(setup.said_quantity)} ${setup.pack_unit} เป็นสต๊อก · ถ้าข้าม สต๊อกจะเริ่มที่ 0`}
-          tag="suggested"
+          note={`ใช้แปลง ${fmt(setup.said_quantity)} ${setup.pack_unit} เป็นสต๊อก`}
+          tag="required"
         />
         <button
           type="button"
@@ -419,7 +434,7 @@ export default function AIIngredientSetupCard({
         )}
         <div className="flex flex-wrap items-center gap-1.5">
           {sizeOptions(setup.unit).map((option) => (
-            <Chip key={option} active={setup.pack_size === option} disabled={busy} onClick={() => send({ pack_size: option, no_pack: false }, true)}>
+            <Chip key={option} active={setup.pack_size === option} disabled={busy} onClick={() => send({ pack_size: option }, true)}>
               {fmt(option)} {setup.unit}
             </Chip>
           ))}
@@ -428,10 +443,9 @@ export default function AIIngredientSetupCard({
         <Actions
           busy={busy}
           onBack={back}
-          onSkip={() => send({ pack_size: 0, no_pack: true, price: 0 }, true)}
           onNext={
             size > 0
-              ? () => send({ pack_size: size, no_pack: false }, true)
+              ? () => send({ pack_size: size }, true)
               : setup.pack_size
                 ? () => setStep(nextStep("pack", setup) ?? "review")
                 : undefined
@@ -441,16 +455,17 @@ export default function AIIngredientSetupCard({
     );
   } else if (step === "price") {
     const price = Number(priceText);
-    const perPackAllowed = Boolean(setup.pack_size);
+    const modes = setup.price_modes ?? [];
     body = (
       <>
-        <Question title="ซื้อมาเท่าไหร่?" note="ใช้คิดต้นทุนเมนู และบันทึกเป็นรายจ่ายวันนี้" tag="suggested" />
-        {perPackAllowed && (
-          <span className="mb-2 inline-flex rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
-            {([
-              ["total", "จ่ายไปทั้งหมด"],
-              ["per_pack", `ราคาต่อ${setup.pack_unit}`],
-            ] as const).map(([mode, label]) => (
+        <Question
+          title="ราคาเท่าไหร่?"
+          note={setup.stock > 0 ? "ใช้คิดต้นทุนเมนู และบันทึกเป็นรายจ่ายวันนี้" : "ใช้คิดต้นทุนเมนู · ยังไม่มีของ จึงยังไม่ลงรายจ่าย"}
+          tag="required"
+        />
+        {modes.length > 1 && (
+          <span className="mb-2 inline-flex flex-wrap rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
+            {modes.map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -460,11 +475,12 @@ export default function AIIngredientSetupCard({
                   setup.price_mode === mode ? "bg-white text-gray-900 shadow-sm dark:bg-gray-950 dark:text-white" : "text-gray-500"
                 }`}
               >
-                {label}
+                {priceModeLabel(mode, setup)}
               </button>
             ))}
           </span>
         )}
+        {modes.length === 1 && <p className="mb-2 text-[12px] text-gray-500">{priceModeLabel(modes[0], setup)}</p>}
         <div className="flex flex-wrap items-center gap-1.5">
           <NumberField value={priceText} onChange={setPriceText} placeholder="ราคา" suffix="บาท" />
         </div>
@@ -476,8 +492,7 @@ export default function AIIngredientSetupCard({
         <Actions
           busy={busy}
           onBack={back}
-          onSkip={() => send({ price: 0, no_price: true }, true)}
-          onNext={price > 0 ? () => send({ price, no_price: false }, true) : undefined}
+          onNext={price > 0 ? () => send({ price }, true) : undefined}
         />
       </>
     );
@@ -507,7 +522,7 @@ export default function AIIngredientSetupCard({
             </div>
           </div>
         </div>
-        <Actions busy={busy} onBack={back} nextLabel="ใช้ตามนี้" onNext={() => send({}, true)} />
+        <Actions busy={busy} onBack={back} nextLabel="ใช้ตามนี้" onNext={() => send({ finish: true }, true)} />
       </>
     );
   }
@@ -526,8 +541,8 @@ export default function AIIngredientSetupCard({
           </p>
           <p className="truncate text-[15px] font-semibold text-gray-950 dark:text-white">{setup.name}</p>
         </div>
-        <span className={`shrink-0 text-[11px] font-semibold tabular-nums ${seconds <= 15 ? "text-amber-600" : "text-gray-500"}`}>
-          ข้อ {stepIndex + 1}/{steps.length} · {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+        <span className="shrink-0 text-[11px] font-semibold tabular-nums text-gray-500">
+          ข้อ {stepIndex + 1}/{steps.length}
         </span>
       </div>
       <div className="flex gap-1 px-4 pt-3" aria-hidden="true">
@@ -556,7 +571,7 @@ export default function AIIngredientSetupCard({
           type="button"
           onClick={cancelHere}
           disabled={busy}
-          className="mt-3 text-[12px] font-medium text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline disabled:opacity-50 dark:hover:text-gray-200"
+          className="mt-3 text-[12px] font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
         >
           ยกเลิกคำสั่งนี้
         </button>

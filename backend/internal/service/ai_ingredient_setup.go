@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
@@ -27,15 +28,19 @@ import (
 
 // AIIngredientSetupAnswers is what the card has answered so far.
 type AIIngredientSetupAnswers struct {
-	Unit        string  `json:"unit"`
-	PackUnit    string  `json:"pack_unit"`
-	PackSize    float64 `json:"pack_size"`
-	NoPack      bool    `json:"no_pack"`
-	PriceMode   string  `json:"price_mode"`
-	Price       float64 `json:"price"`
-	NoPrice     bool    `json:"no_price"`
-	StorageType string  `json:"storage_type"`
-	MinPercent  float64 `json:"min_percent"`
+	Unit string `json:"unit"`
+	// Stock is the opening stock typed on the card, in Unit — asked only when
+	// the command said no amount ("เพิ่มขิง"). Nil means not answered.
+	Stock       *float64 `json:"stock,omitempty"`
+	PackUnit    string   `json:"pack_unit"`
+	PackSize    float64  `json:"pack_size"`
+	PriceMode   string   `json:"price_mode"`
+	Price       float64  `json:"price"`
+	StorageType string   `json:"storage_type"`
+	MinPercent  float64  `json:"min_percent"`
+	// Finish marks the card's last answer: the window drops to the usual
+	// minute and the confirm bar counts it down.
+	Finish bool `json:"finish"`
 }
 
 // AIIngredientSetupRequest is one answer from the card, sent with the whole
@@ -53,31 +58,39 @@ type AIIngredientSetupView struct {
 	SaidUnit     string   `json:"said_unit,omitempty"`
 	Unit         string   `json:"unit"`
 	Units        []string `json:"units"`
+	// NeedsStock: the command said no amount, so the card asks how much is
+	// on hand. StockSet once it is answered (0 is an answer).
+	NeedsStock bool `json:"needs_stock"`
+	StockSet   bool `json:"stock_set"`
 	// NeedsPack: the amount was said in a word that does not convert to the
 	// chosen unit ("2 ขวด" counted by the มิลลิลิตร), so the card asks how
 	// much one holds.
-	NeedsPack bool     `json:"needs_pack"`
-	PackUnit  string   `json:"pack_unit,omitempty"`
-	PackUnits []string `json:"pack_units"`
-	PackSize  float64  `json:"pack_size,omitempty"`
-	NoPack    bool     `json:"no_pack,omitempty"`
-	Stock     float64  `json:"stock"`
-	// CanPrice is false while the opening stock is zero: a price paid for an
-	// amount the shelf does not know cannot become a price per unit.
-	CanPrice     bool     `json:"can_price"`
+	NeedsPack    bool     `json:"needs_pack"`
+	PackUnit     string   `json:"pack_unit,omitempty"`
+	PackUnits    []string `json:"pack_units"`
+	PackSize     float64  `json:"pack_size,omitempty"`
+	Stock        float64  `json:"stock"`
+	PriceModes   []string `json:"price_modes"`
 	PriceMode    string   `json:"price_mode"`
 	Price        float64  `json:"price,omitempty"`
-	NoPrice      bool     `json:"no_price,omitempty"`
 	CostPerUnit  float64  `json:"cost_per_unit,omitempty"`
 	Total        float64  `json:"total,omitempty"`
 	StorageType  string   `json:"storage_type"`
 	StorageTypes []string `json:"storage_types"`
 	MinPercent   float64  `json:"min_percent"`
+	// Missing names what the inventory needs and the card has not got yet.
+	// Confirming is refused until it is empty.
+	Missing []string `json:"missing,omitempty"`
 }
 
 const (
 	aiSetupPriceTotal   = "total"
 	aiSetupPricePerPack = "per_pack"
+	aiSetupPricePerUnit = "per_unit"
+	// aiSetupWindow is how long a card being filled in stays open. The owner
+	// asked for no countdown while answering (25 ก.ย. 2569); the minute starts
+	// on the last answer, at the confirm bar.
+	aiSetupWindow = 10 * time.Minute
 )
 
 // aiSetupStorageTypes are the inventory form's (inventoryPageUtils STORAGE_TYPES).
@@ -99,8 +112,13 @@ func aiSetupFirstUnit(saidUnit string) string {
 }
 
 // buildIngredientSetup validates a card-driven create and computes everything
-// the card shows. An empty unit is allowed here — it is the first question —
-// and refused only at execution.
+// the card shows. Unanswered questions are allowed here — they are what the
+// card asks next — and listed in Missing, which execution refuses.
+//
+// Everything the inventory needs is asked (เจ้าของสั่ง 25 ก.ย. 2569 ให้กรอกครบ):
+// the unit, the opening stock, what one pack holds when it was said in packs,
+// and a price. Storage and the reorder level have the form's own defaults and
+// are shown to be accepted as they are.
 func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity float64, saidUnit string, answers AIIngredientSetupAnswers) (AIActionItemPayload, AIActionItemPreview, error) {
 	cleanName := strings.TrimSpace(name)
 	if cleanName == "" {
@@ -130,8 +148,8 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		SaidUnit:     said,
 		Unit:         unit,
 		Units:        append([]string(nil), IngredientStockUnits...),
+		NeedsStock:   saidQuantity <= 0,
 		PackUnits:    aiSetupPackUnitsFor(said),
-		PriceMode:    aiSetupPriceTotal,
 		StorageType:  "room_temp",
 		// Left out at first, and the card's last step crashed the chat page
 		// drawing a list that was null (25 ก.ย. 2569).
@@ -140,9 +158,17 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 
 	// The opening stock, in the chosen unit.
 	stock := 0.0
-	packUnit, packSize := "", 0.0
+	packSize := 0.0
 	if unit != "" {
 		switch {
+		case view.NeedsStock:
+			if answers.Stock != nil {
+				if *answers.Stock < 0 || *answers.Stock > aiActionMaxQuantity {
+					return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
+				}
+				stock = *answers.Stock
+				view.StockSet = true
+			}
 		case said == "" || sameUnit(said, unit):
 			stock = saidQuantity
 		default:
@@ -153,7 +179,7 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 			// Said in a container ("2 ขวด") the chosen unit cannot be reached
 			// from: the pack size is what connects them.
 			view.NeedsPack = true
-			packUnit = said
+			packUnit := said
 			if word := standardUnitSpelling(answers.PackUnit); word != "" {
 				packUnit = word
 			}
@@ -161,10 +187,7 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 				return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("“%s” ใช้เป็นหน่วยที่ซื้อของ%sไม่ได้ เพราะแปลงเป็น%sได้อยู่แล้ว", packUnit, cleanName, unit)
 			}
 			view.PackUnit = packUnit
-			if answers.NoPack {
-				view.NoPack = true
-				packUnit = ""
-			} else if answers.PackSize > 0 {
+			if answers.PackSize > 0 {
 				if answers.PackSize > aiActionMaxQuantity {
 					return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
 				}
@@ -178,30 +201,43 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
 	}
 	view.Stock = stock
-	view.CanPrice = stock > 0
 
-	// The price, as paid, restated per stock unit.
-	cost, total := 0.0, 0.0
-	priceMode := aiSetupPriceTotal
-	if answers.PriceMode == aiSetupPricePerPack && packSize > 0 {
-		priceMode = aiSetupPricePerPack
+	// The price, however it was paid, restated per stock unit. "Per unit"
+	// always works; "all of it" needs a stock to divide by, "per bottle" a
+	// bottle size.
+	if unit != "" {
+		if stock > 0 {
+			view.PriceModes = append(view.PriceModes, aiSetupPriceTotal)
+		}
+		if packSize > 0 {
+			view.PriceModes = append(view.PriceModes, aiSetupPricePerPack)
+		}
+		view.PriceModes = append(view.PriceModes, aiSetupPricePerUnit)
+	}
+	priceMode := answers.PriceMode
+	if !aiSetupHas(view.PriceModes, priceMode) {
+		priceMode = ""
+		if len(view.PriceModes) > 0 {
+			priceMode = view.PriceModes[0]
+		}
 	}
 	view.PriceMode = priceMode
+	cost, total := 0.0, 0.0
 	switch {
-	case answers.NoPrice:
-		view.NoPrice = true
 	case answers.Price < 0 || answers.Price > aiActionMaxQuantity:
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ราคาต้องไม่ติดลบ")
-	case answers.Price > 0:
-		if stock <= 0 {
-			return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ยังคิดราคาต่อหน่วยไม่ได้ ต้องรู้ก่อนว่าได้ของมาเท่าไหร่")
+	case answers.Price > 0 && unit != "":
+		switch priceMode {
+		case aiSetupPriceTotal:
+			total = roundBaht(answers.Price)
+			cost = total / stock
+		case aiSetupPricePerPack:
+			total = roundBaht(answers.Price * saidQuantity)
+			cost = answers.Price / packSize
+		default:
+			cost = answers.Price
+			total = roundBaht(cost * stock)
 		}
-		total = answers.Price
-		if priceMode == aiSetupPricePerPack {
-			total = answers.Price * saidQuantity
-		}
-		total = roundBaht(total)
-		cost = total / stock
 		view.Price = answers.Price
 		view.Total = total
 		view.CostPerUnit = cost
@@ -220,6 +256,18 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 	}
 	view.MinPercent = answers.MinPercent
 
+	switch {
+	case unit == "":
+		view.Missing = append(view.Missing, "หน่วยนับ")
+	case view.NeedsStock && !view.StockSet:
+		view.Missing = append(view.Missing, "จำนวนที่มีตอนนี้")
+	case view.NeedsPack && packSize <= 0:
+		view.Missing = append(view.Missing, fmt.Sprintf("1 %sกี่%s", view.PackUnit, unit))
+	}
+	if cost <= 0 {
+		view.Missing = append(view.Missing, "ราคา")
+	}
+
 	payload := AIActionItemPayload{
 		Name:         cleanName,
 		Unit:         unit,
@@ -228,20 +276,29 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		Setup:        true,
 		SaidQuantity: saidQuantity,
 		SaidUnit:     said,
+		StockAnswer:  answers.Stock,
 		PackUnit:     view.PackUnit,
 		PackSize:     packSize,
-		NoPack:       view.NoPack,
 		PriceMode:    priceMode,
 		Price:        view.Price,
-		NoPrice:      view.NoPrice,
 		StorageType:  storage,
 		MinPercent:   view.MinPercent,
+		Missing:      view.Missing,
 	}
 	preview := aiIngredientSetupPreview(view)
 	if note := aiSimilarShelfNote(match); note != "" {
 		preview.SideEffects = append(preview.SideEffects, note)
 	}
 	return payload, preview, nil
+}
+
+func aiSetupHas(list []string, value string) bool {
+	for _, entry := range list {
+		if entry == value {
+			return true
+		}
+	}
+	return false
 }
 
 // aiSimilarShelfNote names what is already on the shelf under a longer name
@@ -302,16 +359,12 @@ func aiIngredientSetupPreview(view AIIngredientSetupView) AIActionItemPreview {
 		preview.SideEffects = append(preview.SideEffects,
 			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(view.Total)))
 	}
-	if view.NeedsPack && view.PackSize <= 0 {
-		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("ไม่รู้ว่า 1 %sกี่%s → สต๊อกเริ่มที่ 0", view.PackUnit, unit))
-	}
 	if sealedStockUnits[unit] {
 		preview.SideEffects = append(preview.SideEffects,
 			fmt.Sprintf("นับเป็น%sทั้ง%s · ถ้าเทแบ่งใช้ ให้เลือกหน่วยมิลลิลิตรหรือกรัมแทน", unit, unit))
 	}
-	if view.CostPerUnit <= 0 {
-		preview.SideEffects = append(preview.SideEffects, "ยังไม่มีราคา · ต้นทุนเมนูที่ใช้วัตถุดิบนี้จะเป็น 0 จนกว่าจะตั้งราคา")
+	if len(view.Missing) > 0 {
+		preview.SideEffects = append(preview.SideEffects, "ยังกรอกไม่ครบ: "+strings.Join(view.Missing, " · "))
 	}
 	return preview
 }
@@ -404,7 +457,7 @@ func aiCardCreateResolution(shelf []entity.Ingredient, draft AIStockCommandDraft
 // is separate from AIActionPlanStore so the test fakes that never revise keep
 // compiling.
 type AIActionPlanReviser interface {
-	ReviseAIActionPlanItem(restaurantID, ownerUserID uint, planID, confirmationToken string, seq int, revise repository.AIActionPlanItemRevision) (*entity.AIActionPlan, error)
+	ReviseAIActionPlanItem(restaurantID, ownerUserID uint, planID, confirmationToken string, seq int, ttl time.Duration, revise repository.AIActionPlanItemRevision) (*entity.AIActionPlan, error)
 }
 
 // SetupAIPlanIngredientForOwner applies one answer from the card to a pending
@@ -424,7 +477,13 @@ func (s *AIService) SetupAIPlanIngredientForOwner(actor AIActorContext, planID s
 	if err != nil {
 		return nil, err
 	}
-	plan, err := reviser.ReviseAIActionPlanItem(actor.RestaurantID, actor.OwnerUserID, planID, request.ConfirmationToken, seq,
+	// Open for the whole card while it is asking; the usual minute from the
+	// last answer, which the confirm bar counts down.
+	window := aiSetupWindow
+	if request.Finish {
+		window = 0
+	}
+	plan, err := reviser.ReviseAIActionPlanItem(actor.RestaurantID, actor.OwnerUserID, planID, request.ConfirmationToken, seq, window,
 		func(item entity.AIActionPlanItem) (string, string, error) {
 			var current AIActionItemPayload
 			if err := json.Unmarshal([]byte(item.PayloadJSON), &current); err != nil || !current.Setup {
@@ -486,4 +545,17 @@ func aiPlanItemResponse(preview AIActionItemPreview) AIActionPlanItemResponse {
 		Facts:       preview.Facts,
 		Setup:       preview.Setup,
 	}
+}
+
+// aiPlanWindow is the plan's opening window: the setup window when an item is
+// a card still to be filled in, zero (the usual minute) otherwise.
+func aiPlanWindow(items []repository.CreateAIActionPlanItemParams) time.Duration {
+	for _, item := range items {
+		var payload AIActionItemPayload
+		if item.ActionType == entity.AIActionTypeCreateIngredient &&
+			json.Unmarshal([]byte(item.PayloadJSON), &payload) == nil && payload.Setup {
+			return aiSetupWindow
+		}
+	}
+	return 0
 }

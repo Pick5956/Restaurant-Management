@@ -9,11 +9,13 @@ const fresh: AIIngredientSetup = {
   said_unit: "ขวด",
   unit: "",
   units: ["กรัม", "มิลลิลิตร", "ขวด"],
+  needs_stock: false,
+  stock_set: false,
   needs_pack: false,
   pack_units: ["ขวด", "แกลลอน"],
   stock: 0,
-  can_price: false,
-  price_mode: "total",
+  price_modes: [],
+  price_mode: "",
   storage_type: "room_temp",
   storage_types: ["room_temp", "chilled", "frozen", "dry"],
   min_percent: 0,
@@ -25,29 +27,34 @@ describe("new-ingredient card steps", () => {
     expect(stepsFor(fresh)).toEqual(["unit", "extras"]);
   });
 
-  it("asks the bottle size after มิลลิลิตร, then the price once there is stock", () => {
-    const counted = { ...fresh, unit: "มิลลิลิตร", pack_unit: "ขวด", needs_pack: true };
+  it("asks the bottle size after มิลลิลิตร, then the price", () => {
+    const counted = { ...fresh, unit: "มิลลิลิตร", pack_unit: "ขวด", needs_pack: true, price_modes: ["per_unit" as const] };
     expect(nextStep("unit", counted)).toBe("pack");
     expect(firstOpenStep(counted)).toBe("pack");
-    const sized = { ...counted, pack_size: 700, stock: 1400, can_price: true };
+    const sized = { ...counted, pack_size: 700, stock: 1400 };
     expect(nextStep("pack", sized)).toBe("price");
     expect(stepsFor(sized)).toEqual(["unit", "pack", "price", "extras"]);
   });
 
   it("skips the pack when the amount was said in the unit itself", () => {
-    const bottles = { ...fresh, unit: "ขวด", stock: 2, can_price: true };
+    const bottles = { ...fresh, unit: "ขวด", stock: 2 };
     expect(nextStep("unit", bottles)).toBe("price");
   });
 
-  it("skips the price when the size was skipped (nothing to divide by)", () => {
-    const skipped = { ...fresh, unit: "มิลลิลิตร", pack_unit: "ขวด", needs_pack: true, no_pack: true };
-    expect(nextStep("pack", skipped)).toBe("extras");
-    expect(nextStep("extras", skipped)).toBeNull();
+  // "เพิ่มวัตถุดิบใหม่หน่อย ขิง" — no amount said: the card asks what is on hand.
+  it("asks the amount on hand when none was said", () => {
+    const ginger = { ...fresh, name: "ขิง", said_quantity: 0, said_unit: undefined, unit: "กิโลกรัม", needs_stock: true };
+    expect(stepsFor(ginger)).toEqual(["unit", "stock", "price", "extras"]);
+    expect(firstOpenStep(ginger)).toBe("stock");
+    expect(firstOpenStep({ ...ginger, stock_set: true, stock: 0 })).toBe("price");
+    expect(firstOpenStep({ ...ginger, stock_set: true, stock: 3, cost_per_unit: 60 })).toBe("extras");
   });
 
-  it("sends back what the server holds", () => {
+  it("sends back what the server holds, the stock only once answered", () => {
     const answers = answersFrom({ ...fresh, unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 700, price: 35, price_mode: "per_pack" });
-    expect(answers).toMatchObject({ unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 700, price: 35, price_mode: "per_pack", no_pack: false });
+    expect(answers).toMatchObject({ unit: "มิลลิลิตร", pack_unit: "ขวด", pack_size: 700, price: 35, price_mode: "per_pack" });
+    expect("stock" in answers).toBe(false);
+    expect(answersFrom({ ...fresh, unit: "กิโลกรัม", needs_stock: true, stock_set: true, stock: 0 }).stock).toBe(0);
   });
 
   it("only takes plans that carry a setup item", () => {

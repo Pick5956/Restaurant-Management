@@ -3,12 +3,20 @@ package repository
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"Project-M/internal/entity"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func aiActionPlanTTLOr(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return AIActionPlanTTL
+	}
+	return ttl
+}
 
 // ErrAIActionPlanItemNotEditable is returned when the item asked for is not one
 // the card may fill in: another action type, or one that already ran.
@@ -29,7 +37,10 @@ type AIActionPlanItemRevision func(item entity.AIActionPlanItem) (payloadJSON, p
 // Every answer counts as the owner still being at the card, so the plan's
 // one-minute window restarts. A card with four questions could not be
 // finished inside one minute otherwise, and a card left alone still expires.
-func (r *AIActionPlanRepository) ReviseAIActionPlanItem(restaurantID, ownerUserID uint, planID, confirmationToken string, seq int, revise AIActionPlanItemRevision) (*entity.AIActionPlan, error) {
+//
+// ttl is how long the plan stays open after this answer: long while the card
+// is still asking, the usual minute once the last answer is in.
+func (r *AIActionPlanRepository) ReviseAIActionPlanItem(restaurantID, ownerUserID uint, planID, confirmationToken string, seq int, ttl time.Duration, revise AIActionPlanItemRevision) (*entity.AIActionPlan, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("AI action plan repository is not connected")
 	}
@@ -96,7 +107,7 @@ func (r *AIActionPlanRepository) ReviseAIActionPlanItem(restaurantID, ownerUserI
 			}).Error; err != nil {
 			return err
 		}
-		expires := now.Add(AIActionPlanTTL)
+		expires := now.Add(aiActionPlanTTLOr(ttl))
 		if err := tx.Model(&entity.AIActionPlan{}).Where("id = ?", locked.ID).
 			Updates(map[string]any{"expires_at": expires, "updated_at": now}).Error; err != nil {
 			return err

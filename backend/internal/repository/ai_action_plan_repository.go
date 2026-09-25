@@ -91,6 +91,9 @@ type CreateAIActionPlanParams struct {
 	TurnID         string
 	Summary        string
 	Items          []CreateAIActionPlanItemParams
+	// TTL overrides AIActionPlanTTL. A new-ingredient card is still being
+	// filled in, and a minute is not enough to answer it (25 ก.ย. 2569).
+	TTL time.Duration
 }
 
 // CreateAIActionPlan stores a pending plan and returns its one-time plaintext
@@ -132,7 +135,7 @@ func (r *AIActionPlanRepository) CreateAIActionPlan(params CreateAIActionPlanPar
 		Summary:               aiActionTrimTo(params.Summary, 400),
 		ConfirmationTokenHash: tokenHash,
 		Status:                entity.AIActionPlanStatusPending,
-		ExpiresAt:             now.Add(AIActionPlanTTL),
+		ExpiresAt:             now.Add(aiActionPlanTTLOr(params.TTL)),
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
