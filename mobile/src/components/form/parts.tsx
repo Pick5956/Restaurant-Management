@@ -1,11 +1,12 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, Switch, View, type KeyboardTypeOptions, type TextInput as NativeTextInput } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, Switch, View, type KeyboardTypeOptions, type TextInput as NativeTextInput } from 'react-native';
 
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { SheetTitle } from '@/src/components/inventory/parts';
+import { useReducedMotion } from '@/src/components/motion';
 import { chipRevealOffset } from '@/src/lib/chip-row-reveal';
 import { calendarWeeks, monthTitle } from '@/src/lib/report-view';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
@@ -21,34 +22,104 @@ import { palette } from '@/src/theme';
 type Language = 'th' | 'en';
 export const FORM_MAX_WIDTH = 620;
 
-/** A card with a heading; `icon` gives the heading a tinted tile. */
-export function FormCard({ icon, title, detail, trailing, children, style }: {
+const FOLD_MS = 280;
+
+/**
+ * What a fold hides, sliding open and shut. The contents stay mounted and are
+ * measured on their own (absolutely placed, so the clipped height never
+ * squeezes them); only the height of the window onto them and their opacity
+ * move. This replaced LayoutAnimation on 25 ก.ย. 2569: folding a card with
+ * that, which unmounts a subtree full of text fields mid-animation, closed the
+ * app on iOS with no JS error at all.
+ */
+export function FoldBody({ open, children }: { open: boolean; children: ReactNode }) {
+  const reducedMotion = useReducedMotion();
+  const progress = useRef(new Animated.Value(open ? 1 : 0)).current;
+  const [contentHeight, setContentHeight] = useState(0);
+  useEffect(() => {
+    if (reducedMotion) { progress.setValue(open ? 1 : 0); return; }
+    Animated.timing(progress, { toValue: open ? 1 : 0, duration: FOLD_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: false }).start();
+  }, [open, progress, reducedMotion]);
+  return (
+    <Animated.View
+      accessibilityElementsHidden={!open}
+      importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={open ? 'auto' : 'none'}
+      style={{ overflow: 'hidden', height: progress.interpolate({ inputRange: [0, 1], outputRange: [0, contentHeight] }), opacity: progress }}
+    >
+      <View
+        onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+      >
+        {children}
+      </View>
+    </Animated.View>
+  );
+}
+
+/** A chevron that turns to point up while its section is open. */
+export function FoldChevron({ open }: { open: boolean }) {
+  const reducedMotion = useReducedMotion();
+  const turn = useRef(new Animated.Value(open ? 1 : 0)).current;
+  useEffect(() => {
+    if (reducedMotion) { turn.setValue(open ? 1 : 0); return; }
+    Animated.timing(turn, { toValue: open ? 1 : 0, duration: FOLD_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: true }).start();
+  }, [open, reducedMotion, turn]);
+  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+  return (
+    <Animated.View style={{ transform: [{ rotate }] }}>
+      <AppIcon name="chevron-down" size={18} color={palette.placeholder} />
+    </Animated.View>
+  );
+}
+
+/**
+ * A card with a heading; `icon` gives the heading a tinted tile. With
+ * `onToggle` the heading folds the card away: a turning chevron at its end,
+ * the whole heading the target, and only the heading left while `collapsed`.
+ * The heading does not tint when pressed; the motion is the answer to the tap.
+ */
+export function FormCard({ icon, title, detail, trailing, children, style, collapsed = false, onToggle }: {
   icon?: AppIconName;
   title?: string;
   detail?: string;
   trailing?: ReactNode;
   children: ReactNode;
   style?: object;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
+  const chevron = onToggle ? <FoldChevron open={!collapsed} /> : null;
+  const heading = title ? (
+    icon ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 10, paddingBottom: collapsed ? 10 : 6 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
+          <AppIcon name={icon} size={18} color={palette.primaryInk} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text accessibilityRole="header" style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
+          {detail ? <Text numberOfLines={2} style={{ fontSize: 12, color: palette.placeholder }}>{detail}</Text> : null}
+        </View>
+        {collapsed ? null : trailing}
+        {chevron}
+      </View>
+    ) : (
+      <CardHeading title={title} detail={detail} trailing={<>{collapsed ? null : trailing}{chevron}</>} />
+    )
+  ) : null;
   return (
     <ReportCard style={style}>
-      {title ? (
-        icon ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-            <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.surfaceSubtle }}>
-              <AppIcon name={icon} size={18} color={palette.primaryInk} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text accessibilityRole="header" style={{ fontSize: 15, fontWeight: '700', color: palette.textStrong }}>{title}</Text>
-              {detail ? <Text numberOfLines={2} style={{ fontSize: 12, color: palette.placeholder }}>{detail}</Text> : null}
-            </View>
-            {trailing}
-          </View>
-        ) : (
-          <CardHeading title={title} detail={detail} trailing={trailing} />
-        )
-      ) : null}
-      {children}
+      {heading && onToggle ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          accessibilityState={{ expanded: !collapsed }}
+          onPress={onToggle}
+        >
+          {heading}
+        </Pressable>
+      ) : heading}
+      {onToggle ? <FoldBody open={!collapsed}>{children}</FoldBody> : children}
     </ReportCard>
   );
 }
@@ -80,16 +151,22 @@ export const Field = forwardRef<NativeTextInput, {
   returnKeyType?: 'done' | 'next';
   /** Take the row's share of a FieldRow. */
   grow?: boolean;
-}>(function Field({ label, value, onChangeText, placeholder, icon, unit, keyboardType, multiline, maxLength, autoCapitalize, editable = true, onSubmitEditing, returnKeyType, grow }, ref) {
+  /** What is wrong with the value, in red under the field. */
+  error?: string;
+  /** A fixed width, for a short value beside a growing one. */
+  width?: number;
+  /** Named for screen readers when there is no visible label. */
+  accessibilityLabel?: string;
+}>(function Field({ label, value, onChangeText, placeholder, icon, unit, keyboardType, multiline, maxLength, autoCapitalize, editable = true, onSubmitEditing, returnKeyType, grow, error, width, accessibilityLabel }, ref) {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={{ gap: 4, ...(grow ? { flex: 1, minWidth: 0 } : {}) }}>
+    <View style={{ gap: 4, ...(grow ? { flex: 1, minWidth: 0 } : {}), ...(width ? { width } : {}) }}>
       {label ? <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{label}</Text> : null}
-      <View style={{ flexDirection: 'row', alignItems: multiline ? 'flex-start' : 'center', gap: 8, minHeight: multiline ? 84 : 44, paddingHorizontal: 12, paddingVertical: multiline ? 10 : 0, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: focused ? palette.primary : palette.fieldBorder, backgroundColor: editable ? palette.fieldFill : '#FAF7F4' }}>
+      <View style={{ flexDirection: 'row', alignItems: multiline ? 'flex-start' : 'center', gap: 8, minHeight: multiline ? 84 : 44, paddingHorizontal: 12, paddingVertical: multiline ? 10 : 0, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: error ? palette.danger : focused ? palette.primary : palette.fieldBorder, backgroundColor: editable ? palette.fieldFill : '#FAF7F4' }}>
         {icon ? <AppIcon name={icon} size={18} color={focused ? palette.primaryInk : palette.placeholder} /> : null}
         <TextInput
           ref={ref}
-          accessibilityLabel={label}
+          accessibilityLabel={label ?? accessibilityLabel}
           autoCapitalize={autoCapitalize ?? (keyboardType === 'email-address' ? 'none' : 'sentences')}
           autoCorrect={keyboardType !== 'email-address'}
           editable={editable}
@@ -110,6 +187,7 @@ export const Field = forwardRef<NativeTextInput, {
         />
         {unit ? <Text style={{ fontSize: 12.5, color: palette.placeholder }}>{unit}</Text> : null}
       </View>
+      {error ? <Text accessibilityRole="alert" style={{ fontSize: 12, lineHeight: 17, fontWeight: '600', color: palette.danger }}>{error}</Text> : null}
     </View>
   );
 });
@@ -348,6 +426,88 @@ export function ChoiceChips<T extends string | number>({ options, value, onChang
     );
   }
   return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>{chips}</View>;
+}
+
+/**
+ * ChoiceChips for picking any number: each chip turns black on its own.
+ *
+ * With `limit`, a long list shows its first `limit` chips and a "+ อีก N"
+ * chip that slides the rest open. A chosen chip from the hidden part is shown
+ * with the first ones, so nothing chosen is ever out of sight. Which chips
+ * those are is fixed when the list folds, not recomputed on every tap: a chip
+ * never jumps between the parts under the finger.
+ */
+export function ToggleChips<T extends string | number>({ options, selected, onToggle, limit, moreLabel, lessLabel }: {
+  options: { key: T; label: string; muted?: boolean }[];
+  selected: readonly T[];
+  onToggle: (key: T) => void;
+  limit?: number;
+  /** "+ อีก 12 หมวด", given how many are hidden. */
+  moreLabel?: (hidden: number) => string;
+  lessLabel?: string;
+}) {
+  const folds = limit !== undefined && options.length > limit + 2;
+  const [open, setOpen] = useState(false);
+  const pinnedFor = () => options.slice(limit ?? 0).filter((option) => selected.includes(option.key)).map((option) => option.key);
+  const [pinned, setPinned] = useState<T[]>(pinnedFor);
+  const pinnedForRef = useRef(pinnedFor);
+  pinnedForRef.current = pinnedFor;
+  // The list usually arrives after the first render (a screen loading its
+  // categories): take the chosen ones once it does.
+  useEffect(() => {
+    setPinned(pinnedForRef.current());
+  }, [options.length]);
+  const chip = (option: { key: T; label: string; muted?: boolean }) => {
+    const on = selected.includes(option.key);
+    return (
+      <Pressable
+        key={String(option.key)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: on }}
+        onPress={() => onToggle(option.key)}
+        hitSlop={4}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: on ? palette.textStrong : palette.divider, backgroundColor: on ? palette.textStrong : palette.surface, opacity: pressed ? 0.7 : 1 })}
+      >
+        {on ? <AppIcon name="checkmark" size={14} color="#fff" /> : null}
+        <Text style={{ fontSize: 13, fontWeight: '600', color: on ? '#fff' : option.muted ? palette.placeholder : palette.muted }}>{option.label}</Text>
+      </Pressable>
+    );
+  };
+  const wrap = { flexDirection: 'row', flexWrap: 'wrap', gap: 7 } as const;
+  if (!folds) return <View style={wrap}>{options.map(chip)}</View>;
+
+  const first = options.slice(0, limit).concat(options.slice(limit).filter((option) => pinned.includes(option.key)));
+  const rest = options.slice(limit).filter((option) => !pinned.includes(option.key));
+  const toggle = (
+    <Pressable
+      key="fold"
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      onPress={() => {
+        // Folding again takes a fresh look at what is chosen down there.
+        if (open) setPinned(pinnedFor());
+        setOpen(!open);
+      }}
+      hitSlop={4}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, backgroundColor: palette.surfaceSubtle, opacity: pressed ? 0.7 : 1 })}
+    >
+      <Text style={{ fontSize: 13, fontWeight: '600', color: palette.primaryInk }}>{open ? lessLabel : moreLabel?.(rest.length)}</Text>
+    </Pressable>
+  );
+  return (
+    <View>
+      <View style={wrap}>
+        {first.map(chip)}
+        {open ? null : toggle}
+      </View>
+      <FoldBody open={open}>
+        <View style={[wrap, { paddingTop: 7 }]}>
+          {rest.map(chip)}
+          {open ? toggle : null}
+        </View>
+      </FoldBody>
+    </View>
+  );
 }
 
 /** A pill with one white thumb: the staff tabs, an invitation's lifetime, "ตามบทบาท | กำหนดเอง". */

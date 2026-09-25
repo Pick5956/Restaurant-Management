@@ -55,7 +55,7 @@ test('TextField, SearchField and Select draw the flat form box', () => {
 
 test('the form Field, the table-plan sheet field and the guest count use the same colours', () => {
   const form = code('src/components/form/parts.tsx');
-  assert.match(form, /borderColor: focused \? palette\.primary : palette\.fieldBorder, backgroundColor: editable \? palette\.fieldFill : '#FAF7F4'/);
+  assert.match(form, /borderColor: error \? palette\.danger : focused \? palette\.primary : palette\.fieldBorder, backgroundColor: editable \? palette\.fieldFill : '#FAF7F4'/);
   const sheet = code('src/components/table-plan/sheet-kit.tsx');
   assert.match(sheet, /borderColor: error \? ERROR_INK : focused \? palette\.primary : palette\.fieldBorder, backgroundColor: palette\.fieldFill/);
   const guests = code('src/components/open-table/guest-count-picker.tsx');
