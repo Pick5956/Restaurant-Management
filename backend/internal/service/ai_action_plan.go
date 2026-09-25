@@ -427,7 +427,8 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	if stock < 0 || stock > aiActionMaxQuantity {
 		return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
 	}
-	if match := ResolveIngredientName(shelf, cleanName); match.Exact != nil {
+	match := ResolveIngredientName(shelf, cleanName)
+	if match.Exact != nil {
 		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("มี “%s” ในคลังอยู่แล้ว", match.Exact.Name)
 	}
 
@@ -456,6 +457,9 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	}
 	if cost <= 0 {
 		preview.SideEffects = append(preview.SideEffects, "ยังไม่มีราคา · ต้นทุนเมนูที่ใช้วัตถุดิบนี้จะเป็น 0 จนกว่าจะตั้งราคา")
+	}
+	if note := aiSimilarShelfNote(match); note != "" {
+		preview.SideEffects = append(preview.SideEffects, note)
 	}
 	return AIActionItemPayload{
 		Name:        cleanName,
@@ -961,6 +965,15 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 		var payload AIActionItemPayload
 		if err := json.Unmarshal([]byte(item.PayloadJSON), &payload); err != nil {
 			return errors.New("คำสั่งเสียหาย")
+		}
+		// Checked again at the button, not only when the card was drawn: the
+		// inventory screen has no duplicate check of its own, so a colleague
+		// adding the same item while the card waited left two rows of one
+		// ingredient, each holding half the stock (25 ก.ย. 2569).
+		if shelf, err := ports.Ingredients.ListIngredients(restaurantID); err == nil {
+			if match := ResolveIngredientName(shelf, payload.Name); match.Exact != nil {
+				return fmt.Errorf("มี “%s” ในคลังแล้ว (เพิ่มเข้ามาระหว่างรอยืนยัน) ยังไม่ได้เพิ่มซ้ำ", match.Exact.Name)
+			}
 		}
 		request := &IngredientRequest{
 			Name:        payload.Name,

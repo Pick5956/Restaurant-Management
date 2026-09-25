@@ -106,7 +106,8 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 	if cleanName == "" {
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ต้องมีชื่อวัตถุดิบ")
 	}
-	if match := ResolveIngredientName(shelf, cleanName); match.Exact != nil {
+	match := ResolveIngredientName(shelf, cleanName)
+	if match.Exact != nil {
 		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("มี “%s” ในคลังอยู่แล้ว", match.Exact.Name)
 	}
 	if saidQuantity < 0 || saidQuantity > aiActionMaxQuantity {
@@ -236,7 +237,27 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		StorageType:  storage,
 		MinPercent:   view.MinPercent,
 	}
-	return payload, aiIngredientSetupPreview(view), nil
+	preview := aiIngredientSetupPreview(view)
+	if note := aiSimilarShelfNote(match); note != "" {
+		preview.SideEffects = append(preview.SideEffects, note)
+	}
+	return payload, preview, nil
+}
+
+// aiSimilarShelfNote names what is already on the shelf under a longer name
+// — "ซอสหอยนางรม" said over a shelf holding "ซอสหอยนางรมแม่ครัว". It is not
+// refused: "ผักชี" beside "ผักชีฝรั่ง" is a different ingredient and a real
+// one to add. But the owner decides that knowing the other row is there,
+// instead of finding two rows later.
+func aiSimilarShelfNote(match AIIngredientMatch) string {
+	if len(match.Candidates) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(match.Candidates))
+	for _, candidate := range match.Candidates {
+		names = append(names, "“"+candidate.Name+"”")
+	}
+	return fmt.Sprintf("ในคลังมีชื่อคล้ายกันอยู่แล้ว: %s · ถ้าเป็นของตัวเดียวกัน ให้ยกเลิกแล้วสั่งรับเข้าแทน", strings.Join(names, ", "))
 }
 
 // aiIngredientSetupPreview writes the card's review lines and warnings from

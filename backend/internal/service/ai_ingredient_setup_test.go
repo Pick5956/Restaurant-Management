@@ -167,3 +167,24 @@ func TestAddIngredientChatFromTheOwnersLog(t *testing.T) {
 		t.Fatalf("a sentence naming the row gets no thread note: %s", named)
 	}
 }
+
+// Already on the shelf: refused on the card, and again at the button if it
+// was added while the card waited. A longer name is flagged, not refused.
+func TestNewIngredientIsCheckedAgainstTheShelf(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "ซอสหอยนางรมแม่ครัว", Unit: "ขวด"}}
+	_, preview, err := buildIngredientSetup(shelf, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effects := strings.Join(preview.SideEffects, " | "); !strings.Contains(effects, "ซอสหอยนางรมแม่ครัว") {
+		t.Fatalf("the similar row must be named on the card: %q", effects)
+	}
+
+	payload, _, _ := buildIngredientSetup(nil, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
+	raw, _ := json.Marshal(payload)
+	port := &fakeAIActionIngredientPort{items: map[uint]*entity.Ingredient{7: {Name: "ซอสหอยนางรม", Unit: "ขวด"}}}
+	item := entity.AIActionPlanItem{ActionType: entity.AIActionTypeCreateIngredient, PayloadJSON: string(raw)}
+	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err == nil || len(port.created) != 0 {
+		t.Fatalf("added while the card waited — must not create a second row: err=%v created=%d", err, len(port.created))
+	}
+}
