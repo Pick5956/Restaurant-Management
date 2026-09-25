@@ -196,9 +196,12 @@ func tidyDigest(raw string) string {
 // summarizeConversation asks the model for a digest of the turns not yet covered.
 // It returns "" whenever there is nothing worth writing, which the caller treats
 // as "keep what you had".
-func (s *AIService) summarizeConversation(turns []entity.AIConversationTurn, previous string) string {
+// The second value says whether the model was reached: false means keep the
+// old digest and try again next turn; true with an empty digest means the turns
+// held nothing worth keeping.
+func (s *AIService) summarizeConversation(turns []entity.AIConversationTurn, previous string) (string, bool) {
 	if len(turns) == 0 {
-		return ""
+		return "", true
 	}
 	prompt := buildDigestPrompt(turns, previous)
 	// Low effort on purpose: this is a reading-and-condensing job, not a
@@ -206,12 +209,12 @@ func (s *AIService) summarizeConversation(turns []entity.AIConversationTurn, pre
 	text, _, err := s.askSecondRoundWithOptions(prompt, aiProviderCompleteOptions{ReasoningEffort: "low"})
 	if err != nil {
 		aiStage("warn", "digest: การสรุปบทสนทนาไม่สำเร็จ (%v) — ใช้บันทึกเดิมต่อ", err)
-		return ""
+		return "", false
 	}
 	digest := tidyDigest(text)
 	// Logged in full and on purpose. With no Go gate deciding whether the model
 	// summarised honestly, the log is the only place that judgement can be made
 	// from — and the first thing to read when an answer cites something odd.
 	aiStage("debug", "digest: จากบทสนทนา %d เทิร์น ได้บันทึก:\n%s", len(turns), digest)
-	return digest
+	return digest, true
 }

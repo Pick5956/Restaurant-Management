@@ -127,10 +127,10 @@ func (a *groqProviderAdapter) Classify(question string, history []AIConversation
 			aiStage("error", "Groq classifier: %v — skipping remaining keys", err)
 			return AIRouterResult{}, err
 		}
-		if errors.Is(err, errRateLimit) {
+		if errors.Is(err, errRateLimit) || errors.Is(err, errKeyRejected) {
 			wait := retryAfterOf(err)
 			a.service.keyHealth.park("groq", attempt.Index, time.Now().Add(wait))
-			aiStage("warn", "Groq classifier key %s rate limited → parked for %s", attempt.Label(), wait.Round(time.Second))
+			aiStage("warn", "Groq classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
 		aiStage("warn", "Groq classifier key %s failed: %v → rotating", attempt.Label(), err)
@@ -204,10 +204,10 @@ func (a *geminiProviderAdapter) Classify(question string, history []AIConversati
 			aiStage("error", "Gemini classifier: %v — skipping remaining keys", err)
 			return AIRouterResult{}, err
 		}
-		if errors.Is(err, errRateLimit) {
+		if errors.Is(err, errRateLimit) || errors.Is(err, errKeyRejected) {
 			wait := retryAfterOf(err)
 			a.service.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
-			aiStage("warn", "Gemini classifier key %s rate limited → parked for %s", attempt.Label(), wait.Round(time.Second))
+			aiStage("warn", "Gemini classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
 		aiStage("warn", "Gemini classifier key %s failed: %v → rotating", attempt.Label(), err)

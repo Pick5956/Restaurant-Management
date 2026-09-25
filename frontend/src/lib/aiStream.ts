@@ -84,7 +84,7 @@ export async function askOperationsAIStream(
   conversationId?: string | null,
   options: AskStreamOptions = {},
 ): Promise<{ data: AIAskResponse }> {
-  const request: AIAskRequest = { question, history };
+  const request: AIAskRequest = { question, history, ingredient_card: true };
   const normalizedConversationId = conversationId?.trim();
   if (normalizedConversationId) request.conversation_id = normalizedConversationId;
 

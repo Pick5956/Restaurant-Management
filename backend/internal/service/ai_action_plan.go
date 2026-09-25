@@ -127,6 +127,10 @@ type AIAdjustStockCommand struct {
 	// resolved to a row of this restaurant, and its name for the preview.
 	CategoryID   uint
 	CategoryName string
+	// Setup marks a create the web card fills in step by step (25 ก.ย. 2569):
+	// Quantity and Unit are then the amount as said ("2 ขวด"), not yet the
+	// opening stock. See ai_ingredient_setup.go.
+	Setup bool
 }
 
 // AIActionItemPayload is what gets persisted for an item. It is deliberately
@@ -152,6 +156,22 @@ type AIActionItemPayload struct {
 	Date     string `json:"date,omitempty"`
 	// Used by create_menu_item.
 	CategoryID uint `json:"category_id,omitempty"`
+	// Used by create_ingredient when the card sets it up (ai_ingredient_setup.go):
+	// the amount as said, and the card's answers. Quantity and CostPerUnit
+	// above are then what those answers computed.
+	Setup        bool    `json:"setup,omitempty"`
+	SaidQuantity float64 `json:"said_quantity,omitempty"`
+	SaidUnit     string  `json:"said_unit,omitempty"`
+	PackUnit     string  `json:"pack_unit,omitempty"`
+	PackSize     float64 `json:"pack_size,omitempty"`
+	StockAnswer  *float64 `json:"stock_answer,omitempty"`
+	PriceMode    string  `json:"price_mode,omitempty"`
+	Price        float64 `json:"price,omitempty"`
+	// Missing is what the card still has to ask; execution refuses a
+	// non-empty list.
+	Missing []string `json:"missing,omitempty"`
+	StorageType  string  `json:"storage_type,omitempty"`
+	MinPercent   float64 `json:"min_percent,omitempty"`
 
 	// What the row held when the preview was written, for the action types that
 	// overwrite a value outright. The owner confirms "5000 → 3000" having read
@@ -215,6 +235,9 @@ type AIActionItemPreview struct {
 	Delta string `json:"delta,omitempty"`
 	// Facts is what a create action will write, one line per value.
 	Facts []AIActionPreviewFact `json:"facts,omitempty"`
+	// Setup is the step-by-step card's state for a new ingredient; nil for
+	// every other item.
+	Setup *AIIngredientSetupView `json:"setup,omitempty"`
 }
 
 // AIActionPreviewFact is one "label: value" line of a create preview.
@@ -291,7 +314,7 @@ func validateAdjustStock(port AIActionIngredientPort, restaurantID uint, command
 	}
 	if amount > 0 {
 		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(amount)))
+			aiExpenseSideEffect(amount))
 	}
 	if next <= 0 && ingredient.Stock > 0 {
 		preview.SideEffects = append(preview.SideEffects, "สต๊อกเหลือ 0 · เมนูที่ใช้วัตถุดิบนี้จะถูกปิดขายอัตโนมัติ")
@@ -396,7 +419,18 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	if cleanUnit == "" {
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ต้องระบุหน่วย เช่น กรัม หรือ ฟอง")
 	}
-	if match := ResolveIngredientName(shelf, cleanName); match.Exact != nil {
+	if allowed, ok := ingredientStockUnit(cleanUnit); ok {
+		cleanUnit = allowed
+	} else {
+		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("“%s” ใช้เป็นหน่วยนับในคลังไม่ได้ เลือกจาก %s", cleanUnit, strings.Join(IngredientStockUnits, " / "))
+	}
+	// The card showed "เริ่มที่ -500" and only the save refused it after
+	// confirmation; the same bound the stock-in check uses, here.
+	if stock < 0 || stock > aiActionMaxQuantity {
+		return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
+	}
+	match := ResolveIngredientName(shelf, cleanName)
+	if match.Exact != nil {
 		return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("มี “%s” ในคลังอยู่แล้ว", match.Exact.Name)
 	}
 
@@ -417,7 +451,17 @@ func validateCreateIngredient(shelf []entity.Ingredient, name, unit string, stoc
 	}
 	if stock > 0 && cost > 0 {
 		preview.SideEffects = append(preview.SideEffects,
-			fmt.Sprintf("บันทึกรายจ่าย %s บาท (แก้หรือลบไม่ได้)", formatStockNumber(roundBaht(stock*cost))))
+			aiExpenseSideEffect(roundBaht(stock*cost)))
+	}
+	if sealedStockUnits[cleanUnit] {
+		preview.SideEffects = append(preview.SideEffects,
+			fmt.Sprintf("นับเป็น%sทั้ง%s · ถ้าเทแบ่งใช้ ให้แก้หน่วยเป็นมิลลิลิตร/กรัม แล้วตั้ง “ซื้อเป็น%s” ที่หน้าคลัง", cleanUnit, cleanUnit, cleanUnit))
+	}
+	if cost <= 0 {
+		preview.SideEffects = append(preview.SideEffects, "ยังไม่มีราคา · ต้นทุนเมนูที่ใช้วัตถุดิบนี้จะเป็น 0 จนกว่าจะตั้งราคา")
+	}
+	if note := aiSimilarShelfNote(match); note != "" {
+		preview.SideEffects = append(preview.SideEffects, note)
 	}
 	return AIActionItemPayload{
 		Name:        cleanName,
@@ -655,6 +699,11 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 		if err != nil {
 			return AIActionItemPayload{}, AIActionItemPreview{}, "", err
 		}
+		if command.Setup {
+			payload, preview, err := buildIngredientSetup(shelf, command.Name, command.Quantity, command.Unit,
+				AIIngredientSetupAnswers{Unit: aiSetupFirstUnit(command.Unit)})
+			return payload, preview, entity.AIActionTypeCreateIngredient, err
+		}
 		payload, preview, err := validateCreateIngredient(shelf, command.Name, command.Unit, command.Quantity, 0, 0)
 		return payload, preview, entity.AIActionTypeCreateIngredient, err
 	default:
@@ -663,10 +712,69 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 	}
 }
 
+// aiPlanShelf is the ingredient port every item of one plan is validated
+// against: the live row, with the items already accepted into the plan applied
+// on top. The items execute in order, so item two runs against the row item
+// one leaves behind — and must be previewed and pinned against that, not
+// against the row as it was before the plan.
+//
+// Validating each item against the untouched row caused two bugs (found
+// 23 ก.ย. 2569): "รับหมูสับ 2 กิโล แล้วปรับเป็น 7000" pinned the adjust's
+// expected stock at 5000, so after item one wrote 7000 item two refused itself
+// as "ข้อมูลเปลี่ยนไประหว่างรอยืนยัน"; and "หมูสับขึ้นเป็นกิโลละ 200 แล้วรับ
+// เข้า 5 กิโล" priced the restock on the card at the old cost (900 บาท) while
+// execution booked it at the new one (1,000 บาท) — an expense that cannot be
+// edited. Everything that writes still goes through the real port.
+type aiPlanShelf struct {
+	AIActionIngredientPort
+	changed map[uint]entity.Ingredient
+}
+
+func (s *aiPlanShelf) FindIngredient(restaurantID, ingredientID uint) (*entity.Ingredient, error) {
+	if row, ok := s.changed[ingredientID]; ok {
+		copied := row
+		return &copied, nil
+	}
+	return s.AIActionIngredientPort.FindIngredient(restaurantID, ingredientID)
+}
+
+// apply records what an accepted item will have done to its row by the time
+// the next item runs.
+func (s *aiPlanShelf) apply(restaurantID uint, actionType string, payload AIActionItemPayload) {
+	if payload.IngredientID == 0 {
+		return
+	}
+	row, err := s.FindIngredient(restaurantID, payload.IngredientID)
+	if err != nil || row == nil {
+		return
+	}
+	switch actionType {
+	case entity.AIActionTypeAdjustIngredientStock:
+		next, err := aiActionNextStock(row.Stock, payload.Kind, payload.Quantity)
+		if err != nil {
+			return
+		}
+		levels := levelsAfterStockChange(next, row.MaxStock, row.MinStock, row.MinPercent)
+		row.Stock, row.MaxStock, row.MinStock = levels.Stock, levels.MaxStock, levels.MinStock
+	case entity.AIActionTypeSetIngredientMinStock:
+		row.MinStock, row.MinPercent = payload.MinStock, 0
+	case entity.AIActionTypeSetIngredientCost:
+		row.CostPerUnit = payload.CostPerUnit
+	default:
+		return
+	}
+	s.changed[payload.IngredientID] = *row
+}
+
 // BuildAdjustStockPlan validates every requested change and returns the draft.
 // Invalid items are reported, not silently dropped.
 func BuildAdjustStockPlan(ports AIActionPorts, restaurantID uint, commands []AIAdjustStockCommand, titles []string) AIActionPlanDraft {
 	draft := AIActionPlanDraft{}
+	var shelf *aiPlanShelf
+	if ports.Ingredients != nil {
+		shelf = &aiPlanShelf{AIActionIngredientPort: ports.Ingredients, changed: map[uint]entity.Ingredient{}}
+		ports.Ingredients = shelf
+	}
 	for index, command := range commands {
 		title := ""
 		if index < len(titles) {
@@ -697,6 +805,9 @@ func BuildAdjustStockPlan(ports AIActionPorts, restaurantID uint, commands []AIA
 			PreviewJSON: string(previewJSON),
 		})
 		draft.Previews = append(draft.Previews, preview)
+		if shelf != nil {
+			shelf.apply(restaurantID, actionType, payload)
+		}
 	}
 	return draft
 }
@@ -857,13 +968,43 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 		if err := json.Unmarshal([]byte(item.PayloadJSON), &payload); err != nil {
 			return errors.New("คำสั่งเสียหาย")
 		}
-		_, err := ports.Ingredients.Create(restaurantID, actorUserID, &IngredientRequest{
+		// Checked again at the button, not only when the card was drawn: the
+		// inventory screen has no duplicate check of its own, so a colleague
+		// adding the same item while the card waited left two rows of one
+		// ingredient, each holding half the stock (25 ก.ย. 2569).
+		if shelf, err := ports.Ingredients.ListIngredients(restaurantID); err == nil {
+			if match := ResolveIngredientName(shelf, payload.Name); match.Exact != nil {
+				return fmt.Errorf("มี “%s” ในคลังแล้ว (เพิ่มเข้ามาระหว่างรอยืนยัน) ยังไม่ได้เพิ่มซ้ำ", match.Exact.Name)
+			}
+		}
+		request := &IngredientRequest{
 			Name:        payload.Name,
 			Unit:        payload.Unit,
 			Stock:       payload.Quantity,
 			MinStock:    payload.MinStock,
 			CostPerUnit: payload.CostPerUnit,
-		})
+		}
+		if payload.Setup {
+			// The card's first question. Confirming before it is answered
+			// would create an ingredient no recipe can be measured against.
+			if strings.TrimSpace(payload.Unit) == "" {
+				return errors.New("ยังไม่ได้เลือกหน่วยนับ")
+			}
+			if len(payload.Missing) > 0 {
+				return fmt.Errorf("ยังกรอกไม่ครบ: %s", strings.Join(payload.Missing, " · "))
+			}
+			request.StorageType = payload.StorageType
+			if payload.MinPercent > 0 {
+				percent := payload.MinPercent
+				request.MinPercent = &percent
+			}
+			if payload.PackUnit != "" && payload.PackSize > 0 {
+				packUnit, packSize := payload.PackUnit, payload.PackSize
+				request.PackUnit = &packUnit
+				request.PackSize = &packSize
+			}
+		}
+		_, err := ports.Ingredients.Create(restaurantID, actorUserID, request)
 		return err
 
 	default:

@@ -2,8 +2,10 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
@@ -43,6 +45,8 @@ type AIActionPlanItemResponse struct {
 	ValueUnit string                `json:"value_unit,omitempty"`
 	Delta     string                `json:"delta,omitempty"`
 	Facts     []AIActionPreviewFact `json:"facts,omitempty"`
+	// Setup is the new-ingredient card's state; see ai_ingredient_setup.go.
+	Setup *AIIngredientSetupView `json:"setup,omitempty"`
 }
 
 // maybeHandleJoyboyStockCommand answers an inventory command. It reports handled
@@ -155,6 +159,14 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 			continue
 		}
 		resolution := ResolveStockCommand(shelf, draft)
+		// The web draws a step-by-step card for a new ingredient, so what used
+		// to be a chat question about its unit becomes the card's first step.
+		// Clients without the card still get the question.
+		if request.IngredientCard {
+			if card, ok := aiCardCreateResolution(shelf, draft); ok {
+				resolution = card
+			}
+		}
 		switch {
 		case AIMenuCreateKind(draft.Kind):
 			resolution = ResolveMenuCreateCommand(menus, categories, draft)
@@ -276,12 +288,21 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 	if pending, err := s.actionPlanStore.PendingAIActionPlan(actor.RestaurantID, actor.OwnerUserID); err != nil {
 		aiStage("warn", "joyboy command: checking for a pending plan failed (%v) → carrying on", err)
 	} else if pending != nil {
+		// The box can be gone from the screen — the page crashed, or another
+		// device holds it — so the way out that needs no box is said too
+		// (25 ก.ย. 2569: the new-ingredient card crashed and the owner's retyped
+		// command was sent to "the box above", which was not there).
+		wait := int(math.Ceil(time.Until(pending.ExpiresAt).Seconds()))
+		if wait < 1 {
+			wait = 1
+		}
+		noBox := fmt.Sprintf(" (ถ้าไม่เห็นกล่อง รอ %d วินาทีให้หมดอายุ แล้วสั่งใหม่ได้เลย)", wait)
 		if aiPlanAsksForTheSameThing(pending, draft.Items) {
-			response.Answer = fmt.Sprintf("%sรออยู่แล้วครับ กดปุ่มยืนยันในกล่องข้างบนได้เลย", pending.Summary)
+			response.Answer = fmt.Sprintf("%sรออยู่แล้วครับ กดปุ่มยืนยันในกล่องข้างบนได้เลย", pending.Summary) + noBox
 		} else {
 			response.Answer = fmt.Sprintf(
 				"ยังมีรายการรอยืนยันค้างอยู่ครับ — %s\nกดยืนยันหรือยกเลิกในกล่องข้างบนก่อน แล้วค่อยสั่งอันใหม่นะครับ",
-				pending.Summary)
+				pending.Summary) + noBox
 		}
 		aiStage("flow", "joyboy command: a plan is already pending → not building a second one")
 		response.Intent = AIIntentChat
@@ -295,6 +316,7 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 		OwnerUserID:  actor.OwnerUserID,
 		Summary:      summary,
 		Items:        draft.Items,
+		TTL:          aiPlanWindow(draft.Items),
 	})
 	if err != nil {
 		aiStage("warn", "joyboy command: creating the plan failed (%v)", err)
@@ -307,22 +329,13 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 
 	items := make([]AIActionPlanItemResponse, 0, len(draft.Previews))
 	for _, preview := range draft.Previews {
-		items = append(items, AIActionPlanItemResponse{
-			Title:       preview.Title,
-			Change:      preview.Change,
-			Unit:        preview.Unit,
-			SideEffects: preview.SideEffects,
-			Kind:        preview.Kind,
-			Field:       preview.Field,
-			From:        preview.From,
-			To:          preview.To,
-			ValueUnit:   preview.ValueUnit,
-			Delta:       preview.Delta,
-			Facts:       preview.Facts,
-		})
+		items = append(items, aiPlanItemResponse(preview))
 	}
 
 	answer := fmt.Sprintf("ผมเตรียม%sแล้ว ยังไม่ได้แก้ข้อมูล กดยืนยันภายใน 1 นาทีครับ", summary)
+	if aiPlanWindow(draft.Items) > 0 {
+		answer = fmt.Sprintf("ผมเตรียม%sแล้ว ยังไม่ได้แก้ข้อมูล ตอบคำถามในการ์ดให้ครบ แล้วกดยืนยันครับ", summary)
+	}
 	if len(switchedOff) > 0 {
 		notices = append(notices, aiActionTypesOffSentence(switchedOff))
 	}

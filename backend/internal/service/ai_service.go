@@ -258,6 +258,13 @@ func (s *AIService) AskOperationsForOwner(ctx context.Context, actor AIActorCont
 	s.maybeCleanupAIActionPreviews()
 
 	request := *req
+	// Legacy checks this inside askOperationsCore; the joyboy path never did,
+	// so a pasted supplier message of 900 runes spent three model calls and
+	// then failed to store the turn with a 500. Same limit, same wording, here
+	// where both paths pass.
+	if len([]rune(strings.TrimSpace(request.Question))) > repository.AIConversationQuestionMaxRunes {
+		return nil, errors.New("question is too long")
+	}
 	originalQuestion := request.Question
 	session, history, err := s.prepareConversationSession(actor, &request)
 	if err != nil {

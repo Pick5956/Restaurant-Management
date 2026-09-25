@@ -205,7 +205,7 @@ func computeProactiveInsights(snapshot AISnapshot) []AIInsight {
 
 	// 2) Weekly sales anomaly (7 days vs the prior 7 days).
 	if snapshot.AnalysisReadiness.CanAnalyzeRevenue {
-		trend := computeSalesTrend(snapshot.SalesDays)
+		trend := computeSalesTrendAsOf(snapshot.SalesDays, snapshotDateKey(snapshot.GeneratedAt))
 		if trend.HasPrior {
 			switch {
 			case trend.RevenueChangePct <= -insightSalesChangePct:

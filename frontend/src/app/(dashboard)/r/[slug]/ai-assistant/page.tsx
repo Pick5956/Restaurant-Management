@@ -17,7 +17,7 @@ import {
 import { getUnclearRequestActions, resolveClarificationRequest } from "@/src/lib/aiClarification";
 import { getAnswerChips, getGuidedActions, type AIGuidedAction } from "@/src/lib/aiGuidedActions";
 import { useAutoGrowTextarea } from "@/src/lib/chatComposer";
-import { loadPendingPlan, savePendingPlan, type StoredPlanState } from "@/src/lib/aiPendingPlan";
+import { loadPendingPlan, questionBehindPlan, savePendingPlan, type StoredPlanState } from "@/src/lib/aiPendingPlan";
 import { resolveNavigationRequest } from "@/src/lib/aiNavigation";
 import {
   chatStorageKey,
@@ -45,6 +45,8 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import type { AIActionPreview, AIActionPlan, AIConversationMessage, AIForecastResult, AIChartData } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
+import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
 import AISettingsModal from "@/src/components/shared/AISettingsModal";
 import ForecastChart from "@/src/components/shared/ForecastChart";
@@ -224,6 +226,17 @@ export default function AIAssistantPage() {
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
     if (pendingActionPreview && !(await discardPendingActionPreview())) return false;
+    // The server holds one plan per owner. Leaving a chat with its card still
+    // unanswered left that plan blocking every command in the next chat
+    // ("ยังมีรายการรอยืนยัน") until it expired, with its buttons out of sight
+    // (found 23 ก.ย. 2569). Cancel it on the server and keep the card in the
+    // old chat as cancelled — what the mobile app already does.
+    const plan = pendingActionPlan;
+    if (plan && planCardState === "pending" && conversationId !== activeThread) {
+      cancelAIActionPlan(plan.id).catch(() => undefined);
+      savePendingPlan(threadStorageKey, plan, "cancelled");
+      setPlanCardState("cancelled");
+    }
     setListOpen(false);
     setActiveThread(storageKey, conversationId);
     return true;
@@ -467,6 +480,13 @@ export default function AIAssistantPage() {
           adoptUnsentThread(storageKey, newThreadId, prev, chatWriteSourceRef.current);
           return prev;
         });
+        // The confirm card too: the switch below re-runs the thread effect,
+        // which clears the pending plan and restores whatever is stored under
+        // the new key — and nothing was, because the save effect only runs
+        // once the new key is hydrated. A first-message command ("เพิ่มหมูสับ
+        // 2 กิโล" in a fresh chat) lost its card that way while the server kept
+        // the plan and refused every next command for a minute (23 ก.ย. 2569).
+        if (data.action_plan) savePendingPlan(threadKey(storageKey, newThreadId), data.action_plan, "pending");
         setActiveThread(storageKey, newThreadId);
       }
       notifyConversationsChanged();
@@ -490,8 +510,13 @@ export default function AIAssistantPage() {
           : "";
       setError(message || copy.error);
     } finally {
-      if (conversationRequests.isCurrent(requestGeneration)) setDraft(null);
-      setLoading(false);
+      // Both gated: a request the chat has moved on from must not switch off
+      // the spinner of the one now in flight, or the send button re-enables
+      // under a half-written answer.
+      if (conversationRequests.isCurrent(requestGeneration)) {
+        setDraft(null);
+        setLoading(false);
+      }
     }
   };
 
@@ -617,7 +642,7 @@ export default function AIAssistantPage() {
   // Put the original sentence back in the input, cursor at the end, so the owner
   // changes the part that was wrong instead of retyping the whole command.
   const reissuePendingCommand = () => {
-    const question = pendingActionQuestion;
+    const question = pendingActionQuestion || questionBehindPlan(messages, pendingActionPlan?.id);
     if (!question) return;
     setInput(question);
     requestAnimationFrame(() => {
@@ -688,12 +713,28 @@ export default function AIAssistantPage() {
   // Dropping it instead would be the worse bug, because the server still refuses
   // every other command until this card is confirmed or cancelled.
   const planCard =
-    pendingActionPlan && pendingActionPlan.items.length > 0 ? (
+    pendingActionPlan && planNeedsSetup(pendingActionPlan) ? (
+      <AIIngredientSetupCard
+        key={pendingActionPlan.id}
+        plan={pendingActionPlan}
+        onPlanChange={setPendingActionPlan}
+        onConfirm={handlePlanConfirm}
+        onCancel={handlePlanCancel}
+        onReissue={handlePlanReissue}
+        initialState={planCardState}
+        onResolved={(resolved) => {
+          actionResolvedRef.current = true;
+          if (resolved !== "confirming") setPlanCardState(resolved);
+        }}
+        language={language}
+      />
+    ) : pendingActionPlan && pendingActionPlan.items.length > 0 ? (
       <InlineDbConfirmBar
         key={pendingActionPlan.id}
         summary={pendingActionPlan.summary}
         items={pendingActionPlan.items.map((planItem) => ({
           title: planItem.title,
+          headline: planItemHeadline(planItem),
           change: planItem.change,
           unit: planItem.unit,
           sideEffects: planItem.side_effects,
@@ -1033,7 +1074,11 @@ export default function AIAssistantPage() {
               // No mic on the web either since 22 ก.ย. 2569 (the owner's call, the
               // same as the app): speaking goes through the device's own keyboard
               // or OS dictation, which types straight into this box.
-              className="flex flex-col gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
+              // One row: with the mic and the "+" gone the buttons had a whole
+              // line of their own under a one-line question, so the send button
+              // sits beside the text now (22 ก.ย. 2569). items-end keeps it on
+              // the last line as a long question grows.
+              className="flex items-end gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-800"
             >
               <textarea
                   ref={inputRef}
@@ -1047,10 +1092,9 @@ export default function AIAssistantPage() {
                   }}
                   placeholder={copy.askPlaceholder}
                   rows={1}
-                  className="min-h-[2.25rem] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
+                  className="min-h-[2.25rem] min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
                 />
-              <div className="flex items-center gap-1">
-              <div className="flex-1" />
+              <div className="flex shrink-0 items-center gap-1">
               {/* Open the field taller once there is enough text that expanding
                   shows more of it. */}
               {composer.canExpand && (

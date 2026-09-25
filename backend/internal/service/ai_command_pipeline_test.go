@@ -186,7 +186,9 @@ func TestNewIngredientWithAUnitDoesNotAskForTheUnitAgain(t *testing.T) {
 	if resolution.Command.Kind != "create" {
 		t.Errorf("a name the shelf does not have has to become a create, got %q", resolution.Command.Kind)
 	}
-	if resolution.Command.Unit != "กก." || resolution.Command.Quantity != 3000 {
+	// Spelled the way the inventory form writes it, so the new shelf row
+	// reads like every other one ("กก." → "กิโลกรัม").
+	if resolution.Command.Unit != "กิโลกรัม" || resolution.Command.Quantity != 3000 {
 		t.Errorf("the unit and quantity the owner gave were dropped: %+v", resolution.Command)
 	}
 

@@ -65,6 +65,8 @@ import { useTheme } from "@/src/providers/ThemeProvider";
 import type { AIActionPlan, AIActionPreview, AIAskResponse, AIChartData, AIConversationMessage, AIForecastResult } from "@/src/types/ai";
 import AIActionPreviewCard from "@/src/components/shared/AIActionPreviewCard";
 import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
+import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
+import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
 
@@ -344,6 +346,17 @@ export default function AIOperationsFloatingChat() {
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
     if (pendingActionPreview && !(await discardPendingActionPreview())) return;
+    // The server holds one plan per owner. Leaving a chat with its card still
+    // unanswered left that plan blocking every command in the next chat
+    // ("ยังมีรายการรอยืนยัน") until it expired, with its buttons out of sight
+    // (found 23 ก.ย. 2569). Cancel it on the server and keep the card in the
+    // old chat as cancelled — what the mobile app already does.
+    const plan = pendingActionPlan;
+    if (plan && planCardState === "pending" && conversationId !== activeThread) {
+      cancelAIActionPlan(plan.id).catch(() => undefined);
+      savePendingPlan(threadStorageKey, plan, "cancelled");
+      setPlanCardState("cancelled");
+    }
     setListOpen(false);
     setActiveThread(storageKey, conversationId);
   };
@@ -637,6 +650,10 @@ export default function AIOperationsFloatingChat() {
       });
       if (newThreadId) {
         skipServerLoadRef.current = newThreadId;
+        // Stored under the new key before the switch: the thread effect it
+        // triggers clears the pending plan and restores from storage, and the
+        // save effect would not have written it yet (see the page).
+        if (data.action_plan) savePendingPlan(threadKey(storageKey, newThreadId), data.action_plan, "pending");
         setActiveThread(storageKey, newThreadId);
       }
       notifyConversationsChanged();
@@ -682,8 +699,12 @@ export default function AIOperationsFloatingChat() {
         },
       ]);
     } finally {
-      if (conversationRequests.isCurrent(requestGeneration)) setDraft(null);
-      setLoading(false);
+      // Both gated, as on the page: a stale request must not clear the newer
+      // one's spinner.
+      if (conversationRequests.isCurrent(requestGeneration)) {
+        setDraft(null);
+        setLoading(false);
+      }
     }
   };
 
@@ -787,12 +808,26 @@ export default function AIOperationsFloatingChat() {
   // before, because the server still refuses every other command until it is
   // confirmed or cancelled, and a card nobody can see is a deadlock.
   const planCard =
-    pendingActionPlan && pendingActionPlan.items.length > 0 ? (
+    pendingActionPlan && planNeedsSetup(pendingActionPlan) ? (
+      <AIIngredientSetupCard
+        key={pendingActionPlan.id}
+        plan={pendingActionPlan}
+        onPlanChange={setPendingActionPlan}
+        onConfirm={handlePlanConfirm}
+        onCancel={handlePlanCancel}
+        initialState={planCardState}
+        onResolved={(resolved) => {
+          if (resolved !== "confirming") setPlanCardState(resolved);
+        }}
+        language={language}
+      />
+    ) : pendingActionPlan && pendingActionPlan.items.length > 0 ? (
       <InlineDbConfirmBar
         key={pendingActionPlan.id}
         summary={pendingActionPlan.summary}
         items={pendingActionPlan.items.map((planItem) => ({
           title: planItem.title,
+          headline: planItemHeadline(planItem),
           change: planItem.change,
           unit: planItem.unit,
           sideEffects: planItem.side_effects,

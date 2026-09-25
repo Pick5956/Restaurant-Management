@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { forwardRef, useState } from 'react';
-import { ActivityIndicator, Pressable, TextInput as NativeTextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, TextInput as NativeTextInput } from 'react-native';
 
 import { AppIcon } from '@/src/components/app-icon';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
@@ -73,7 +73,7 @@ export const Composer = forwardRef<NativeTextInput, {
       placeholder={t('พิมพ์คำถามของคุณที่นี่...', 'Type your question here...')}
       placeholderTextColor={ai.faint}
       style={{
-        flex: tall ? undefined : 1,
+        flex: 1,
         minHeight: 42,
         maxHeight: 150,
         paddingHorizontal: 10,
@@ -97,25 +97,23 @@ export const Composer = forwardRef<NativeTextInput, {
     elevation: 1,
   };
 
-  if (tall) {
-    return (
-      <GlassSurface
-        style={{ borderRadius: 28, paddingTop: 10, paddingBottom: 9, paddingHorizontal: 9, gap: 4, overflow: 'hidden' }}
-        fallbackStyle={fallbackStyle}
-      >
-        {input}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-          {sendButton}
-        </View>
-      </GlassSurface>
-    );
-  }
-
+  // One row in both shapes. A long question used to drop the send button onto
+  // a line of its own under the text; with only the send button left it sits
+  // beside the text and stays on the last line as it grows (22 ก.ย. 2569).
+  // 14px on the left where the "+" used to sit, so the text does not start
+  // against the capsule's curve.
   return (
     <GlassSurface
-      // 14px on the left where the "+" used to sit, so the text does not start
-      // against the capsule's curve.
-      style={{ borderRadius: 999, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, paddingRight: 8, paddingVertical: 8, gap: 3, overflow: 'hidden' }}
+      style={{
+        borderRadius: tall ? 28 : 999,
+        flexDirection: 'row',
+        alignItems: tall ? 'flex-end' : 'center',
+        paddingLeft: 14,
+        paddingRight: 8,
+        paddingVertical: 8,
+        gap: 3,
+        overflow: 'hidden',
+      }}
       fallbackStyle={fallbackStyle}
     >
       {input}

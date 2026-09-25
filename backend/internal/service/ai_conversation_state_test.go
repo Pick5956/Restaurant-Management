@@ -25,6 +25,10 @@ type fakeAIConversationStore struct {
 	appended     *entity.AIConversationTurn
 	nextState    string
 	err          error
+	// conflictOnce makes the next AppendTurn behave like the digest goroutine
+	// won the race: the row's version moves on, its state gains a digest, and
+	// the append is refused as a conflict. Cleared after one use.
+	conflictOnce bool
 }
 
 func (f *fakeAIConversationStore) CreateConversation(value *entity.AIConversation) error {
@@ -61,6 +65,17 @@ func (f *fakeAIConversationStore) AppendTurn(restaurantID, ownerUserID uint, con
 	f.appendCalls++
 	if f.err != nil {
 		return f.err
+	}
+	if f.conflictOnce {
+		f.conflictOnce = false
+		if f.conversation != nil {
+			f.conversation.Version++
+			f.conversation.StateJSON = `{"digest":"เจ้าของชอบดูกำไรก่อนยอดขาย","digest_through":6}`
+		}
+		return repository.ErrAIConversationConflict
+	}
+	if f.conversation != nil && expectedVersion != f.conversation.Version {
+		return repository.ErrAIConversationConflict
 	}
 	turn.ID = "turn-created"
 	f.appendActor = AIActorContext{RestaurantID: restaurantID, OwnerUserID: ownerUserID, Role: "owner"}
@@ -381,5 +396,49 @@ func TestSanitisingHistoryKeepsTheEndOfALongMessage(t *testing.T) {
 	}
 	if strings.Contains(cleaned[0].Content, "เริ่มต้น") {
 		t.Fatalf("the message should have been cut from the front: %q", cleaned[0].Content)
+	}
+}
+
+// The digest goroutine from the previous turn can land while this answer is
+// being written; the version moves on and the append is refused. The answer
+// is already paid for, so the turn reloads the row, carries the digest it now
+// holds, and appends again — instead of a 409 that threw the reply away.
+func TestPersistConversationTurnRetriesOnceAfterDigestConflict(t *testing.T) {
+	conversation := &entity.AIConversation{ID: "conversation-1", Version: 4}
+	store := &fakeAIConversationStore{conversation: conversation, conflictOnce: true}
+	service := &AIService{conversationStore: store}
+	session := &aiConversationSession{conversation: conversation, digest: "", digestThrough: 0}
+	response := &AIAskResponse{Answer: "กำไรเดือนนี้ 56,025 บาทครับ", Task: AITaskGeneralChat}
+
+	if err := service.persistConversationTurn(ownerActor(), session, "กำไรเดือนนี้เท่าไหร่", response, time.Second); err != nil {
+		t.Fatalf("persistConversationTurn after a digest conflict: %v", err)
+	}
+	if store.appendCalls != 2 || store.findCalls != 1 {
+		t.Fatalf("append calls = %d, find calls = %d; want one retry after one reload", store.appendCalls, store.findCalls)
+	}
+	var state aiConversationCompactState
+	if err := json.Unmarshal([]byte(store.nextState), &state); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	// The digest that landed meanwhile rides on the retried write; the old
+	// (empty) memory this request started with must not overwrite it.
+	if state.Digest != "เจ้าของชอบดูกำไรก่อนยอดขาย" || state.DigestThrough != 6 {
+		t.Fatalf("retried state lost the digest: %+v", state)
+	}
+	if session.digest != state.Digest || session.conversation.Version != 6 {
+		t.Fatalf("session not moved on: digest=%q version=%d", session.digest, session.conversation.Version)
+	}
+
+	// When the row cannot be reloaded the conflict is reported as before —
+	// never a silent success over a turn that was not stored.
+	store2 := &fakeAIConversationStore{conflictOnce: true} // no conversation: reload fails
+	service2 := &AIService{conversationStore: store2}
+	session2 := &aiConversationSession{conversation: &entity.AIConversation{ID: "conversation-2", Version: 1}}
+	err := service2.persistConversationTurn(ownerActor(), session2, "ถามอีก", &AIAskResponse{Answer: "ตอบ", Task: AITaskGeneralChat}, time.Second)
+	if !errors.Is(err, repository.ErrAIConversationConflict) {
+		t.Fatalf("conflict without a reload should surface, got %v", err)
+	}
+	if store2.appendCalls != 1 {
+		t.Fatalf("append calls = %d, want 1 (no retry without a reload)", store2.appendCalls)
 	}
 }

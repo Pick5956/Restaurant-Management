@@ -452,6 +452,14 @@ export function auditMessage(log: RestaurantAuditLog, language: Language) {
     if (language === "th") return `AI ${on ? "เปิดขาย" : "ปิดขาย"}เมนู${menuName ? ` "${menuName}"` : ""}`;
     return `AI ${on ? "turned on" : "turned off"} ${menuName ? `"${menuName}"` : "a menu item"}`;
   }
+  if (log.action === "ai_action_plan_item") {
+    // One confirmed change from an assistant plan (since 24 ก.ย. 2569): the
+    // card's own title and change line, e.g. "หมูสับ · 2000 → 4000".
+    const title = typeof details.title === "string" ? details.title.trim() : "";
+    const change = typeof details.change === "string" ? details.change.trim() : "";
+    const what = [title, change].filter(Boolean).join(" · ");
+    return language === "th" ? `AI แก้ตามคำสั่ง${what ? ` · ${what}` : ""}` : `AI change${what ? ` · ${what}` : ""}`;
+  }
   return log.action;
 }
 

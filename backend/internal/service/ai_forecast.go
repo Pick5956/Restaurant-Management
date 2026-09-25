@@ -99,12 +99,14 @@ func (s *AIService) buildSalesForecastAnswer(restaurantID uint) (*AIAskResponse,
 		return nil, false, nil
 	}
 
-	since := repository.BangkokNow().AddDate(0, 0, -120)
+	now := repository.BangkokNow()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	since := now.AddDate(0, 0, -120)
 	rows, err := s.repo.RecentSalesSummary(restaurantID, since)
 	if err != nil {
 		return nil, false, err
 	}
-	points := forecastPointsFromRows(rows)
+	points := finishedDaysOnly(forecastPointsFromRows(rows), today)
 
 	if len(points) < forecastMinPoints {
 		return &AIAskResponse{
@@ -119,8 +121,6 @@ func (s *AIService) buildSalesForecastAnswer(restaurantID uint) (*AIAskResponse,
 	// Forecast the days AFTER today, not after the last data point — "สัปดาห์หน้า"
 	// means the coming week. When the data is stale (a demo DB that stopped days
 	// ago) this reaches across the gap, so the staleness is stated plainly.
-	now := repository.BangkokNow()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	lastData := points[len(points)-1].date
 	anchor := today
 	if lastData.After(anchor) {
@@ -135,7 +135,10 @@ func (s *AIService) buildSalesForecastAnswer(restaurantID uint) (*AIAskResponse,
 	cal := buildOperatingCalendar(rules)
 
 	result := buildForecast(points, cal, anchor, forecastHorizonDays, forecastBacktestDays)
-	if staleDays := int(today.Sub(lastData).Hours() / 24); staleDays > 0 {
+	// Measured from yesterday: today is dropped above as unfinished, so on
+	// perfectly fresh data the newest point is yesterday and that is 0 stale
+	// days, not 1 (the sheet printed data_stale_days=1 every time otherwise).
+	if staleDays := int(today.AddDate(0, 0, -1).Sub(lastData).Hours() / 24); staleDays > 0 {
 		result.StaleDays = staleDays
 	}
 
@@ -169,6 +172,21 @@ func forecastPointsFromRows(rows []repository.AISalesSummary) []forecastDailyPoi
 	}
 	sort.Slice(pts, func(i, j int) bool { return pts[i].date.Before(pts[j].date) })
 	return pts
+}
+
+// finishedDaysOnly drops today and anything after it. The sales query reads up
+// to this second, so asked at noon today's row holds half a day — and it was the
+// newest same-weekday point for next week's forecast and the newest day in the
+// trend window, pulling both down as if the shop had a bad day (found
+// 22 ก.ย. 2569). A day the shop is still open counts once it is over.
+func finishedDaysOnly(points []forecastDailyPoint, today time.Time) []forecastDailyPoint {
+	kept := points[:0:0]
+	for _, p := range points {
+		if p.date.Before(today) {
+			kept = append(kept, p)
+		}
+	}
+	return kept
 }
 
 // forecastDay predicts one day's revenue from history strictly before it.

@@ -156,3 +156,23 @@ export function clearPendingPlan(chatKey: string | null): void {
     // Nothing to do: the plan expires on its own within the minute.
   }
 }
+
+/**
+ * questionBehindPlan finds the owner's sentence that produced a plan: the
+ * last user message before the answer that carries the plan's id.
+ *
+ * "ขอคำสั่งใหม่" puts that sentence back in the input. It used to come only
+ * from memory, so after a reload the button did nothing (found 25 ก.ย. 2569)
+ * — the thread survives a reload, and the sentence is in it.
+ */
+export function questionBehindPlan(
+  messages: { role: string; content: string; planId?: string }[],
+  planId: string | null | undefined,
+): string {
+  if (!planId) return "";
+  const answerAt = messages.findIndex((message) => message.planId === planId);
+  for (let index = answerAt - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return messages[index].content.trim();
+  }
+  return "";
+}

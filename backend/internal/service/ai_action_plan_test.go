@@ -105,7 +105,7 @@ func TestValidateAdjustStockShowsSideEffects(t *testing.T) {
 		t.Fatalf("stock-in should validate: %v", err)
 	}
 	joined := strings.Join(preview.SideEffects, " | ")
-	if !strings.Contains(joined, "บันทึกรายจ่าย") || !strings.Contains(joined, "แก้หรือลบไม่ได้") {
+	if !strings.Contains(joined, "รายจ่าย ฿") || !strings.Contains(joined, "ลบไม่ได้") {
 		t.Errorf("a valued stock-in must warn about the linked expense: %q", joined)
 	}
 
@@ -334,5 +334,102 @@ func TestBuildPlanStampsTheActionKind(t *testing.T) {
 	var stored AIActionItemPreview
 	if err := json.Unmarshal([]byte(draft.Items[0].PreviewJSON), &stored); err != nil || stored.Kind != entity.AIActionTypeAdjustIngredientStock || stored.Delta != "+5" {
 		t.Errorf("stored preview = %+v err=%v", stored, err)
+	}
+}
+
+// Two commands on one ingredient in one sentence: the second is previewed and
+// pinned against the row the first leaves behind, because that is the row it
+// will meet at execution (found 23 ก.ย. 2569 — it used to refuse itself).
+func TestPlanPinsASecondItemAgainstTheFirstItemsResult(t *testing.T) {
+	port := newAIActionPortFixture() // หมูสับ id 2, stock 2000
+	draft := BuildAdjustStockPlan(AIActionPorts{Ingredients: port}, 1, []AIAdjustStockCommand{
+		{IngredientID: 2, Kind: "in", Quantity: 2000},
+		{IngredientID: 2, Kind: "adjust", Quantity: 7000},
+	}, []string{"หมูสับ", "หมูสับ"})
+	if len(draft.Items) != 2 {
+		t.Fatalf("both items should validate, rejected: %+v", draft.Rejected)
+	}
+	if draft.Previews[1].From != "4000" || draft.Previews[1].To != "7000" {
+		t.Fatalf("second preview = %s → %s, want 4000 → 7000", draft.Previews[1].From, draft.Previews[1].To)
+	}
+	var second AIActionItemPayload
+	if err := json.Unmarshal([]byte(draft.Items[1].PayloadJSON), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.ExpectedStock == nil || *second.ExpectedStock != 4000 {
+		t.Fatalf("second item pinned at %v, want 4000", second.ExpectedStock)
+	}
+	// Execution: item one has run and the row is at 4000 — item two must go through.
+	port.items[2].Stock = 4000
+	item := entity.AIActionPlanItem{ActionType: draft.Items[1].ActionType, PayloadJSON: draft.Items[1].PayloadJSON}
+	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err != nil {
+		t.Fatalf("second item refused itself: %v", err)
+	}
+	// The plan must not have written anything to the real row while building.
+	if port.items[2].Stock != 4000 || len(port.adjusted) != 1 {
+		t.Fatalf("building the plan touched the shelf: stock %v, adjusted %d", port.items[2].Stock, len(port.adjusted))
+	}
+}
+
+// A cost change followed by a restock prices the restock's expense at the new
+// cost on the card — the cost execution will use (the card said 900, the
+// ledger got 1,000, and that row cannot be edited).
+func TestPlanPricesARestockAtACostChangedEarlierInThePlan(t *testing.T) {
+	port := newAIActionPortFixture() // หมูสับ cost 0.18/g
+	draft := BuildAdjustStockPlan(AIActionPorts{Ingredients: port}, 1, []AIAdjustStockCommand{
+		{IngredientID: 2, Kind: "cost", Quantity: 0.2},
+		{IngredientID: 2, Kind: "in", Quantity: 5000},
+	}, []string{"หมูสับ", "หมูสับ"})
+	if len(draft.Previews) != 2 {
+		t.Fatalf("both items should validate, rejected: %+v", draft.Rejected)
+	}
+	effects := strings.Join(draft.Previews[1].SideEffects, " | ")
+	if !strings.Contains(effects, "฿1,000") {
+		t.Fatalf("restock expense should be at the new cost (1000), got %q", effects)
+	}
+}
+
+// A new ingredient may only be counted in the inventory's own units; a
+// container someone buys in is a question, a sealed unit carries a hint, and
+// a negative opening stock is refused before the card, not after it.
+func TestCreateIngredientUnitRules(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "หมูสับ", Unit: "กรัม"}}
+	if _, _, err := validateCreateIngredient(shelf, "น้ำปลา", "ลัง", 2, 0, 0); err == nil {
+		t.Fatal("ลัง is how it is bought, not a stock unit — must be refused")
+	}
+	payload, _, err := validateCreateIngredient(shelf, "หมูสามชั้น", "กก.", 3, 0, 0)
+	if err != nil || payload.Unit != "กิโลกรัม" {
+		t.Fatalf("กก. should become กิโลกรัม, got %q / %v", payload.Unit, err)
+	}
+	_, preview, err := validateCreateIngredient(shelf, "โซดา", "ขวด", 24, 0, 0)
+	if err != nil {
+		t.Fatalf("ขวด is a sealed stock unit: %v", err)
+	}
+	if hint := strings.Join(preview.SideEffects, " | "); !strings.Contains(hint, "เทแบ่ง") || !strings.Contains(hint, "ยังไม่มีราคา") {
+		t.Fatalf("sealed-unit and no-price hints missing: %q", hint)
+	}
+	if _, _, err := validateCreateIngredient(shelf, "ผักชี", "กรัม", -500, 0, 0); err == nil {
+		t.Fatal("negative opening stock must be refused at preview")
+	}
+
+	asked := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "น้ำปลา", Kind: "create", Quantity: 2, Unit: "ลัง"})
+	if asked.Kind != AICommandOutcomeAsk || len(asked.Options) != len(IngredientStockUnits) {
+		t.Fatalf("ลัง should ask with unit chips, got %q %v", asked.Kind, asked.Options)
+	}
+	fresh := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "น้ำปลา", Kind: "in", Quantity: 2, Unit: "ลัง"})
+	if fresh.Kind != AICommandOutcomeAsk {
+		t.Fatalf("an unknown name with a purchase unit should ask for the stock unit, got %q", fresh.Kind)
+	}
+}
+
+// Only the longer shelf name is a near match for what was said: "กุ้งแห้ง"
+// over a shelf holding "กุ้ง" is a different ingredient, not กุ้ง.
+func TestNearMatchIsOneWay(t *testing.T) {
+	shelf := []entity.Ingredient{{Name: "กุ้ง", Unit: "กรัม"}, {Name: "ต้มยำกุ้งน้ำข้น", Unit: "ถ้วย"}}
+	if match := ResolveIngredientName(shelf, "กุ้งแห้ง"); match.Exact != nil || len(match.Candidates) != 0 {
+		t.Fatalf("กุ้งแห้ง must not match กุ้ง: %+v", match)
+	}
+	if match := ResolveIngredientName(shelf, "ต้มยำกุ้ง"); len(match.Candidates) != 1 || match.Candidates[0].Name != "ต้มยำกุ้งน้ำข้น" {
+		t.Fatalf("a shorthand for a longer name is still near: %+v", match)
 	}
 }

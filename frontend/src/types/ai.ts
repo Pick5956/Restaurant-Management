@@ -95,6 +95,10 @@ export type AIAskRequest = {
   question: string;
   history: AIConversationMessage[];
   conversation_id?: string;
+  /** This client draws the step-by-step card for a new ingredient
+   * (AIIngredientSetupCard), so the server sends the card instead of asking
+   * the unit in the chat first. */
+  ingredient_card?: boolean;
 };
 
 export type AIResolvedPlan = {
@@ -232,6 +236,60 @@ export type AIActionPlanItem = {
   change: string;
   unit?: string;
   side_effects?: string[];
+  kind?: string;
+  /** The change in parts, for a value that moves ("5,000" → "7,000" กรัม). */
+  from?: string;
+  to?: string;
+  value_unit?: string;
+  facts?: { label: string; value: string }[];
+  /** Set on a new ingredient the card asks about one step at a time. */
+  setup?: AIIngredientSetup;
+};
+
+// The new-ingredient card's state, computed in Go (ai_ingredient_setup.go).
+// The lists are the only values the server accepts.
+export type AIIngredientSetup = {
+  name: string;
+  said_quantity: number;
+  said_unit?: string;
+  unit: string;
+  units: string[];
+  /** No amount was said, so the card asks what is on hand. */
+  needs_stock: boolean;
+  stock_set: boolean;
+  needs_pack: boolean;
+  pack_unit?: string;
+  pack_units: string[];
+  pack_size?: number;
+  stock: number;
+  /** The price modes Go accepts for this state, in the order to offer them. */
+  price_modes: AIIngredientPriceMode[];
+  price_mode: AIIngredientPriceMode | "";
+  price?: number;
+  cost_per_unit?: number;
+  total?: number;
+  storage_type: string;
+  storage_types: string[];
+  min_percent: number;
+  /** What the inventory still needs; confirming is refused until empty. */
+  missing?: string[];
+};
+
+export type AIIngredientPriceMode = "total" | "per_pack" | "per_unit";
+
+// One answer from the card, sent with every answer so far.
+export type AIIngredientSetupAnswers = {
+  unit: string;
+  /** Opening stock typed on the card; left out until answered. */
+  stock?: number;
+  pack_unit: string;
+  pack_size: number;
+  price_mode: AIIngredientPriceMode | "";
+  price: number;
+  storage_type: string;
+  min_percent: number;
+  /** The last answer: the confirm bar's minute starts here. */
+  finish?: boolean;
 };
 
 export type AIActionPlan = {

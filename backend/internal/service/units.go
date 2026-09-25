@@ -86,6 +86,34 @@ var unitSpelling = map[string]string{
 
 // standardUnitSpelling writes a measuring unit the standard way and leaves
 // every other word — ฟอง, ถุง, ขวด — exactly as it was typed.
+// IngredientStockUnits are the units a new ingredient may be counted in — the
+// same twelve the inventory form offers (inventoryPageUtils UNITS, 18 ก.ย.
+// 2569): weighed, poured, counted, or a sealed container used whole. The
+// assistant used to accept any word, so "เพิ่มน้ำปลา 2 ลัง" made an
+// ingredient counted in ลัง that no recipe could ever be measured against.
+var IngredientStockUnits = []string{
+	"กรัม", "กิโลกรัม", "มิลลิลิตร", "ลิตร",
+	"ฟอง", "ชิ้น", "ลูก", "ตัว",
+	"ขวด", "กระป๋อง", "กล่อง", "ซอง",
+}
+
+// sealedStockUnits are the container words that are also stock units: the
+// shop uses the whole bottle or packet at a time. Fish sauce poured by the
+// spoon is not one of those, so the preview says how to change it.
+var sealedStockUnits = map[string]bool{"ขวด": true, "กระป๋อง": true, "กล่อง": true, "ซอง": true}
+
+// ingredientStockUnit returns the form's spelling of a unit when it is one a
+// new ingredient may be counted in ("กก." → "กิโลกรัม"), and false otherwise.
+func ingredientStockUnit(unit string) (string, bool) {
+	spelled := standardUnitSpelling(unit)
+	for _, allowed := range IngredientStockUnits {
+		if spelled == allowed {
+			return allowed, true
+		}
+	}
+	return "", false
+}
+
 func standardUnitSpelling(unit string) string {
 	clean := strings.TrimSpace(unit)
 	if spelled, ok := unitSpelling[canonicalUnit(clean)]; ok {

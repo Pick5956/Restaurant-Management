@@ -287,14 +287,46 @@ func (s *AIService) persistConversationTurn(actor AIActorContext, session *aiCon
 		DisplayJSON:          string(displayJSON),
 		LatencyMS:            elapsed.Milliseconds(),
 	}
-	if err := s.conversationStore.AppendTurn(
+	err = s.conversationStore.AppendTurn(
 		actor.RestaurantID,
 		actor.OwnerUserID,
 		session.conversation.ID,
 		session.conversation.Version,
 		turn,
 		string(stateJSON),
-	); err != nil {
+	)
+	if errors.Is(err, repository.ErrAIConversationConflict) {
+		// The digest goroutine from the previous turn landed while this answer
+		// was being written: it moved the version on, and this append was
+		// refused for it. The answer is already computed and paid for, so it
+		// is not thrown away over a memory note — reload the row, carry the
+		// digest it now holds, and append once more. A second refusal is a
+		// real concurrent turn and is reported as before (found 23 ก.ย. 2569:
+		// a follow-up chip tapped within a second or two of a long chat's
+		// sixth answer came back 409 and the reply vanished).
+		fresh, loadErr := s.conversationStore.FindActiveConversation(actor.RestaurantID, actor.OwnerUserID, session.conversation.ID)
+		if loadErr != nil || fresh == nil {
+			return err
+		}
+		var stored aiConversationCompactState
+		_ = json.Unmarshal([]byte(strings.TrimSpace(fresh.StateJSON)), &stored)
+		state.Digest, state.DigestThrough = stored.Digest, stored.DigestThrough
+		session.digest, session.digestThrough = stored.Digest, stored.DigestThrough
+		if stateJSON, err = json.Marshal(state); err != nil {
+			return fmt.Errorf("encode conversation state: %w", err)
+		}
+		session.conversation = fresh
+		aiStage("flow", "conversation: บันทึกเทิร์นชนกับ digest ที่เพิ่งเขียน → โหลดใหม่แล้วบันทึกอีกครั้ง")
+		err = s.conversationStore.AppendTurn(
+			actor.RestaurantID,
+			actor.OwnerUserID,
+			session.conversation.ID,
+			session.conversation.Version,
+			turn,
+			string(stateJSON),
+		)
+	}
+	if err != nil {
 		return err
 	}
 	response.TurnID = turn.ID
@@ -504,9 +536,16 @@ func (s *AIService) maybeSummarizeConversation(actor AIActorContext, session *ai
 				pending = append(pending, candidate)
 			}
 		}
-		digest := s.summarizeConversation(pending, previous)
-		if strings.TrimSpace(digest) == "" {
+		digest, reached := s.summarizeConversation(pending, previous)
+		if !reached {
 			return
+		}
+		// "ไม่มี" — nothing in these turns worth keeping. The old digest stays
+		// and the marker still moves on: leaving it put made the same turns
+		// count as uncovered on every later question, one extra model call
+		// each (found 23 ก.ย. 2569).
+		if strings.TrimSpace(digest) == "" {
+			digest = previous
 		}
 		state := aiConversationCompactState{
 			SchemaVersion: aiConversationStateVersion,

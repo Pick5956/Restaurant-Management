@@ -411,10 +411,11 @@ function legendEntries(data: AIChartData): { colour: string; opacity: number; la
 
 export function AIChart({ data }: { data: AIChartData }) {
   const [width, setWidth] = useState(0);
+  // Its own card: the title, unit and legend below are a chart's. Checked
+  // before the series, so a list with no bars to draw still shows.
+  if (data.kind === 'stocklist') return <StockList data={data} />;
   const drawn = drawnSeries(data);
   if (drawn.length === 0 || data.categories.length === 0) return null;
-  // Its own card: the title, unit and legend below are a chart's.
-  if (data.kind === 'stocklist') return <StockList data={data} />;
   const horizontal = data.kind === 'bar' && data.layout === 'horizontal';
   const height = data.kind === 'pie'
     ? 190

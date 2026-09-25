@@ -347,6 +347,12 @@ export default function AIAssistantScreen() {
     setThreadLoading(true);
     discardPending();
     setMessages([]);
+    // A question still streaming in the chat being left: its finally block
+    // only resets these when the generation is still its own, so they would
+    // stay on — a caret bubble from the old chat over the new one and a send
+    // button stuck as a spinner until "New chat" (found 23 ก.ย. 2569).
+    setLoading(false);
+    setDraft(null);
     setConversationId(id);
     setNotice(null);
     try {

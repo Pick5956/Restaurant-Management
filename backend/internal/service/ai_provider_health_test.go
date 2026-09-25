@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"errors"
 	"net/http"
@@ -294,5 +295,28 @@ func TestProviderAttemptLabelIdentifiesTheKeyWithoutExposingIt(t *testing.T) {
 	// An empty key must not panic or invent a fingerprint.
 	if got := (providerAttempt{Position: 1, Total: 2}).Label(); !strings.Contains(got, "1/2") {
 		t.Errorf("an empty key should still report its position: %q", got)
+	}
+}
+
+// A key the provider refuses outright (401/403) parks like a rate limit, but
+// for an hour: retrying it once per rotation cycle was one wasted round trip
+// per cycle, forever, with the answer still coming from the next key.
+func TestClassifyProviderResponseParksRejectedKeyForAnHour(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		err := classifyProviderResponse("Gemini", "second-round", "gemini-3.5-flash-lite", responseWith(status, nil))
+		if !errors.Is(err, errKeyRejected) {
+			t.Fatalf("HTTP %d should be a rejected key, got %v", status, err)
+		}
+		if got := retryAfterOf(err); got != rejectedKeyCooldown {
+			t.Fatalf("HTTP %d parked for %s, want %s", status, got, rejectedKeyCooldown)
+		}
+		if msg := err.Error(); !strings.Contains(msg, "rejected") || !strings.Contains(msg, fmt.Sprint(status)) {
+			t.Fatalf("message should name the refusal and the status, got %q", msg)
+		}
+	}
+	// A real 429 keeps its own wait.
+	limited := classifyProviderResponse("Gemini", "second-round", "m", responseWith(http.StatusTooManyRequests, http.Header{"Retry-After": []string{"7"}}))
+	if got := retryAfterOf(limited); got != 7*time.Second {
+		t.Fatalf("429 wait = %s, want 7s", got)
 	}
 }
