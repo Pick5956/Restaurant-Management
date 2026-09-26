@@ -74,8 +74,6 @@ export default function ReportsPage() {
         grossRevenue: "รายได้รวม",
         expenses: "รายจ่ายรวม",
         netProfit: "กำไรสุทธิ",
-        afterAll: (cost: string, operating: string) => `ต้นทุนวัตถุดิบ −${cost} · รายจ่ายอื่น −${operating}`,
-        entries: (n: number) => `${n} รายการ`,
         beforeDiscount: "ก่อนหักส่วนลด",
         discountNote: (value: string) => `ส่วนลด −${value}`,
         marginInfo: "มาร์จินคืออะไร",
@@ -118,8 +116,6 @@ export default function ReportsPage() {
         grossRevenue: "Gross revenue",
         expenses: "Total expenses",
         netProfit: "Net profit",
-        afterAll: (cost: string, operating: string) => `Food cost −${cost} · Other expenses −${operating}`,
-        entries: (n: number) => `${n} entries`,
         beforeDiscount: "Before discounts",
         discountNote: (value: string) => `Discounts −${value}`,
         marginInfo: "What is margin?",
@@ -289,14 +285,12 @@ export default function ReportsPage() {
               {
                 label: copy.expenses,
                 value: formatCurrency(report.summary.expenses ?? 0, lang),
-                note: copy.entries(report.summary.expense_count ?? 0),
                 icon: <AlertTriangle className="h-4 w-4" />,
               },
               { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
               {
                 label: copy.netProfit,
                 value: formatCurrency(netProfit, lang),
-                note: copy.afterAll(formatCurrency(report.summary.cost, lang), formatCurrency(operatingExpenses, lang)),
                 icon: <TrendingUp className="h-4 w-4" />,
               },
               {
@@ -315,13 +309,13 @@ export default function ReportsPage() {
                 ),
               },
             ].map((card: { label: string; value: string; note?: string; icon: React.ReactNode }) => (
-              <div key={card.label} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <div key={card.label} className="rounded-xl border border-gray-200 bg-white px-3.5 py-3 dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between gap-3 text-gray-500">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</span>
                   {card.icon}
                 </div>
-                <p className="mt-3 text-xl font-semibold tabular-nums">{card.value}</p>
-                {card.note ? <p className="mt-1 text-[12px] text-gray-500 tabular-nums">{card.note}</p> : null}
+                <p className="mt-1.5 text-lg font-semibold tabular-nums">{card.value}</p>
+                {card.note ? <p className="mt-0.5 text-[11px] text-gray-500 tabular-nums">{card.note}</p> : null}
               </div>
             ))}
           </div>
