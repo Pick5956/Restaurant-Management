@@ -209,8 +209,10 @@ function Row({ id, label, hint, children }: { id?: string; label: string; hint?:
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">{title}</p>
+    <div className="flex flex-col gap-1">
+      {/* A real heading, not a small grey caps label: the owner asked for the
+          group names ("การตอบ") to read bigger, as in Claude's settings (26 ก.ย. 2569). */}
+      <p className="text-[15px] font-semibold leading-6 text-gray-900 dark:text-gray-100">{title}</p>
       <div className="flex flex-col">{children}</div>
     </div>
   );
@@ -498,7 +500,7 @@ export default function AISettingsModal({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 }}
-                className="h-8 w-44 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-[12.5px] text-gray-800 outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                className="h-8 w-44 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-[16px] text-gray-800 sm:text-[12.5px] outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
               />
             </Row>
             <Row id="follow_ups" label={t.followUps} hint={t.followUpsHint}>
