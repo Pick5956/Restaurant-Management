@@ -774,7 +774,7 @@ export default function AISettingsModal({
           {!mobileOpen && (
             <div className="flex min-h-0 flex-1 flex-col sm:hidden">
               <header className="flex items-center justify-end border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
-                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </header>
@@ -835,7 +835,7 @@ export default function AISettingsModal({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {saveBadge}
-                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+                <button onClick={requestClose} aria-label={t.close} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
               </div>

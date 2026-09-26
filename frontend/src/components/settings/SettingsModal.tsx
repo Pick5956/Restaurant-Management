@@ -304,7 +304,7 @@ export default function SettingsModal() {
               at its lower edge. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
             <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-end bg-white px-4 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-5 after:bg-gradient-to-b after:from-white after:to-transparent after:content-[''] dark:bg-gray-950 dark:after:from-gray-950">
-              <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+              <button onClick={requestClose} aria-label={t.close} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
                 <X className="h-5 w-5" />
               </button>
             </header>
