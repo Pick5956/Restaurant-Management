@@ -587,7 +587,7 @@ function CollapsibleCard({
       // `sm`), so there is no "room" to share out: every topic starts folded
       // to its bar, and the one tapped opens to its own rows, at most half
       // the screen, scrolling past that.
-      const phone = !window.matchMedia("(min-width: 40rem)").matches; // Tailwind's sm
+      const phone = !window.matchMedia("(min-width: 640px)").matches; // Tailwind's sm
       if (activeKey === null && !phone) {
         for (const block of blocks) {
           block.style.flex = "";
