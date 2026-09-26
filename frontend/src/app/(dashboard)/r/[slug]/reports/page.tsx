@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import DateRangeButton from "@/src/components/shared/DateRangeButton";
-import { AlertTriangle, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
+import ReportSummaryCards from "./ReportSummaryCards";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
@@ -269,56 +270,15 @@ export default function ReportsPage() {
         </div>
       ) : report ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {[
-              {
-                label: copy.grossRevenue,
-                value: formatCurrency(report.summary.gross_revenue ?? report.summary.revenue, lang),
-                // "ยอดขาย" used to sit beside this card with the same figure
-                // whenever no bill had a discount (15 ก.ย. 2569); a discount is
-                // now the line under it.
-                note: (report.summary.discount ?? 0) > 0
-                  ? `${copy.discountNote(formatCurrency(report.summary.discount ?? 0, lang))} · ${formatCurrency(report.summary.revenue, lang)}`
-                  : undefined,
-                icon: <Wallet className="h-4 w-4" />,
-              },
-              {
-                label: copy.expenses,
-                value: formatCurrency(report.summary.expenses ?? 0, lang),
-                icon: <AlertTriangle className="h-4 w-4" />,
-              },
-              { label: copy.orders, value: formatNumber(report.summary.orders, lang), icon: <BarChart3 className="h-4 w-4" /> },
-              {
-                label: copy.netProfit,
-                value: formatCurrency(netProfit, lang),
-                icon: <TrendingUp className="h-4 w-4" />,
-              },
-              {
-                label: copy.margin,
-                value: `${formatNumber(report.summary.margin, lang)}%`,
-                icon: (
-                  <button
-                    type="button"
-                    aria-label={copy.marginInfo}
-                    aria-expanded={marginInfoOpen}
-                    onClick={() => setMarginInfoOpen((open) => !open)}
-                    className="ui-press rounded-full p-0.5 text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                  >
-                    <Info className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                ),
-              },
-            ].map((card: { label: string; value: string; note?: string; icon: React.ReactNode }) => (
-              <div key={card.label} className="rounded-xl border border-gray-200 bg-white px-3.5 py-3 dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex items-center justify-between gap-3 text-gray-500">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</span>
-                  {card.icon}
-                </div>
-                <p className="mt-1.5 text-lg font-semibold tabular-nums">{card.value}</p>
-                {card.note ? <p className="mt-0.5 text-[11px] text-gray-500 tabular-nums">{card.note}</p> : null}
-              </div>
-            ))}
-          </div>
+          <ReportSummaryCards
+            summary={report.summary}
+            netProfit={netProfit}
+            operatingExpenses={operatingExpenses}
+            lang={lang}
+            marginInfoOpen={marginInfoOpen}
+            onToggleMarginInfo={() => setMarginInfoOpen((open) => !open)}
+            copy={copy}
+          />
           {marginInfoOpen ? (
             <div role="note" className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
               <p className="font-semibold">{copy.marginInfo}</p>
