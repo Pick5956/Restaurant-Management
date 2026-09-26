@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Printer } from "lucide-react";
-import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Printer } from "lucide-react";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
-import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -80,7 +77,6 @@ function emptyForm(restaurantId: number | null): FormState {
 export default function ExpensesPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
-  const { href: restaurantPageHref } = useRestaurantNav();
   const { showToast } = useToast();
   // The page glides on the mouse wheel and coasts on after it, like the
   // overview, inventory and revenue pages. The scroller belongs to the shell
@@ -138,7 +134,6 @@ export default function ExpensesPage() {
       language === "th"
         ? {
             eyebrow: "Expenses",
-            back: "กลับหน้าแดชบอร์ด",
             exportPdf: "บันทึกเป็น PDF",
             title: "บันทึกรายจ่าย",
             denied: "ไม่มีสิทธิ์ดูรายจ่าย",
@@ -179,7 +174,6 @@ export default function ExpensesPage() {
           }
         : {
             eyebrow: "Expenses",
-            back: "Back to dashboard",
             exportPdf: "Export PDF",
             title: "Expense ledger",
             denied: "You do not have permission to view expenses.",
@@ -497,11 +491,7 @@ export default function ExpensesPage() {
         {/* The picker itself is screen-only, so the PDF keeps a plain month heading. */}
         <span className="hidden text-[16px] font-semibold print:block">{monthLabel}</span>
         <span className="text-[11px] text-gray-500 dark:text-gray-400 print:hidden">{scopedData.entries} {copy.entries}</span>
-        {/* Icon-only, so the label has to survive as an accessible name. */}
-        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className={`ml-auto ${BACK_CONTROL} print:hidden`}>
-          <ArrowLeft className={BACK_ICON} aria-hidden="true" />
-        </Link>
-        <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
+        <button type="button" onClick={() => void exportPdf()} disabled={loading || !scopedData.expenses.length} className="ui-press ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[12px] font-semibold text-gray-600 shadow-(--dashboard-control-shadow) hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 print:hidden">
           <Printer className="h-4 w-4" aria-hidden="true" />
           {copy.exportPdf}
         </button>
