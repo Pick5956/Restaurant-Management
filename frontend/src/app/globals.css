@@ -144,10 +144,12 @@ body {
 
 html {
   /* Pinned, so every rem (spacing, icon and control sizes) is 16px whatever
-     font size the browser is set to. Text is already px (text-[Npx] times
-     --app-text-scale), so a bigger browser font never made the words bigger:
-     it only swelled the spacing around them, and the ≡ button grew out of line
-     with the fixed-width rail (27 ก.ย. 2569). Page zoom still works. */
+     font size the browser is set to. Most text is px (about 1,400 text-[Npx]
+     against 250 text-sm/text-xs/…, all times --app-text-scale), so a bigger
+     browser font grew one word in seven and the spacing around all of them,
+     and the ≡ button grew out of line with the fixed-width rail
+     (27 ก.ย. 2569). The cost: someone who enlarges the browser font gets
+     nothing larger here; page zoom still enlarges everything evenly. */
   font-size: 16px;
   /* Painted here too, not only on body: phone Safari reads the root's colour
      for the bands around the page. */
