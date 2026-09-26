@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
-import { AlertTriangle, ArrowLeft, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
-import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
+import { AlertTriangle, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
@@ -32,13 +29,8 @@ import type { Bill } from "@/src/types/order";
 import type { ManagerReport, SalesDetailReport } from "@/src/types/report";
 
 export default function ReportsPage() {
-  // The page glides on the mouse wheel and coasts on after it, like the
-  // overview page. The scroller belongs to the shell layout, so it is wired up
-  // here and let go when the page is left.
-  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
-  const { href: restaurantPageHref } = useRestaurantNav();
   const lang = language as "th" | "en";
   const canView = can(activeMembership, "view_reports");
   const [report, setReport] = useState<ManagerReport | null>(null);
@@ -54,7 +46,6 @@ export default function ReportsPage() {
   const copy = useMemo(() => language === "th"
     ? {
         denied: "ไม่มีสิทธิ์ดูรายงาน",
-        back: "กลับหน้าแดชบอร์ด",
         eyebrow: "Reports",
         title: "รายงานผู้จัดการ",
         subtitle: "ยอดขาย ต้นทุนเมนู และวัตถุดิบเสี่ยงจากข้อมูลขายจริง",
@@ -103,7 +94,6 @@ export default function ReportsPage() {
       }
     : {
         denied: "You do not have permission to view reports.",
-        back: "Back to dashboard",
         eyebrow: "Reports",
         title: "Manager report",
         subtitle: "Sales, menu food cost, and stock risks from real order data.",
@@ -308,9 +298,6 @@ export default function ReportsPage() {
             </span>
           </form>
         </div>
-        <Link href={restaurantPageHref("/home")} aria-label={copy.back} title={copy.back} className={BACK_CONTROL}>
-          <ArrowLeft className={BACK_ICON} aria-hidden="true" />
-        </Link>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{error}</div>}

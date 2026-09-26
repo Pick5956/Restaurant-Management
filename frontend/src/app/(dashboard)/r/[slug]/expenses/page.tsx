@@ -78,10 +78,6 @@ export default function ExpensesPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { showToast } = useToast();
-  // The page glides on the mouse wheel and coasts on after it, like the
-  // overview, inventory and revenue pages. The scroller belongs to the shell
-  // layout, so it is wired up here and let go when the page is left.
-  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const restaurantId = activeMembership?.restaurant_id ?? null;
   const canEdit = can(activeMembership, "manage_expenses");
   const canView = canEdit || can(activeMembership, "view_reports");

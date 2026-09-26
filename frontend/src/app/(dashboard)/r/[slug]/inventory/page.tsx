@@ -436,10 +436,6 @@ export default function InventoryPage() {
   // One tree renders at a time rather than two hidden by CSS: both mounted would
   // run the inventory fetch twice and keep two copies of the same state.
   const isMobile = useIsMobile();
-  // The page glides on the mouse wheel and coasts on after it, like the
-  // overview page. The scroller belongs to the shell layout, so it is wired
-  // up here and let go when the page is left.
-  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { language } = useLanguage();
   const { showToast } = useToast();
   // Every "are you sure" on this page is the warm dialog the AI chat uses for

@@ -2,6 +2,7 @@ import { SidebarProvider } from "@/src/providers/SidebarProvider";
 import Sidebar from "@/src/components/shared/Sidebar";
 import MobileNavHandle from "@/src/components/shared/MobileNavHandle";
 import ContentWrapper from "@/src/components/shared/ContentWrapper";
+import ShellScroll from "@/src/components/shared/ShellScroll";
 import DashboardRestaurantGuard from "@/src/components/shared/DashboardRestaurantGuard";
 import AIOperationsFloatingChatGate from "@/src/components/shared/AIOperationsFloatingChatGate";
 
@@ -25,9 +26,9 @@ export default function DashboardLayout({
               html background instead. */}
           <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 bottom-0 z-10 h-0.5 bg-slate-100 dark:bg-gray-950 lg:hidden" />
           <div data-shell-sheet="">
-            <div data-shell-scroll="">
+            <ShellScroll>
               <main className="min-w-0 max-w-full overflow-x-clip">{children}</main>
-            </div>
+            </ShellScroll>
           </div>
         </ContentWrapper>
         <AIOperationsFloatingChatGate />
