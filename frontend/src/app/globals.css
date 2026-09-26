@@ -254,8 +254,11 @@ html {
   background: transparent;
 }
 
+/* Held off both ends: the chat's box has 16px rounded corners and clips, so a
+   thumb run to the very top was sliced by the curve (26 ก.ย. 2569). */
 .chat-scroll::-webkit-scrollbar-track {
   background: transparent;
+  margin-block: 14px;
 }
 
 .chat-scroll::-webkit-scrollbar-thumb {
