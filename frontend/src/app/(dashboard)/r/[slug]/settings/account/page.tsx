@@ -199,7 +199,7 @@ export default function AccountSettingsPage() {
   if (phone) {
     const fullName = [form.first_name, form.last_name].map((part) => part.trim()).filter(Boolean).join(" ") || displayName;
     const hero = (
-      <div className="flex items-center gap-3.5 bg-gradient-to-br from-(--inv-action-soft) to-(--inv-surface) px-4 pb-3.5 pt-[18px]">
+      <div className="flex items-center gap-3.5 bg-gradient-to-b from-(--inv-action-soft) to-(--inv-surface) px-4 pb-3.5 pt-[18px]">
         <input ref={profileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadPhoto} tabIndex={-1} />
         <button
           type="button"
@@ -233,7 +233,7 @@ export default function AccountSettingsPage() {
         <div className="grid grid-cols-2 gap-2.5">
           <MobileInput label={copy.firstName} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
           <MobileInput label={copy.lastName} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
-          <MobileInput label={copy.nickname} value={form.nickname} placeholder={language === "th" ? "ใช้ชื่อจริง" : "Your first name"} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
+          <MobileInput label={copy.nickname} value={form.nickname} placeholder={language === "th" ? "เช่น ต้น" : "e.g. Tony"} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
           <MobileInput label={copy.phone} value={form.phone} placeholder="08x-xxx-xxxx" onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
         </div>
         <p className="-mt-1 ml-0.5 text-[12px] leading-[17px] text-(--inv-muted)">{copy.nicknameHint}</p>
