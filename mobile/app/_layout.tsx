@@ -9,6 +9,7 @@ import { LogBox, Platform, StatusBar as SystemStatusBar, View, useWindowDimensio
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { TabletWorkspaceFrame } from '@/src/components/app-shell';
+import { PopEnterLayer, PopSlideOverlay, popSlideListeners } from '@/src/components/pop-slide';
 import { AuthProvider } from '@/src/providers/auth-provider';
 import { PrinterProvider } from '@/src/providers/printer-provider';
 import { ToastProvider } from '@/src/providers/toast-provider';
@@ -51,6 +52,10 @@ const bundledFonts = {
   [APP_FONT_FAMILIES.semiBold]: require('../assets/fonts/Kanit-SemiBold.ttf'),
   [APP_FONT_FAMILIES.bold]: require('../assets/fonts/Kanit-Bold.ttf'),
 };
+
+function androidScreenLayout({ children }: { children: ReactNode }) {
+  return <PopEnterLayer>{children}</PopEnterLayer>;
+}
 
 function TabletWorkspaceStackLayout({ children }: { children: ReactNode }) {
   return <TabletWorkspaceFrame>{children}</TabletWorkspaceFrame>;
@@ -110,6 +115,11 @@ function AppNavigator() {
       <PrinterProvider>
         <Stack
           layout={TabletWorkspaceStackLayout}
+          // Android only: a page closes with the native slide played by
+          // src/components/pop-slide.tsx, since the native one lost the
+          // leaving page's content and slid out a blank sheet.
+          screenListeners={popSlideListeners}
+          screenLayout={Platform.OS === 'android' ? androidScreenLayout : undefined}
           screenOptions={{
             headerShown: false,
             animation: 'slide_from_right',
@@ -161,6 +171,7 @@ function AppNavigator() {
           <Stack.Screen name="reports" />
           <Stack.Screen name="ai-assistant" />
         </Stack>
+        <PopSlideOverlay />
       </PrinterProvider>
     </AuthProvider>
   );

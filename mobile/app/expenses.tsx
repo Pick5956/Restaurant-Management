@@ -9,7 +9,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { ExpenseBreakdown, ExpenseChips, ExpenseHero, ExpenseList } from '@/src/components/expenses/parts';
 import { HeadingAction } from '@/src/components/heading-action';
 import { CardHeading, PeriodButton, PeriodSheet, ReportCard } from '@/src/components/reports/parts';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { elapsedDays, expenseChipCategories, expenseShares, groupExpensesByDay } from '@/src/lib/expense-view';
@@ -226,7 +226,7 @@ export default function ExpensesScreen() {
           </View>
         ) : periodButton}
         {error ? <Feedback title={copy('โหลดค่าใช้จ่ายไม่ได้', 'Could not load expenses')} detail={error.detail} tone="danger" /> : null}
-        {loading && !data ? skeleton : body}
+        {loading && !data ? skeleton : body ? <ContentReveal style={{ flex: 1, minHeight: 0 }}>{body}</ContentReveal> : null}
       </View>
       <PeriodSheet open={periodOpen} onClose={() => setPeriodOpen(false)} range={range} today={today} onApply={setRange} language={language} />
     </AppScreen>

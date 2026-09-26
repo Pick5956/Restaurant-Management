@@ -11,6 +11,7 @@ import { useReducedMotion } from '@/src/components/motion';
 import { ReservationDayCard, ReservationDayHeader, ReservationRow } from '@/src/components/reservations/reservation-day';
 import { ReservationFilterBar } from '@/src/components/reservations/reservation-filter-bar';
 import { ReservationListSkeleton } from '@/src/components/reservations/reservation-list-skeleton';
+import { ContentReveal } from '@/src/components/skeleton';
 import { ReservationSummary } from '@/src/components/reservations/reservation-row-summary';
 import { ReservationStatusChip } from '@/src/components/reservations/reservation-status-chip';
 import { Button, EmptyState } from '@/src/components/ui';
@@ -427,7 +428,7 @@ export default function ReservationsScreen() {
     );
   } else {
     body = (
-      <View style={{ gap: spacing.xl }}>
+      <ContentReveal style={{ gap: spacing.xl }}>
         {days.map((day) => (
           <View key={day.date || 'no-date'} style={{ gap: spacing.sm }}>
             <ReservationDayHeader label={reservationDayLabel(day.date, today, language)} />
@@ -445,7 +446,7 @@ export default function ReservationsScreen() {
             variant="secondary"
           />
         ) : null}
-      </View>
+      </ContentReveal>
     );
   }
 

@@ -9,6 +9,7 @@ import { MenuCompactTile } from '@/src/components/order-menu/menu-compact-tile';
 import { MenuListRow } from '@/src/components/order-menu/menu-list-row';
 import { CountBadge, StockMark } from '@/src/components/order-menu/menu-tile-parts';
 import { MenuViewToggle } from '@/src/components/order-menu/menu-view-toggle';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import { EmptyState, IconButton, SearchField, SectionHeader } from '@/src/components/ui';
 import { formatTender } from '@/src/lib/cash-tender';
 import { isMenuSoldOut, menuGridColumns, type MenuCatalogGroup } from '@/src/lib/menu-catalog';
@@ -286,5 +287,26 @@ export function OrderMenuGrid({
         <MotionReveal key={mode} style={{ gap: sectionSpacing.between }}>{sections}</MotionReveal>
       ) : sections}
     </View>
+  );
+}
+
+/**
+ * The dishes' own shape while an order and the menu load together, on the
+ * order screen and on the one that adds to a served bill.
+ */
+export function OrderMenuSkeleton({ label, tabletWorkspace }: { label: string; tabletWorkspace: boolean }) {
+  return (
+    <SkeletonReveal label={label} style={{ gap: spacing.md }}>
+      <Bone width={140} height={18} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+        {Array.from({ length: tabletWorkspace ? 6 : 4 }, (_, index) => (
+          <View key={index} style={{ width: tabletWorkspace ? '31%' : '47%', flexGrow: 1, gap: 8 }}>
+            <Bone height={1} radius={18} style={{ width: '100%', height: undefined, aspectRatio: 1 }} />
+            <Bone width="70%" height={15} />
+            <Bone width="35%" height={15} />
+          </View>
+        ))}
+      </View>
+    </SkeletonReveal>
   );
 }

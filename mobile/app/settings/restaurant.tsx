@@ -8,7 +8,7 @@ import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { ChoiceChips, DangerAction, Field, FieldRow, FormBody, FormCard, Note, SaveDock, SwitchRow } from '@/src/components/form/parts';
 import { HeadingAction } from '@/src/components/heading-action';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { toFloat, toInt } from '@/src/lib/forms';
@@ -315,7 +315,7 @@ export default function RestaurantSettingsScreen() {
     >
       {error ? <Feedback title={copy('โหลดข้อมูลร้านไม่สำเร็จ', 'Could not load restaurant information')} detail={error.detail} tone="danger" /> : null}
       {loading ? skeleton : tablet ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xl }}>
+        <ContentReveal style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xl }}>
           <View style={{ width: 240, gap: 4 }}>
             {sections.map((item) => {
               const on = item.key === section;
@@ -335,13 +335,13 @@ export default function RestaurantSettingsScreen() {
             {cards[section]}
             {section === 'ordering' && !geofenceEnabled ? <Note text={copy('เปิดตรวจตำแหน่งแล้วใส่พิกัดร้านกับรัศมี ลูกค้าที่อยู่นอกรัศมีจะสั่งผ่าน QR ไม่ได้', 'Turn on the check and enter the shop coordinates and radius; customers outside it cannot order through the QR')} /> : null}
           </View>
-        </View>
+        </ContentReveal>
       ) : (
-        <View style={{ gap: spacing.md }}>
+        <ContentReveal style={{ gap: spacing.md }}>
           <ChoiceChips scroll options={sections.map((item) => ({ key: item.key, label: item.label, icon: item.icon }))} value={section} onChange={setSection} />
           {cards[section]}
           {section === 'promptpay' ? <View style={{ paddingTop: spacing.sm }}>{deleteBlock}</View> : null}
-        </View>
+        </ContentReveal>
       )}
     </AppScreen>
   );

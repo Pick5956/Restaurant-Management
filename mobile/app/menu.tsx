@@ -11,6 +11,7 @@ import { MenuCompactRow } from '@/src/components/menu-manage/menu-compact-row';
 import { MenuFilterBar } from '@/src/components/menu-manage/menu-filter-bar';
 import { MenuManageSkeleton } from '@/src/components/menu-manage/menu-manage-skeleton';
 import { MenuManageTile } from '@/src/components/menu-manage/menu-manage-tile';
+import { ContentReveal } from '@/src/components/skeleton';
 import { PlanFailed, PlanState } from '@/src/components/table-plan/plan-states';
 import { filterMenuCatalog } from '@/src/lib/menu-catalog';
 import {
@@ -278,7 +279,7 @@ export default function MenuScreen() {
       ) : null}
 
       {view === 'list' ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.md }}>
+        <ContentReveal style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.md }}>
           {filtered.map((item) => (
             <MenuManageTile
               key={item.ID}
@@ -297,7 +298,7 @@ export default function MenuScreen() {
               )}
             />
           ))}
-        </View>
+        </ContentReveal>
       ) : null}
     </AppScreen>
   );

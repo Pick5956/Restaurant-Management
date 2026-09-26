@@ -10,6 +10,7 @@ import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { CompactTableTile } from '@/src/components/compact-table-tile';
 import { FilterChipRow } from '@/src/components/filter-chip-row';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { Button, EmptyState, Feedback, IconButton, SearchField, SectionHeader } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { money, tableStatusLabel } from '@/src/lib/format';
@@ -434,118 +435,136 @@ export default function TablesScreen() {
               </View>
             </View>
           ) : null}
-          {groups.map((group) => {
-            // Free out of total, not the total alone. "12 โต๊ะ" is a fact about
-            // the restaurant that never changes during service; how many of them
-            // can take someone right now is the question being asked of this
-            // screen. Counted the same way the tiles are painted, so the number
-            // and the green cards under it can never disagree.
-            const freeCount = group.tables.filter(
-              (table) => tableTileStatus(table.status, activeOrderByTable.has(table.ID)) === 'free',
-            ).length;
-            return (
-            <View key={group.key} style={{ gap: spacing.md }}>
-              <SectionHeader
-                title={group.label}
-                inlineDetail={copy(
-                  `ว่าง ${freeCount.toLocaleString('th-TH')} จาก ${group.tables.length.toLocaleString('th-TH')}`,
-                  `${freeCount.toLocaleString('en-US')} of ${group.tables.length.toLocaleString('en-US')} free`,
-                )}
-              />
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-                {group.tables.map((table) => {
-                  const order = activeOrderByTable.get(table.ID);
-                  // A table with an active order always reads as occupied (amber),
-                  // matching web POS. On the floor green means "free", so tinting a
-                  // busy table green misreads at a glance, which is the whole job of
-                  // this tile.
-                  const statusLabel = order
-                    ? copy('กำลังใช้งาน', 'In use')
-                    : tableStatusLabel(table.status, language);
-                  const reminder = reservationReminder(table.upcoming_reservation_at, now, language);
-                  const accessibilityLabel = copy(
-                    `โต๊ะ ${table.display_label || table.table_number}, ${order ? 'กำลังใช้งาน' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
-                    `Table ${table.display_label || table.table_number}, ${order ? 'in use' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
-                  );
-                  if (compactView) {
-                    // Three to a row, and only what tells the floor whether it can
-                    // seat someone: which table, and whether it is taken. The
-                    // booking reminder stays because losing it is the difference
-                    // between a warning and no warning, but the guest count, order
-                    // number and running total are all detail for a screen you have
-                    // already decided to open.
+          {groups.length ? (
+            <ContentReveal style={{ gap: spacing.xl }}>
+            {groups.map((group) => {
+              // Free out of total, not the total alone. "12 โต๊ะ" is a fact about
+              // the restaurant that never changes during service; how many of them
+              // can take someone right now is the question being asked of this
+              // screen. Counted the same way the tiles are painted, so the number
+              // and the green cards under it can never disagree.
+              const freeCount = group.tables.filter(
+                (table) => tableTileStatus(table.status, activeOrderByTable.has(table.ID)) === 'free',
+              ).length;
+              return (
+              <View key={group.key} style={{ gap: spacing.md }}>
+                <SectionHeader
+                  title={group.label}
+                  inlineDetail={copy(
+                    `ว่าง ${freeCount.toLocaleString('th-TH')} จาก ${group.tables.length.toLocaleString('th-TH')}`,
+                    `${freeCount.toLocaleString('en-US')} of ${group.tables.length.toLocaleString('en-US')} free`,
+                  )}
+                />
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+                  {group.tables.map((table) => {
+                    const order = activeOrderByTable.get(table.ID);
+                    // A table with an active order always reads as occupied (amber),
+                    // matching web POS. On the floor green means "free", so tinting a
+                    // busy table green misreads at a glance, which is the whole job of
+                    // this tile.
+                    const statusLabel = order
+                      ? copy('กำลังใช้งาน', 'In use')
+                      : tableStatusLabel(table.status, language);
+                    const reminder = reservationReminder(table.upcoming_reservation_at, now, language);
+                    const accessibilityLabel = copy(
+                      `โต๊ะ ${table.display_label || table.table_number}, ${order ? 'กำลังใช้งาน' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
+                      `Table ${table.display_label || table.table_number}, ${order ? 'in use' : tableStatusLabel(table.status, language)}${reminder ? `, ${reminder}` : ''}`,
+                    );
+                    if (compactView) {
+                      // Three to a row, and only what tells the floor whether it can
+                      // seat someone: which table, and whether it is taken. The
+                      // booking reminder stays because losing it is the difference
+                      // between a warning and no warning, but the guest count, order
+                      // number and running total are all detail for a screen you have
+                      // already decided to open.
+                      return (
+                        <CompactTableTile
+                          accessibilityLabel={accessibilityLabel}
+                          flexBasis={tabletWorkspace ? 116 : 'auto'}
+                          flexGrow={tabletWorkspace ? 1 : 0}
+                          key={table.ID}
+                          label={table.display_label || table.table_number}
+                          labelFontSize={labelFontSize}
+                          language={language}
+                          maxWidth={tabletWorkspace ? 160 : undefined}
+                          minWidth={tabletWorkspace ? 108 : 0}
+                          onLongPress={managementShortcut(table)}
+                          onPress={() => open(table)}
+                          status={tableTileStatus(table.status, Boolean(order))}
+                          statusLabel={statusLabel}
+                          upcomingReservationAt={table.upcoming_reservation_at}
+                          width={tabletWorkspace ? undefined : '31%'}
+                        />
+                      );
+                    }
+                    // The detailed card, laid out like the web POS table card
+                    // (owner, 2026-09-22: the old one left too much empty space):
+                    // the table and its status pill on one line, the seats under
+                    // it, the order and its total at the foot. It is the only
+                    // reader of statusTone here — the compact tile carries its own
+                    // map, so repainting one view could never repaint the other.
+                    const tone = order ? 'warning' : table.status === 'reserved' ? 'info' : table.status === 'inactive' ? 'neutral' : 'success';
+                    const tint = statusTone(tone);
                     return (
-                      <CompactTableTile
+                      <Pressable
                         accessibilityLabel={accessibilityLabel}
-                        flexBasis={tabletWorkspace ? 116 : 'auto'}
-                        flexGrow={tabletWorkspace ? 1 : 0}
+                        accessibilityRole="button"
                         key={table.ID}
-                        label={table.display_label || table.table_number}
-                        labelFontSize={labelFontSize}
-                        language={language}
-                        maxWidth={tabletWorkspace ? 160 : undefined}
-                        minWidth={tabletWorkspace ? 108 : 0}
                         onLongPress={managementShortcut(table)}
                         onPress={() => open(table)}
-                        status={tableTileStatus(table.status, Boolean(order))}
-                        statusLabel={statusLabel}
-                        upcomingReservationAt={table.upcoming_reservation_at}
-                        width={tabletWorkspace ? undefined : '31%'}
-                      />
-                    );
-                  }
-                  // The detailed card, laid out like the web POS table card
-                  // (owner, 2026-09-22: the old one left too much empty space):
-                  // the table and its status pill on one line, the seats under
-                  // it, the order and its total at the foot. It is the only
-                  // reader of statusTone here — the compact tile carries its own
-                  // map, so repainting one view could never repaint the other.
-                  const tone = order ? 'warning' : table.status === 'reserved' ? 'info' : table.status === 'inactive' ? 'neutral' : 'success';
-                  const tint = statusTone(tone);
-                  return (
-                    <Pressable
-                      accessibilityLabel={accessibilityLabel}
-                      accessibilityRole="button"
-                      key={table.ID}
-                      onLongPress={managementShortcut(table)}
-                      onPress={() => open(table)}
-                      style={({ pressed }) => detailedCardStyle(tint.backgroundColor, pressed)}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
-                        <Text selectable numberOfLines={1} style={[DETAILED_CARD_TITLE, { color: tint.color }]}>{table.display_label || table.table_number}</Text>
-                        <DetailedCardPill color={tint.color} label={statusLabel} />
-                      </View>
-                      {/* The booking shares the seats line rather than taking one
-                          of its own. A line of its own grew the card, and because
-                          a wrapped row stretches to its tallest tile that pushed
-                          every card beside it out with empty space. */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                        <Text selectable numberOfLines={1} style={[typeScale.caption, { minWidth: 0, flex: 1, color: palette.muted }]}>{order
-                          ? copy(`${order.customer_count.toLocaleString('th-TH')} คน`, `${order.customer_count.toLocaleString('en-US')} guests`)
-                          : copy(`${table.capacity.toLocaleString('th-TH')} ที่นั่ง`, `${table.capacity.toLocaleString('en-US')} seats`)}
-                        </Text>
-                        {reminder ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                            <AppIcon color={palette.info} name="time-outline" size={13} />
-                            <Text selectable numberOfLines={1} style={[typeScale.caption, { color: palette.info, fontWeight: '700' }]}>{reminder}</Text>
-                          </View>
+                        style={({ pressed }) => detailedCardStyle(tint.backgroundColor, pressed)}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+                          <Text selectable numberOfLines={1} style={[DETAILED_CARD_TITLE, { color: tint.color }]}>{table.display_label || table.table_number}</Text>
+                          <DetailedCardPill color={tint.color} label={statusLabel} />
+                        </View>
+                        {/* The booking shares the seats line rather than taking one
+                            of its own. A line of its own grew the card, and because
+                            a wrapped row stretches to its tallest tile that pushed
+                            every card beside it out with empty space. */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                          <Text selectable numberOfLines={1} style={[typeScale.caption, { minWidth: 0, flex: 1, color: palette.muted }]}>{order
+                            ? copy(`${order.customer_count.toLocaleString('th-TH')} คน`, `${order.customer_count.toLocaleString('en-US')} guests`)
+                            : copy(`${table.capacity.toLocaleString('th-TH')} ที่นั่ง`, `${table.capacity.toLocaleString('en-US')} seats`)}
+                          </Text>
+                          {reminder ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                              <AppIcon color={palette.info} name="time-outline" size={13} />
+                              <Text selectable numberOfLines={1} style={[typeScale.caption, { color: palette.info, fontWeight: '700' }]}>{reminder}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1 }} />
+                        {/* A free table ends at its seats, as on the web: no "tap
+                            to open" line, which only explained the card. */}
+                        {order ? (
+                          <DetailedCardTotal orderNumber={order.order_number} total={money(order.grand_total, language)} />
+                        ) : table.status === 'reserved' ? (
+                          <Text selectable numberOfLines={1} style={[typeScale.caption, { color: tint.color, fontWeight: '700' }]}>{table.reservation_name || copy('ไม่ระบุชื่อผู้จอง', 'No guest name')}</Text>
                         ) : null}
-                      </View>
-                      <View style={{ flex: 1 }} />
-                      {/* A free table ends at its seats, as on the web: no "tap
-                          to open" line, which only explained the card. */}
-                      {order ? (
-                        <DetailedCardTotal orderNumber={order.order_number} total={money(order.grand_total, language)} />
-                      ) : table.status === 'reserved' ? (
-                        <Text selectable numberOfLines={1} style={[typeScale.caption, { color: tint.color, fontWeight: '700' }]}>{table.reservation_name || copy('ไม่ระบุชื่อผู้จอง', 'No guest name')}</Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-            );
-          })}
+              );
+            })}
+            </ContentReveal>
+          ) : loading && !tables.length ? (
+            <SkeletonReveal label={copy('กำลังโหลดโต๊ะ', 'Loading tables')} style={{ gap: spacing.md }}>
+              <Bone width={150} height={16} />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+                {Array.from({ length: 6 }, (_, index) => (
+                  <Bone
+                    key={index}
+                    height={tabletWorkspace ? 112 : 104}
+                    radius={16}
+                    style={tabletWorkspace ? { flexBasis: 176, flexGrow: 1, minWidth: 164 } : { width: '48%' }}
+                  />
+                ))}
+              </View>
+            </SkeletonReveal>
+          ) : null}
         </View>
       </View>
       {!loading && !groups.length && !(showTakeaways && takeaways.length) ? <EmptyState title={copy('ไม่พบโต๊ะ', 'No tables found')} detail={tables.length ? copy('ลองเปลี่ยนคำค้น', 'Try a different search.') : canManageTables ? copy('สร้างโต๊ะในหน้าจัดการโต๊ะก่อนรับออเดอร์', 'Create tables in Table management before taking orders.') : copy('ร้านนี้ยังไม่มีโต๊ะที่พร้อมรับออเดอร์', 'This restaurant has no tables ready for orders yet.')} action={canManageTables ? <Button label={copy('ไปหน้าจัดการโต๊ะ', 'Open Table management')} onPress={() => router.push('/table-management')} /> : undefined} /> : null}

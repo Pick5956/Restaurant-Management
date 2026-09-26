@@ -172,7 +172,7 @@ export function ThreadSkeleton({ label }: { label: string }) {
     </View>
   );
   return (
-    <SkeletonReveal label={label} style={{ gap: 14 }}>
+    <SkeletonReveal label={label} style={{ gap: 14 }} spinner={false}>
       {userShape('u1', '64%', ['90%', '55%'])}
       {answerShape('a1', ['92%', '100%', '70%'], true)}
       {userShape('u2', '46%', ['80%'])}

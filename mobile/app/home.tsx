@@ -13,6 +13,7 @@ import { AppRefreshControl, AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
 import { AttentionList, AttentionRail, DayStrip, HomeHeading, HomeSkeleton, MonthRow, SalesHero, StatTile, TableMap, type AttentionCardProps } from '@/src/components/home/parts';
+import { ContentReveal } from '@/src/components/skeleton';
 import { EdgeRow, EdgeSection, EdgeSectionHeader, EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import {
@@ -38,7 +39,6 @@ import {
 import { formatBangkokDate } from '@/src/lib/order-query';
 import { can } from '@/src/lib/rbac';
 import { getBangkokReportMonth } from '@/src/lib/report-query';
-import { getWorkModeCopy } from '@/src/lib/work-mode';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { palette, radius, spacing, statusTone, typeScale } from '@/src/theme';
@@ -110,25 +110,6 @@ function localizedOrderStatus(status: OrderStatus, copy: Copy) {
   return copy(...labels[status]);
 }
 
-function localizedWorkMode(
-  workMode: ReturnType<typeof getWorkModeCopy>,
-  copy: Copy,
-) {
-  const titles: Record<string, string> = {
-    โหมดครัว: 'Kitchen mode',
-    โหมดหน้าร้าน: 'Front-of-house mode',
-    โหมดแคชเชียร์: 'Cashier mode',
-    โหมดเจ้าของร้าน: 'Owner mode',
-    โหมดทำงาน: 'Work mode',
-  };
-  const title = copy(workMode.title, titles[workMode.title] || workMode.title);
-  return {
-    title,
-    // The word "mode" is chrome; the role alone is what the person is.
-    role: title.replace(/^โหมด/, '').replace(/\s+mode$/i, '').trim(),
-  };
-}
-
 function attentionLabel(priority: HomePriority, copy: Copy) {
   switch (priority.key) {
     case 'kitchen-overdue':
@@ -197,9 +178,6 @@ export default function HomeScreen() {
   // The app's line under "อัปเดตข้อมูลไม่ได้" when there is one, never the server's words.
   const [error, setError] = useState<{ detail?: string } | null>(null);
 
-  const workMode = localizedWorkMode(getWorkModeCopy(activeMembership), copy);
-  // A shop that renamed the role sees its own name for it, not the stock one.
-  const roleChip = activeMembership?.role?.display_name_override?.trim() || workMode.role;
   const canViewDashboard = can(activeMembership, 'view_dashboard');
   const canTakeOrder = can(activeMembership, 'take_order');
   const canViewOrders = can(activeMembership, 'view_orders');
@@ -677,13 +655,8 @@ export default function HomeScreen() {
           <DayStrip compact days={days} language={language} onSelect={selectDate} />
         </View>
       ) : undefined}
+      centerTitle={!tabletWorkspace}
       refreshControl={<AppRefreshControl onRefresh={() => load()} />}
-      action={(
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10, backgroundColor: palette.accentSoft, borderWidth: 1, borderColor: palette.accentMuted }}>
-          <AppIcon name="person-circle-outline" size={14} color={palette.primaryInk} />
-          <Text style={{ fontSize: 12, fontWeight: '600', color: palette.primaryInk }}>{roleChip}</Text>
-        </View>
-      )}
     >
       {tabletWorkspace ? null : <DayStrip days={days} language={language} onSelect={selectDate} />}
 
@@ -702,7 +675,7 @@ export default function HomeScreen() {
           label={copy('กำลังโหลดข้อมูลของวันที่เลือก', 'Loading data for the selected date')}
         />
       ) : tabletWorkspace ? (
-        <View style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' }}>
+        <ContentReveal style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' }}>
           <View style={{ flex: 1.45, gap: spacing.md }}>
             {hero}
             {stats}
@@ -717,20 +690,20 @@ export default function HomeScreen() {
                 takes this side instead of leaving it empty. */}
             {!isToday && !attentionBlock && !tablesBlock ? tabletOrders : null}
           </View>
-        </View>
+        </ContentReveal>
       ) : (
-        <>
+        <ContentReveal style={{ gap: spacing.xl }}>
           {hero}
           {stats}
           {liveDataWarning}
           {attentionBlock}
           {tablesBlock}
           {month}
-        </>
+        </ContentReveal>
       )}
 
       {!dateLoading && !tabletWorkspace ? (
-        <View style={{ gap: spacing.md }}>
+        <ContentReveal style={{ gap: spacing.md }}>
           <EdgeSectionHeader
             title={
               isToday
@@ -747,7 +720,7 @@ export default function HomeScreen() {
             }
           />
           {displayOrders.length ? orderRows(displayOrders.slice(0, 6)) : noOrders}
-        </View>
+        </ContentReveal>
       ) : null}
     </AppScreen>
   );

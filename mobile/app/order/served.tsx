@@ -6,7 +6,8 @@ import { listCategories, listMenuItems } from '@/src/api/menu';
 import { getOrder } from '@/src/api/order';
 import { AppScreen, ScreenHeading } from '@/src/components/app-shell';
 import { OrderItemPanel } from '@/src/components/order-item-editor';
-import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
+import { OrderMenuFilterBar, OrderMenuGrid, OrderMenuSkeleton } from '@/src/components/order-menu-grid';
+import { ContentReveal } from '@/src/components/skeleton';
 import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
@@ -170,20 +171,24 @@ export default function ServedItemScreen() {
   ) : undefined;
   const loadFailure = error !== null ? <Feedback title={copy('โหลดเมนูไม่สำเร็จ', 'Could not load the menu')} detail={error || undefined} tone="danger" /> : null;
   const grid = editable ? (
-    <OrderMenuGrid
-      groups={menuGroups}
-      countByMenu={addedByMenu}
-      tabletWorkspace={sidePanel}
-      onPressItem={(item) => (sidePanel
-        ? pickDish(item)
-        : router.push({
-          pathname: '/order/item' as never,
-          params: { id: String(orderId), menuId: String(item.ID), served: '1' },
-        } as never))}
-      accessibilityLabelFor={(item, added) => (added > 0
-        ? copy(`เพิ่ม ${item.name} ลงในบิล เพิ่มแล้ว ${added}`, `Add ${item.name} to the bill, ${added} added`)
-        : copy(`เพิ่ม ${item.name} ลงในบิล`, `Add ${item.name} to the bill`))}
-    />
+    <ContentReveal style={sidePanel ? { flex: 1, minHeight: 0 } : undefined}>
+      <OrderMenuGrid
+        groups={menuGroups}
+        countByMenu={addedByMenu}
+        tabletWorkspace={sidePanel}
+        onPressItem={(item) => (sidePanel
+          ? pickDish(item)
+          : router.push({
+            pathname: '/order/item' as never,
+            params: { id: String(orderId), menuId: String(item.ID), served: '1' },
+          } as never))}
+        accessibilityLabelFor={(item, added) => (added > 0
+          ? copy(`เพิ่ม ${item.name} ลงในบิล เพิ่มแล้ว ${added}`, `Add ${item.name} to the bill, ${added} added`)
+          : copy(`เพิ่ม ${item.name} ลงในบิล`, `Add ${item.name} to the bill`))}
+      />
+    </ContentReveal>
+  ) : !order && error === null ? (
+    <OrderMenuSkeleton label={copy('กำลังโหลดเมนู', 'Loading the menu')} tabletWorkspace={sidePanel} />
   ) : null;
 
   if (sidePanel) {

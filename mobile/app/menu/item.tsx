@@ -12,6 +12,7 @@ import { DangerAction, Field, FieldRow, FoldBody, FoldChevron, FORM_MAX_WIDTH, F
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { MenuImageCropper } from '@/src/components/menu-image-cropper';
 import { StateMessage } from '@/src/components/mobile-screen';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { Button, EmptyState, Feedback, SearchField } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { toFloat, toInt } from '@/src/lib/forms';
@@ -318,6 +319,23 @@ export default function MenuItemEditorScreen() {
     );
   }
 
+  if (editing && loading && itemExists !== true) {
+    // The editor's own shape - the photo, then its cards - while the item loads.
+    return (
+      <AppScreen title={title} topLevel={false} centerTitle contentMaxWidth={tablet ? FORM_MAX_WIDTH : undefined}>
+        <SkeletonReveal label={copy('กำลังโหลดเมนู', 'Loading menu item')} style={{ gap: spacing.md }}>
+          <View style={{ alignItems: 'center', paddingVertical: spacing.sm, gap: 12 }}>
+            <Bone width={148} height={148} radius={28} />
+            <Bone width={110} height={34} radius={999} />
+          </View>
+          <Bone height={300} radius={18} />
+          <Bone height={64} radius={18} />
+          <Bone height={64} radius={18} />
+        </SkeletonReveal>
+      </AppScreen>
+    );
+  }
+
   if (editing && itemExists !== true) {
     const stateTitle = loading
       ? copy('กำลังโหลดเมนู', 'Loading menu item')
@@ -361,7 +379,7 @@ export default function MenuItemEditorScreen() {
       )}
     >
       {error ? <Feedback title={error.title} detail={error.detail} tone="danger" /> : null}
-      <View style={{ gap: spacing.md }}>
+      <ContentReveal style={{ gap: spacing.md }}>
         {/* The same element whether the photo is shown or being framed, so
             opening the framer never remounts it and loses the picked photo. */}
         <View style={imageEditing ? { borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: palette.divider, backgroundColor: palette.surface, padding: 14 } : { paddingVertical: spacing.sm }}>
@@ -618,7 +636,7 @@ export default function MenuItemEditorScreen() {
             />
           </View>
         ) : null}
-      </View>
+      </ContentReveal>
 
       <BottomSheet open={pickingIngredient} onClose={() => { setPickingIngredient(false); setIngredientQuery(''); }} heightFraction={0.72} keyboardLift label={copy('ปิด', 'Close')} showClose>
         <SheetTitle title={copy('เลือกวัตถุดิบ', 'Choose an ingredient')} />

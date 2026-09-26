@@ -9,6 +9,7 @@ import { BottomSheet, GlassButton, GlassHeaderPane, GlassPanel, LIQUID_GLASS } f
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { AppTextInput as TextInput } from '@/src/components/app-text-input';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { money } from '@/src/lib/format';
 import { countPayload, quickAmounts, reorderQuantityFor, reorderShare, restockStep, stockShare, stockStatus, type StockStatus } from '@/src/lib/inventory-list';
@@ -1037,5 +1038,39 @@ export function FormPickRow({ label, value, first, onPress }: { label: string; v
     <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? palette.surfaceSubtle : 'transparent' })}>
       {inner}
     </Pressable>
+  );
+}
+
+/**
+ * The ingredient cards before the list lands: an IngredientCard's own frame
+ * with the name, stock figure and meta line as bones, so the rows fade in where
+ * the eye already is instead of after a spinner.
+ */
+export function IngredientListSkeleton({ label }: { label: string }) {
+  return (
+    <SkeletonReveal label={label} style={{ gap: 10 }}>
+      {[0.55, 0.7, 0.45, 0.6, 0.5].map((share, index) => (
+        <Card key={index} solid style={{ padding: 12, gap: 8 }}>
+          <Bone width={`${Math.round(share * 100)}%`} height={15} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Bone width={84} height={22} radius={7} />
+            <Bone width={70} height={11} />
+          </View>
+          <Bone width="45%" height={10} />
+        </Card>
+      ))}
+    </SkeletonReveal>
+  );
+}
+
+/**
+ * The stock pages' cards before their data lands, one block per card at that
+ * card's usual height, so what loads fades in where the eye already is.
+ */
+export function InventoryCardsSkeleton({ label, heights }: { label: string; heights: number[] }) {
+  return (
+    <SkeletonReveal label={label} style={{ gap: 10 }}>
+      {heights.map((height, index) => <Bone key={index} height={height} radius={22} />)}
+    </SkeletonReveal>
   );
 }

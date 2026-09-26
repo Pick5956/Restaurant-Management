@@ -8,7 +8,7 @@ import { AppScreen } from '@/src/components/app-shell';
 import { FORM_MAX_WIDTH, Note } from '@/src/components/form/parts';
 import { HeadingAction } from '@/src/components/heading-action';
 import { ReportCard } from '@/src/components/reports/parts';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { RoleRow } from '@/src/components/staff/parts';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import {
@@ -105,7 +105,7 @@ export default function RolesScreen() {
           <Bone height={280} radius={18} />
         </SkeletonReveal>
       ) : (
-        <View style={{ gap: spacing.md }}>
+        <ContentReveal style={{ gap: spacing.md }}>
           {groups.length ? (
             <ReportCard>
               {groups.map((group, index) => {
@@ -127,7 +127,7 @@ export default function RolesScreen() {
             <EmptyState title={copy('ยังไม่มีบทบาทที่จัดการได้', 'No manageable roles yet')} detail={copy('เพิ่มบทบาทใหม่สำหรับงานของร้านนี้', 'Add a new role for this restaurant.')} />
           )}
           <Note text={copy('บทบาทมาตรฐานเปลี่ยนชื่อและสิทธิ์ได้ แต่ซ่อนได้เท่านั้น ลบไม่ได้ · บทบาทที่สร้างเองลบได้เมื่อไม่มีใครถืออยู่', 'Standard roles can be renamed and re-permissioned but only hidden, never deleted · a role you created can be deleted once nobody holds it')} />
-        </View>
+        </ContentReveal>
       )}
     </AppScreen>
   );

@@ -25,7 +25,7 @@ import {
   type TableColumn,
   type TableRow,
 } from '@/src/components/reports/parts';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { money } from '@/src/lib/format';
@@ -441,17 +441,19 @@ export default function ReportsScreen() {
         {tablet ? null : periodButton}
         {error ? <Feedback title={copy('โหลดรายงานไม่ได้', 'Could not load reports')} detail={error.detail} tone="danger" /> : null}
         {loading && !report ? skeleton : report ? (
-          <View style={{ flex: 1, minHeight: 0, gap: spacing.md, opacity: loading ? 0.55 : 1 }}>
-            <ReportFigures figures={figures} tablet={tablet} />
-            {tablet ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                {tabs}
-                <View style={{ flex: 1 }} />
-                {periodButton}
-              </View>
-            ) : tabs}
-            {body}
-          </View>
+          <ContentReveal style={{ flex: 1, minHeight: 0 }}>
+            <View style={{ flex: 1, minHeight: 0, gap: spacing.md, opacity: loading ? 0.55 : 1 }}>
+              <ReportFigures figures={figures} tablet={tablet} />
+              {tablet ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                  {tabs}
+                  <View style={{ flex: 1 }} />
+                  {periodButton}
+                </View>
+              ) : tabs}
+              {body}
+            </View>
+          </ContentReveal>
         ) : null}
       </View>
 

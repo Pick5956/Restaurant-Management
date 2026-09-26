@@ -13,7 +13,7 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppScreen } from '@/src/components/app-shell';
 import { ChoiceChips, FORM_MAX_WIDTH, FormBody, FormCard, Note, PermissionGroups, PillTabs, SaveDock } from '@/src/components/form/parts';
 import { HeadingAction } from '@/src/components/heading-action';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
   allPermissions,
@@ -379,7 +379,7 @@ export default function StaffMemberScreen() {
     >
       {error ? <Feedback title={copy('โหลดข้อมูลพนักงานไม่สำเร็จ', 'Unable to load staff details')} detail={error.detail} tone="danger" /> : null}
       {!member ? (loading ? skeleton : null) : tablet ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
+        <ContentReveal style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
           <View style={{ width: 360, gap: spacing.md }}>
             {personCard}
             {roleCard}
@@ -389,15 +389,15 @@ export default function StaffMemberScreen() {
             {permissionCard}
             {permissionGroupCards}
           </View>
-        </View>
+        </ContentReveal>
       ) : (
-        <View style={{ gap: spacing.md, maxWidth: FORM_MAX_WIDTH, width: '100%', alignSelf: 'center' }}>
+        <ContentReveal style={{ gap: spacing.md, maxWidth: FORM_MAX_WIDTH, width: '100%', alignSelf: 'center' }}>
           {personCard}
           {roleCard}
           {permissionCard}
           {permissionGroupCards}
           {statusCard}
-        </View>
+        </ContentReveal>
       )}
     </AppScreen>
   );

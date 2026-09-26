@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { createIngredient, deleteIngredient, listIngredientCategories, listIngredients, updateIngredient } from '@/src/api/ingredient';
@@ -8,7 +8,8 @@ import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, PercentSlider, ReorderPreview, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
+import { ChoiceChip, Dock, DockButton, FloatingHeader, FormField, FormGroup, FormPickRow, FormRow, InventoryCardsSkeleton, PercentSlider, ReorderPreview, SheetSection, SheetTitle, fmt, headerContentTop } from '@/src/components/inventory/parts';
+import { ContentReveal } from '@/src/components/skeleton';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureCode, apiFailureDetail, apiFailureSays } from '@/src/lib/api-failure';
 import {
@@ -252,10 +253,10 @@ export default function InventoryItemScreen() {
           contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: dockBottom + 16 }}
         >
           {error ? <View style={{ marginBottom: 12 }}><Feedback title={error.title} detail={error.detail} tone="danger" /></View> : null}
-          {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
+          {loading ? <InventoryCardsSkeleton label={t('กำลังโหลดวัตถุดิบ', 'Loading ingredient')} heights={[100, 150, 100]} /> : null}
 
           {!loading ? (
-            <>
+            <ContentReveal>
               <FormGroup>
                 <FormRow label={t('ชื่อ', 'Name')} first>
                   <FormField value={name} onChangeText={setName} placeholder={t('เช่น กะเพรา', 'e.g. Holy basil')} readOnly={readOnly} />
@@ -349,7 +350,7 @@ export default function InventoryItemScreen() {
                 <FormPickRow label={t('วิธีเก็บ', 'Kept')} value={storageName} first onPress={readOnly ? undefined : () => setPicker('storage')} />
               </FormGroup>
 
-            </>
+            </ContentReveal>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>

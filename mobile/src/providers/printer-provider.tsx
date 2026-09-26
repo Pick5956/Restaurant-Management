@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { PermissionsAndroid, Platform, type View } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform, type View } from 'react-native';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
 import {
@@ -68,6 +68,14 @@ function devBuildOnlyMessage() {
 }
 
 async function loadPrinterModule() {
+  // Expo Go ships neither the printer's native module nor react-native-fs, and
+  // the library throws while it is being evaluated. The catch below turns that
+  // into this message, but in development Metro has already shown the throw as
+  // an "Uncaught Error" red screen on every Android launch. So it is not
+  // imported at all where the native half is missing.
+  if (!NativeModules.RNThermalPrinter || !NativeModules.RNFSManager) {
+    throw new Error(devBuildOnlyMessage());
+  }
   try {
     return await import('@finan-me/react-native-thermal-printer');
   } catch {
