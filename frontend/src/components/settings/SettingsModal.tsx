@@ -1,5 +1,6 @@
 "use client";
 
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Globe, Search, Store, User, X, type LucideIcon } from "lucide-react";
@@ -309,7 +310,8 @@ export default function SettingsModal() {
               </button>
             </header>
 
-            <div className="mt-14 flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-3">
+            {/* Wheel scrolling glides like the stock page (smoothScroll), 27 ก.ย. 2569. */}
+            <div ref={smoothScroll} className="mt-14 flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-3">
               {sections.map((key) => (
                 <div key={key} data-settings-section={key} hidden={key !== activeSection} className="flex flex-col gap-5 [&[hidden]]:hidden">
                   {key === "account" ? <AccountSettings /> : key === "display" ? <DisplaySettings /> : <RestaurantSettings />}

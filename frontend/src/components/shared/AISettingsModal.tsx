@@ -1,5 +1,6 @@
 "use client";
 
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Trash2, X } from "lucide-react";
@@ -841,7 +842,8 @@ export default function AISettingsModal({
               </div>
             </header>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:mt-14 sm:px-6 sm:pt-3">
+            {/* Wheel scrolling glides like the stock page (smoothScroll), 27 ก.ย. 2569. */}
+            <div ref={smoothScroll} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:mt-14 sm:px-6 sm:pt-3">
               {/* Nothing loaded yet: the spinner from the very first frame (the
                   request starts in an effect, a frame after the sheet appears).
                   Once there is a view it stays up through later refreshes. */}
