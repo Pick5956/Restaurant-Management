@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Clock, Globe, QrCode, Receipt, Search, Store, User, Wallet, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronLeft, Globe, Search, Store, User, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import UserAvatar from "@/src/components/shared/UserAvatar";
-import { useTheme } from "@/src/providers/ThemeProvider";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useIOSActiveStates, useIsMobile } from "../inventory/mobile/primitives";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { useAuth } from "@/src/providers/AuthProvider";
@@ -13,10 +11,42 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { BACK_CONTROL, BACK_ICON } from "@/src/components/shared/backControl";
 import { FOCUS_RING, RAISED, SettingsMobileContext, SettingsSearchContext, TEXT_FOCUS } from "./_components/SettingsPrimitives";
+import SettingsViewAllPage from "./page";
 
 type NavItem = { key: "account" | "display" | "restaurant"; href: string; label: string; icon?: ReactNode };
 
 const ICON = "mr-2 h-5 w-5 shrink-0";
+
+/**
+ * Whether the phone's chip strip overflows and where it sits - the same
+ * affordance as the stock page's ChipRow (inventory/mobile/primitives.tsx).
+ */
+function useScrollAffordance(shown: boolean) {
+  const ref = useRef<HTMLUListElement>(null);
+  const [state, setState] = useState({ scrollable: false, ratio: 0, progress: 0 });
+  const measure = useCallback(() => {
+    const node = ref.current;
+    if (!node) return;
+    const overflow = node.scrollWidth - node.clientWidth;
+    if (overflow <= 1) {
+      setState((current) => (current.scrollable ? { scrollable: false, ratio: 0, progress: 0 } : current));
+      return;
+    }
+    setState({ scrollable: true, ratio: node.clientWidth / node.scrollWidth, progress: node.scrollLeft / overflow });
+  }, []);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    node.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => {
+      node.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [measure, shown]);
+  return { ref, ...state };
+}
 
 /**
  * The settings frame, laid out after the reference the owner chose: a back
@@ -28,7 +58,7 @@ const ICON = "mr-2 h-5 w-5 shrink-0";
  */
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const { language } = useLanguage();
-  const { activeMembership, user } = useAuth();
+  const { activeMembership } = useAuth();
   const { pagePath, href } = useRestaurantNav();
   const router = useRestaurantRouter();
   const [query, setQuery] = useState("");
@@ -88,7 +118,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     let frame = 0;
     const recount = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setHasResults(root.querySelector("[data-setting-row]:not([hidden])") !== null));
+      frame = requestAnimationFrame(() => setHasResults(root.querySelector("[data-setting-row]:not([hidden]), section[data-settings-group]:not([hidden])") !== null));
     };
     recount();
     const observer = new MutationObserver(recount);
@@ -110,168 +140,242 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   };
 
   // ---- Phone ---------------------------------------------------------------
-  // The stock page's phone look (inventory/mobile, chosen 26 ก.ย. 2569): the
-  // computer's category list becomes the first screen, and each category - each
-  // restaurant group, too - is a short screen of its own behind a centred title
-  // and an orange back chevron. Nothing has to be scrolled to, so a tap always
-  // lands. The computer's layout below is untouched.
+  // Chosen 26 ก.ย. 2569: one long page of cards, a fixed bar with the title,
+  // a search button and a strip of chips. A chip lights the moment it is
+  // tapped, the page glides to its card and the card flashes once - so the
+  // last cards, which can never reach the top, still show where the tap went.
+  // Every settings route draws the same page; /settings/account and the rest
+  // only decide which card it opens on. The computer's layout below is untouched.
   const isMobile = useIsMobile();
   useIOSActiveStates();
   const searchParams = useSearchParams();
-  const { theme, mounted } = useTheme();
-  const phoneGroup = pagePath === "/settings/restaurant" ? searchParams.get("group") : null;
-  const phoneNavRef = useRef<HTMLDivElement>(null);
-  const [phoneNavHeight, setPhoneNavHeight] = useState(0);
+  const phoneBarRef = useRef<HTMLDivElement>(null);
+  const [phoneBarHeight, setPhoneBarHeight] = useState(0);
+  const [phoneSearch, setPhoneSearch] = useState(false);
+  const [activeChip, setActiveChip] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  // While set, the page is gliding to a tapped chip's card and the scroll
+  // must not move the lit chip; the next touch or wheel hands it back.
+  const chipLockRef = useRef(false);
+  const flashTimerRef = useRef(0);
+  const { ref: chipsRef, scrollable: chipsScroll, ratio: chipsRatio, progress: chipsProgress } = useScrollAffordance(Boolean(isMobile) && !phoneSearch);
+  const chipsThumb = Math.max(chipsRatio * 100, 35);
+
   useEffect(() => {
-    const bar = phoneNavRef.current;
+    const bar = phoneBarRef.current;
     if (!bar || typeof ResizeObserver === "undefined") return;
     // Fixed, with a spacer of its measured height: html and body clip
     // overflow-x, so position: sticky does not stick on a phone.
-    const observer = new ResizeObserver(() => setPhoneNavHeight(bar.offsetHeight));
+    const observer = new ResizeObserver(() => setPhoneBarHeight(bar.offsetHeight));
     observer.observe(bar);
     return () => observer.disconnect();
   }, [isMobile]);
 
+  // The lit chip follows the card under the bar as the page is scrolled.
+  useEffect(() => {
+    if (!isMobile) return;
+    let frame = 0;
+    const spy = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (chipLockRef.current) return;
+        const line = (phoneBarRef.current?.offsetHeight ?? 0) + 24;
+        let current: string | null = null;
+        document.querySelectorAll<HTMLElement>("section[data-settings-group]:not([hidden])").forEach((section) => {
+          if (section.getBoundingClientRect().top <= line) current = section.dataset.settingsGroup ?? null;
+        });
+        if (current === "delete") current = "qr";
+        setActiveChip((previous) => current ?? previous ?? "account");
+      });
+    };
+    const release = () => {
+      chipLockRef.current = false;
+    };
+    spy();
+    window.addEventListener("scroll", spy, { passive: true });
+    window.addEventListener("touchstart", release, { passive: true });
+    window.addEventListener("wheel", release, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", spy);
+      window.removeEventListener("touchstart", release);
+      window.removeEventListener("wheel", release);
+    };
+  }, [isMobile]);
+
+  // Keep the lit chip inside the strip.
+  useEffect(() => {
+    const strip = chipsRef.current;
+    const chip = strip?.querySelector<HTMLElement>(`[data-chip="${activeChip}"]`);
+    if (!strip || !chip || strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollTo({ left: chip.offsetLeft - strip.clientWidth / 2 + chip.offsetWidth / 2, behavior: "smooth" });
+  }, [activeChip, chipsRef]);
+
+  const goToCard = useCallback((id: string, smooth: boolean) => {
+    const section = document.querySelector<HTMLElement>(`section[data-settings-group="${id}"]`);
+    if (!section) return false;
+    chipLockRef.current = true;
+    setActiveChip(id);
+    section.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    window.clearTimeout(flashTimerRef.current);
+    setFlash(id);
+    flashTimerRef.current = window.setTimeout(() => setFlash(null), 1200);
+    return true;
+  }, []);
+
+  // /settings/account, /settings/restaurant?group=billing and the rest open
+  // the page at their card, once it has loaded (the restaurant's arrives late).
+  const openAt =
+    pagePath === "/settings/account" ? "account"
+      : pagePath === "/settings/display" ? "display"
+        : pagePath === "/settings/restaurant" ? searchParams.get("group") || "identity"
+          : null;
+  useEffect(() => {
+    if (!isMobile || !openAt) return;
+    const observer = new MutationObserver(() => {
+      if (goToCard(openAt, false)) observer.disconnect();
+    });
+    const frame = requestAnimationFrame(() => {
+      if (!goToCard(openAt, false)) observer.observe(document.body, { childList: true, subtree: true });
+    });
+    const stop = window.setTimeout(() => observer.disconnect(), 8000);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.clearTimeout(stop);
+    };
+  }, [goToCard, isMobile, openAt]);
+
+  useEffect(() => () => window.clearTimeout(flashTimerRef.current), []);
+
   if (isMobile === null) return <div className="min-h-dvh" />;
   if (isMobile) {
     const th = language === "th";
-    const canRestaurant = can(activeMembership, "manage_restaurant_settings");
-    const isOwner = activeMembership?.role?.name === "owner";
-    const groupTitles: Record<string, string> = th
-      ? { identity: "ข้อมูลร้าน", operations: "เวลาและโต๊ะ", billing: "การคิดเงิน", promptpay: "รับเงินพร้อมเพย์", qr: "สั่งอาหารผ่าน QR", delete: "ลบร้านอาหาร" }
-      : { identity: "Restaurant", operations: "Hours and tables", billing: "Billing", promptpay: "PromptPay", qr: "QR ordering", delete: "Delete restaurant" };
-    const title =
-      pagePath === "/settings/account" ? copy.account
-        : pagePath === "/settings/display" ? copy.display
-          : pagePath === "/settings/restaurant" ? (phoneGroup && groupTitles[phoneGroup]) || copy.restaurant
-            : copy.title;
-    const onLanding = isViewAll;
-    const name = [user?.first_name, user?.last_name].map((part) => part?.trim()).filter((part) => part && part !== "-").join(" ") || user?.email || "";
-    const displaySummary = `${language === "th" ? "ไทย" : "English"} · ${mounted && theme === "dark" ? (th ? "มืด" : "Dark") : th ? "สว่าง" : "Light"}`;
-    const restaurantRows: { id: string; icon: LucideIcon; tone: string }[] = [
-      { id: "identity", icon: Store, tone: "bg-(--inv-action-soft) text-(--inv-action)" },
-      { id: "operations", icon: Clock, tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
-      { id: "billing", icon: Receipt, tone: "bg-(--inv-ok-soft) text-(--inv-ok)" },
-      { id: "promptpay", icon: Wallet, tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300" },
-      { id: "qr", icon: QrCode, tone: "bg-(--inv-low-soft) text-amber-700 dark:text-amber-300" },
+    const chips: { id: string; label: string }[] = [
+      { id: "account", label: th ? "บัญชี" : "Account" },
+      { id: "display", label: th ? "การแสดงผล" : "Display" },
     ];
-    const row = (to: string, label: string, icon: LucideIcon | null, tone: string, value?: string, last = false) => {
-      const Icon = icon;
-      return (
-        <Link
-          key={to}
-          href={href(to)}
-          onClick={() => setQuery("")}
-          className={`ui-press flex min-h-[50px] items-center gap-3 px-3 ${last ? "" : "border-b border-(--inv-hairline)"} ${FOCUS_RING}`}
-        >
-          {Icon ? (
-            <span className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] ${tone}`}>
-              <Icon aria-hidden="true" className="h-[17px] w-[17px]" strokeWidth={2} />
-            </span>
-          ) : null}
-          <span className="min-w-0 flex-1 truncate text-[15px] text-(--inv-body)">{label}</span>
-          {value ? <span className="max-w-[45%] truncate text-[15px] text-(--inv-muted)">{value}</span> : null}
-          <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-        </Link>
+    if (can(activeMembership, "manage_restaurant_settings")) {
+      chips.push(
+        { id: "identity", label: th ? "ข้อมูลร้าน" : "Restaurant" },
+        { id: "operations", label: th ? "เวลาและโต๊ะ" : "Hours" },
+        { id: "billing", label: th ? "การคิดเงิน" : "Billing" },
+        { id: "promptpay", label: th ? "พร้อมเพย์" : "PromptPay" },
+        { id: "qr", label: "QR" },
       );
+    }
+    const closeSearch = () => {
+      setQuery("");
+      setPhoneSearch(false);
     };
-    const eyebrow = (text: string) => (
-      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">{text}</p>
-    );
-    const card = "mb-[22px] overflow-hidden rounded-(--inv-radius-lg) border border-(--inv-hairline) bg-(--inv-surface)";
 
     return (
-      <div data-inventory-mobile="" data-settings-root="" className="min-h-dvh bg-(--inv-canvas) pb-10 text-(--inv-body)">
+      <div
+        data-inventory-mobile=""
+        data-settings-root=""
+        className="min-h-dvh bg-(--inv-canvas) pb-12 text-(--inv-body)"
+        style={{ "--settings-bar": `${phoneBarHeight + 12}px` } as CSSProperties}
+      >
         <div
-          ref={phoneNavRef}
-          className="fixed inset-x-0 top-0 z-30 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur"
+          ref={phoneBarRef}
+          className="fixed inset-x-0 top-0 z-30 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-4">
+            {phoneSearch ? (
+              <div role="search" className="relative min-w-0 flex-1">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
+                <input
+                  type="search"
+                  autoFocus
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") closeSearch();
+                  }}
+                  placeholder={copy.searchLabel}
+                  aria-label={copy.searchLabel}
+                  className="h-10 w-full rounded-xl bg-(--inv-surface-strong) pl-9 pr-3 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
+                />
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={goBack}
+                  aria-label={copy.back}
+                  className={`ui-press -ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
+                >
+                  <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
+                </button>
+                <h1 className="min-w-0 flex-1 truncate text-[22px] font-bold text-(--inv-heading)">{copy.title}</h1>
+              </>
+            )}
             <button
               type="button"
-              onClick={() => (onLanding ? goBack() : router.push("/settings"))}
-              aria-label={copy.back}
-              className={`ui-press flex min-h-[44px] min-w-[64px] items-center rounded-(--inv-radius) px-1 text-(--inv-action) ${FOCUS_RING}`}
+              onClick={() => (phoneSearch ? closeSearch() : setPhoneSearch(true))}
+              aria-label={phoneSearch ? copy.clear : copy.searchLabel}
+              className={`ui-press flex h-10 shrink-0 items-center justify-center rounded-xl ${phoneSearch ? "px-2 text-[15px] font-semibold text-(--inv-action)" : "w-10 bg-(--inv-surface-strong) text-(--inv-body)"} ${FOCUS_RING}`}
             >
-              <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
+              {phoneSearch ? (th ? "ยกเลิก" : "Cancel") : <Search aria-hidden="true" className="h-[18px] w-[18px]" />}
             </button>
-            <h1 className="min-w-0 flex-1 truncate text-center text-[15px] font-semibold text-(--inv-heading)">{title}</h1>
-            <div className="min-w-[64px]" />
           </div>
-        </div>
-        <div aria-hidden="true" style={{ height: phoneNavHeight }} />
 
-        <div ref={contentRef} className="px-4 pt-3">
-          {onLanding ? (
-            <div role="search" className="relative mb-[18px]">
-              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={th ? "ค้นหาการตั้งค่า" : "Search settings"}
-                aria-label={copy.searchLabel}
-                className="h-10 w-full rounded-(--inv-radius) bg-(--inv-surface-strong) pl-9 pr-10 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
-              />
-              {query ? (
-                <button type="button" onClick={() => setQuery("")} aria-label={copy.clear} className="absolute right-1 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center text-(--inv-muted)">
-                  <X aria-hidden="true" className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {onLanding && !query.trim() ? (
+          {phoneSearch ? null : (
             <>
-              <Link
-                href={href("/settings/account")}
-                className={`ui-press mb-[22px] flex items-center gap-3 rounded-(--inv-radius-lg) border border-(--inv-hairline) bg-(--inv-surface) p-3.5 shadow-(--inv-shadow) ${FOCUS_RING}`}
-              >
-                <UserAvatar src={user?.profile_image} name={name} size={52} className="h-[52px] w-[52px] text-[17px]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[16px] font-semibold text-(--inv-heading)">{name}</span>
-                  <span className="block truncate text-[12.5px] text-(--inv-muted)">{user?.email}</span>
-                </span>
-                <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-              </Link>
-
-              {eyebrow(th ? "ของฉัน" : "Me")}
-              <div className={card}>
-                {row("/settings/account", copy.account, User, "bg-(--inv-action-soft) text-(--inv-action)", undefined)}
-                {row("/settings/display", copy.display, Globe, "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300", displaySummary, true)}
+              <div className="relative mt-2.5">
+                <ul ref={chipsRef} aria-label={copy.categories} className="soft-scrollbar-hide flex gap-1.5 overflow-x-auto px-4">
+                  {chips.map((chip) => {
+                    const on = activeChip === chip.id;
+                    return (
+                      <li key={chip.id} className="shrink-0">
+                        <button
+                          type="button"
+                          data-chip={chip.id}
+                          aria-current={on ? "true" : undefined}
+                          onClick={() => goToCard(chip.id, true)}
+                          className={`ui-press whitespace-nowrap rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${FOCUS_RING} ${
+                            on
+                              ? "border-(--inv-action) bg-(--inv-action-soft) text-(--inv-action)"
+                              : "border-(--inv-hairline) bg-(--inv-surface) text-(--inv-muted)"
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {chipsScroll ? (
+                  <>
+                    <div aria-hidden="true" className={`pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-(--inv-canvas) to-transparent transition-opacity duration-200 ${chipsProgress > 0.02 ? "opacity-100" : "opacity-0"}`} />
+                    <div aria-hidden="true" className={`pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-(--inv-canvas) to-transparent transition-opacity duration-200 ${chipsProgress < 0.98 ? "opacity-100" : "opacity-0"}`} />
+                  </>
+                ) : null}
               </div>
-
-              {canRestaurant ? (
-                <>
-                  {eyebrow(copy.restaurant)}
-                  <div className={card}>
-                    {restaurantRows.map((item, index) =>
-                      row(`/settings/restaurant?group=${item.id}`, groupTitles[item.id], item.icon, item.tone, undefined, index === restaurantRows.length - 1),
-                    )}
-                  </div>
-                  {isOwner ? (
-                    <div className={card}>
-                      <Link
-                        href={href("/settings/restaurant?group=delete")}
-                        className={`ui-press flex min-h-[50px] items-center justify-center px-3 text-[15px] font-semibold text-(--inv-out) ${FOCUS_RING}`}
-                      >
-                        {groupTitles.delete}
-                      </Link>
-                    </div>
-                  ) : null}
-                </>
+              {chipsScroll ? (
+                // A short centred track under the chips, the stock page's: it
+                // only says there is more to the side.
+                <div aria-hidden="true" className="mx-auto mt-2 h-[3px] w-12 overflow-hidden rounded-full bg-(--inv-surface-strong)">
+                  <div
+                    className="h-full rounded-full bg-(--inv-action)"
+                    style={{ width: `${chipsThumb}%`, transform: `translateX(${(chipsProgress * (100 - chipsThumb) * 100) / chipsThumb}%)` }}
+                  />
+                </div>
               ) : null}
             </>
-          ) : (
-            <SettingsSearchContext.Provider value={query}>
-              <SettingsMobileContext.Provider value={{ mobile: true, group: phoneGroup, showTitles: Boolean(query.trim()) || (pagePath === "/settings/restaurant" && !phoneGroup) }}>
-                {query && !hasResults ? (
-                  <p className="py-6 text-center text-[13px] text-(--inv-faint)">{copy.noMatch(query.trim())}</p>
-                ) : null}
-                {children}
-              </SettingsMobileContext.Provider>
-            </SettingsSearchContext.Provider>
           )}
+        </div>
+        <div aria-hidden="true" style={{ height: phoneBarHeight }} />
+
+        <div ref={contentRef} className="flex flex-col gap-4 px-4 pt-3">
+          <SettingsSearchContext.Provider value={query}>
+            <SettingsMobileContext.Provider value={{ mobile: true, group: null, showTitles: false, flash }}>
+              {query && !hasResults ? (
+                <p className="py-6 text-center text-[13px] text-(--inv-faint)">{copy.noMatch(query.trim())}</p>
+              ) : null}
+              <SettingsViewAllPage />
+            </SettingsMobileContext.Provider>
+          </SettingsSearchContext.Provider>
         </div>
       </div>
     );

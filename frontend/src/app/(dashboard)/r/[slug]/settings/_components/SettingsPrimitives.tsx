@@ -93,7 +93,7 @@ export const SettingsSearchContext = createContext("");
  * layout sets this; a computer never does, so its rows stay exactly as they were.
  * `group` is the one restaurant group a phone page shows (?group=billing).
  */
-export const SettingsMobileContext = createContext<{ mobile: boolean; group: string | null; showTitles: boolean }>({ mobile: false, group: null, showTitles: false });
+export const SettingsMobileContext = createContext<{ mobile: boolean; group: string | null; showTitles: boolean; flash?: string | null }>({ mobile: false, group: null, showTitles: false, flash: null });
 
 function useSettingsMobile() {
   return useContext(SettingsMobileContext).mobile;
