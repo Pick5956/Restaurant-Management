@@ -972,7 +972,7 @@ export default function AIOperationsFloatingChat() {
 
           {listOpen && (
             <AIChatList
-              variant="sheet"
+              variant="inset"
               language={language}
               activeId={activeThread}
               onOpen={openThread}
