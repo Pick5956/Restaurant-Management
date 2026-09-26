@@ -922,7 +922,7 @@ export default function AIOperationsFloatingChat() {
             role="dialog"
             aria-modal="false"
             aria-labelledby="ai-operations-chat-title"
-            className="relative z-10 flex h-full w-full flex-col overflow-hidden rounded-t-2xl rounded-b-none border border-gray-200 bg-[#faf8f2] shadow-xl shadow-gray-950/10 transition-shadow duration-200 dark:border-gray-800 dark:bg-gray-950 dark:shadow-black/30 sm:rounded-2xl sm:bg-white"
+            className="relative z-10 flex h-full w-full flex-col overflow-hidden rounded-t-2xl rounded-b-none border border-gray-200 bg-[#faf8f2] shadow-xl shadow-gray-950/10 transition-shadow duration-200 dark:border-gray-800 dark:bg-gray-950 dark:shadow-black/30 sm:rounded-2xl"
           >
           {/* No header bar at any width. The phone had one treatment and the desktop
               another — a titled, bordered bar — and the owner preferred the phone's:
