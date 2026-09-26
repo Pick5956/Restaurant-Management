@@ -3,7 +3,7 @@
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Globe, Search, Store, User, X, type LucideIcon } from "lucide-react";
+import { Globe, Search, Sparkles, Store, User, X, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
@@ -11,6 +11,7 @@ import { listenForSettings, type OpenSettingsDetail, type SettingsSection } from
 import { FLASH_CLASSES, matchesSearch } from "@/src/components/shared/settingsModalKit";
 import { useIsMobile } from "@/src/app/(dashboard)/r/[slug]/inventory/mobile/primitives";
 import AccountSettings from "./AccountSettings";
+import AIAssistantSettings from "./AIAssistantSettings";
 import DisplaySettings from "./DisplaySettings";
 import RestaurantSettings from "./RestaurantSettings";
 import SettingsPhoneSheet from "./SettingsPhoneSheet";
@@ -20,13 +21,15 @@ import SettingsPhoneSheet from "./SettingsPhoneSheet";
 // Dishy AI's settings already are (AISettingsModal), so this is that window:
 // the same card, sidebar with a search, section list and close band. The
 // sections are the old pages' - account, language and display, restaurant -
-// each saving a setting the moment it changes, as they did on the page.
+// each saving a setting the moment it changes, as they did on the page. Dishy
+// AI's own settings joined as a fourth section for the owner (27 ก.ย. 2569);
+// the gear on the AI page and its separate window are gone.
 //
 // A phone (under 768px) gets the window full screen with the phone settings
 // the owner chose on 26 ก.ย. inside it (SettingsPhoneSheet): he asked for
 // those cards back rather than Dishy AI's rows (27 ก.ย. 2569).
 
-const SECTION_ICONS: Record<SettingsSection, LucideIcon> = { account: User, display: Globe, restaurant: Store };
+const SECTION_ICONS: Record<SettingsSection, LucideIcon> = { account: User, display: Globe, restaurant: Store, ai: Sparkles };
 
 function copy(language: "th" | "en") {
   return language === "th"
@@ -39,6 +42,7 @@ function copy(language: "th" | "en") {
           account: { name: "บัญชี" },
           display: { name: "ภาษาและการแสดงผล" },
           restaurant: { name: "ร้านอาหาร" },
+          ai: { name: "Dishy AI" },
         },
       }
     : {
@@ -50,6 +54,7 @@ function copy(language: "th" | "en") {
           account: { name: "Account" },
           display: { name: "Language and display" },
           restaurant: { name: "Restaurant" },
+          ai: { name: "Dishy AI" },
         },
       };
 }
@@ -62,9 +67,14 @@ export default function SettingsModal() {
   const isMobile = useIsMobile();
   const t = copy(language);
   const canManageRestaurant = can(activeMembership, "manage_restaurant_settings");
-  const sections: SettingsSection[] = canManageRestaurant
-    ? ["account", "display", "restaurant"]
-    : ["account", "display"];
+  // Dishy AI's settings are the owner's: only the owner may change them.
+  const isOwner = activeMembership?.role?.name === "owner";
+  const sections: SettingsSection[] = [
+    "account",
+    "display",
+    ...(canManageRestaurant ? (["restaurant"] as const) : []),
+    ...(isOwner ? (["ai"] as const) : []),
+  ];
 
   const [open, setOpen] = useState(false);
   // Leaving plays the exit first, then unmounts - the AI settings' timing.
@@ -273,7 +283,7 @@ export default function SettingsModal() {
   if (isMobile) {
     return createPortal(
       <div className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)]`}>
-        <SettingsPhoneSheet request={request} canManageRestaurant={canManageRestaurant} onClose={requestClose} rootRef={cardRef} />
+        <SettingsPhoneSheet request={request} canManageRestaurant={canManageRestaurant} isOwner={isOwner} onClose={requestClose} rootRef={cardRef} />
       </div>,
       document.body,
     );
@@ -314,7 +324,7 @@ export default function SettingsModal() {
             <div ref={smoothScroll} className="mt-14 flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-3">
               {sections.map((key) => (
                 <div key={key} data-settings-section={key} hidden={key !== activeSection} className="flex flex-col gap-5 [&[hidden]]:hidden">
-                  {key === "account" ? <AccountSettings /> : key === "display" ? <DisplaySettings /> : <RestaurantSettings />}
+                  {key === "account" ? <AccountSettings /> : key === "display" ? <DisplaySettings /> : key === "ai" ? <AIAssistantSettings /> : <RestaurantSettings />}
                 </div>
               ))}
             </div>

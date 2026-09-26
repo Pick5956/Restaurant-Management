@@ -172,7 +172,7 @@ func aiActionTypesOffSentence(types map[string]struct{}) string {
 	sort.Slice(names, func(i, j int) bool {
 		return aiActionTypeOrder(names[i]) < aiActionTypeOrder(names[j])
 	})
-	return "ผมยังทำ " + strings.Join(names, " และ ") + " ให้ไม่ได้ครับ เพราะปิดไว้ในตั้งค่า Dishy AI หัวข้อ “สิทธิ์ของผู้ช่วย” เปิดแล้วสั่งใหม่ได้เลย"
+	return "ผมยังทำ " + strings.Join(names, " และ ") + " ให้ไม่ได้ครับ เพราะปิดไว้ในหน้าตั้งค่า หมวด Dishy AI หัวข้อ “สิทธิ์ของผู้ช่วย” (กดรูปโปรไฟล์ล่างซ้าย → ตั้งค่า) เปิดแล้วสั่งใหม่ได้เลย"
 }
 
 func aiActionTypeOrder(thaiName string) int {

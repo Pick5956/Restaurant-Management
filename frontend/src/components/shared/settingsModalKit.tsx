@@ -2,10 +2,10 @@
 
 import type { ReactNode } from "react";
 
-// The pieces the two settings windows share: Dishy AI's settings (the
-// reference, AISettingsModal) and the app settings opened from the account
-// menu (SettingsModal, 27 ก.ย. 2569). One switch, one row, one group heading,
-// so the two windows cannot drift apart.
+// The switch, row, group heading and note of the settings window. They were
+// Dishy AI's settings window (AISettingsModal) first; that window became a
+// section of the app's settings (SettingsModal, 27 ก.ย. 2569) and these are
+// what is left of it to share.
 
 export function Switch({ on, onChange, disabled, label, labelledBy }: { on: boolean; onChange: (next: boolean) => void; disabled?: boolean; label?: string; labelledBy?: string }) {
   return (

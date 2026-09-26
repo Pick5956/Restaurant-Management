@@ -7,6 +7,7 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import type { OpenSettingsDetail } from "@/src/lib/settingsModal";
 import { FOCUS_RING, SettingsMobileContext, SettingsSearchContext } from "./SettingsPrimitives";
 import AccountSettings from "./AccountSettings";
+import AIAssistantSettings from "./AIAssistantSettings";
 import DisplaySettings from "./DisplaySettings";
 import RestaurantSettings from "./RestaurantSettings";
 
@@ -54,18 +55,22 @@ function cardFor(request: OpenSettingsDetail) {
   if (request.section === "account") return "account";
   if (request.section === "display") return "display";
   if (request.section === "restaurant") return request.focus || "identity";
+  if (request.section === "ai") return "ai";
   return null;
 }
 
 export default function SettingsPhoneSheet({
   request,
   canManageRestaurant,
+  isOwner,
   onClose,
   rootRef,
 }: {
   /** What the window was opened for; the page starts at its card. */
   request: OpenSettingsDetail;
   canManageRestaurant: boolean;
+  /** Dishy AI's card is the owner's alone. */
+  isOwner: boolean;
   onClose: () => void;
   rootRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -101,6 +106,7 @@ export default function SettingsPhoneSheet({
       { id: "qr", label: "QR" },
     );
   }
+  if (isOwner) chips.push({ id: "ai", label: "Dishy AI" });
 
   // The lit chip follows the card under the bar as the page is scrolled.
   useEffect(() => {
@@ -312,6 +318,7 @@ export default function SettingsPhoneSheet({
               <AccountSettings />
               <DisplaySettings />
               {canManageRestaurant ? <RestaurantSettings /> : null}
+              {isOwner ? <AIAssistantSettings /> : null}
             </SettingsMobileContext.Provider>
           </SettingsSearchContext.Provider>
         </div>

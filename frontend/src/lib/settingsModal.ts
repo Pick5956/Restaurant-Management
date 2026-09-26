@@ -2,7 +2,8 @@
 // ask for it - the account menu, the old /settings links the AI still hands
 // out - and the one window mounted by the dashboard layout answers.
 
-export type SettingsSection = "account" | "display" | "restaurant";
+// "ai" is Dishy AI's settings, moved here from the AI page (27 ก.ย. 2569).
+export type SettingsSection = "account" | "display" | "restaurant" | "ai";
 
 export type OpenSettingsDetail = {
   section?: SettingsSection;
@@ -55,5 +56,6 @@ export function settingsRequestForPath(path: string, search = ""): OpenSettingsD
   const group = new URLSearchParams(search).get("group") ?? undefined;
   if (section === "account" || section === "display") return { section };
   if (section === "restaurant") return { section, focus: group };
+  if (section === "ai") return { section };
   return {};
 }

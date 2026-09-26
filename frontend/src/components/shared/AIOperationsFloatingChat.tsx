@@ -51,6 +51,7 @@ import {
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
+  onAllConversationsCleared,
   adoptUnsentThread,
   saveThreadCache,
   setActiveThread,
@@ -486,6 +487,17 @@ export default function AIOperationsFloatingChat() {
     setActionPreviewError("");
     setMessages([{ id: "welcome", role: "assistant", content: welcomeText, createdAt: new Date() }]);
   }, [conversationRequests, welcomeText]);
+
+  // Every chat was moved to the trash from the settings window: this one too,
+  // so start a fresh one.
+  useEffect(
+    () =>
+      onAllConversationsCleared(() => {
+        setActiveThread(storageKey, null);
+        resetConversation();
+      }),
+    [storageKey, resetConversation],
+  );
 
   useEffect(() => subscribeToChatClear((clearedKey) => {
     if (clearedKey === threadStorageKey) resetConversation();

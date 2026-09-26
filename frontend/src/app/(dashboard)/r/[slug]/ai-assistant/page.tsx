@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
-import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings } from "lucide-react";
+import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2 } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
@@ -31,6 +31,7 @@ import {
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
+  onAllConversationsCleared,
   adoptUnsentThread,
   saveThreadCache,
   setActiveThread,
@@ -48,7 +49,6 @@ import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
 import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
-import AISettingsModal from "@/src/components/shared/AISettingsModal";
 import ForecastChart from "@/src/components/shared/ForecastChart";
 import AIChart from "@/src/components/shared/AIChart";
 import AIInsightsPanel from "@/src/components/shared/AIInsightsPanel";
@@ -162,7 +162,6 @@ export default function AIAssistantPage() {
   // trying to cancel an already-executed action.
   const actionResolvedRef = useRef(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [insightsCount, setInsightsCount] = useState(0);
   const [actionConfirming, setActionConfirming] = useState(false);
   const [actionCancelling, setActionCancelling] = useState(false);
@@ -370,6 +369,18 @@ export default function AIAssistantPage() {
     setActionPreviewError("");
     setMessages([{ id: "welcome", role: "assistant", content: welcomeText, createdAt: new Date() }]);
   }, [conversationRequests, welcomeText]);
+
+  // Every chat was moved to the trash from the settings window, this one
+  // included: start a fresh one (the window used to call this directly when it
+  // lived on this page).
+  useEffect(
+    () =>
+      onAllConversationsCleared(() => {
+        setActiveThread(storageKey, null);
+        resetConversation();
+      }),
+    [storageKey, resetConversation],
+  );
 
   useEffect(() => subscribeToChatClear((clearedKey) => {
     if (clearedKey === threadStorageKey) resetConversation();
@@ -847,30 +858,9 @@ export default function AIAssistantPage() {
                 )}
               </button>
             </HoverTip>
-            <HoverTip
-              label={language === "th" ? "ตั้งค่า AI" : "AI settings"}
-              placement="bottom"
-            >
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-                aria-label={language === "th" ? "ตั้งค่า AI" : "AI settings"}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200/80 bg-white/80 text-gray-600 shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:text-gray-900 hover:shadow-md dark:border-gray-800/80 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:text-white"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            </HoverTip>
+            {/* No gear here: Dishy AI's settings are a section of the app's
+                settings, under the account menu (27 ก.ย. 2569). */}
           </div>
-          <AISettingsModal
-            open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            language={language}
-            onConversationsCleared={() => {
-              // Every chat just went to the trash, this one included.
-              setActiveThread(storageKey, null);
-              resetConversation();
-            }}
-          />
           {/* Messages — scroll area bleeds to the window's right edge so its
               scrollbar sits flush; pr-8 keeps the bubbles off the scrollbar. */}
           {/* The top fade lives on this wrapper, not on the scroller. A mask on

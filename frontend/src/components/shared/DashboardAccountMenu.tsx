@@ -269,12 +269,13 @@ export default function DashboardAccountMenu({
                 </div>
               </div>
               <div className="border-t border-[color:var(--dashboard-shell-border)]" />
-              <MenuButton icon={<Settings className="h-4 w-4" />} label={copy.settings} onClick={() => showSettings()} />
               <MenuButton icon={isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />} label={copy.theme} value={copy.themeValue} chevron onClick={() => setPanel("theme")} />
               <MenuButton icon={<Languages className="h-4 w-4" />} label={copy.language} value={copy.languageValue} chevron onClick={() => setPanel("language")} />
               {activeMembership?.role?.name === "owner" ? (
                 <MenuButton icon={<Sparkles className="h-4 w-4" />} label={copy.aiAssistant} value={copy.aiAssistantValue} chevron onClick={() => setPanel("assistant")} />
               ) : null}
+              {/* Settings last, under the quick switches (the owner, 27 ก.ย. 2569). */}
+              <MenuButton icon={<Settings className="h-4 w-4" />} label={copy.settings} onClick={() => showSettings()} />
               <div className="border-t border-[color:var(--dashboard-shell-border)]" />
               <MenuButton icon={<LogOut className="h-4 w-4" />} label={copy.logout} danger onClick={logout} />
             </>
