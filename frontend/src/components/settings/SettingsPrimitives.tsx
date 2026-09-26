@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import {
+  createContext,
   useId,
   useRef,
   type ButtonHTMLAttributes,
@@ -13,7 +14,7 @@ import {
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect, { type ThemedSelectOption } from "@/src/components/shared/ThemedSelect";
 import ThemedTimeInput from "@/src/components/shared/ThemedTimeInput";
-import { Group, Switch } from "@/src/components/shared/settingsModalKit";
+import { Group, Switch, matchesSearch } from "@/src/components/shared/settingsModalKit";
 
 // The settings live in a floating window opened from the account menu
 // (27 ก.ย. 2569), drawn the way Dishy AI's settings are (AISettingsModal, the
@@ -40,6 +41,23 @@ const INPUT_ERROR = "border-red-300 focus:border-red-400 focus:ring-red-500/15 d
 export const CONTROL_WIDTH = "w-44";
 
 const FIELD_ERROR = "mt-1 max-w-44 text-right text-[11px] leading-4 text-red-600 dark:text-red-400";
+
+// ---------------------------------------------------------------------------
+// Phone
+
+/**
+ * On a phone the window shows the settings chosen for it on 26 ก.ย. 2569
+ * (SettingsMobileKit): one long page of cards under a strip of chips. The
+ * window sets `mobile`; each page then draws its cards instead of these rows.
+ * `flash` is the card a chip just scrolled to, lit for a moment.
+ */
+export const SettingsMobileContext = createContext<{ mobile: boolean; flash?: string | null }>({ mobile: false, flash: null });
+
+/** What the phone's search box holds; cards that do not match hide. */
+export const SettingsSearchContext = createContext("");
+
+/** Every word of the query has to appear somewhere in the texts. */
+export const matchesSetting = matchesSearch;
 
 // ---------------------------------------------------------------------------
 // The row

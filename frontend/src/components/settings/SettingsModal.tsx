@@ -2,23 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Globe, Search, Store, User, X, type LucideIcon } from "lucide-react";
+import { Globe, Search, Store, User, X, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
 import { listenForSettings, type OpenSettingsDetail, type SettingsSection } from "@/src/lib/settingsModal";
 import { FLASH_CLASSES, matchesSearch } from "@/src/components/shared/settingsModalKit";
+import { useIsMobile } from "@/src/app/(dashboard)/r/[slug]/inventory/mobile/primitives";
 import AccountSettings from "./AccountSettings";
 import DisplaySettings from "./DisplaySettings";
 import RestaurantSettings from "./RestaurantSettings";
+import SettingsPhoneSheet from "./SettingsPhoneSheet";
 
 // The app's settings in one floating window, opened from the account menu
 // (27 ก.ย. 2569). The owner asked for the settings page to become the window
 // Dishy AI's settings already are (AISettingsModal), so this is that window:
-// the same card, sidebar with a search, section list, close band, and on a
-// phone the same full-screen list that drills into a section. The sections are
-// the old pages' - account, language and display, restaurant - each saving a
-// setting the moment it changes, as they did on the page.
+// the same card, sidebar with a search, section list and close band. The
+// sections are the old pages' - account, language and display, restaurant -
+// each saving a setting the moment it changes, as they did on the page.
+//
+// A phone (under 768px) gets the window full screen with the phone settings
+// the owner chose on 26 ก.ย. inside it (SettingsPhoneSheet): he asked for
+// those cards back rather than Dishy AI's rows (27 ก.ย. 2569).
 
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = { account: User, display: Globe, restaurant: Store };
 
@@ -27,25 +32,23 @@ function copy(language: "th" | "en") {
     ? {
         settings: "ตั้งค่า",
         close: "ปิด",
-        back: "กลับ",
         search: "ค้นหาการตั้งค่า",
         searchEmpty: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`,
         sections: {
-          account: { name: "บัญชี", blurb: "รูปโปรไฟล์ · ชื่อ · เบอร์โทร" },
-          display: { name: "ภาษาและการแสดงผล", blurb: "ภาษา · ธีม · ปุ่มผู้ช่วย AI" },
-          restaurant: { name: "ร้านอาหาร", blurb: "ข้อมูลร้าน · เวลา · การคิดเงิน · QR" },
+          account: { name: "บัญชี" },
+          display: { name: "ภาษาและการแสดงผล" },
+          restaurant: { name: "ร้านอาหาร" },
         },
       }
     : {
         settings: "Settings",
         close: "Close",
-        back: "Back",
         search: "Search settings",
         searchEmpty: (q: string) => `No settings match “${q}”`,
         sections: {
-          account: { name: "Account", blurb: "Photo · name · phone" },
-          display: { name: "Language and display", blurb: "Language · theme · AI button" },
-          restaurant: { name: "Restaurant", blurb: "Profile · hours · billing · QR" },
+          account: { name: "Account" },
+          display: { name: "Language and display" },
+          restaurant: { name: "Restaurant" },
         },
       };
 }
@@ -55,18 +58,19 @@ type SearchResult = { id: string; section: SettingsSection; label: string; group
 export default function SettingsModal() {
   const { language } = useLanguage();
   const { activeMembership } = useAuth();
+  const isMobile = useIsMobile();
   const t = copy(language);
-  const sections: SettingsSection[] = can(activeMembership, "manage_restaurant_settings")
+  const canManageRestaurant = can(activeMembership, "manage_restaurant_settings");
+  const sections: SettingsSection[] = canManageRestaurant
     ? ["account", "display", "restaurant"]
     : ["account", "display"];
 
   const [open, setOpen] = useState(false);
   // Leaving plays the exit first, then unmounts - the AI settings' timing.
   const [closing, setClosing] = useState(false);
-  // Desktop always shows a section; a phone shows the section list first and
-  // drills in (mobileOpen), as the AI settings do.
   const [section, setSection] = useState<SettingsSection>("account");
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // What the window was last opened for; the phone view starts at its card.
+  const [request, setRequest] = useState<OpenSettingsDetail>({});
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   // The row or group a search result or an old address points at, to scroll
@@ -80,9 +84,7 @@ export default function SettingsModal() {
       if (closeTimer.current) window.clearTimeout(closeTimer.current);
       setClosing(false);
       setSection(detail.section ?? "account");
-      // A named section opens straight into it on a phone too ("ดูบัญชีของคุณ");
-      // the plain "ตั้งค่า" starts at the list.
-      setMobileOpen(Boolean(detail.section));
+      setRequest(detail);
       setQuery("");
       setJumpTo(detail.focus ?? null);
       setOpen(true);
@@ -183,17 +185,15 @@ export default function SettingsModal() {
       observer.disconnect();
       window.clearTimeout(stop);
     };
-  }, [open, jumpTo, section, mobileOpen]);
+  }, [open, jumpTo, section]);
 
   if (!open || typeof document === "undefined") return null;
 
   const activeSection: SettingsSection = sections.includes(section) ? section : "account";
-  const SectionIcon = SECTION_ICONS[activeSection];
   const trimmedQuery = query.trim();
 
   const openResult = (result: SearchResult) => {
     setSection(result.section);
-    setMobileOpen(true);
     setQuery("");
     setJumpTo(result.id);
   };
@@ -269,10 +269,19 @@ export default function SettingsModal() {
     );
   });
 
+  if (isMobile) {
+    return createPortal(
+      <div className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)]`}>
+        <SettingsPhoneSheet request={request} canManageRestaurant={canManageRestaurant} onClose={requestClose} rootRef={cardRef} />
+      </div>,
+      document.body,
+    );
+  }
+
   // Portalled to <body> so no page's stacking context can hold it under a bar.
   return createPortal(
     <div
-      className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-0 sm:p-4`}
+      className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4`}
       onClick={requestClose}
     >
       <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/50" />
@@ -281,81 +290,26 @@ export default function SettingsModal() {
         aria-modal="true"
         aria-label={t.settings}
         ref={cardRef}
-        className="ai-settings-card relative flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
+        className="ai-settings-card relative flex h-[560px] max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-gray-950"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Desktop sidebar */}
-        <aside className="hidden w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 pt-4 dark:border-gray-800 dark:bg-gray-900/50 sm:flex">
+        <aside className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 pt-4 dark:border-gray-800 dark:bg-gray-900/50">
           <div className="mb-2">{searchBox}</div>
           {trimmedQuery ? searchResults : sectionNav}
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Phone: the section list, until a section is opened */}
-          {!mobileOpen && (
-            <div className="flex min-h-0 flex-1 flex-col sm:hidden">
-              <header className="flex items-center justify-end border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
-                <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                  <X className="h-5 w-5" />
-                </button>
-              </header>
-              <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-950">
-                <div className="mb-3">{searchBox}</div>
-                {trimmedQuery ? (
-                  <div className="overflow-hidden rounded-[14px] border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">{searchResults}</div>
-                ) : (
-                  <div className="flex flex-col overflow-hidden rounded-[14px] border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    {sections.map((key) => {
-                      const Icon = SECTION_ICONS[key];
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => {
-                            setSection(key);
-                            setMobileOpen(true);
-                          }}
-                          className="flex min-h-16 items-center gap-3.5 border-t border-gray-100 px-4 py-3 text-left first:border-t-0 active:bg-gray-50 dark:border-gray-800 dark:active:bg-gray-800"
-                        >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300">
-                            <Icon className="h-[18px] w-[18px]" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-[15px] font-medium leading-5 text-gray-800 dark:text-gray-100">{t.sections[key].name}</span>
-                            <span className="mt-0.5 block text-[12px] leading-4 text-gray-500 dark:text-gray-400">{t.sections[key].blurb}</span>
-                          </span>
-                          <ChevronRight className="h-[18px] w-[18px] shrink-0 text-gray-300 dark:text-gray-600" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* The section itself: always on desktop, after a tap on a phone.
-              Kept mounted (hidden) while the phone shows the list, so the
-              search can read every row. */}
-          <div className={`${mobileOpen ? "flex" : "hidden"} relative min-h-0 flex-1 flex-col sm:flex`}>
-            <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800 sm:absolute sm:inset-x-0 sm:top-0 sm:z-10 sm:h-14 sm:justify-end sm:border-0 sm:bg-white sm:px-4 sm:py-0 sm:dark:bg-gray-950 sm:after:pointer-events-none sm:after:absolute sm:after:inset-x-0 sm:after:top-full sm:after:h-5 sm:after:bg-gradient-to-b sm:after:from-white sm:after:to-transparent sm:after:content-[''] sm:dark:after:from-gray-950">
-              <div className="flex min-w-0 items-center gap-2 sm:hidden">
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(false)}
-                  aria-label={`${t.back} · ${t.sections[activeSection].name}`}
-                  className="-ml-1 flex items-center gap-1.5 rounded-md p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                  <SectionIcon className="h-4 w-4 text-orange-500" />
-                </button>
-              </div>
+          {/* The section. A band across the top holds the close control, as in
+              Claude's settings: the section scrolls up under it and fades out
+              at its lower edge. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-end bg-white px-4 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-5 after:bg-gradient-to-b after:from-white after:to-transparent after:content-[''] dark:bg-gray-950 dark:after:from-gray-950">
               <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
                 <X className="h-5 w-5" />
               </button>
             </header>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-6 pt-4 sm:mt-14 sm:px-6 sm:pt-3">
+            <div className="mt-14 flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-3">
               {sections.map((key) => (
                 <div key={key} data-settings-section={key} hidden={key !== activeSection} className="flex flex-col gap-5 [&[hidden]]:hidden">
                   {key === "account" ? <AccountSettings /> : key === "display" ? <DisplaySettings /> : <RestaurantSettings />}
