@@ -146,9 +146,8 @@ export default function RestaurantSettings() {
         loadErrorHint: "ข้อมูลร้านยังโหลดไม่ขึ้น",
         deleteTitle: "ลบร้านอาหาร",
         deleteAction: "ลบร้าน",
-        dangerHeading: "โซนอันตราย",
+        deleteWarningShort: "ลบแล้วกู้คืนไม่ได้",
         deleteNamed: (name: string) => `ลบร้าน “${name}”`,
-        deleteNote: "ต้องพิมพ์ชื่อร้านยืนยันอีกครั้งก่อนลบ",
         save: "บันทึกข้อมูลร้าน",
         saveError: "บันทึกข้อมูลร้านไม่สำเร็จ",
         uploadError: "อัปโหลดโลโก้ไม่สำเร็จ",
@@ -241,9 +240,8 @@ export default function RestaurantSettings() {
         loadErrorHint: "The restaurant details have not loaded.",
         deleteTitle: "Delete restaurant",
         deleteAction: "Delete",
-        dangerHeading: "Danger zone",
+        deleteWarningShort: "This cannot be undone",
         deleteNamed: (name: string) => `Delete “${name}”`,
-        deleteNote: "You type the restaurant's name to confirm before it is deleted",
         save: "Save restaurant",
         saveError: "Could not save restaurant details.",
         uploadError: "Could not upload the logo.",
@@ -586,12 +584,10 @@ export default function RestaurantSettings() {
     const phoneDanger = isOwner ? (
       <MobileDangerZone
         id="delete"
-        heading={copy.dangerHeading}
         title={copy.deleteTitle}
-        warning={copy.deleteWarning}
+        warning={copy.deleteWarningShort}
         action={copy.deleteNamed(shopName)}
         actionLabel={`${copy.deleteAction} ${shopName}`}
-        note={copy.deleteNote}
         onAction={() => {
           setDeleteModalClosing(false);
           setDeleteModalOpen(true);

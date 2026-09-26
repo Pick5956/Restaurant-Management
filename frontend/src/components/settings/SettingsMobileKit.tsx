@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useId, type InputHTMLAttributes, type ReactNode } from "react";
-import { AlertTriangle, Minus, Plus, Trash2, type LucideIcon } from "lucide-react";
+import { Minus, Plus, Trash2, type LucideIcon } from "lucide-react";
 import { FOCUS_RING, SettingsMobileContext, SettingsSearchContext, matchesSetting } from "./SettingsPrimitives";
 
 // The settings on a phone (chosen 26 ก.ย. 2569): one long page, a strip of
@@ -22,35 +22,29 @@ export const SettingsDangerSlotContext = createContext<HTMLElement | null>(null)
 
 /**
  * The last card on the page, and plainly dangerous (the owner, 27 ก.ย. 2569):
- * a red heading over it, a red-edged card, and a solid red button that names
- * what it deletes. The confirming step stays with whoever opens it.
+ * a red-edged card, one short line, and a solid red button that names what it
+ * deletes. No heading over it and no note under it - the owner cut both. The
+ * confirming step stays with whoever opens it.
  */
 export function MobileDangerZone({
   id,
-  heading,
   title,
   warning,
   action,
   actionLabel,
-  note,
   onAction,
 }: {
   id: string;
-  heading: string;
   title: string;
   warning: string;
   action: string;
   /** The button's accessible name, when its text alone is not enough. */
   actionLabel?: string;
-  note?: string;
   onAction: () => void;
 }) {
   const query = useContext(SettingsSearchContext);
   return (
-    <div data-settings-group={id} hidden={!matchesSetting(query, title, warning, heading)} className="flex flex-col gap-1.5">
-      <p className="ml-1 flex items-center gap-1.5 text-[12.5px] font-bold text-red-600 dark:text-red-400">
-        <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" /> {heading}
-      </p>
+    <div data-settings-group={id} hidden={!matchesSetting(query, title, warning)}>
       <section
         aria-label={title}
         className="rounded-[22px] border-[1.5px] border-red-300 bg-red-50 px-4 pb-4 pt-4 shadow-(--inv-shadow) dark:border-red-800/80 dark:bg-red-950/30"
@@ -73,7 +67,6 @@ export function MobileDangerZone({
           <Trash2 aria-hidden="true" className="h-4 w-4 shrink-0" />
           <span className="truncate">{action}</span>
         </button>
-        {note ? <p className="mt-2 text-center text-[11.5px] text-red-700 dark:text-red-400/90">{note}</p> : null}
       </section>
     </div>
   );
