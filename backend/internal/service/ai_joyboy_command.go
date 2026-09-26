@@ -96,7 +96,7 @@ func (s *AIService) handleJoyboyStockDrafts(actor AIActorContext, request *AIAsk
 		if aiDraftsIncludeMenu(drafts) {
 			what = "แก้ข้อมูลร้าน"
 		}
-		response.Answer = fmt.Sprintf("ผมยัง%sให้ไม่ได้ครับ ต้องเปิด “ให้ผู้ช่วยแก้ข้อมูลร้านได้” ในตั้งค่าผู้ช่วยก่อน แล้วผมจะเตรียมรายการให้คุณกดยืนยัน", what)
+		response.Answer = fmt.Sprintf("ผมยัง%sให้ไม่ได้ครับ ต้องเปิด “ให้ผู้ช่วยแก้ข้อมูลร้านได้” ในตั้งค่า Dishy AI หัวข้อ “สิทธิ์ของผู้ช่วย” ก่อน แล้วผมจะเตรียมรายการให้คุณกดยืนยัน", what)
 		response.Intent = AIIntentChat
 		response.Task = AITaskGeneralChat
 		response.Model = "joyboy-action-disabled"

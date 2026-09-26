@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, SlidersHorizontal, Trash2, Wand2, X } from "lucide-react";
+import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Trash2, X } from "lucide-react";
 import {
   AI_ACTION_TYPES,
   deleteAllAIConversations,
@@ -70,7 +70,7 @@ function copy(language: "th" | "en") {
         saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
         sections: {
           general: { name: "ทั่วไป", blurb: "ชื่อที่เรียกคุณ · คำถามแนะนำ · ประวัติแชท" },
-          actions: { name: "สิ่งที่ทำแทนคุณได้", blurb: "เลือกว่าแก้อะไรได้บ้าง" },
+          actions: { name: "สิทธิ์ของผู้ช่วย", blurb: "เลือกว่าผู้ช่วยแก้อะไรในร้านได้" },
           notifications: { name: "การแจ้งเตือน", blurb: "ของใกล้หมด · ของค้าง · ยอดขายผิดปกติ" },
         },
         groupAnswers: "การตอบ",
@@ -122,7 +122,7 @@ function copy(language: "th" | "en") {
         saveError: "Could not save, try again",
         sections: {
           general: { name: "General", blurb: "What it calls you · suggestions · chat history" },
-          actions: { name: "What it can do for you", blurb: "Choose what it may change" },
+          actions: { name: "Assistant permissions", blurb: "Choose what the assistant may change in the shop" },
           notifications: { name: "Notifications", blurb: "Low stock · dead stock · unusual sales" },
         },
         groupAnswers: "Answers",
@@ -166,7 +166,7 @@ function copy(language: "th" | "en") {
       };
 }
 
-const SECTION_ICONS: Record<SectionKey, typeof Wand2> = { general: SlidersHorizontal, actions: Wand2, notifications: Bell };
+const SECTION_ICONS: Record<SectionKey, typeof ShieldCheck> = { general: SlidersHorizontal, actions: ShieldCheck, notifications: Bell };
 const SECTION_ORDER: SectionKey[] = ["general", "actions", "notifications"];
 
 type SearchEntry = { id: string; section: SectionKey; label: string; hint: string };

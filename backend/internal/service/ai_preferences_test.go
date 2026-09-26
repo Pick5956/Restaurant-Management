@@ -151,7 +151,7 @@ func TestDropSwitchedOffActionTypesKeepsItemsAndPreviewsAligned(t *testing.T) {
 		t.Errorf("wrong set of switched-off kinds: %v", off)
 	}
 	sentence := aiActionTypesOffSentence(off)
-	if !strings.Contains(sentence, "เปลี่ยนราคาเมนู") || !strings.Contains(sentence, "สิ่งที่ทำแทนคุณได้") {
+	if !strings.Contains(sentence, "เปลี่ยนราคาเมนู") || !strings.Contains(sentence, "สิทธิ์ของผู้ช่วย") {
 		t.Errorf("the refusal does not name the kind and where to switch it on:\n%s", sentence)
 	}
 }
