@@ -151,7 +151,8 @@ func TestPersonaScopesAndForbidsWhatItShould(t *testing.T) {
 	if !strings.Contains(joyboyPersona, "ข้อนี้ใช้เฉพาะคำถามเรื่องโมเดล/ค่าย/เครื่องที่รันเท่านั้น") {
 		t.Error("the model-identity rule must be scoped, or it swallows 'what is your name'")
 	}
-	if !strings.Contains(joyboyPersona, "คุณคือผู้ช่วยของ Dishy ยังไม่มีชื่อเล่นเป็นของตัวเอง") {
+	// Its name is Dishy AI (the owner, 27 ก.ย. 2569) — before that it had none.
+	if !strings.Contains(joyboyPersona, "คุณชื่อ Dishy AI เป็นผู้ช่วย AI ของระบบ Dishy") {
 		t.Error("the assistant needs a true answer to give when asked its name")
 	}
 
