@@ -1178,7 +1178,19 @@ textarea {
   background-color: transparent !important;
 }
 
-@media (min-width: 1024px) {
+/* The rail is drawn from md: as icons on an iPad held upright, in full from
+   lg. It sits "sunk" behind its inset shadow at both, never a hairline. */
+@media (min-width: 48rem) {
+  [data-nav-rail].dashboard-shell-border-r::after {
+    display: none;
+  }
+}
+
+/* 64rem, Tailwind's lg, not 1024px: every lg: class in the pages is rem. With
+   a bigger default font in the browser the two used to disagree between
+   1024px and 64rem, and the sheet below took over the scrolling while the
+   pages still laid themselves out for a phone (27 ก.ย. 2569). */
+@media (min-width: 64rem) {
   html:has([data-shell-frame]) {
     overflow: hidden;
   }
@@ -1188,10 +1200,6 @@ textarea {
      that says the desktop shell is active and owns the scrolling. */
   [data-shell-frame] {
     background: none;
-  }
-
-  [data-nav-rail].dashboard-shell-border-r::after {
-    display: none;
   }
 
   /* The canvas beside the rail. It is flush and square now - the inset
@@ -1809,7 +1817,7 @@ textarea {
   background-color: var(--inv-head-bg);
   border-bottom: 1px solid var(--inv-head-line);
 }
-@media (min-width: 1024px) {
+@media (min-width: 64rem) {
   .inv-thead th { top: var(--inv-th-top, 0px); }
 }
 .inv-thead th:first-child,

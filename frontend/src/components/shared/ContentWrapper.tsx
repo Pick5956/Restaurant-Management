@@ -1,35 +1,40 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { RAIL_FULL_QUERY, RAIL_ICONS_QUERY, RAIL_ICONS_WIDTH } from '@/src/lib/navRail';
 
 export default function ContentWrapper({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const html = document.documentElement;
-    const mq = window.matchMedia('(min-width: 1024px)');
+    const full = window.matchMedia(RAIL_FULL_QUERY);
+    const icons = window.matchMedia(RAIL_ICONS_QUERY);
 
     const update = () => {
       if (!ref.current) return;
-      if (!mq.matches) {
+      if (full.matches) {
+        // Read CSS variable set imperatively by SidebarProvider (no React re-render needed)
+        ref.current.style.marginLeft = html.style.getPropertyValue('--sidebar-w') || '235px';
+      } else if (icons.matches) {
+        ref.current.style.marginLeft = RAIL_ICONS_WIDTH;
+      } else {
         ref.current.style.marginLeft = '0px';
-        return;
       }
-      // Read CSS variable set imperatively by SidebarProvider (no React re-render needed)
-      const w = html.style.getPropertyValue('--sidebar-w') || '235px';
-      ref.current.style.marginLeft = w;
     };
 
     // Watch for CSS variable changes on <html> style attribute
     const observer = new MutationObserver(update);
     observer.observe(html, { attributes: true, attributeFilter: ['style'] });
 
-    mq.addEventListener('change', update);
+    full.addEventListener('change', update);
+    icons.addEventListener('change', update);
     update();
 
     return () => {
       observer.disconnect();
-      mq.removeEventListener('change', update);
+      full.removeEventListener('change', update);
+      icons.removeEventListener('change', update);
     };
   }, []);
 

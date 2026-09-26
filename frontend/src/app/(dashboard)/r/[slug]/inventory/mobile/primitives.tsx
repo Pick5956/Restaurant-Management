@@ -22,7 +22,9 @@ export function useIsMobile(breakpoint = 768) {
   // side only after mount. Rendering both would double every fetch.
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
   useEffect(() => {
-    const query = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    // In rem, as Tailwind's md is (768 → 48rem), so a bigger browser font
+    // moves this switch and the md: classes together (27 ก.ย. 2569).
+    const query = window.matchMedia(`(width < ${breakpoint / 16}rem)`);
     const sync = () => setIsMobile(query.matches);
     sync();
     query.addEventListener("change", sync);

@@ -221,7 +221,7 @@ export default function AIAssistantPage() {
   const skipServerLoadRef = useRef<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   // A card off the chats button on a wide screen, a full sheet on a phone.
-  const wideScreen = useMediaQuery("(min-width: 640px)");
+  const wideScreen = useMediaQuery("(min-width: 40rem)"); // Tailwind's sm
   // Switching chats leaves the current one behind, and a preview waiting on
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {

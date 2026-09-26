@@ -13,6 +13,8 @@ import { useBackdropClose } from '@/src/hooks/useBackdropClose';
 import { can, TEAM_MANAGEMENT_PERMISSIONS } from '@/src/lib/rbac';
 import { getDefaultWorkspaceRoute } from '@/src/lib/workMode';
 import { branchLabel } from '@/src/lib/branchLabel';
+import { useMediaQuery } from '@/src/lib/useMediaQuery';
+import { RAIL_ICONS_QUERY } from '@/src/lib/navRail';
 import type { Permission } from '@/src/types/auth';
 
 type SubItem = {
@@ -360,7 +362,14 @@ export default function Sidebar() {
   const landingHref = getDefaultWorkspaceRoute(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
-  const collapseTitle = collapsed
+  // An iPad held upright (md up to lg) gets the rail as icons only; there is
+  // no room to push the page over for the labels, so its menu button opens the
+  // full menu over the page instead of widening the rail (owner, 27 ก.ย. 2569).
+  const iconsOnly = useMediaQuery(RAIL_ICONS_QUERY);
+  const railCollapsed = collapsed || iconsOnly;
+  const collapseTitle = iconsOnly
+    ? language === 'th' ? 'เปิดเมนู' : 'Open menu'
+    : collapsed
     ? language === 'th' ? 'ขยายแถบด้านข้าง' : 'Expand sidebar'
     : language === 'th' ? 'ย่อแถบด้านข้าง' : 'Collapse sidebar';
 
@@ -454,19 +463,21 @@ export default function Sidebar() {
         </div>
       </aside>
 
+      {/* md:max-lg:w-[68px] holds the icon width in CSS as well, so the rail
+          is never drawn full width on an iPad before iconsOnly is known. */}
       <aside
         data-nav-rail=""
         className={`
-          dashboard-shell-border-r fixed left-0 top-0 z-30 hidden h-dvh flex-col overflow-hidden bg-[var(--rail-bg)] lg:flex
+          dashboard-shell-border-r fixed left-0 top-0 z-30 hidden h-dvh flex-col overflow-hidden bg-[var(--rail-bg)] md:flex
           transition-[width] duration-300 ease-in-out will-change-[width]
-          ${collapsed ? 'w-[68px]' : 'w-[235px]'}
+          ${railCollapsed ? 'w-[68px]' : 'w-[235px]'} md:max-lg:w-[68px]
         `}
       >
         <div className="flex h-[62px] shrink-0 flex-col justify-center px-3">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setCollapsed(!collapsed)}
+              onClick={() => (iconsOnly ? setMobileOpen(true) : setCollapsed(!collapsed))}
               /* 44px wide with the icon centred puts its axis at x=34, the same
                  place the collapsed rail centres every nav icon. Widening rather
                  than re-aligning keeps the left edge fixed, so the icon does not
@@ -474,7 +485,7 @@ export default function Sidebar() {
               className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-md text-[var(--rail-fg-muted)] transition-colors hover:bg-[var(--rail-hover-bg)]"
               title={collapseTitle}
               aria-label={collapseTitle}
-              aria-expanded={!collapsed}
+              aria-expanded={iconsOnly ? mobileOpen : !collapsed}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="h-5 w-5" aria-hidden="true">
                 <line x1="4" y1="6" x2="20" y2="6" />
@@ -485,9 +496,9 @@ export default function Sidebar() {
             <Link
               href={restaurantPageHref(landingHref)}
               aria-label="Dishy"
-              tabIndex={collapsed ? -1 : undefined}
+              tabIndex={railCollapsed ? -1 : undefined}
               className={`flex min-w-0 items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${
-                collapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-auto opacity-100'
+                railCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-auto opacity-100'
               }`}
             >
               <AppLogo size={32} />
@@ -496,11 +507,11 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <NavLinks collapsed={collapsed} />
+        <NavLinks collapsed={railCollapsed} />
 
-        <div className={`shrink-0 border-t border-[var(--rail-border)] px-3 py-2 flex flex-col ${collapsed ? 'items-center gap-1' : 'gap-0.5'}`}>
-          <RestaurantSwitcherCard collapsed={collapsed} />
-          <DashboardAccountMenu variant={collapsed ? 'icon' : 'rail'} />
+        <div className={`shrink-0 border-t border-[var(--rail-border)] px-3 py-2 flex flex-col ${railCollapsed ? 'items-center gap-1' : 'gap-0.5'}`}>
+          <RestaurantSwitcherCard collapsed={railCollapsed} />
+          <DashboardAccountMenu variant={railCollapsed ? 'icon' : 'rail'} />
         </div>
       </aside>
     </>
