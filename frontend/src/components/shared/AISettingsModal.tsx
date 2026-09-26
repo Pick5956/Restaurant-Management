@@ -60,7 +60,7 @@ const ACTION_ROWS: ActionRow[] = [
 function copy(language: "th" | "en") {
   return language === "th"
     ? {
-        settings: "ตั้งค่าผู้ช่วย",
+        settings: "ตั้งค่า Dishy AI",
         close: "ปิด",
         back: "กลับ",
         saved: "บันทึกแล้ว",
@@ -110,7 +110,7 @@ function copy(language: "th" | "en") {
         bellNote: "ขึ้นที่กระดิ่งมุมขวาบน เฉพาะตอนเปิดแอป",
       }
     : {
-        settings: "Assistant settings",
+        settings: "Dishy AI settings",
         close: "Close",
         back: "Back",
         saved: "Saved",
