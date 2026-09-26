@@ -883,14 +883,13 @@ export default function AIOperationsFloatingChat() {
           border-color: rgb(249 115 22);
           box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15);
         }
-        /* Phone sheet only: the message list dissolves into the canvas under the
-           floating controls instead of ending at a hard edge. From sm up the panel
-           has a real header bar, so no fade there. */
-        @media (max-width: 639px) {
-          .ai-sheet-fade {
-            -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem);
-            mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem);
-          }
+        /* The message list dissolves into the panel at both ends instead of
+           ending at a hard edge: under the floating controls at the top, and
+           into the input at the bottom. Every width now - the controls float at
+           every width, and the ruled bar above the input is gone (26 ก.ย. 2569). */
+        .ai-sheet-fade {
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 calc(100% - 1.25rem), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 calc(100% - 1.25rem), transparent 100%);
         }
         @media (prefers-reduced-motion: reduce) {
           .animate-message-slide {
@@ -1152,9 +1151,10 @@ export default function AIOperationsFloatingChat() {
               handleSend();
             }}
             onClick={(e) => e.stopPropagation()}
-            /* Phone: the pill floats on the canvas with no bar or divider above it,
-               matching the full AI page. sm+ keeps the bordered footer. */
-            className="bg-transparent px-3 pb-3 pt-1 dark:bg-transparent sm:rounded-b-2xl sm:border-t sm:border-gray-200 sm:bg-white sm:p-3.5 sm:dark:border-gray-800 sm:dark:bg-gray-950"
+            /* The pill floats on the panel's own background at every width, as on
+               the full AI page. The computer used to have a white bar with a rule
+               above it, which cut the thread off in a hard line (26 ก.ย. 2569). */
+            className="bg-transparent px-3 pb-3 pt-1 sm:px-3.5 sm:pb-3.5"
           >
             {/* One capsule, the same as the full AI page: the box and the send
                 button on one line, the button the height of a one-line box. It
