@@ -752,7 +752,7 @@ export default function AISettingsModal({
       className={`${closing ? "ai-settings-out" : "ai-settings-in"} fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-0 sm:p-4`}
       onClick={requestClose}
     >
-      <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/50" />
+      <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/15 backdrop-blur-[1px] dark:bg-black/30" />
       <div
         role="dialog"
         aria-modal="true"

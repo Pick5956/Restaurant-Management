@@ -1136,10 +1136,20 @@ export default function AIAssistantPage() {
       {/* Dim overlay — click to dismiss. Full-viewport on a phone (the panel
           covers the screen there); a light scrim on a desktop, where the panel
           is a popover and the page behind it stays visible. */}
+        {/* The chat list's card gets the same backdrop on a computer (the owner,
+            26 ก.ย. 2569): drawn here over the whole chat page, as this one is,
+            rather than inside the list's own box, which leaves the page's
+            padding unblurred. Clicks still reach the list's own catcher. */}
+        {listOpen && wideScreen && (
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-[29] bg-black/15 backdrop-blur-[1px] dark:bg-black/30" />
+        )}
         {drawerOpen && (
           <div
             onClick={() => setDrawerOpen(false)}
-            className="fixed inset-0 z-[59] bg-black/30 backdrop-blur-[1px] dark:bg-black/50 sm:absolute sm:bg-black/15 sm:backdrop-blur-0 sm:dark:bg-black/30"
+            // The 1px blur shows at every width: the owner liked it on the
+            // computer (26 ก.ย. 2569), where the "sm:backdrop-blur-0" meant to
+            // switch it off never existed in Tailwind v4 anyway.
+            className="fixed inset-0 z-[59] bg-black/30 backdrop-blur-[1px] dark:bg-black/50 sm:absolute sm:bg-black/15 sm:dark:bg-black/30"
             aria-hidden
           />
         )}
