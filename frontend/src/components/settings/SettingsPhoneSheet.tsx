@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, Search } from "lucide-react";
+import { ChevronLeft, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { useIOSActiveStates } from "@/src/app/(dashboard)/r/[slug]/inventory/mobile/primitives";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -12,8 +12,9 @@ import RestaurantSettings from "./RestaurantSettings";
 
 // The settings window on a phone (27 ก.ย. 2569): the owner opens it from the
 // account menu like on a computer, but inside it keeps the phone settings he
-// chose on 26 ก.ย. - a bar with the title and a search button, a strip of
-// chips, and one long page of cards (SettingsMobileKit). A chip lights the
+// chose on 26 ก.ย. - a bar, a strip of chips, and one long page of cards
+// (SettingsMobileKit). The bar is the back arrow and a search box across the
+// rest of it; the owner cut the "ตั้งค่า" title (27 ก.ย. 2569). A chip lights the
 // moment it is tapped, the page glides to its card and the card flashes once,
 // so the last cards, which can never reach the top, still show where the tap
 // went. This was the /settings page's phone layout; it now scrolls inside the
@@ -72,7 +73,6 @@ export default function SettingsPhoneSheet({
   useIOSActiveStates();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
   const [hasResults, setHasResults] = useState(true);
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -80,12 +80,12 @@ export default function SettingsPhoneSheet({
   // must not move the lit chip; the next touch or wheel hands it back.
   const chipLockRef = useRef(false);
   const flashTimerRef = useRef(0);
-  const { ref: chipsRef, scrollable: chipsScroll, ratio: chipsRatio, progress: chipsProgress } = useScrollAffordance(!searching);
+  const { ref: chipsRef, scrollable: chipsScroll, ratio: chipsRatio, progress: chipsProgress } = useScrollAffordance(!query);
   const chipsThumb = Math.max(chipsRatio * 100, 35);
 
   const copy = th
-    ? { title: "ตั้งค่า", close: "ปิด", searchLabel: "ค้นหาการตั้งค่า", cancel: "ยกเลิก", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”` }
-    : { title: "Settings", close: "Close", searchLabel: "Search settings", cancel: "Cancel", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”` };
+    ? { title: "ตั้งค่า", close: "ปิด", searchLabel: "ค้นหาการตั้งค่า", clear: "ล้างคำค้นหา", categories: "หมวดการตั้งค่า", noMatch: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”` }
+    : { title: "Settings", close: "Close", searchLabel: "Search settings", clear: "Clear search", categories: "Settings categories", noMatch: (q: string) => `No settings match “${q}”` };
 
   const chips: { id: string; label: string }[] = [
     { id: "account", label: th ? "บัญชี" : "Account" },
@@ -195,11 +195,6 @@ export default function SettingsPhoneSheet({
     };
   }, [query]);
 
-  const closeSearch = () => {
-    setQuery("");
-    setSearching(false);
-  };
-
   return (
     <div
       ref={rootRef}
@@ -213,50 +208,46 @@ export default function SettingsPhoneSheet({
     >
       <div className="shrink-0 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center gap-2 px-4">
-          {searching ? (
-            <div role="search" className="relative min-w-0 flex-1">
-              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
-              <input
-                type="search"
-                autoFocus
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    closeSearch();
-                  }
-                }}
-                placeholder={copy.searchLabel}
-                aria-label={copy.searchLabel}
-                className="h-10 w-full rounded-xl bg-(--inv-surface-strong) pl-9 pr-3 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
-              />
-            </div>
-          ) : (
-            <>
-              {/* Back to the page the window was opened over. */}
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={copy.close}
-                className={`ui-press -ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
-              >
-                <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
-              </button>
-              <h1 className="min-w-0 flex-1 truncate text-[22px] font-bold text-(--inv-heading)">{copy.title}</h1>
-            </>
-          )}
+          {/* Back to the page the window was opened over. */}
           <button
             type="button"
-            onClick={() => (searching ? closeSearch() : setSearching(true))}
-            aria-label={searching ? copy.cancel : copy.searchLabel}
-            className={`ui-press flex h-10 shrink-0 items-center justify-center rounded-xl ${searching ? "px-2 text-[15px] font-semibold text-(--inv-action)" : "w-10 bg-(--inv-surface-strong) text-(--inv-body)"} ${FOCUS_RING}`}
+            onClick={onClose}
+            aria-label={copy.close}
+            className={`ui-press -ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
           >
-            {searching ? copy.cancel : <Search aria-hidden="true" className="h-[18px] w-[18px]" />}
+            <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
           </button>
+          <div role="search" className="relative min-w-0 flex-1">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && query) {
+                  event.preventDefault();
+                  setQuery("");
+                }
+              }}
+              placeholder={copy.searchLabel}
+              aria-label={copy.searchLabel}
+              className="h-10 w-full rounded-xl bg-(--inv-surface-strong) pl-9 pr-10 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label={copy.clear}
+                className={`absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-(--inv-muted) ${FOCUS_RING}`}
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {searching ? null : (
+        {/* While a query is typed the chips step aside: the cards they point at may be hidden. */}
+        {query ? null : (
           <>
             <div className="relative mt-2.5">
               <ul ref={chipsRef} aria-label={copy.categories} className="soft-scrollbar-hide flex gap-1.5 overflow-x-auto px-4">
