@@ -748,22 +748,21 @@ export default function AISettingsModal({
 
           {/* The section itself: always on desktop, after a tap on a phone */}
           <div className={`${mobileOpen ? "flex" : "hidden"} min-h-0 flex-1 flex-col sm:flex`}>
-            <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800 sm:px-6 sm:pt-4">
-              <div className="flex min-w-0 items-center gap-2">
+            {/* No section title (the owner cut every title, 26 ก.ย. 2569): the
+                highlighted entry in the list already says which section this
+                is. A phone keeps the bar for its back button; a computer has
+                only the close control, floated into the corner. */}
+            <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800 sm:absolute sm:right-4 sm:top-3 sm:z-10 sm:border-0 sm:p-0">
+              <div className="flex min-w-0 items-center gap-2 sm:hidden">
                 <button
                   type="button"
                   onClick={() => setMobileOpen(false)}
-                  aria-label={t.back}
-                  className="-ml-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 sm:hidden"
+                  aria-label={`${t.back} · ${t.sections[activeSection].name}`}
+                  className="-ml-1 flex items-center gap-1.5 rounded-md p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   <ChevronLeft className="h-5 w-5" />
+                  <SectionIcon className="h-4 w-4 text-orange-500" />
                 </button>
-                <div className="min-w-0">
-                  <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
-                    <SectionIcon className="h-4 w-4 text-orange-500 sm:hidden" />
-                    {t.sections[activeSection].name}
-                  </h2>
-                </div>
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {saveBadge}
@@ -773,7 +772,7 @@ export default function AISettingsModal({
               </div>
             </header>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
+            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pt-14">
               {/* Nothing loaded yet: the spinner from the very first frame (the
                   request starts in an effect, a frame after the sheet appears).
                   Once there is a view it stays up through later refreshes. */}
