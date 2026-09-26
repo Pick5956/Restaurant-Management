@@ -1,7 +1,7 @@
 "use client";
 
-import { useContext, useId, type InputHTMLAttributes, type ReactNode } from "react";
-import { Minus, Plus, type LucideIcon } from "lucide-react";
+import { createContext, useContext, useId, type InputHTMLAttributes, type ReactNode } from "react";
+import { AlertTriangle, Minus, Plus, Trash2, type LucideIcon } from "lucide-react";
 import { FOCUS_RING, SettingsMobileContext, SettingsSearchContext, matchesSetting } from "./SettingsPrimitives";
 
 // The settings on a phone (chosen 26 ก.ย. 2569): one long page, a strip of
@@ -11,6 +11,73 @@ import { FOCUS_RING, SettingsMobileContext, SettingsSearchContext, matchesSettin
 // +) rather than the same form row repeated. Painted with the stock page's
 // phone tokens (--inv-*), which the layout's data-inventory-mobile root brings.
 // The pages keep their own state and save calls; these are only the looks.
+
+/**
+ * Where the page's danger zone goes: an element at the very bottom of the phone
+ * page, below every other card (27 ก.ย. 2569). The restaurant draws its delete
+ * card there through a portal, so the card keeps its own dialog and logic while
+ * sitting under Dishy AI's card. Null anywhere else - the card stays in place.
+ */
+export const SettingsDangerSlotContext = createContext<HTMLElement | null>(null);
+
+/**
+ * The last card on the page, and plainly dangerous (the owner, 27 ก.ย. 2569):
+ * a red heading over it, a red-edged card, and a solid red button that names
+ * what it deletes. The confirming step stays with whoever opens it.
+ */
+export function MobileDangerZone({
+  id,
+  heading,
+  title,
+  warning,
+  action,
+  actionLabel,
+  note,
+  onAction,
+}: {
+  id: string;
+  heading: string;
+  title: string;
+  warning: string;
+  action: string;
+  /** The button's accessible name, when its text alone is not enough. */
+  actionLabel?: string;
+  note?: string;
+  onAction: () => void;
+}) {
+  const query = useContext(SettingsSearchContext);
+  return (
+    <div data-settings-group={id} hidden={!matchesSetting(query, title, warning, heading)} className="flex flex-col gap-1.5">
+      <p className="ml-1 flex items-center gap-1.5 text-[12.5px] font-bold text-red-600 dark:text-red-400">
+        <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" /> {heading}
+      </p>
+      <section
+        aria-label={title}
+        className="rounded-[22px] border-[1.5px] border-red-300 bg-red-50 px-4 pb-4 pt-4 shadow-(--inv-shadow) dark:border-red-800/80 dark:bg-red-950/30"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
+            <Trash2 aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-semibold text-red-700 dark:text-red-400">{title}</h2>
+            <p className="text-[12.5px] leading-[18px] text-red-800/80 dark:text-red-300/80">{warning}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onAction}
+          aria-label={actionLabel}
+          className={`ui-press mt-3.5 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[14px] bg-red-600 px-3 text-[15px] font-bold text-white shadow-[0_2px_0_#b91c1c] ${FOCUS_RING}`}
+        >
+          <Trash2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+          <span className="truncate">{action}</span>
+        </button>
+        {note ? <p className="mt-2 text-center text-[11.5px] text-red-700 dark:text-red-400/90">{note}</p> : null}
+      </section>
+    </div>
+  );
+}
 
 /** Whether the settings are drawn for a phone. */
 export function useSettingsPhone() {

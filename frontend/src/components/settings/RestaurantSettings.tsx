@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, Camera, Clock, ImagePlus, MapPin, QrCode, Receipt, Trash2, Wallet, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { AlertTriangle, Camera, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet, X } from "lucide-react";
+import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -31,7 +31,7 @@ import {
   type FormField,
   type FormState,
 } from "./restaurantSettingsForm";
-import { MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, useSettingsPhone } from "./SettingsMobileKit";
+import { MobileDangerZone, MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, SettingsDangerSlotContext, useSettingsPhone } from "./SettingsMobileKit";
 
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
@@ -71,6 +71,7 @@ export default function RestaurantSettings() {
     formStateRef.current = form;
   });
 
+  const dangerSlot = useContext(SettingsDangerSlotContext);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteModalClosing, setDeleteModalClosing] = useState(false);
   const [confirmRestaurantName, setConfirmRestaurantName] = useState("");
@@ -145,6 +146,9 @@ export default function RestaurantSettings() {
         loadErrorHint: "ข้อมูลร้านยังโหลดไม่ขึ้น",
         deleteTitle: "ลบร้านอาหาร",
         deleteAction: "ลบร้าน",
+        dangerHeading: "โซนอันตราย",
+        deleteNamed: (name: string) => `ลบร้าน “${name}”`,
+        deleteNote: "ต้องพิมพ์ชื่อร้านยืนยันอีกครั้งก่อนลบ",
         save: "บันทึกข้อมูลร้าน",
         saveError: "บันทึกข้อมูลร้านไม่สำเร็จ",
         uploadError: "อัปโหลดโลโก้ไม่สำเร็จ",
@@ -237,6 +241,9 @@ export default function RestaurantSettings() {
         loadErrorHint: "The restaurant details have not loaded.",
         deleteTitle: "Delete restaurant",
         deleteAction: "Delete",
+        dangerHeading: "Danger zone",
+        deleteNamed: (name: string) => `Delete “${name}”`,
+        deleteNote: "You type the restaurant's name to confirm before it is deleted",
         save: "Save restaurant",
         saveError: "Could not save restaurant details.",
         uploadError: "Could not upload the logo.",
@@ -575,6 +582,22 @@ export default function RestaurantSettings() {
         document.body,
       );
   if (phone) {
+    const shopName = restaurant?.name?.trim() || copy.unnamed;
+    const phoneDanger = isOwner ? (
+      <MobileDangerZone
+        id="delete"
+        heading={copy.dangerHeading}
+        title={copy.deleteTitle}
+        warning={copy.deleteWarning}
+        action={copy.deleteNamed(shopName)}
+        actionLabel={`${copy.deleteAction} ${shopName}`}
+        note={copy.deleteNote}
+        onAction={() => {
+          setDeleteModalClosing(false);
+          setDeleteModalOpen(true);
+        }}
+      />
+    ) : null;
     const th = language === "th";
     const tables = Math.min(500, Math.max(1, Number(form.table_count) || 1));
     // A rate is a pill when it is one of the usual ones, and typed otherwise.
@@ -785,21 +808,9 @@ export default function RestaurantSettings() {
             ) : null}
           </MobileSection>
 
-          {isOwner ? (
-            <MobileSection id="delete" title={copy.deleteTitle} summary={copy.deleteWarning} icon={Trash2} tone="bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400" danger>
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteModalClosing(false);
-                  setDeleteModalOpen(true);
-                }}
-                aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
-                className={`ui-press flex min-h-[44px] w-full items-center justify-center rounded-[14px] border border-red-200 bg-(--inv-surface) text-[15px] font-semibold text-red-600 dark:border-red-900/60 dark:text-red-400 ${FOCUS_RING}`}
-              >
-                {copy.deleteAction}
-              </button>
-            </MobileSection>
-          ) : null}
+          {/* The delete card goes to the bottom of the page, under Dishy AI's
+              card, when the page has a slot for it (27 ก.ย. 2569). */}
+          {dangerSlot ? (phoneDanger ? createPortal(phoneDanger, dangerSlot) : null) : phoneDanger}
         </div>
         {deleteModal}
       </>

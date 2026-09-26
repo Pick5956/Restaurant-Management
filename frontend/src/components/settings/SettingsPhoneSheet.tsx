@@ -6,6 +6,7 @@ import { useIOSActiveStates } from "@/src/app/(dashboard)/r/[slug]/inventory/mob
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import type { OpenSettingsDetail } from "@/src/lib/settingsModal";
 import { FOCUS_RING, SettingsMobileContext, SettingsSearchContext } from "./SettingsPrimitives";
+import { SettingsDangerSlotContext } from "./SettingsMobileKit";
 import AccountSettings from "./AccountSettings";
 import AIAssistantSettings from "./AIAssistantSettings";
 import DisplaySettings from "./DisplaySettings";
@@ -82,6 +83,8 @@ export default function SettingsPhoneSheet({
   const [hasResults, setHasResults] = useState(true);
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  // The bottom of the page, where the restaurant's delete card is drawn.
+  const [dangerSlot, setDangerSlot] = useState<HTMLDivElement | null>(null);
   // While set, the page is gliding to a tapped chip's card and the scroll
   // must not move the lit chip; the next touch or wheel hands it back.
   const chipLockRef = useRef(false);
@@ -122,7 +125,8 @@ export default function SettingsPhoneSheet({
         scroller.querySelectorAll<HTMLElement>("section[data-settings-group]:not([hidden])").forEach((section) => {
           if (section.getBoundingClientRect().top <= line) current = section.dataset.settingsGroup ?? null;
         });
-        if (current === "delete") current = "qr";
+        // The delete card is last, under Dishy AI's: the chip before it stays lit.
+        if (current === "delete") current = scroller.querySelector('section[data-settings-group="ai"]') ? "ai" : "qr";
         setActiveChip((previous) => current ?? previous ?? "account");
       });
     };
@@ -317,8 +321,11 @@ export default function SettingsPhoneSheet({
               ) : null}
               <AccountSettings />
               <DisplaySettings />
-              {canManageRestaurant ? <RestaurantSettings /> : null}
+              <SettingsDangerSlotContext.Provider value={dangerSlot}>
+                {canManageRestaurant ? <RestaurantSettings /> : null}
+              </SettingsDangerSlotContext.Provider>
               {isOwner ? <AIAssistantSettings /> : null}
+              <div ref={setDangerSlot} className="empty:hidden" />
             </SettingsMobileContext.Provider>
           </SettingsSearchContext.Provider>
         </div>

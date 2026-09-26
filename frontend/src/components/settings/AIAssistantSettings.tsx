@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Check, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Check, CircleX, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import {
   deleteAllAIConversations,
   getAISettings,
@@ -22,7 +22,8 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { Note, Switch } from "@/src/components/shared/settingsModalKit";
 import { SettingsButton, SettingsGroup, SettingsItem, SettingsSkeleton, SettingsSwitch } from "./SettingsPrimitives";
-import { MobileSection, useSettingsPhone } from "./SettingsMobileKit";
+import { MobileInput, MobileLabel, MobileSection, MobileSwitchTile, MobileToggle, useSettingsPhone } from "./SettingsMobileKit";
+import { FOCUS_RING } from "./SettingsPrimitives";
 
 // Dishy AI's settings as one section of the app's settings (27 ก.ย. 2569): the
 // owner asked for them to live here, under the account menu, instead of in a
@@ -33,25 +34,27 @@ import { MobileSection, useSettingsPhone } from "./SettingsMobileKit";
 
 // The bell's five kinds are four rows: a sales drop and a sales rise are one
 // thing to the owner ("ยอดขายเปลี่ยนผิดปกติ").
-type InsightRow = { id: string; kinds: AIInsightKind[]; th: [string, string]; en: [string, string] };
+// `short` is the name on the phone's pill (th, en), where the full one does not fit.
+type InsightRow = { id: string; kinds: AIInsightKind[]; th: [string, string]; en: [string, string]; short: [string, string] };
 const INSIGHT_ROWS: InsightRow[] = [
-  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "ต่ำกว่าขั้นต่ำที่ตั้งไว้"], en: ["Ingredient running low", "Under the minimum you set"] },
-  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Unused for 30 days"] },
-  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุด เทียบ 7 วันก่อน"], en: ["Unusual sales change", "Last 7 days against the 7 before"] },
-  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "สั่งบ่อยแต่ทำเงินน้อย"], en: ["Popular but low-margin menu", "Ordered often, earns little"] },
+  { id: "ingredient_low", kinds: ["ingredient_low"], th: ["วัตถุดิบใกล้หมด", "ต่ำกว่าขั้นต่ำที่ตั้งไว้"], en: ["Ingredient running low", "Under the minimum you set"], short: ["ของใกล้หมด", "Low stock"] },
+  { id: "dead_stock", kinds: ["dead_stock"], th: ["ของค้างสต๊อก", "ไม่ได้ใช้เลยใน 30 วัน"], en: ["Dead stock", "Unused for 30 days"], short: ["ของค้าง", "Dead stock"] },
+  { id: "sales_change", kinds: ["sales_drop", "sales_up"], th: ["ยอดขายเปลี่ยนผิดปกติ", "7 วันล่าสุด เทียบ 7 วันก่อน"], en: ["Unusual sales change", "Last 7 days against the 7 before"], short: ["ยอดขายผิดปกติ", "Sales change"] },
+  { id: "plowhorse", kinds: ["plowhorse"], th: ["เมนูขายดีแต่กำไรน้อย", "สั่งบ่อยแต่ทำเงินน้อย"], en: ["Popular but low-margin menu", "Ordered often, earns little"], short: ["ขายดีกำไรน้อย", "Low-margin hit"] },
 ];
 
 // The example sentence is the row's note: the search finds "ราคา 120" too.
-type ActionRow = { type: AIActionType; th: [string, string]; en: [string, string] };
+type ActionGroup = "menu" | "ingredients" | "money";
+type ActionRow = { type: AIActionType; group: ActionGroup; th: [string, string]; en: [string, string]; short: [string, string] };
 const ACTION_ROWS: ActionRow[] = [
-  { type: "set_menu_availability", th: ["เปิด–ปิดขายเมนู", "“ปิดขายต้มยำกุ้งวันนี้”"], en: ["Open or close a menu item", "“Close Tom Yum Kung for today”"] },
-  { type: "set_menu_price", th: ["เปลี่ยนราคาเมนู", "“ขึ้นราคาผัดไทยเป็น 95 บาท”"], en: ["Change a menu price", "“Raise Pad Thai to 95 baht”"] },
-  { type: "create_menu_item", th: ["เพิ่มเมนูใหม่", "“เพิ่มเมนูข้าวผัดปู ราคา 120 หมวดข้าว”"], en: ["Add a new menu item", "“Add crab fried rice, 120 baht, in Rice”"] },
-  { type: "adjust_ingredient_stock", th: ["ปรับจำนวนสต๊อก", "“รับหมูสับเข้ามา 5 กิโล”"], en: ["Adjust stock", "“Received 5 kg of minced pork”"] },
-  { type: "set_ingredient_min_stock", th: ["ตั้งสต๊อกขั้นต่ำ", "“ตั้งขั้นต่ำกะเพราไว้ 2 กิโล”"], en: ["Set a minimum stock", "“Set holy basil minimum to 2 kg”"] },
-  { type: "set_ingredient_cost", th: ["ตั้งต้นทุนต่อหน่วย", "“ไข่ไก่ตอนนี้ฟองละ 4.50”"], en: ["Set a unit cost", "“Eggs are 4.50 each now”"] },
-  { type: "create_ingredient", th: ["เพิ่มวัตถุดิบใหม่", "“เพิ่มวัตถุดิบ เห็ดออรินจิ หน่วยเป็นกิโล”"], en: ["Add a new ingredient", "“Add king oyster mushroom, in kg”"] },
-  { type: "create_expense", th: ["บันทึกรายจ่าย", "“จ่ายค่าแก๊สไป 1,200” หรือถ่ายรูปใบเสร็จส่งให้"], en: ["Record an expense", "“Paid 1,200 for gas”, or send a receipt photo"] },
+  { type: "set_menu_availability", group: "menu", th: ["เปิด–ปิดขายเมนู", "“ปิดขายต้มยำกุ้งวันนี้”"], en: ["Open or close a menu item", "“Close Tom Yum Kung for today”"], short: ["เปิด–ปิดขาย", "Open/close"] },
+  { type: "set_menu_price", group: "menu", th: ["เปลี่ยนราคาเมนู", "“ขึ้นราคาผัดไทยเป็น 95 บาท”"], en: ["Change a menu price", "“Raise Pad Thai to 95 baht”"], short: ["เปลี่ยนราคา", "Price"] },
+  { type: "create_menu_item", group: "menu", th: ["เพิ่มเมนูใหม่", "“เพิ่มเมนูข้าวผัดปู ราคา 120 หมวดข้าว”"], en: ["Add a new menu item", "“Add crab fried rice, 120 baht, in Rice”"], short: ["เพิ่มเมนู", "New menu"] },
+  { type: "adjust_ingredient_stock", group: "ingredients", th: ["ปรับจำนวนสต๊อก", "“รับหมูสับเข้ามา 5 กิโล”"], en: ["Adjust stock", "“Received 5 kg of minced pork”"], short: ["ปรับสต๊อก", "Stock"] },
+  { type: "set_ingredient_min_stock", group: "ingredients", th: ["ตั้งสต๊อกขั้นต่ำ", "“ตั้งขั้นต่ำกะเพราไว้ 2 กิโล”"], en: ["Set a minimum stock", "“Set holy basil minimum to 2 kg”"], short: ["ขั้นต่ำ", "Minimum"] },
+  { type: "set_ingredient_cost", group: "ingredients", th: ["ตั้งต้นทุนต่อหน่วย", "“ไข่ไก่ตอนนี้ฟองละ 4.50”"], en: ["Set a unit cost", "“Eggs are 4.50 each now”"], short: ["ต้นทุน", "Unit cost"] },
+  { type: "create_ingredient", group: "ingredients", th: ["เพิ่มวัตถุดิบใหม่", "“เพิ่มวัตถุดิบ เห็ดออรินจิ หน่วยเป็นกิโล”"], en: ["Add a new ingredient", "“Add king oyster mushroom, in kg”"], short: ["เพิ่มวัตถุดิบ", "New ingredient"] },
+  { type: "create_expense", group: "money", th: ["บันทึกรายจ่าย", "“จ่ายค่าแก๊สไป 1,200” หรือถ่ายรูปใบเสร็จส่งให้"], en: ["Record an expense", "“Paid 1,200 for gas”, or send a receipt photo"], short: ["บันทึกรายจ่าย", "Expense"] },
 ];
 
 function copy(language: "th" | "en") {
@@ -95,6 +98,14 @@ function copy(language: "th" | "en") {
         purgeAllCancel: "ยังก่อน",
         purgeIn: (days: number) => (days <= 0 ? "จะถูกลบถาวรวันนี้" : `จะถูกลบถาวรในอีก ${days} วัน`),
         untitled: "แชทไม่มีชื่อ",
+        phoneSummary: "ตั้งค่าผู้ช่วยของร้าน",
+        pillHint: "แตะเม็ดเพื่อเปิด–ปิดทีละอย่าง",
+        groupMenu: "เมนู",
+        groupIngredients: "วัตถุดิบ",
+        groupMoney: "การเงิน",
+        groupBell: "แจ้งเตือนที่กระดิ่ง",
+        on: "เปิด",
+        off: "ปิด",
       }
     : {
         section: "Dishy AI",
@@ -135,6 +146,14 @@ function copy(language: "th" | "en") {
         purgeAllCancel: "Not yet",
         purgeIn: (days: number) => (days <= 0 ? "removed for good today" : `removed for good in ${days} day${days === 1 ? "" : "s"}`),
         untitled: "Untitled chat",
+        phoneSummary: "Your shop's assistant",
+        pillHint: "Tap a pill to turn it on or off",
+        groupMenu: "Menu",
+        groupIngredients: "Ingredients",
+        groupMoney: "Money",
+        groupBell: "On the bell",
+        on: "on",
+        off: "off",
       };
 }
 
@@ -288,6 +307,61 @@ export default function AIAssistantSettings() {
   const pick = (pair: { th: [string, string]; en: [string, string] }) => (language === "th" ? pair.th : pair.en);
   const actionsOn = Boolean(view?.actions_enabled);
 
+  // The trash, open under its row: restore or delete each chat, or all.
+  const trashList = (
+    <div className="mb-1 flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+      {trash === null ? (
+        <p className="px-4 py-5 text-center text-[12px] text-gray-400">…</p>
+      ) : trash.length === 0 ? (
+        <p className="px-4 py-5 text-center text-[12px] text-gray-500 dark:text-gray-400">{t.trashEmpty}</p>
+      ) : (
+        <>
+          {trash.map((conversation) => (
+            <div key={conversation.id} className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 py-2.5 first:border-t-0 dark:border-gray-800">
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">{conversation.title || t.untitled}</p>
+                <p className="mt-0.5 text-[11.5px] text-gray-500 dark:text-gray-400">{t.purgeIn(daysUntilPurge(conversation.trashed_at))}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void restoreOne(conversation)}
+                  disabled={trashBusyId !== null}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12px] font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:text-orange-300 dark:hover:bg-orange-950/30"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> {t.restore}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void purgeOne(conversation)}
+                  disabled={trashBusyId !== null}
+                  aria-label={t.purge}
+                  title={t.purge}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center justify-end gap-1.5 border-t border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/60">
+            {confirmPurgeAll ? (
+              <>
+                <SettingsButton onClick={() => setConfirmPurgeAll(false)} disabled={trashBusyId !== null}>{t.purgeAllCancel}</SettingsButton>
+                <SettingsButton variant="danger" onClick={() => void purgeAll()} loading={trashBusyId === "*"}>{t.purgeAllConfirm}</SettingsButton>
+              </>
+            ) : (
+              <SettingsButton variant="danger-secondary" onClick={() => setConfirmPurgeAll(true)} disabled={trashBusyId !== null}>
+                {t.purgeAll}
+              </SettingsButton>
+            )}
+          </div>
+        </>
+      )}
+      {trashError ? <p className="px-3 py-2 text-[11px] text-red-500">{trashError}</p> : null}
+    </div>
+  );
+
   const body = !view ? (
     loadFailed ? (
       <p className="text-[12.5px] text-red-600 dark:text-red-400">{t.loadError}</p>
@@ -400,80 +474,135 @@ export default function AIAssistantSettings() {
             {trash && trash.length > 0 ? ` (${trash.length})` : ""}
           </SettingsButton>
         </SettingsItem>
-        {trashOpen ? (
-          <div className="mb-1 flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
-            {trash === null ? (
-              <p className="px-4 py-5 text-center text-[12px] text-gray-400">…</p>
-            ) : trash.length === 0 ? (
-              <p className="px-4 py-5 text-center text-[12px] text-gray-500 dark:text-gray-400">{t.trashEmpty}</p>
-            ) : (
-              <>
-                {trash.map((conversation) => (
-                  <div key={conversation.id} className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 py-2.5 first:border-t-0 dark:border-gray-800">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">{conversation.title || t.untitled}</p>
-                      <p className="mt-0.5 text-[11.5px] text-gray-500 dark:text-gray-400">{t.purgeIn(daysUntilPurge(conversation.trashed_at))}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => void restoreOne(conversation)}
-                        disabled={trashBusyId !== null}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12px] font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:text-orange-300 dark:hover:bg-orange-950/30"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" /> {t.restore}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void purgeOne(conversation)}
-                        disabled={trashBusyId !== null}
-                        aria-label={t.purge}
-                        title={t.purge}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/30"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex items-center justify-end gap-1.5 border-t border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/60">
-                  {confirmPurgeAll ? (
-                    <>
-                      <SettingsButton onClick={() => setConfirmPurgeAll(false)} disabled={trashBusyId !== null}>{t.purgeAllCancel}</SettingsButton>
-                      <SettingsButton variant="danger" onClick={() => void purgeAll()} loading={trashBusyId === "*"}>{t.purgeAllConfirm}</SettingsButton>
-                    </>
-                  ) : (
-                    <SettingsButton variant="danger-secondary" onClick={() => setConfirmPurgeAll(true)} disabled={trashBusyId !== null}>
-                      {t.purgeAll}
-                    </SettingsButton>
-                  )}
-                </div>
-              </>
-            )}
-            {trashError ? <p className="px-3 py-2 text-[11px] text-red-500">{trashError}</p> : null}
-          </div>
-        ) : null}
+        {trashOpen ? trashList : null}
       </SettingsGroup>
     </>
   );
 
-  // A phone: one card on the long page, with a chip of its own; the rows
-  // inside are the same as on a computer.
+  // A phone: one card on the long page, with a chip of its own (design C,
+  // chosen 27 ก.ย. 2569). What it may change and what it tells you about are
+  // pills - ✓ and orange when on - grouped the way the computer's rows are,
+  // so the whole of it fits in about a screen and a half.
   if (phone) {
+    const pill = (key: string, label: string, full: string, on: boolean, onToggle: () => void, disabled = false) => (
+      <button
+        key={key}
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={full}
+        disabled={disabled}
+        onClick={onToggle}
+        className={`ui-press inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3.5 text-[13.5px] transition disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${
+          on
+            ? "border-(--inv-action) bg-(--inv-action-soft) font-semibold text-(--inv-action)"
+            : "border-(--inv-hairline) bg-(--inv-surface) text-(--inv-muted)"
+        }`}
+      >
+        {on ? <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={3} /> : <CircleX aria-hidden="true" className="h-3.5 w-3.5" />}
+        {label}
+      </button>
+    );
+    const groupLabel = (text: string) => <p className="mb-1.5 ml-0.5 mt-3 text-[12.5px] font-semibold text-(--inv-muted)">{text}</p>;
+    const groups: { key: ActionGroup; title: string }[] = [
+      { key: "menu", title: t.groupMenu },
+      { key: "ingredients", title: t.groupIngredients },
+      { key: "money", title: t.groupMoney },
+    ];
+    const button = "ui-press flex min-h-[44px] items-center justify-center gap-1.5 rounded-[14px] border text-[14px] font-semibold disabled:opacity-60";
     return (
       <MobileSection
         id="ai"
         title={t.section}
-        summary={t.summary}
+        summary={t.phoneSummary}
         icon={Sparkles}
         tone="bg-(--inv-action-soft) text-(--inv-action)"
         keywords={[
-          t.titleLabel, t.followUps, t.groupPermissions, t.master, t.groupNotifications, t.clearAll, t.trash,
+          t.summary, t.titleLabel, t.followUps, t.groupPermissions, t.master, t.groupNotifications, t.clearAll, t.trash,
           ...ACTION_ROWS.map((row) => pick(row).join(" ")),
           ...INSIGHT_ROWS.map((row) => pick(row).join(" ")),
         ].join(" ")}
       >
-        <div className="flex flex-col gap-5 pt-1">{body}</div>
+        {!view ? (
+          loadFailed ? <p className="text-[12.5px] text-red-600 dark:text-red-400">{t.loadError}</p> : <SettingsSkeleton label={t.loading} rows={3} />
+        ) : (
+          <>
+            <MobileInput
+              label={t.titleLabel}
+              value={titleDraft}
+              placeholder={t.titlePlaceholder}
+              onChange={setTitleDraft}
+              onCommit={commitTitle}
+              autoComplete="off"
+            />
+            <p className="-mt-2 mb-3 ml-0.5 text-[12px] text-(--inv-muted)">{t.titleHint}</p>
+
+            {/* The master switch, in the brand's soft orange: off turns every pill below off. */}
+            <div className="rounded-2xl border border-orange-200 bg-(--inv-action-soft) px-3.5 py-3 dark:border-orange-900/50">
+              <div className="flex items-center gap-3">
+                <p className="min-w-0 flex-1 text-[15px] font-semibold text-orange-900 dark:text-orange-200">{t.master}</p>
+                <MobileToggle checked={actionsOn} label={t.master} onChange={(next) => apply({ actions_enabled: next }, (v) => ({ ...v, actions_enabled: next }))} />
+              </div>
+              <p className="mt-1 text-[12.5px] leading-[18px] text-orange-700 dark:text-orange-300/80">{t.masterHint} · {t.pillHint}</p>
+            </div>
+            {!view.feature_available ? (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">{t.unavailable}</p>
+            ) : null}
+            {groups.map((group) => (
+              <div key={group.key}>
+                {groupLabel(group.title)}
+                <div className="flex flex-wrap gap-2">
+                  {ACTION_ROWS.filter((row) => row.group === group.key).map((row) => {
+                    const on = view.action_types[row.type] !== false;
+                    return pill(row.type, language === "th" ? row.short[0] : row.short[1], pick(row)[0], on, () =>
+                      apply({ action_types: { [row.type]: !on } }, (v) => ({ ...v, action_types: { ...v.action_types, [row.type]: !on } })),
+                    !actionsOn);
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {groupLabel(t.groupBell)}
+            <div className="mb-3 flex flex-wrap gap-2">
+              {INSIGHT_ROWS.map((row) => {
+                const on = row.kinds.every((kind) => view.insight_kinds[kind] !== false);
+                return pill(row.id, language === "th" ? row.short[0] : row.short[1], pick(row)[0], on, () => {
+                  const patch: Partial<Record<AIInsightKind, boolean>> = {};
+                  for (const kind of row.kinds) patch[kind] = !on;
+                  void apply({ insight_kinds: patch }, (v) => ({ ...v, insight_kinds: { ...v.insight_kinds, ...patch } }));
+                });
+              })}
+            </div>
+
+            <MobileSwitchTile title={t.followUps} hint={t.followUpsHint} checked={followUps} onChange={setFollowUps} />
+
+            <MobileLabel>{t.groupHistory}</MobileLabel>
+            {clearedCount !== null ? (
+              <p className="mb-2 inline-flex items-center gap-1 text-[13px] font-medium text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5" /> {t.cleared}
+              </p>
+            ) : null}
+            {confirmClear ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setConfirmClear(false)} disabled={clearing} className={`${button} border-(--inv-hairline) bg-(--inv-surface) text-(--inv-body) ${FOCUS_RING}`}>{t.clearCancel}</button>
+                <button type="button" onClick={clearAll} disabled={clearing} className={`${button} border-red-600 bg-red-600 text-white ${FOCUS_RING}`}>
+                  <Trash2 className="h-4 w-4" /> {t.clearConfirm}
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={toggleTrash} className={`${button} border-(--inv-hairline) bg-(--inv-surface) text-(--inv-body) ${FOCUS_RING}`}>
+                  {trashOpen ? t.trashClose : t.trashOpen}
+                  {trash && trash.length > 0 ? ` (${trash.length})` : ""}
+                </button>
+                <button type="button" onClick={() => setConfirmClear(true)} className={`${button} border-red-200 bg-(--inv-surface) text-red-600 dark:border-red-900/60 dark:text-red-400 ${FOCUS_RING}`}>
+                  {t.clearButton}
+                </button>
+              </div>
+            )}
+            {trashOpen ? <div className="mt-3">{trashList}</div> : null}
+          </>
+        )}
       </MobileSection>
     );
   }
