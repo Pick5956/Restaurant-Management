@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
-import { Check, ChevronLeft, ChevronRight, Languages, LogOut, Moon, Sparkles, Sun } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Languages, LogOut, Moon, Settings, Sparkles, Sun } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
-import { useRestaurantNav } from "@/src/hooks/useRestaurantNav";
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { roleLabel } from "@/src/lib/roleLabels";
+import { openSettings } from "@/src/lib/settingsModal";
 
 // useLayoutEffect warns during server rendering, and this only ever runs in the
 // browser, so fall back to useEffect on the server.
@@ -73,7 +72,6 @@ export default function DashboardAccountMenu({
   variant?: "icon" | "rail";
 } = {}) {
   const { user, logout, activeMembership } = useAuth();
-  const { href: restaurantPageHref } = useRestaurantNav();
   const { language, setLanguage } = useLanguage();
   const { theme, mounted, toggle, showAIAssistant, setShowAIAssistant } = useTheme();
   const [open, setOpen] = useState(false);
@@ -118,6 +116,7 @@ export default function DashboardAccountMenu({
     ? {
         account: "บัญชีผู้ใช้",
         profile: "ดูบัญชีของคุณ",
+        settings: "ตั้งค่า",
         theme: "ธีม",
         themeValue: isDark ? "มืด" : "สว่าง",
         language: "แสดงภาษา",
@@ -134,6 +133,7 @@ export default function DashboardAccountMenu({
     : {
         account: "Account",
         profile: "View your account",
+        settings: "Settings",
         theme: "Appearance",
         themeValue: isDark ? "Dark" : "Light",
         language: "Display language",
@@ -204,6 +204,13 @@ export default function DashboardAccountMenu({
     commitChoice();
   };
 
+  // The settings are a floating window now (27 ก.ย. 2569), not a page: the
+  // menu closes and the window opens over whatever page this is.
+  const showSettings = (section?: "account") => {
+    commitChoice();
+    openSettings({ section });
+  };
+
   const selectAssistantVisibility = (next: boolean) => {
     setShowAIAssistant(next);
     commitChoice();
@@ -256,12 +263,13 @@ export default function DashboardAccountMenu({
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-semibold text-gray-950 dark:text-white">{displayName}</p>
                   <p className="truncate text-[12px] text-gray-500 dark:text-gray-400">{user?.email ?? ""}</p>
-                  <Link href={restaurantPageHref("/settings/account")} onClick={() => setOpen(false)} className="mt-1 inline-flex text-[12px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
+                  <button type="button" onClick={() => showSettings("account")} className="mt-1 inline-flex text-[12px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
                     {copy.profile}
-                  </Link>
+                  </button>
                 </div>
               </div>
               <div className="border-t border-[color:var(--dashboard-shell-border)]" />
+              <MenuButton icon={<Settings className="h-4 w-4" />} label={copy.settings} onClick={() => showSettings()} />
               <MenuButton icon={isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />} label={copy.theme} value={copy.themeValue} chevron onClick={() => setPanel("theme")} />
               <MenuButton icon={<Languages className="h-4 w-4" />} label={copy.language} value={copy.languageValue} chevron onClick={() => setPanel("language")} />
               {activeMembership?.role?.name === "owner" ? (

@@ -5,6 +5,7 @@ import ContentWrapper from "@/src/components/shared/ContentWrapper";
 import ShellScroll from "@/src/components/shared/ShellScroll";
 import DashboardRestaurantGuard from "@/src/components/shared/DashboardRestaurantGuard";
 import AIOperationsFloatingChatGate from "@/src/components/shared/AIOperationsFloatingChatGate";
+import SettingsModal from "@/src/components/settings/SettingsModal";
 
 export default function DashboardLayout({
   children,
@@ -32,6 +33,8 @@ export default function DashboardLayout({
           </div>
         </ContentWrapper>
         <AIOperationsFloatingChatGate />
+        {/* The settings window, opened from the account menu (27 ก.ย. 2569). */}
+        <SettingsModal />
       </SidebarProvider>
     </DashboardRestaurantGuard>
   );
