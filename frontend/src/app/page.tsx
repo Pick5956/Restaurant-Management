@@ -22,14 +22,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Download,
-  Settings,
   CreditCard,
   Moon,
   ReceiptText,
   ShoppingCart,
   Sun,
-  Store,
   Table2,
   UsersRound,
   type LucideIcon,
@@ -58,25 +55,18 @@ type RoleItem = {
   icon: LucideIcon;
 };
 
-type HeroProof = {
-  label: string;
-  icon: LucideIcon;
-};
-
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1750950388492-f803d12c4a8a?auto=format&fit=crop&w=2200&q=80";
 
-const HERO_PROOFS: Record<Language, HeroProof[]> = {
-  th: [
-    { label: "ใช้ได้ทั้งมือถือ แท็บเล็ต และ PC", icon: Download },
-    { label: "รองรับร้านได้หลายสาขา", icon: Settings },
-    { label: "มีแดชบอร์ดสำหรับเจ้าของร้าน", icon: Store },
-  ],
-  en: [
-    { label: "Works on mobile, tablet, and PC", icon: Download },
-    { label: "Manage multiple branches", icon: Settings },
-    { label: "Owner dashboard included", icon: Store },
-  ],
+// Screenshots of the real app, not a drawing of it: the hero used to render a
+// made-up phone screen at 5-7px type that no page in Dishy looks like. Retake
+// these whenever the home or tables page changes, or the landing page lies.
+const HERO_SCREENSHOTS = {
+  desktop: "/landing/desktop-home.png",
+  phone: "/landing/phone-tables.png",
 };
+// What the browser bar above the desktop screenshot reads. Keep it on the same
+// restaurant the screenshot was taken from.
+const HERO_DESKTOP_URL = "dishy.pro/r/restaurant-hsg9an/home";
 
 const SHIFT_METRICS: Record<Language, ShiftMetric[]> = {
   th: [
@@ -127,9 +117,13 @@ const LANDING_COPY: Record<Language, {
   nav: [string, string, string];
   login: string;
   register: string;
+  heroEyebrow: string;
   heroTitle: string;
+  heroDesc: string;
+  heroFacts: string;
   heroImageAlt: string;
-  phoneImageAlt: string;
+  desktopShotAlt: string;
+  phoneShotAlt: string;
   proofTitle: string;
   proofDesc: string;
   workflowTitle: string;
@@ -143,15 +137,18 @@ const LANDING_COPY: Record<Language, {
   ctaDesc: string;
   footerProject: string;
   footerWorkflow: string;
-  mockup: Record<string, string>;
 }> = {
   th: {
     nav: ["ภาพรวม", "กะร้าน", "ทีม"],
     login: "เข้าสู่ระบบ",
     register: "เริ่มใช้งาน",
-    heroTitle: "จัดการร้านได้ผ่านมือถือ",
+    heroEyebrow: "ระบบร้านอาหารสำหรับร้านเล็กถึงกลาง",
+    heroTitle: "รับออเดอร์ ส่งครัว ปิดบิล จบในระบบเดียว",
+    heroDesc: "พนักงานรับออเดอร์จากมือถือ ครัวเห็นคิวทันที แคชเชียร์ปิดบิลจากออเดอร์เดียวกัน เจ้าของดูยอดขายได้ทุกที่",
+    heroFacts: "ใช้ได้บนมือถือ แท็บเล็ต และคอมพิวเตอร์ · รองรับหลายสาขา · ภาษาไทย/อังกฤษ",
     heroImageAlt: "ทีมครัวกำลังทำอาหารระหว่างกะเย็นในร้านอาหาร",
-    phoneImageAlt: "ตัวอย่าง Dishy บนมือถือ",
+    desktopShotAlt: "หน้าภาพรวมร้านของ Dishy บนคอมพิวเตอร์",
+    phoneShotAlt: "หน้าโต๊ะของ Dishy บนมือถือ",
     proofTitle: "ยกระดับร้านด้วยข้อมูลที่ทีมเห็นตรงกัน",
     proofDesc: "บริหารออเดอร์ งานครัว การชำระเงิน และภาพรวมร้านจากพื้นที่ทำงานเดียว",
     workflowTitle: "ขั้นตอนการทำงานที่ต่อเนื่อง",
@@ -165,17 +162,18 @@ const LANDING_COPY: Record<Language, {
     ctaDesc: "เข้าสู่ระบบเพื่อสร้างร้าน ตั้งค่าโต๊ะ เมนู และเชิญทีมให้ทดลองขั้นตอนหน้าร้าน ครัว และปิดบิล",
     footerProject: "ระบบจัดการงานร้านอาหารสำหรับโปรเจกต์ Pre-capstone",
     footerWorkflow: "ออกแบบสำหรับขั้นตอนการทำงานของร้านอาหารไทย",
-    mockup: {
-      overview: "ภาพรวมกะร้าน", shift: "กะเย็นวันนี้", open: "เปิดให้บริการ", focusLabel: "สิ่งที่ต้องเห็นในกะนี้", focusTitle: "โต๊ะ คิวครัว และบิลอยู่ในภาพเดียว", focusDesc: "ใช้สำหรับช่วงที่ร้านต้องตัดสินใจเร็ว ไม่ใช่แค่ดูรายงานหลังปิดร้าน", front: "หน้าร้านรับออเดอร์", kitchen: "ครัวอัปเดตสถานะ", cashier: "แคชเชียร์ปิดบิล", floorMap: "ผังโต๊ะ", zones: "โซน A-C", activity: "ความเคลื่อนไหว", live: "สด", kitchenQueue: "คิวครัว", updatedFromPos: "อัปเดตจาก POS", table: "โต๊ะ", paymentTitle: "โต๊ะ B2 รอชำระ", paymentDesc: "ตรวจรายการ รับชำระ และคืนสถานะโต๊ะจากขั้นตอนเดียว",
-    },
   },
   en: {
     nav: ["Overview", "Workflow", "Team"],
     login: "Sign in",
     register: "Get started",
-    heroTitle: "Run your restaurant from your phone",
+    heroEyebrow: "Restaurant software for small and mid-sized shops",
+    heroTitle: "Take orders, run the kitchen, close bills in one system",
+    heroDesc: "Staff take orders on their phones, the kitchen sees tickets right away, cashiers close bills from the same order, and owners check sales from anywhere.",
+    heroFacts: "Works on phone, tablet, and computer · Multiple branches · Thai/English",
     heroImageAlt: "A kitchen team preparing dishes during an evening restaurant shift",
-    phoneImageAlt: "Dishy shown on a mobile phone",
+    desktopShotAlt: "Dishy's restaurant overview on a computer",
+    phoneShotAlt: "Dishy's table screen on a phone",
     proofTitle: "Keep the whole team aligned with shared restaurant data",
     proofDesc: "Manage orders, kitchen progress, payments, and the live state of your restaurant from one workspace.",
     workflowTitle: "One continuous restaurant workflow",
@@ -189,37 +187,7 @@ const LANDING_COPY: Record<Language, {
     ctaDesc: "Sign in to create a restaurant, configure tables and menus, and invite your team to try the front-of-house, kitchen, and billing flow.",
     footerProject: "Pre-capstone restaurant operations system",
     footerWorkflow: "Built for Thai restaurant workflows",
-    mockup: {
-      overview: "Live shift overview", shift: "Tonight's shift", open: "Open", focusLabel: "What matters this shift", focusTitle: "Tables, kitchen queue, and bills in one view", focusDesc: "Built for moments when the team needs to act quickly, not only review reports after closing.", front: "Front of house takes orders", kitchen: "Kitchen updates status", cashier: "Cashier closes bills", floorMap: "Floor map", zones: "Zones A-C", activity: "Activity", live: "live", kitchenQueue: "Kitchen queue", updatedFromPos: "Updated from POS", table: "Table", paymentTitle: "Table B2 awaiting payment", paymentDesc: "Review the order, take payment, and release the table from one flow.",
-    },
   },
-};
-
-const TABLE_TONES = [
-  "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300",
-  "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300",
-  "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300",
-  "border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300",
-  "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-300",
-  "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300",
-];
-
-const TABLES: Record<Language, Array<{ id: string; status: string; tone: string }>> = {
-  th: ["ว่าง", "กำลังทาน", "ครัวทำเสร็จ", "เปิดบิล", "รอชำระ", "ครัวกำลังทำ"].map((status, index) => ({ id: ["A1", "A2", "A3", "B1", "B2", "C1"][index], status, tone: TABLE_TONES[index] })),
-  en: ["Free", "Dining", "Kitchen completed", "Bill opened", "Awaiting payment", "Kitchen cooking"].map((status, index) => ({ id: ["A1", "A2", "A3", "B1", "B2", "C1"][index], status, tone: TABLE_TONES[index] })),
-};
-
-const KITCHEN_TICKETS: Record<Language, Array<{ table: string; item: string; state: string; dot: string }>> = {
-  th: [
-    { table: "A2", item: "กะเพราหมูสับ + ไข่ดาว", state: "กำลังทำ", dot: "bg-amber-500" },
-    { table: "A3", item: "ต้มยำกุ้ง, ข้าวเปล่า", state: "เสร็จแล้ว", dot: "bg-emerald-500" },
-    { table: "C1", item: "ผัดไทย, ชาไทยเย็น", state: "คิวใหม่", dot: "bg-sky-500" },
-  ],
-  en: [
-    { table: "A2", item: "Minced pork basil + fried egg", state: "Cooking", dot: "bg-amber-500" },
-    { table: "A3", item: "Tom yum goong, steamed rice", state: "Done", dot: "bg-emerald-500" },
-    { table: "C1", item: "Pad Thai, Thai iced tea", state: "New ticket", dot: "bg-sky-500" },
-  ],
 };
 
 type MockPip = { text: string; note?: string };
@@ -476,17 +444,6 @@ function LandingMotionStyles() {
         }
       }
 
-      @keyframes landingProofReveal {
-        from {
-          opacity: 0;
-          transform: translateY(10px) scale(0.985);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-
       @keyframes landingLivePulse {
         0%, 100% {
           box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
@@ -504,11 +461,6 @@ function LandingMotionStyles() {
       .landing-hero-reveal {
         opacity: 0;
         animation: landingHeroReveal 560ms var(--landing-ease) both;
-      }
-
-      .landing-proof-card {
-        opacity: 0;
-        animation: landingProofReveal 440ms var(--landing-ease) both;
       }
 
       .landing-live-chip {
@@ -534,7 +486,6 @@ function LandingMotionStyles() {
       @media (prefers-reduced-motion: reduce) {
         .landing-hero-photo,
         .landing-hero-reveal,
-        .landing-proof-card,
         .landing-live-chip {
           animation: none !important;
           opacity: 1 !important;
@@ -594,31 +545,6 @@ function SecondaryButton({onClick, children}: {onClick: () => void; children: Re
     </button>
   );
 }
-function PrimaryButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="ui-press landing-lift inline-flex h-25 w-full max-w-6xl items-center rounded-[10px] bg-orange-700 px-5 text-xl sm:text-3xl md:text-4xl lg:text-[60px] font-semibold text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 dark:bg-orange-700 dark:text-white dark:hover:bg-orange-800"
-    >
-      {/* อันแรก — เล็กสุด */}
-      <span className="flex flex-[1] items-center justify-start">
-         
-      </span>
-
-      {/* กลาง */}
-      <span className="flex flex-[2] items-center justify-center">
-        {children}
-      </span>
-
-      {/* ขวา */}
-      <span className="flex flex-[1] items-center justify-end">
-        <ArrowRight className="h-6 w-6 shrink-0" strokeWidth={3} />
-      </span>
-    </button>
-  );
-}
-
 function SectionHeader({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="max-w-3xl flex flex-col items-center">
@@ -642,169 +568,54 @@ function HeroImage({ alt }: { alt: string }) {
   );
 }
 
-function PhoneMockup({ label, language }: { label: string; language: Language }) {
-  const copy = LANDING_COPY[language].mockup;
-  const phoneTables = [TABLES[language][0], TABLES[language][1], TABLES[language][4]];
-  const phoneTickets = KITCHEN_TICKETS[language].slice(0, 2);
+// Shows the screenshot only once it has actually loaded. An onError on the
+// <img> itself misses a file that 404s before hydration and leaves a broken
+// image icon with its alt text on the hero, so this probes it first.
+function HeroScreenshot({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+  const [loaded, setLoaded] = useState(false);
 
+  useEffect(() => {
+    const probe = new window.Image();
+    probe.onload = () => setLoaded(true);
+    probe.src = src;
+  }, [src]);
+
+  if (!loaded) {
+    return <div aria-hidden="true" className={`bg-gray-100 ${className}`} />;
+  }
   return (
-    <div
-      role="img"
-      aria-label={label}
-      className="relative aspect-[9/16] w-48 shrink-0 sm:w-64 md:w-80 lg:w-96"
-    >
-      <div
-        aria-hidden="true"
-        className="relative h-full overflow-hidden rounded-[2rem] bg-gray-950 p-[5px] shadow-[0_8px_8px_rgba(3,7,18,0.32)] sm:rounded-[2.5rem] sm:p-2 md:rounded-[3rem]"
-      >
-        <div className="relative flex h-full flex-col overflow-hidden rounded-[1.7rem] bg-slate-50 text-gray-950 sm:rounded-[2.05rem] md:rounded-[2.5rem]">
-          <div className="absolute left-1/2 top-2 z-10 h-3 w-14 -translate-x-1/2 rounded-full bg-gray-950 sm:top-3 sm:h-4 sm:w-20" />
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} className={`object-cover object-top ${className}`} />
+  );
+}
 
-          <div className="flex items-center justify-between px-4 pb-1 pt-2.5 font-mono text-[7px] font-semibold tabular-nums text-gray-600 sm:px-5 sm:pb-2 sm:pt-4 sm:text-[9px] md:px-6 md:text-[11px]">
-            <span>09:41</span>
-            <span className="flex items-end gap-0.5">
-              <span className="h-1 w-0.5 rounded-full bg-gray-500 sm:h-1.5" />
-              <span className="h-1.5 w-0.5 rounded-full bg-gray-600 sm:h-2" />
-              <span className="h-2 w-0.5 rounded-full bg-gray-800 sm:h-2.5" />
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 border-b border-gray-200 bg-white px-2.5 py-2 sm:gap-2.5 sm:px-4 sm:py-3 md:px-5">
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-500 text-white sm:h-7 sm:w-7 md:h-9 md:w-9">
-              <Store className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" strokeWidth={2} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <AppWordmark decorative height={10} className="text-gray-950" />
-              <p className="truncate text-[6px] text-gray-500 sm:text-[9px] md:text-[11px]">{copy.shift}</p>
-            </div>
-            <span className="rounded bg-emerald-50 px-1 py-0.5 text-[6px] font-semibold text-emerald-700 sm:px-1.5 sm:text-[8px] md:text-[10px]">
-              {copy.open}
-            </span>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-hidden px-2.5 py-2 sm:px-4 sm:py-3 md:px-5 md:py-4">
-            <div className="rounded-md bg-gray-950 px-2.5 py-2 text-white sm:px-3.5 sm:py-3 md:px-4 md:py-4">
-              <p className="text-[6px] font-medium text-orange-300 sm:text-[8px] md:text-[10px]">
-                {copy.focusLabel}
-              </p>
-              <p className="mt-1 line-clamp-2 text-[9px] font-semibold leading-tight sm:text-xs md:text-base">
-                {copy.focusTitle}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 border-b border-gray-200 py-2 sm:py-3 md:py-4">
-              {[copy.front, copy.kitchen, copy.cashier].map((item, index) => {
-                const Icon = [Table2, ChefHat, ReceiptText][index];
-                return (
-                  <div
-                    key={item}
-                    className={`min-w-0 px-1.5 text-center sm:px-2 ${index > 0 ? "border-l border-gray-200" : ""}`}
-                  >
-                    <Icon className="mx-auto h-3 w-3 text-gray-700 sm:h-4 sm:w-4 md:h-5 md:w-5" strokeWidth={1.8} />
-                    <p className="mt-1 truncate text-[6px] font-medium text-gray-600 sm:text-[8px] md:text-[10px]">
-                      {item}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="border-b border-gray-200 py-2 sm:py-3 md:py-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[8px] font-semibold sm:text-[10px] md:text-xs">{copy.floorMap}</p>
-                <span className="text-[6px] text-gray-500 sm:text-[8px] md:text-[10px]">{copy.zones}</span>
-              </div>
-              <div className="mt-1.5 grid grid-cols-3 gap-1 sm:mt-2 sm:gap-1.5 md:gap-2">
-                {phoneTables.map((table) => (
-                  <div key={table.id} className={`rounded-md border px-1 py-1.5 text-center sm:py-2 md:py-2.5 ${table.tone}`}>
-                    <p className="font-mono text-[8px] font-semibold tabular-nums sm:text-[10px] md:text-xs">{table.id}</p>
-                    <p className="mt-0.5 truncate text-[5px] font-medium sm:text-[7px] md:text-[9px]">{table.status}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-b border-gray-200 py-2 sm:py-3 md:py-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[8px] font-semibold sm:text-[10px] md:text-xs">{copy.kitchenQueue}</p>
-                <span className="text-[6px] font-medium text-gray-500 sm:text-[8px] md:text-[10px]">{copy.live}</span>
-              </div>
-              <div className="mt-1.5 space-y-1 sm:mt-2 sm:space-y-1.5">
-                {phoneTickets.map((ticket) => (
-                  <div key={`${ticket.table}-${ticket.item}`} className="flex items-center gap-1.5 sm:gap-2">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full sm:h-2 sm:w-2 ${ticket.dot}`} />
-                    <p className="shrink-0 font-mono text-[6px] font-semibold tabular-nums sm:text-[8px] md:text-[10px]">
-                      {ticket.table}
-                    </p>
-                    <p className="min-w-0 flex-1 truncate text-[6px] text-gray-600 sm:text-[8px] md:text-[10px]">
-                      {ticket.item}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 py-1.5 sm:py-2.5 md:py-4">
-              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-50 text-orange-600 sm:h-7 sm:w-7 md:h-8 md:w-8">
-                <CreditCard className="h-3 w-3 sm:h-4 sm:w-4" strokeWidth={1.8} />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[7px] font-semibold sm:text-[9px] md:text-[11px]">{copy.paymentTitle}</p>
-                <p className="mt-0.5 truncate text-[5px] text-gray-500 sm:text-[7px] md:text-[9px]">{copy.paymentDesc}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-4 border-t border-gray-200 bg-white px-3 py-1.5 text-gray-500 sm:px-5 sm:py-2.5 md:py-3">
-            {[BarChart3, Table2, ChefHat, UsersRound].map((Icon, index) => (
-              <span key={index} className={`flex justify-center ${index === 0 ? "text-orange-600" : ""}`}>
-                <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5" strokeWidth={1.8} />
-              </span>
-            ))}
-          </div>
+function HeroBrowser({ alt }: { alt: string }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-white shadow-[0_24px_48px_-24px_rgba(0,0,0,0.5)]">
+      <div className="flex h-8 items-center gap-3 border-b border-gray-200 bg-gray-50 px-3">
+        <div aria-hidden="true" className="flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+          <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+          <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+        </div>
+        <div className="mx-auto h-5 w-1/2 max-w-xs truncate rounded bg-white px-2 text-center font-mono text-[10px] leading-5 text-gray-400 ring-1 ring-gray-200">
+          {HERO_DESKTOP_URL}
         </div>
       </div>
+      <HeroScreenshot src={HERO_SCREENSHOTS.desktop} alt={alt} className="aspect-[16/10] w-full" />
     </div>
   );
 }
 
-function ImageAndDownload({ btn, language }: { btn: () => void; language: Language }) {
-  const copy = LANDING_COPY[language];
-
+// An iPhone at its real 390x844 proportions: thin bezel, no drawn status bar,
+// since the screenshot already carries its own.
+function HeroPhone({ alt }: { alt: string }) {
   return (
-    <div className="m-6 mb-6 flex flex-col items-center gap-6 sm:flex-row sm:justify-start sm:gap-16 md:gap-24 lg:gap-64">
-      <PhoneMockup label={copy.phoneImageAlt} language={language} />
-      <div className="flex flex-col items-center gap-4 sm:items-center">
-        <PrimaryButton onClick={btn}>{copy.register}</PrimaryButton>
-       <HeroProofStrip language={language} />
+    <div className="relative aspect-[390/844] rounded-[2.6rem] bg-[#1c1c1e] p-[7px] shadow-[0_20px_40px_-20px_rgba(0,0,0,0.6)] ring-1 ring-white/15">
+      <div className="relative h-full overflow-hidden rounded-[2.2rem] bg-white">
+        <HeroScreenshot src={HERO_SCREENSHOTS.phone} alt={alt} className="h-full w-full" />
+        <div aria-hidden="true" className="absolute left-1/2 top-[1.4%] h-[3.2%] w-[31%] -translate-x-1/2 rounded-full bg-black" />
       </div>
-    </div>
-  );
-}
-function HeroProofStrip({ language }: { language: Language }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-4">
-      {HERO_PROOFS[language].map((item, index) => {
-        const Icon = item.icon;
-        return (
-          <div
-            key={item.label}
-            style={{ animationDelay: `${260 + index * 70}ms` }}
-            className="landing-proof-card rounded-md border border-white/18 bg-gray-950/78 p-3 text-white sm:p-3.5 lg:p-4"
-          >
-            <div className="flex items-center gap-3">
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-gray-950 sm:h-9 sm:w-9">
-                <Icon className="h-4 w-4" strokeWidth={1.8} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-orange-200 sm:text-[15px]">
-                  {item.label}
-                </p>
-              </div>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -1263,22 +1074,55 @@ export default function LandingPage() {
       </header>
 
       <main>
-        <section className="relative min-h-[calc(100dvh-112px)] overflow-hidden bg-gray-950 text-white">
+        <section className="relative overflow-hidden bg-gray-950 text-white">
           <HeroImage alt={copy.heroImageAlt} />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,7,18,0.92)_0%,rgba(3,7,18,0.72)_44%,rgba(3,7,18,0.22)_100%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-gray-950 to-transparent" />
-          <div className="justify-center gap-10 relative mx-auto flex min-h-[calc(100dvh-112px)] max-w-7xl flex-col px-4 pb-6 pt-20 sm:min-h-[calc(100dvh-88px)] sm:px-6 sm:pb-7 sm:pt-28 lg:px-8">
+          {/* Dark on the left so the white copy reads, open on the right so the
+              kitchen shows through. On a phone the copy runs the full width, so
+              the whole photo darkens evenly instead. */}
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,7,18,0.88)_0%,rgba(3,7,18,0.62)_45%,rgba(3,7,18,0.25)_100%)] max-lg:bg-none max-lg:bg-gray-950/75" />
+          <div className="relative mx-auto grid max-w-7xl gap-12 px-4 pb-16 pt-28 sm:px-6 lg:min-h-[calc(100dvh-64px)] lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:px-8 lg:pb-20 lg:pt-32">
+            <div className="max-w-xl">
+              <HeroReveal delay={40}>
+                <p className="text-sm font-medium text-orange-400">{copy.heroEyebrow}</p>
+              </HeroReveal>
+              <HeroReveal delay={80}>
+                <h1 className="mt-3 text-[34px] font-semibold leading-[1.2] text-white sm:text-[44px]">
+                  {copy.heroTitle}
+                </h1>
+              </HeroReveal>
+              <HeroReveal delay={120}>
+                <p className="mt-5 text-[17px] leading-8 text-gray-300">{copy.heroDesc}</p>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={openLandingLoginModal}
+                    className="ui-press inline-flex h-11 items-center gap-2 rounded-md bg-orange-700 px-5 text-[15px] font-semibold text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                  >
+                    {copy.register}
+                    <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openLandingLoginModal}
+                    className="ui-press h-11 rounded-md px-5 text-[15px] font-semibold text-white ring-1 ring-white/25 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                  >
+                    {copy.login}
+                  </button>
+                </div>
+                <p className="mt-6 text-sm text-gray-400">{copy.heroFacts}</p>
+              </HeroReveal>
+            </div>
 
-            <HeroReveal delay={80}>
-              <h1 className="mt-5 max-w-4xl text-[34px] font-semibold leading-[1.08] text-white [text-wrap:balance] sm:text-5xl lg:text-[80px]">
-                {copy.heroTitle}
-              </h1>
+            <HeroReveal delay={160}>
+              <div className="relative pb-10">
+                <div className="ml-auto w-[88%]">
+                  <HeroBrowser alt={copy.desktopShotAlt} />
+                </div>
+                <div className="absolute -bottom-2 left-0 w-[28%] min-w-[104px]">
+                  <HeroPhone alt={copy.phoneShotAlt} />
+                </div>
+              </div>
             </HeroReveal>
-
-            <HeroReveal delay={120}>
-              <ImageAndDownload btn={openLandingLoginModal} language={language} />
-            </HeroReveal>
-            
           </div>
         </section>
 
