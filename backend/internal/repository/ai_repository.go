@@ -172,9 +172,10 @@ func (r *AIRepository) RecentSalesSummary(restaurantID uint, since time.Time) ([
 }
 
 // AIMonthlyProfit is one calendar month of the shop's money: paid sales, the
-// recipe cost of what was sold, and the expenses the owner recorded. Net is
-// revenue − cost − expenses; a month with ExpenseEntries == 0 has no ledger at
-// all, which is not the same as having spent nothing.
+// recipe cost of what was sold, and the expenses the owner recorded other than
+// ingredient purchases (those are the recipe cost already). Net is revenue −
+// cost − expenses; a month with ExpenseEntries == 0 has no such expense on
+// record, which is not the same as having spent nothing.
 type AIMonthlyProfit struct {
 	Month          string  `json:"month"` // "2026-08", Bangkok calendar
 	Revenue        float64 `json:"revenue"`
@@ -220,7 +221,9 @@ func (r *AIRepository) ProfitByMonth(restaurantID uint, months int, now time.Tim
 	var spent []expenseRow
 	if err := r.db.Table("expenses").
 		Select("TO_CHAR(spent_at, 'YYYY-MM') AS month, COALESCE(SUM(amount), 0) AS amount, COUNT(*) AS entries").
-		Where("restaurant_id = ? AND deleted_at IS NULL AND spent_at >= ?", restaurantID, first).
+		// Ingredient purchases are left out: the recipe cost above already
+		// counts the ingredients that sold (see ReportRepository.ExpenseTotal).
+		Where("restaurant_id = ? AND deleted_at IS NULL AND spent_at >= ? AND category <> ?", restaurantID, first, "ingredient").
 		Group("month").Scan(&spent).Error; err != nil {
 		return nil, err
 	}

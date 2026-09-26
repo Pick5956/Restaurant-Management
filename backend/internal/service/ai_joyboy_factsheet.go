@@ -1422,17 +1422,28 @@ func joyboyNetAfterExpensesLines(grossProfit float64, expenses *ExpenseListRespo
 	if expenses == nil {
 		return nil
 	}
-	net := grossProfit - expenses.Total
+	// Ingredient purchases are not taken off: gross profit already took off the
+	// recipe cost of what sold, and the purchases are that same food. Netting
+	// them too made August's net 194,024 while the report page said otherwise
+	// (26 ก.ย. 2569). They are still named, so the owner sees where they went.
+	operating, entries, bought, boughtEntries := joyboyOperatingExpenses(expenses)
+	net := grossProfit - operating
 	lines := []string{
 		fmt.Sprintf("expenses_recorded=%s expense_items=%d net_after_expenses=%s",
-			joyboyNum(roundBaht(expenses.Total)), expenses.Entries, joyboyNum(roundBaht(net))),
+			joyboyNum(roundBaht(operating)), entries, joyboyNum(roundBaht(net))),
 	}
-	if expenses.Entries == 0 {
-		lines = append(lines, "net_means=ช่วงนี้ยังไม่มีรายจ่ายบันทึกไว้เลย net_after_expenses จึงเท่ากับกำไรขั้นต้น "+
-			"ถ้าถามว่าเหลือเท่าไหร่ ให้บอกเลขนี้พร้อมบอกว่ายังไม่มีรายจ่ายในระบบ เงินที่เหลือจริงอาจน้อยกว่านี้")
+	if boughtEntries > 0 {
+		lines = append(lines, fmt.Sprintf("ingredient_purchases=%s ingredient_purchase_items=%d "+
+			"purchases_means=ค่าซื้อวัตถุดิบในช่วงนี้ ไม่ได้หักจากกำไร เพราะต้นทุนวัตถุดิบตามสูตรหักไปแล้วใน gross_profit "+
+			"ถ้าถามว่าทำไมไม่หัก ให้อธิบายแบบนี้ ห้ามบอกว่าลืมหัก",
+			joyboyNum(roundBaht(bought)), boughtEntries))
+	}
+	if entries == 0 {
+		lines = append(lines, "net_means=ช่วงนี้ยังไม่มีรายจ่ายอื่นนอกจากวัตถุดิบบันทึกไว้ (ค่าแรง ค่าเช่า ค่าน้ำไฟ ฯลฯ) net_after_expenses จึงเท่ากับกำไรขั้นต้น "+
+			"ถ้าถามว่าเหลือเท่าไหร่ ให้บอกเลขนี้พร้อมบอกว่ายังไม่มีรายจ่ายพวกนั้นในระบบ เงินที่เหลือจริงอาจน้อยกว่านี้")
 		return lines
 	}
-	lines = append(lines, fmt.Sprintf("net_means=กำไรขั้นต้นหักรายจ่ายที่บันทึกในระบบช่วงเดียวกัน (%d รายการ) "+
+	lines = append(lines, fmt.Sprintf("net_means=กำไรขั้นต้นหักรายจ่ายอื่นที่ไม่ใช่วัตถุดิบ ที่บันทึกในระบบช่วงเดียวกัน (%d รายการ) "+
 		"ถ้าถามว่าเหลือเท่าไหร่ หรือกำไรหลังหักค่าใช้จ่าย ให้ตอบ net_after_expenses "+
 		"และบอกด้วยว่าหักเฉพาะรายจ่ายที่บันทึกไว้ รายจ่ายที่ไม่ได้บันทึกยังไม่รวม "+
 		"ถ้าถามว่ากำไรเท่าไหร่เฉย ๆ ให้บอกทั้งสองเลข: กำไรขั้นต้น (ก่อนหัก) และ net_after_expenses (หลังหัก) เสมอ", expenses.Entries))
@@ -2251,7 +2262,9 @@ func joyboyProfitByMonthBody(rows []repository.AIMonthlyProfit, currentYearMonth
 	if len(rows) == 0 {
 		return joyboyNoData("no_paid_sales_in_the_last_months")
 	}
-	lines := []string{"scope=calendar_months_bangkok oldest_first=true", "net=revenue-cost-recorded_expenses"}
+	lines := []string{"scope=calendar_months_bangkok oldest_first=true",
+		"net=revenue-cost-recorded_expenses expenses_means=รายจ่ายที่ไม่ใช่ค่าซื้อวัตถุดิบ (ค่าแรง ค่าเช่า ค่าน้ำไฟ ฯลฯ) " +
+			"ค่าซื้อวัตถุดิบไม่หักซ้ำ เพราะ cost คือวัตถุดิบที่ขายไปแล้ว"}
 	var unrecorded []string
 	for _, r := range rows {
 		net := r.Revenue - r.Cost - r.Expenses
@@ -2267,8 +2280,24 @@ func joyboyProfitByMonthBody(rows []repository.AIMonthlyProfit, currentYearMonth
 	}
 	if len(unrecorded) > 0 {
 		lines = append(lines, "months_without_recorded_expenses="+strings.Join(unrecorded, ","),
-			"gap_means=เดือนพวกนี้ไม่มีรายจ่ายบันทึกไว้ในระบบ net ของเดือนนั้นจึงเป็นกำไรก่อนหักรายจ่าย ไม่ใช่ว่าไม่มีค่าใช้จ่าย "+
+			"gap_means=เดือนพวกนี้ไม่มีรายจ่ายอื่นนอกจากวัตถุดิบบันทึกไว้ net ของเดือนนั้นจึงยังไม่หักค่าแรง ค่าเช่า ค่าน้ำไฟ ไม่ใช่ว่าไม่มีค่าใช้จ่าย "+
 				"ห้ามเทียบว่าเดือนพวกนี้กำไรดีกว่าเดือนที่มีรายจ่ายบันทึก ให้บอกเจ้าของตรง ๆ ว่าตัวเลขคนละแบบ")
 	}
 	return joyboyJoin(lines)
+}
+
+// joyboyOperatingExpenses splits a ledger into what net profit takes off - the
+// expenses that are not ingredient purchases - and the purchases themselves,
+// using the ledger's per-category totals (whole window, not the listed page).
+func joyboyOperatingExpenses(list *ExpenseListResponse) (operating float64, entries int64, bought float64, boughtEntries int64) {
+	if list == nil {
+		return 0, 0, 0, 0
+	}
+	for _, c := range list.Categories {
+		if c.Category == "ingredient" {
+			bought += c.Amount
+			boughtEntries += c.Entries
+		}
+	}
+	return list.Total - bought, list.Entries - boughtEntries, bought, boughtEntries
 }
