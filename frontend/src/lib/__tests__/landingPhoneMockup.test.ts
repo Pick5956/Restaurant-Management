@@ -2,20 +2,21 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const landingSource = readFileSync(
-  join(process.cwd(), "src", "app", "page.tsx"),
-  "utf8",
-);
+const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
+const landingSource = read("app", "page.tsx");
+const devicesSource = read("components", "landing", "LandingDevices.tsx");
 
-describe("landing phone mockup", () => {
-  it("renders a first-party mockup instead of a third-party phone image", () => {
-    expect(landingSource).not.toContain("PHONE_IMAGE_URL");
-    expect(landingSource).not.toContain("static.vecteezy.com");
-    expect(landingSource).toContain("function PhoneMockup");
+describe("landing device mockups", () => {
+  it("draws its own device frames instead of a third-party phone image", () => {
+    const source = landingSource + devicesSource;
+    expect(source).not.toContain("PHONE_IMAGE_URL");
+    expect(source).not.toContain("static.vecteezy.com");
+    expect(devicesSource).toContain("export function Phone(");
+    expect(landingSource).toContain("LandingDevices");
   });
 
-  it("exposes the visual preview through an accessible image label", () => {
-    expect(landingSource).toContain('role="img"');
-    expect(landingSource).toContain("aria-label={label}");
+  it("gives a drawn stand-in screen one image label instead of its fake UI", () => {
+    expect(devicesSource).toContain('role="img"');
+    expect(devicesSource).toContain("aria-label={label}");
   });
 });

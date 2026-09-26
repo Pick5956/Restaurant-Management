@@ -180,10 +180,12 @@ function decideRedirect(): string {
   return "/restaurants";
 }
 
+export type AuthModalMode = "login" | "register";
+
 export interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialMode?: "login" | "register";
+  initialMode?: AuthModalMode;
   onAuthenticated?: (user?: User, memberships?: Membership[]) => void;
   redirectTo?: string;
 }
@@ -222,6 +224,9 @@ export default function AuthModal({
 
   if (lastIsOpen !== isOpen) {
     setLastIsOpen(isOpen);
+    // Every opening starts on the form it was opened for: the landing page's
+    // "Get started" opens the sign-up form, "Sign in" the sign-in form.
+    if (isOpen) setAuthMode(initialMode);
     if (!isOpen) {
       setClosing(false);
       setGooglePending(false);
