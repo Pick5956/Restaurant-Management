@@ -747,12 +747,14 @@ export default function AISettingsModal({
           )}
 
           {/* The section itself: always on desktop, after a tap on a phone */}
-          <div className={`${mobileOpen ? "flex" : "hidden"} min-h-0 flex-1 flex-col sm:flex`}>
+          <div className={`${mobileOpen ? "flex" : "hidden"} relative min-h-0 flex-1 flex-col sm:flex`}>
             {/* No section title (the owner cut every title, 26 ก.ย. 2569): the
                 highlighted entry in the list already says which section this
-                is. A phone keeps the bar for its back button; a computer has
-                only the close control, floated into the corner. */}
-            <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800 sm:absolute sm:right-4 sm:top-3 sm:z-10 sm:border-0 sm:p-0">
+                is. A phone keeps the bar for its back button. A computer has a
+                plain band across the top holding the close control, as in
+                Claude's settings: the section scrolls up under it and fades
+                out at its lower edge instead of running into the corner. */}
+            <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800 sm:absolute sm:inset-x-0 sm:top-0 sm:z-10 sm:h-14 sm:justify-end sm:border-0 sm:bg-white sm:px-4 sm:py-0 sm:dark:bg-gray-950 sm:after:pointer-events-none sm:after:absolute sm:after:inset-x-0 sm:after:top-full sm:after:h-5 sm:after:bg-gradient-to-b sm:after:from-white sm:after:to-transparent sm:after:content-[''] sm:dark:after:from-gray-950">
               <div className="flex min-w-0 items-center gap-2 sm:hidden">
                 <button
                   type="button"
@@ -772,7 +774,7 @@ export default function AISettingsModal({
               </div>
             </header>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pt-14">
+            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6 pt-4 sm:mt-14 sm:px-6 sm:pt-3">
               {/* Nothing loaded yet: the spinner from the very first frame (the
                   request starts in an effect, a frame after the sheet appears).
                   Once there is a view it stays up through later refreshes. */}
