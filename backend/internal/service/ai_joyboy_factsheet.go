@@ -208,6 +208,23 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 		}
 		lines = append(lines, fmt.Sprintf("items_below_minimum=%d listed=%d %s=%s",
 			total, len(result.LowStockIngredients), costKey, joyboyNum(roundBaht(restockCost))))
+		// "Below minimum" is two things: gone, and running low. Given only the
+		// total, the model called all twenty-six "หมดสต๊อกแล้ว" when one of
+		// them still had stock (26 ก.ย. 2569) - so the split is said outright.
+		out, low := 0, 0
+		if result.InventoryValuation != nil {
+			out, low = result.InventoryValuation.OutItems, result.InventoryValuation.LowItems
+		} else {
+			for _, item := range result.LowStockIngredients {
+				if item.Status == "out" {
+					out++
+				} else {
+					low++
+				}
+			}
+		}
+		lines = append(lines, fmt.Sprintf("out_of_stock=%d running_low=%d note=หมดแล้ว %d ตัว ใกล้หมด (ยังมีของ) %d ตัว "+
+			"ถ้าบอกจำนวนให้แยกสองกลุ่มนี้ ห้ามเรียกทั้ง %d ตัวว่าหมด", out, low, out, low, total))
 		if total > len(result.LowStockIngredients) {
 			lines = append(lines, fmt.Sprintf("note=ต่ำกว่าขั้นต่ำทั้งหมด %d ตัว ใบนี้แสดง %d ตัวที่เร่งด่วนสุด "+
 				"restock_listed_cost คือค่าเติมเฉพาะที่แสดง ไม่ใช่ทั้งหมด ถ้าถามจำนวนให้ตอบ %d",

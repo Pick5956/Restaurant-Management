@@ -44,11 +44,30 @@ type AIService struct {
 	keyHealth providerKeyHealth
 }
 
+// aiProviderHeaderWait is how long one key may stay silent before the call
+// moves on to the next. A healthy Gemini or Groq call answers in 1–3.5 s
+// (the stream sends its headers as it starts); a key that hangs used to hold
+// the owner for the whole 30 s client timeout, and two such keys in a row made
+// one question take 65 s (26 ก.ย. 2569). The 30 s ceiling stays for a reply
+// that is under way.
+const aiProviderHeaderWait = 12 * time.Second
+
+func aiProviderTransport() http.RoundTripper {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	transport := base.Clone()
+	transport.ResponseHeaderTimeout = aiProviderHeaderWait
+	return transport
+}
+
 func ProvideAIService(repo *repository.AIRepository) *AIService {
 	service := &AIService{
 		repo: repo,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: aiProviderTransport(),
 		},
 	}
 	service.structuredPlannerProviders = []StructuredPlannerProvider{

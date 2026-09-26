@@ -304,6 +304,7 @@ func ComputeSalesTrend(days []repository.AISalesSummary) AISalesTrend {
 			ref = t
 		}
 	}
+	trend.RecentEnd = ref
 	recentStart := ref.AddDate(0, 0, -6) // last 7 days inclusive of ref
 	priorStart := ref.AddDate(0, 0, -13) // the 7 days before that
 	for _, p := range parsed {

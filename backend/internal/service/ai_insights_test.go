@@ -125,6 +125,11 @@ func TestSalesDropCardStatesTheSizeInTheHeadline(t *testing.T) {
 		if !strings.Contains(in.Metric, "฿") {
 			t.Errorf("card money should be marked with ฿, got %q", in.Metric)
 		}
+		// The card names its days, so its "7 วัน" cannot be read as the chat's
+		// (which counts today) and look like a contradiction.
+		if !strings.Contains(in.Title, "1–7 ส.ค.") || !strings.Contains(in.Detail, "25–31 ก.ค.") {
+			t.Errorf("the card should name both windows, got %q / %q", in.Title, in.Detail)
+		}
 		return
 	}
 	t.Fatal("a 50% weekly drop should produce a sales_drop insight")

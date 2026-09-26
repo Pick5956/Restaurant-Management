@@ -68,6 +68,12 @@ func TestJoyboyLowStockSheetCountsTheWholeShelf(t *testing.T) {
 		t.Errorf("sheet does not say which count answers the question:%s%s", "\n", body)
 	}
 
+	// Gone and running low are said apart: given only the total, the model
+	// called all twenty-six "หมดแล้ว" when one still had stock.
+	if !strings.Contains(body, "out_of_stock=2 running_low=13") {
+		t.Errorf("sheet does not split out-of-stock from running low: %s", body)
+	}
+
 	// Without the summary the list is all there is, and the sheet says so
 	// plainly rather than inventing a bigger number.
 	body, _ = joyboyFactBody(AIToolResult{Tool: AIToolGetLowStockIngredients, LowStockIngredients: risks[:3]})
