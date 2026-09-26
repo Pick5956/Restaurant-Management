@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, SlidersHorizontal, Trash2, Wand2, X } from "lucide-react";
+import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, SlidersHorizontal, Trash2, Wand2, X } from "lucide-react";
 import {
   AI_ACTION_TYPES,
   deleteAllAIConversations,
@@ -108,6 +108,8 @@ function copy(language: "th" | "en") {
         groupStock: "วัตถุดิบ",
         groupSales: "ยอดขายและเมนู",
         bellNote: "ขึ้นที่กระดิ่งมุมขวาบน เฉพาะตอนเปิดแอป",
+        search: "ค้นหาการตั้งค่า",
+        searchEmpty: (q: string) => `ไม่พบการตั้งค่าที่ตรงกับ “${q}”`,
       }
     : {
         settings: "Dishy AI settings",
@@ -158,6 +160,8 @@ function copy(language: "th" | "en") {
         groupStock: "Ingredients",
         groupSales: "Sales and menu",
         bellNote: "On the bell, top right, while the app is open",
+        search: "Search settings",
+        searchEmpty: (q: string) => `No settings match “${q}”`,
       };
 }
 
@@ -188,9 +192,12 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (nex
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
+function Row({ id, label, hint, children }: { id?: string; label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-gray-100 py-3 first:border-t-0 dark:border-gray-800">
+    <div
+      data-setting-id={id}
+      className="flex items-center justify-between gap-4 border-t border-gray-100 py-3 transition-[background-color] duration-700 first:border-t-0 dark:border-gray-800"
+    >
       <div className="min-w-0">
         <p className="text-[13px] font-medium leading-[18px] text-gray-800 dark:text-gray-100">{label}</p>
         {hint ? <p className="mt-0.5 text-[11.5px] leading-4 text-gray-500 dark:text-gray-400">{hint}</p> : null}
@@ -217,6 +224,40 @@ function Note({ children }: { children: React.ReactNode }) {
 
 const SECTION_ICONS: Record<SectionKey, typeof Wand2> = { general: SlidersHorizontal, actions: Wand2, notifications: Bell };
 const SECTION_ORDER: SectionKey[] = ["general", "actions", "notifications"];
+
+// A row the search lands on is lit for a moment, the way Claude's settings
+// point at the setting you searched for. Written out whole so Tailwind keeps
+// the classes; the outline paints around the row without moving anything.
+const FLASH_CLASSES = ["rounded-md", "bg-orange-50", "outline", "outline-8", "outline-orange-50", "dark:bg-orange-950/40", "dark:outline-orange-950/40"];
+
+type SearchEntry = { id: string; section: SectionKey; label: string; hint: string };
+
+/** Every setting on every section, for the search box (26 ก.ย. 2569). */
+function searchIndex(t: ReturnType<typeof copy>, language: "th" | "en"): SearchEntry[] {
+  const pick = (pair: { th: [string, string]; en: [string, string] }) => (language === "th" ? pair.th : pair.en);
+  return [
+    { id: "owner_title", section: "general", label: t.titleLabel, hint: `${t.titleHint} ${t.groupAnswers}` },
+    { id: "follow_ups", section: "general", label: t.followUps, hint: `${t.followUpsHint} ${t.groupAnswers}` },
+    { id: "clear_all", section: "general", label: t.clearAll, hint: `${t.clearAllHint} ${t.groupHistory}` },
+    { id: "trash", section: "general", label: t.trash, hint: `${t.trashHint} ${t.groupHistory}` },
+    { id: "master", section: "actions", label: t.master, hint: t.masterHint },
+    ...ACTION_ROWS.map((row) => {
+      const [label, example] = pick(row);
+      const group = row.group === "menu" ? t.groupMenu : row.group === "ingredients" ? t.groupIngredients : t.groupMoney;
+      return { id: row.type, section: "actions" as const, label, hint: `${group} ${example}` };
+    }),
+    ...INSIGHT_ROWS.map((row) => {
+      const [label, hint] = pick(row);
+      return { id: row.id, section: "notifications" as const, label, hint };
+    }),
+  ];
+}
+
+/** Every word typed must appear somewhere in the setting's name, note or section. */
+function matchesSearch(entry: SearchEntry, sectionName: string, query: string) {
+  const haystack = `${entry.label} ${entry.hint} ${sectionName}`.toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((word) => haystack.includes(word));
+}
 
 export default function AISettingsModal({
   open,
@@ -263,6 +304,10 @@ export default function AISettingsModal({
   // always a section, on a phone null means "the list".
   const [section, setSection] = useState<SectionKey | null>("actions");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  // The setting a search result opened, to scroll to and light once it renders.
+  const [jumpTo, setJumpTo] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [followUps, setFollowUps] = useFollowUpsSetting();
   const [titleDraft, setTitleDraft] = useState("");
@@ -290,6 +335,7 @@ export default function AISettingsModal({
     setTrash(null);
     setTrashError("");
     setConfirmPurgeAll(false);
+    setQuery("");
     getAISettings()
       .then((res) => {
         setView(res.data);
@@ -304,6 +350,23 @@ export default function AISettingsModal({
   useEffect(() => () => {
     if (savedTimer.current) window.clearTimeout(savedTimer.current);
   }, []);
+
+  // After a search result switches section, bring its row into view and light
+  // it. A frame later, so the section it is in has rendered.
+  useEffect(() => {
+    if (!jumpTo) return;
+    const frame = requestAnimationFrame(() => {
+      const row = cardRef.current?.querySelector<HTMLElement>(`[data-setting-id="${jumpTo}"]`);
+      setJumpTo(null);
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.add(...FLASH_CLASSES);
+      // Its own timer, not this effect's cleanup: clearing jumpTo re-runs the
+      // effect, and a cleanup that cancelled this left the row lit for good.
+      window.setTimeout(() => row.classList.remove(...FLASH_CLASSES), 1600);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [jumpTo, section, mobileOpen, view]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -424,7 +487,7 @@ export default function AISettingsModal({
       return (
         <>
           <Group title={t.groupAnswers}>
-            <Row label={t.titleLabel} hint={t.titleHint}>
+            <Row id="owner_title" label={t.titleLabel} hint={t.titleHint}>
               <input
                 type="text"
                 value={titleDraft}
@@ -438,12 +501,12 @@ export default function AISettingsModal({
                 className="h-8 w-44 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-[12.5px] text-gray-800 outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
               />
             </Row>
-            <Row label={t.followUps} hint={t.followUpsHint}>
+            <Row id="follow_ups" label={t.followUps} hint={t.followUpsHint}>
               <Switch on={followUps} onChange={setFollowUps} label={t.followUps} />
             </Row>
           </Group>
           <Group title={t.groupHistory}>
-            <Row label={t.clearAll} hint={confirmClear ? undefined : t.clearAllHint}>
+            <Row id="clear_all" label={t.clearAll} hint={confirmClear ? undefined : t.clearAllHint}>
               {clearedCount !== null ? (
                 <span className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-600 dark:text-emerald-400">
                   <Check className="h-3.5 w-3.5" /> {t.cleared}
@@ -478,7 +541,7 @@ export default function AISettingsModal({
                 </button>
               )}
             </Row>
-            <Row label={t.trash} hint={t.trashHint}>
+            <Row id="trash" label={t.trash} hint={t.trashHint}>
               <button
                 type="button"
                 onClick={openTrash}
@@ -578,7 +641,7 @@ export default function AISettingsModal({
       ];
       return (
         <>
-          <div className="flex items-center justify-between gap-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3.5 dark:border-orange-900/50 dark:bg-orange-950/25">
+          <div data-setting-id="master" className="flex items-center justify-between gap-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3.5 dark:border-orange-900/50 dark:bg-orange-950/25">
             <div className="min-w-0">
               <p className="text-[13px] font-medium leading-[18px] text-orange-900 dark:text-orange-200">{t.master}</p>
               <p className="mt-0.5 text-[11.5px] leading-4 text-orange-700 dark:text-orange-300/80">{t.masterHint}</p>
@@ -601,7 +664,7 @@ export default function AISettingsModal({
                 // taken out on 19 ก.ย. 2569 at the owner's request.
                 const [label] = language === "th" ? row.th : row.en;
                 return (
-                  <Row key={row.type} label={label}>
+                  <Row key={row.type} id={row.type} label={label}>
                     <Switch
                       on={view.action_types[row.type] !== false}
                       disabled={!actionsOn}
@@ -637,7 +700,7 @@ export default function AISettingsModal({
     const [label, hint] = language === "th" ? row.th : row.en;
     const on = row.kinds.every((kind) => view.insight_kinds[kind] !== false);
     return (
-      <Row key={row.id} label={label} hint={hint}>
+      <Row key={row.id} id={row.id} label={label} hint={hint}>
         <Switch
           on={on}
           label={label}
@@ -659,6 +722,64 @@ export default function AISettingsModal({
     ) : saveState === "error" ? (
       <span className="text-[11px] text-red-500">{t.saveError}</span>
     ) : null;
+
+  const trimmedQuery = query.trim();
+  const results = trimmedQuery
+    ? searchIndex(t, language).filter((entry) => matchesSearch(entry, t.sections[entry.section].name, trimmedQuery))
+    : [];
+  const openResult = (entry: SearchEntry) => {
+    setSection(entry.section);
+    setMobileOpen(true);
+    setQuery("");
+    setJumpTo(entry.id);
+  };
+  const searchBox = (
+    <div role="search" className="relative">
+      <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && results[0]) openResult(results[0]);
+          if (e.key === "Escape" && query) {
+            e.stopPropagation();
+            setQuery("");
+          }
+        }}
+        placeholder={t.search}
+        aria-label={t.search}
+        className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-8 pr-2.5 text-[16px] text-gray-800 outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 sm:text-[13px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 [&::-webkit-search-cancel-button]:hidden"
+      />
+    </div>
+  );
+  // What the search found, each with the section it lives in. Pressing Enter
+  // opens the first.
+  const searchResults = (
+    <div className="flex flex-col gap-0.5">
+      {results.length === 0 ? (
+        <p className="px-2.5 py-3 text-[12px] leading-5 text-gray-500 dark:text-gray-400">{t.searchEmpty(trimmedQuery)}</p>
+      ) : (
+        results.map((entry) => {
+          const Icon = SECTION_ICONS[entry.section];
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => openResult(entry)}
+              className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium leading-[18px] text-gray-800 dark:text-gray-100">{entry.label}</span>
+                <span className="block text-[11.5px] leading-4 text-gray-500 dark:text-gray-400">{t.sections[entry.section].name}</span>
+              </span>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
 
   const sectionNav = (
     <>
@@ -699,12 +820,14 @@ export default function AISettingsModal({
         // No title on screen (the owner cut it, 26 ก.ย. 2569) - the section
         // names say where you are - so the window's name is given here.
         aria-label={t.settings}
+        ref={cardRef}
         className="ai-settings-card relative flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Desktop sidebar */}
         <aside className="hidden w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 pt-4 dark:border-gray-800 dark:bg-gray-900/50 sm:flex">
-          {sectionNav}
+          <div className="mb-2">{searchBox}</div>
+          {trimmedQuery ? searchResults : sectionNav}
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -717,6 +840,10 @@ export default function AISettingsModal({
                 </button>
               </header>
               <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-950">
+                <div className="mb-3">{searchBox}</div>
+                {trimmedQuery ? (
+                  <div className="overflow-hidden rounded-[14px] border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">{searchResults}</div>
+                ) : (
                 <div className="flex flex-col overflow-hidden rounded-[14px] border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                   {SECTION_ORDER.map((key) => {
                     const Icon = SECTION_ICONS[key];
@@ -742,6 +869,7 @@ export default function AISettingsModal({
                     );
                   })}
                 </div>
+                )}
               </div>
             </div>
           )}
