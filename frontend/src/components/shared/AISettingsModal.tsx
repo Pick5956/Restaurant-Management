@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Settings2, SlidersHorizontal, Trash2, Wand2, X } from "lucide-react";
+import { Bell, Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, SlidersHorizontal, Trash2, Wand2, X } from "lucide-react";
 import {
   AI_ACTION_TYPES,
   deleteAllAIConversations,
@@ -694,14 +694,16 @@ export default function AISettingsModal({
     >
       <div aria-hidden="true" className="ai-settings-backdrop absolute inset-0 bg-black/50" />
       <div
+        role="dialog"
+        aria-modal="true"
+        // No title on screen (the owner cut it, 26 ก.ย. 2569) - the section
+        // names say where you are - so the window's name is given here.
+        aria-label={t.settings}
         className="ai-settings-card relative flex h-full w-full overflow-hidden bg-white shadow-xl dark:bg-gray-950 sm:h-[560px] sm:max-h-[85vh] sm:max-w-3xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Desktop sidebar */}
-        <aside className="hidden w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/50 sm:flex">
-          <p className="mb-2 flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            <Settings2 className="h-3.5 w-3.5" /> {t.settings}
-          </p>
+        <aside className="hidden w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 pt-4 dark:border-gray-800 dark:bg-gray-900/50 sm:flex">
           {sectionNav}
         </aside>
 
@@ -709,8 +711,7 @@ export default function AISettingsModal({
           {/* Phone: the section list, until a section is opened */}
           {!mobileOpen && (
             <div className="flex min-h-0 flex-1 flex-col sm:hidden">
-              <header className="flex items-center justify-between border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
-                <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white">{t.settings}</h2>
+              <header className="flex items-center justify-end border-b border-gray-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] dark:border-gray-800">
                 <button onClick={requestClose} aria-label={t.close} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                   <X className="h-5 w-5" />
                 </button>
