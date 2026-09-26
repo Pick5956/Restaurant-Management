@@ -348,7 +348,9 @@ export default function AIAssistantPage() {
 
   const conversationHistory = (): AIConversationMessage[] =>
     messages
-      .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system")
+      // The on-screen greeting is not a turn: sent along, the model read
+      // "สวัสดีพู่กัน" as something it had already said.
+      .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system" && m.id !== "welcome")
       .slice(-6)
       .map((m) => ({ id: m.id, role: m.role, content: m.content }));
 
@@ -923,6 +925,11 @@ export default function AIAssistantPage() {
                 </div>
               ) : (
                 messages.map((msg) => {
+                // The greeting is the empty screen's headline, never a reply: once
+                // the owner asked something it showed up as the assistant's first
+                // message, as if it had spoken first (27 ก.ย. 2569; the floating
+                // chat had the same fault, fixed 26 ก.ย.).
+                if (msg.id === "welcome") return null;
                 if (msg.role === "user") {
                   return (
                     <div key={msg.id} className="ml-auto flex max-w-[96%] items-end justify-end gap-2.5 sm:max-w-[85%]">

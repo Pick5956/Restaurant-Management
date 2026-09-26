@@ -466,7 +466,9 @@ export default function AIOperationsFloatingChat() {
 
   const conversationHistory = (): AIConversationMessage[] =>
     messages
-      .filter((message): message is Message & { role: "user" | "assistant" } => message.role !== "system")
+      // The on-screen greeting is not a turn: sent along, the model read
+      // "สวัสดีพู่กัน" as something it had already said.
+      .filter((message): message is Message & { role: "user" | "assistant" } => message.role !== "system" && message.id !== "welcome")
       .slice(-6)
       .map((message) => ({ id: message.id, role: message.role, content: message.content }));
 
