@@ -986,7 +986,7 @@ export default function AIOperationsFloatingChat() {
           <div
             ref={attachScrollArea}
             onScroll={handleThreadScroll}
-            className="ai-sheet-fade flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-14 space-y-4 scrollbar-thin sm:px-4 sm:pt-4"
+            className="ai-sheet-fade chat-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-14 space-y-4 sm:px-4"
           >
             {/* Nothing asked yet: the orb, one line, and the questions — the
                 same opening as the full AI page. This used to be a chat bubble
@@ -1020,6 +1020,10 @@ export default function AIOperationsFloatingChat() {
               </div>
             ) : (
             messages.map((msg) => {
+              // The greeting is the empty thread's headline, never a bubble: once
+              // a question was sent it showed up as the first reply, and was gone
+              // again when the chat reopened (it is not stored) - 26 ก.ย. 2569.
+              if (msg.id === "welcome") return null;
               if (msg.role === "system") {
                 return (
                   <div key={msg.id} className="w-full text-center py-2 text-xs text-red-500 dark:text-red-400 font-medium animate-message-slide">
@@ -1152,7 +1156,11 @@ export default function AIOperationsFloatingChat() {
                matching the full AI page. sm+ keeps the bordered footer. */
             className="bg-transparent px-3 pb-3 pt-1 dark:bg-transparent sm:rounded-b-2xl sm:border-t sm:border-gray-200 sm:bg-white sm:p-3.5 sm:dark:border-gray-800 sm:dark:bg-gray-950"
           >
-            <div className="flex flex-col gap-1 rounded-[1.5rem] border border-gray-200 bg-white p-1.5 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-900">
+            {/* One capsule, the same as the full AI page: the box and the send
+                button on one line, the button the height of a one-line box. It
+                grows upward as the question wraps; items-end keeps the button on
+                the last line (26 ก.ย. 2569). */}
+            <div className="flex items-end gap-1 rounded-[1.75rem] border border-gray-200 bg-white p-2 pl-2 shadow-sm transition focus-within:border-orange-300 dark:border-gray-800 dark:bg-gray-900">
               {/* A textarea, not an input: an input cannot wrap, so a long
                   question scrolled sideways out of sight while it was being
                   typed. Enter still sends; Shift+Enter starts a new line. */}
@@ -1170,10 +1178,9 @@ export default function AIOperationsFloatingChat() {
                 placeholder={copy.askPlaceholder}
                 disabled={loading || actionConfirming || actionCancelling}
                 aria-label={copy.askPlaceholder}
-                className="min-h-9 w-full resize-none bg-transparent px-2 py-1.5 text-sm font-medium !text-gray-950 placeholder-gray-400 outline-none dark:!text-gray-50 dark:placeholder-gray-500"
+                className="chat-scroll min-h-[2.25rem] min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm font-medium !text-gray-950 placeholder-gray-400 outline-none dark:!text-gray-50 dark:placeholder-gray-500"
               />
-              <div className="flex items-center gap-1">
-              <div className="flex-1" />
+              <div className="flex shrink-0 items-center gap-1">
               {composer.canExpand && (
                 <button
                   type="button"

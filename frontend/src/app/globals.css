@@ -239,6 +239,42 @@ html {
   display: none;
 }
 
+/* Chat scrollers (the floating chat, 26 ก.ย. 2569): a slim rounded thumb and
+   no arrows. Chrome on Windows 11 draws its own bar - arrows at both ends - for
+   any element whose standard scrollbar-width/-color is set, and then ignores
+   every ::-webkit-scrollbar rule; the page-wide `thin` is handed back to
+   `auto` here so the rules below are the ones that draw (as .dropdown-scroll). */
+.chat-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.chat-scroll::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.chat-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
 /* Thai marks that sit above a vowel - the tone mark in ตี๋, กี้, ปั๊ม - rise above
    the line box. Tailwind's `truncate` is `overflow: hidden`, which clips both
    axes, so every truncated line of Thai could lose the top of those marks; the
