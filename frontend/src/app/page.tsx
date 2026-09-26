@@ -13,6 +13,7 @@ import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
 import { safeNextPathFromSearch } from "@/src/lib/safeRedirect";
+import { smoothScroll } from "@/src/hooks/smoothScroll";
 import {
   ArrowRight,
   BarChart3,
@@ -989,6 +990,11 @@ export default function LandingPage() {
     const timer = window.setTimeout(() => openLoginModal(authRedirectTo), 0);
     return () => window.clearTimeout(timer);
   }, [loading, openLoginModal, readAuthRedirectTo, user]);
+
+  // The wheel glides and coasts here the way it does on every dashboard page
+  // (ShellScroll). The landing page scrolls the window, not a box, so the
+  // root element takes it.
+  useEffect(() => smoothScroll(document.documentElement), []);
 
   useEffect(() => {
     const onScroll = () => {
