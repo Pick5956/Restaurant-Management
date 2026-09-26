@@ -9,7 +9,8 @@ import { AppText as Text } from '@/src/components/app-text';
 import { AppRefreshControl, AppScreen, ScreenHeading } from '@/src/components/app-shell';
 import { MenuImage } from '@/src/components/menu-image';
 import { OrderItemPanel } from '@/src/components/order-item-editor';
-import { OrderMenuFilterBar, OrderMenuGrid } from '@/src/components/order-menu-grid';
+import { OrderMenuFilterBar, OrderMenuGrid, OrderMenuSkeleton } from '@/src/components/order-menu-grid';
+import { ContentReveal } from '@/src/components/skeleton';
 import { OrderItemPanelPlaceholder, OrderMenuSplit } from '@/src/components/order-menu-split';
 import { Divider, EmptyState, Feedback, GlassLayer, SectionHeader, StatusBadge, Surface } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
@@ -603,17 +604,21 @@ export default function OrderDetailScreen() {
 
   // The badge counts only what is still in this round, as the web POS tile does.
   const menuWorkspace = order && !locked && canTakeOrder ? (
-    <OrderMenuGrid
-      groups={menuGroups}
-      countByMenu={pendingByMenu}
-      tabletWorkspace={sidePanel}
-      onPressItem={(item) => (sidePanel
-        ? pickDish(item)
-        : router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never))}
-      accessibilityLabelFor={(item, inRound) => (inRound > 0
-        ? copy(`เพิ่มเมนู ${item.name} ในตะกร้า ${inRound}`, `Add ${item.name}, ${inRound} in cart`)
-        : copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`))}
-    />
+    <ContentReveal style={sidePanel ? { flex: 1, minHeight: 0 } : undefined}>
+      <OrderMenuGrid
+        groups={menuGroups}
+        countByMenu={pendingByMenu}
+        tabletWorkspace={sidePanel}
+        onPressItem={(item) => (sidePanel
+          ? pickDish(item)
+          : router.push({ pathname: '/order/item' as never, params: { id: String(orderId), menuId: String(item.ID) } } as never))}
+        accessibilityLabelFor={(item, inRound) => (inRound > 0
+          ? copy(`เพิ่มเมนู ${item.name} ในตะกร้า ${inRound}`, `Add ${item.name}, ${inRound} in cart`)
+          : copy(`เพิ่มเมนู ${item.name}`, `Add ${item.name}`))}
+      />
+    </ContentReveal>
+  ) : !order && error === null && canTakeOrder ? (
+    <OrderMenuSkeleton label={copy('กำลังโหลดเมนู', 'Loading the menu')} tabletWorkspace={sidePanel} />
   ) : null;
 
   if (!canAccessOrder) {
@@ -739,7 +744,7 @@ export default function OrderDetailScreen() {
           {!canTakeOrder || locked ? <Surface>{orderSummaryContent}</Surface> : null}
           {menuWorkspace}
         </>
-      ) : null}
+      ) : menuWorkspace}
     </AppScreen>
   );
 }

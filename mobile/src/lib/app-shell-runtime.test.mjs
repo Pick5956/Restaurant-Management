@@ -265,9 +265,10 @@ test('mobile role-name surfaces consume the restaurant override contract', async
   assert.match(typesSource, /display_name_override\?: string/);
   assert.match(restaurantsSource, /roleLabel\(membership\.role, language\)/);
   assert.match(invitationSource, /return roleLabel\(role, language\)/);
-  // Since 2026-09-11 Home shows the role as a chip at the top right instead of
-  // the restaurant row; the override still has to be what that chip reads.
-  assert.match(homeSource, /activeMembership\?\.role\?\.display_name_override/);
+  // Home showed the role as a chip at the top right from 2026-09-11 until the
+  // owner removed it on 2026-09-26 and centred the title; the role is on the
+  // restaurant list and in the staff screens, not repeated on Home.
+  assert.doesNotMatch(homeSource, /person-circle-outline|roleChip/);
 });
 
 test('restaurant identity is rendered only on Home while detail headings retain Back', async () => {

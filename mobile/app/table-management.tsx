@@ -9,6 +9,7 @@ import { hapticSelect, hapticSuccess, PlanProvider } from '@/src/components/tabl
 import { FilterBar, HeaderSelectAction, SelectionBar, SelectionDock, type RoomFilter } from '@/src/components/table-plan/plan-bars';
 import { AddRoomChip, floorLabels, LabelRuler, RoomSection, type FloorHandlers } from '@/src/components/table-plan/plan-floor';
 import { PlanInspector } from '@/src/components/table-plan/plan-inspector';
+import { ContentReveal } from '@/src/components/skeleton';
 import { PlanFailed, PlanSkeleton, PlanState } from '@/src/components/table-plan/plan-states';
 import { floorGrid } from '@/src/components/table-plan/plan-tile';
 import { RoomEditorBody } from '@/src/components/table-plan/room-editor-body';
@@ -370,12 +371,12 @@ function TablePlanScreen({ canManage }: { canManage: boolean }) {
       {canManage ? <AddRoomChip label={copy('เพิ่มโซน', 'Add zone')} onPress={addRoom} /> : null}
     </View>
   ) : (
-    <View style={{ gap: spacing.xl }}>
+    <ContentReveal style={{ gap: spacing.xl }}>
       {tables.length ? <SummaryCard language={lang} onStatus={setStatusFilter} status={statusFilter} summary={summary} /> : null}
       {filtering && rooms.length === 0 ? (
         <PlanState action={{ label: copy('ล้างตัวกรอง', 'Clear filters'), onPress: clearFilters }} icon="search-outline" line={copy('ไม่พบโต๊ะ', 'No tables found')} />
       ) : floor}
-    </View>
+    </ContentReveal>
   );
 
   const slip = <QrSlipHost shopName={activeMembership?.restaurant?.name ?? ''} slip={paper.slip} slipRef={paper.slipRef} />;

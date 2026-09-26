@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, LayoutAnimation, ScrollView, View } from 'react-native';
+import { Alert, LayoutAnimation, ScrollView, View } from 'react-native';
 import type { Anchor } from '@/src/components/inventory/parts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,6 +18,7 @@ import {
   HEADER_PAD_TOP,
   HeaderTextButton,
   IngredientCard,
+  IngredientListSkeleton,
   KeyValue,
   RestockSheet,
   SEARCH_HEIGHT,
@@ -34,6 +35,7 @@ import {
   fmt,
   headerContentTop,
 } from '@/src/components/inventory/parts';
+import { ContentReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail, apiFailureKind, apiFailureSays } from '@/src/lib/api-failure';
 import {
@@ -337,30 +339,34 @@ export default function InventoryScreen() {
         {!selecting && !search ? <TotalsCard value={totals.value} needsOrder={totals.needsOrder} language={language} /> : null}
 
         {loading && !ingredients.length ? (
-          <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View>
+          <IngredientListSkeleton label={t('กำลังโหลดวัตถุดิบ', 'Loading ingredients')} />
         ) : null}
 
-        {visible.map((item) => {
-          const card = (
-            <IngredientCard
-              item={item}
-              language={language}
-              locale={locale}
-              selecting={selecting}
-              selected={selected.has(item.ID)}
-              canManage={canManage}
-              onPress={() => (selecting ? toggle(item.ID) : router.push({ pathname: '/inventory/detail' as never, params: { id: String(item.ID) } } as never))}
-              onRestock={() => setSheet({ kind: 'restock', item })}
-              onMore={(at) => openRowMenu(item, at)}
-            />
-          );
-          if (!canManage || selecting) return <View key={item.ID}>{card}</View>;
-          return (
-            <SwipeRow key={item.ID} id={String(item.ID)} background={palette.canvas} deleteLabel={t(`ลบ ${item.name}`, `Delete ${item.name}`)} onDelete={() => confirmDelete(item)} onWillOpen={onRowWillOpen}>
-              {card}
-            </SwipeRow>
-          );
-        })}
+        {visible.length ? (
+          <ContentReveal style={{ gap: 10 }}>
+            {visible.map((item) => {
+              const card = (
+                <IngredientCard
+                  item={item}
+                  language={language}
+                  locale={locale}
+                  selecting={selecting}
+                  selected={selected.has(item.ID)}
+                  canManage={canManage}
+                  onPress={() => (selecting ? toggle(item.ID) : router.push({ pathname: '/inventory/detail' as never, params: { id: String(item.ID) } } as never))}
+                  onRestock={() => setSheet({ kind: 'restock', item })}
+                  onMore={(at) => openRowMenu(item, at)}
+                />
+              );
+              if (!canManage || selecting) return <View key={item.ID}>{card}</View>;
+              return (
+                <SwipeRow key={item.ID} id={String(item.ID)} background={palette.canvas} deleteLabel={t(`ลบ ${item.name}`, `Delete ${item.name}`)} onDelete={() => confirmDelete(item)} onWillOpen={onRowWillOpen}>
+                  {card}
+                </SwipeRow>
+              );
+            })}
+          </ContentReveal>
+        ) : null}
 
         {!loading && !visible.length ? (
           <EmptyState

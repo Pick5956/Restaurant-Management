@@ -7,8 +7,9 @@ import {
   type OrderListResponse,
 } from '@/src/api/order';
 import { AppRefreshControl, AppScreen, type AppScreenScrollControl } from '@/src/components/app-shell';
-import { ArchiveCompactRow, ArchiveDayButton, ArchiveDaySheet, ArchiveList } from '@/src/components/order-archive';
+import { ArchiveCompactRow, ArchiveDayButton, ArchiveDaySheet, ArchiveList, ArchiveSkeleton } from '@/src/components/order-archive';
 import { usePrimaryTabSceneStatus } from '@/src/components/primary-tabs-runtime';
+import { ContentReveal } from '@/src/components/skeleton';
 import {
   Button,
   EdgeSection,
@@ -188,15 +189,19 @@ export default function OrdersScreen() {
         </View>
 
         {days.length ? (
-          <EdgeSection>
-            <ArchiveList
-              days={days}
-              today={today}
-              language={language}
-              copy={copy}
-              onOpen={(order) => router.push({ pathname: '/order/bill' as never, params: { id: String(order.ID) } } as never)}
-            />
-          </EdgeSection>
+          <ContentReveal>
+            <EdgeSection>
+              <ArchiveList
+                days={days}
+                today={today}
+                language={language}
+                copy={copy}
+                onOpen={(order) => router.push({ pathname: '/order/bill' as never, params: { id: String(order.ID) } } as never)}
+              />
+            </EdgeSection>
+          </ContentReveal>
+        ) : loading && !failure ? (
+          <ArchiveSkeleton label={copy('กำลังโหลดออเดอร์', 'Loading orders')} />
         ) : null}
 
         {pagination?.has_more ? (

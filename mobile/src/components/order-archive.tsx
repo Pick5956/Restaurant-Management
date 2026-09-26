@@ -6,7 +6,8 @@ import { AppIcon } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
 import { SheetTitle } from '@/src/components/inventory/parts';
 import { calendarMonthOf, MonthCalendar, stepCalendarMonth } from '@/src/components/month-calendar';
-import { EdgeRow, GlassLayer, IconButton } from '@/src/components/ui';
+import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { EdgeRow, EdgeSection, GlassLayer, IconButton } from '@/src/components/ui';
 import { COMPACT_BUTTON } from '@/src/lib/compact-header';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import { money } from '@/src/lib/format';
@@ -213,5 +214,32 @@ export function ArchiveList({ days, today, language, copy, onOpen }: {
         );
       }))}
     </View>
+  );
+}
+
+/**
+ * The archive's rows before the first page lands: an EdgeRow's own size (72
+ * high, the page gutter either side) with the number, two detail lines and the
+ * amount as bones, so the orders fade in where the eye already is.
+ */
+export function ArchiveSkeleton({ label }: { label: string }) {
+  return (
+    <SkeletonReveal label={label}>
+      <EdgeSection>
+        {[0.7, 0.55, 0.8, 0.6, 0.75, 0.5].map((share, index) => (
+          <View
+            key={index}
+            style={{ minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: palette.divider }}
+          >
+            <View style={{ flex: 1, gap: 7 }}>
+              <Bone width={120} height={15} />
+              <Bone width={`${Math.round(share * 100)}%`} height={11} />
+              <Bone width="40%" height={11} />
+            </View>
+            <Bone width={72} height={18} radius={6} />
+          </View>
+        ))}
+      </EdgeSection>
+    </SkeletonReveal>
   );
 }

@@ -7,6 +7,7 @@ import { createInvitation } from '@/src/api/restaurant';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
 import { ChoiceChips, Field, FORM_MAX_WIDTH, FormBody, FormCard, Note, PillTabs, SaveDock } from '@/src/components/form/parts';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { GhostButton } from '@/src/components/staff/parts';
 import { ActionDock, Button, EmptyState, Feedback } from '@/src/components/ui';
 import { parsePermissionsForRole } from '@/src/lib/permissions';
@@ -187,14 +188,17 @@ export default function InviteStaffScreen() {
         <FormCard title={copy('บทบาทที่จะได้รับ', 'Role they will get')}>
           <FormBody>
             {roles.length ? (
-              <>
+              <ContentReveal style={{ gap: 12 }}>
                 <ChoiceChips options={roles.map((role) => ({ key: role.ID, label: roleLabel(role, language) }))} value={roleId} onChange={setRoleId} />
                 {roleSummary ? <Note icon="shield-checkmark-outline" text={roleSummary} /> : null}
-              </>
+              </ContentReveal>
             ) : !loadingRoles ? (
               <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{copy('บัญชีนี้มอบได้เฉพาะบทบาทที่มีสิทธิ์ไม่เกินของตัวเอง ตอนนี้ไม่มีบทบาทแบบนั้น', 'You can only invite to roles within your own permissions, and there are none right now')}</Text>
             ) : (
-              <Text style={{ fontSize: 13.5, color: palette.placeholder }}>{copy('กำลังโหลดบทบาท…', 'Loading roles…')}</Text>
+              // The role chips' own shape while the roles load.
+              <SkeletonReveal label={copy('กำลังโหลดบทบาท', 'Loading roles')} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {[84, 108, 72, 96].map((width, index) => <Bone key={index} width={width} height={32} radius={999} />)}
+              </SkeletonReveal>
             )}
           </FormBody>
         </FormCard>

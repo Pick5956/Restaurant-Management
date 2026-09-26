@@ -10,6 +10,7 @@ import { FORM_MAX_WIDTH } from '@/src/components/form/parts';
 import { RetryPill } from '@/src/components/hub/stage-tiles';
 import { CategoryDragList } from '@/src/components/menu-categories/category-drag-list';
 import { CategoryListSkeleton } from '@/src/components/menu-categories/category-list-skeleton';
+import { ContentReveal } from '@/src/components/skeleton';
 import { CategoryNameField } from '@/src/components/menu-categories/category-name-field';
 import { CategoryInlineRow } from '@/src/components/menu-categories/category-row';
 import { EmptyState, Feedback } from '@/src/components/ui';
@@ -438,25 +439,27 @@ export default function MenuCategoriesScreen() {
     list = <EmptyState title={copy('ยังไม่มีหมวดเมนู', 'No categories yet')} />;
   } else {
     list = (
-      <CategoryDragList
-        categories={sorted}
-        copy={copy}
-        counts={counts}
-        disabled={saving || deleting || reorderSaving}
-        editingId={mode.kind === 'renaming' ? mode.id : null}
-        framed={framed}
-        header={addRow}
-        language={language}
-        locked={inlineLocked(mode)}
-        onDelete={(category) => { void confirmDelete(category); }}
-        onLiftChange={handleLiftChange}
-        onRailChange={handleRailChange}
-        onRename={startRename}
-        onReorder={reorder}
-        openRailId={openRailId}
-        renderEditor={renderEditor}
-        scrollControlRef={scrollControlRef}
-      />
+      <ContentReveal>
+        <CategoryDragList
+          categories={sorted}
+          copy={copy}
+          counts={counts}
+          disabled={saving || deleting || reorderSaving}
+          editingId={mode.kind === 'renaming' ? mode.id : null}
+          framed={framed}
+          header={addRow}
+          language={language}
+          locked={inlineLocked(mode)}
+          onDelete={(category) => { void confirmDelete(category); }}
+          onLiftChange={handleLiftChange}
+          onRailChange={handleRailChange}
+          onRename={startRename}
+          onReorder={reorder}
+          openRailId={openRailId}
+          renderEditor={renderEditor}
+          scrollControlRef={scrollControlRef}
+        />
+      </ContentReveal>
     );
   }
 

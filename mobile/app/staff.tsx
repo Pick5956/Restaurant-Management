@@ -14,7 +14,7 @@ import { AppRefreshControl, AppScreen, type AppScreenScrollControl } from '@/src
 import { AppText as Text } from '@/src/components/app-text';
 import { HeadingAction } from '@/src/components/heading-action';
 import { CardHeading, ReportCard } from '@/src/components/reports/parts';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { ActivityRow, GhostButton, MemberRow, RoleRow, shortDateTime, StaffTabs, TeamStats } from '@/src/components/staff/parts';
 import { Button, EmptyState, Feedback } from '@/src/components/ui';
 import {
@@ -467,12 +467,14 @@ export default function StaffScreen() {
         <Feedback title={error.title} detail={error.detail} tone="danger" />
       ) : null}
       {initialLoading ? skeleton : hasLoadedTeam ? (
-        tablet ? tabletBody : (
-          <View style={{ gap: spacing.md }}>
-            {tabs.length > 1 ? <StaffTabs<StaffTab> tabs={tabs} value={shownTab} onChange={setTab} /> : null}
-            {phoneBody}
-          </View>
-        )
+        <ContentReveal>
+          {tablet ? tabletBody : (
+            <View style={{ gap: spacing.md }}>
+              {tabs.length > 1 ? <StaffTabs<StaffTab> tabs={tabs} value={shownTab} onChange={setTab} /> : null}
+              {phoneBody}
+            </View>
+          )}
+        </ContentReveal>
       ) : null}
     </AppScreen>
   );

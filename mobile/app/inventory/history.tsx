@@ -11,6 +11,7 @@ import {
   Card,
   ChoiceChip,
   FloatingHeader,
+  InventoryCardsSkeleton,
   SEARCH_HEIGHT,
   SearchCapsule,
   Segmented,
@@ -25,6 +26,7 @@ import {
   headerContentTop,
   shortTime,
 } from '@/src/components/inventory/parts';
+import { ContentReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { can } from '@/src/lib/rbac';
@@ -207,7 +209,8 @@ export default function InventoryHistoryScreen() {
         contentContainerStyle={{ paddingTop: headerContentTop(insets.top, true, true), paddingHorizontal: 12, paddingBottom: insets.bottom + 24, gap: 10 }}
       >
         {error ? <Feedback title={t('โหลดประวัติไม่ได้', 'Could not load')} detail={error.detail} tone="danger" /> : null}
-        {loading ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
+        {loading && !rows.length ? <InventoryCardsSkeleton label={t('กำลังโหลดประวัติ', 'Loading history')} heights={[150, 110, 150]} /> : null}
+        {loading && rows.length ? <View style={{ paddingVertical: 12, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
 
         {!loading && !rows.length && !error ? (
           <EmptyState
@@ -216,16 +219,20 @@ export default function InventoryHistoryScreen() {
           />
         ) : null}
 
-        {groups.map((group) => (
-          <View key={group.key} style={{ gap: 6 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: palette.muted, marginLeft: 4, marginTop: 4 }}>{group.heading}</Text>
-            <Card solid style={{ paddingHorizontal: 14, paddingVertical: 4 }}>
-              {group.rows.map((row, index) => (
-                <Row key={row.ID} row={row} language={language} locale={locale} first={index === 0} />
-              ))}
-            </Card>
-          </View>
-        ))}
+        {groups.length ? (
+          <ContentReveal style={{ gap: 10 }}>
+            {groups.map((group) => (
+              <View key={group.key} style={{ gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: palette.muted, marginLeft: 4, marginTop: 4 }}>{group.heading}</Text>
+                <Card solid style={{ paddingHorizontal: 14, paddingVertical: 4 }}>
+                  {group.rows.map((row, index) => (
+                    <Row key={row.ID} row={row} language={language} locale={locale} first={index === 0} />
+                  ))}
+                </Card>
+              </View>
+            ))}
+          </ContentReveal>
+        ) : null}
 
         {!loading && rows.length < total ? (
           <Pressable

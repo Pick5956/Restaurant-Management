@@ -23,7 +23,7 @@ import { AppTextInput as TextInput } from '@/src/components/app-text-input';
 import { AppScreen } from '@/src/components/app-shell';
 import { DangerAction, Field, FormBody, FormCard, Note, PermissionGroups, SaveDock } from '@/src/components/form/parts';
 import { HeadingAction } from '@/src/components/heading-action';
-import { Bone, SkeletonReveal } from '@/src/components/skeleton';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import {
   allPermissions,
@@ -369,7 +369,7 @@ export default function RoleEditorScreen() {
         </FormCard>
       ) : null}
       {tablet ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
+        <ContentReveal style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg }}>
           <View style={{ width: 340, gap: spacing.md }}>
             <FormCard>
               <View style={{ alignItems: 'center', gap: 6, padding: 16 }}>
@@ -384,14 +384,14 @@ export default function RoleEditorScreen() {
             {deleteBlock}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>{groups}</View>
-        </View>
+        </ContentReveal>
       ) : (
-        <View style={{ gap: spacing.md }}>
+        <ContentReveal style={{ gap: spacing.md }}>
           {figures}
           {editing && holderCount ? <Note icon="alert-circle-outline" tone="warning" text={copy(`สิทธิ์ที่ปิดตรงนี้จะหายจากทั้ง ${holderCount} คนที่ถือบทบาทนี้ทันทีที่บันทึก`, `Anything switched off here disappears for all ${holderCount} people with this role as soon as you save`)} /> : null}
           {groups}
           <View style={{ paddingTop: spacing.sm }}>{deleteBlock}</View>
-        </View>
+        </ContentReveal>
       )}
     </AppScreen>
   );

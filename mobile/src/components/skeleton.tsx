@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, View, type DimensionValue, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useReducedMotion } from '@/src/components/motion';
+import { palette } from '@/src/theme';
 
 // Loading skeletons: the shape of a screen drawn before its data arrives, so
 // the numbers land where the eye is already looking instead of the page
@@ -16,6 +17,10 @@ import { useReducedMotion } from '@/src/components/motion';
 
 const BONE = '#F3ECE5';
 const SWEEP_MS = 1500;
+const CONTENT_REVEAL_DELAY_MS = 110;
+const CONTENT_REVEAL_MS = 260;
+// How long a skeleton stands alone before a spinner joins it.
+const SLOW_LOAD_SPINNER_MS = 1000;
 
 let sharedClock: Animated.Value | null = null;
 let sharedLoop: Animated.CompositeAnimation | null = null;
@@ -107,13 +112,48 @@ export function Bone({ width = '100%', height, radius = 8, onColor = false, styl
 }
 
 /**
+ * What takes the skeleton's place, fading in rather than blinking in (owner,
+ * 2026-09-26: every page but the kitchen "flickered" its content in). The
+ * kitchen's numbers - its tickets arrive on a LayoutAnimation that fades each
+ * one in over 260 ms after 110 ms - on an opacity the native driver runs, not
+ * a LayoutAnimation: that one, around a subtree full of text fields, closed
+ * the app on iOS. Mount it where the loaded content replaces the skeleton; it
+ * fades once, when it first mounts, and never again on a refresh.
+ */
+export function ContentReveal({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const reducedMotion = useReducedMotion();
+  const opacity = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+  useEffect(() => {
+    if (reducedMotion) { opacity.setValue(1); return undefined; }
+    const animation = Animated.timing(opacity, {
+      toValue: 1,
+      delay: CONTENT_REVEAL_DELAY_MS,
+      duration: CONTENT_REVEAL_MS,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [opacity, reducedMotion]);
+  return <Animated.View style={[{ opacity }, style]}>{children}</Animated.View>;
+}
+
+/**
  * Holds the skeleton back for a beat and fades it in. A load that finishes
  * inside ~120 ms never shows it at all — a skeleton that flashes for a frame
  * reads as the screen glitching, which is worse than no placeholder.
+ *
+ * A load still going after a second also gets a spinner in the middle (owner,
+ * 2026-09-26): past that, a page of grey shapes starts to look stuck rather
+ * than on its way. One that lands inside the second shows no spinner at all.
+ * `spinner={false}` for a skeleton that already says it is working, like the
+ * assistant's thinking line.
  */
-export function SkeletonReveal({ children, label, style }: { children: ReactNode; label: string; style?: ViewStyle }) {
+export function SkeletonReveal({ children, label, style, spinner = true }: { children: ReactNode; label: string; style?: ViewStyle; spinner?: boolean }) {
   const reducedMotion = useReducedMotion();
   const opacity = useRef(new Animated.Value(0)).current;
+  const spinnerOpacity = useRef(new Animated.Value(0)).current;
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
     const animation = Animated.timing(opacity, {
       toValue: 1,
@@ -124,6 +164,21 @@ export function SkeletonReveal({ children, label, style }: { children: ReactNode
     animation.start();
     return () => animation.stop();
   }, [opacity, reducedMotion]);
+  useEffect(() => {
+    if (!spinner) return undefined;
+    const timer = setTimeout(() => setSlow(true), SLOW_LOAD_SPINNER_MS);
+    return () => clearTimeout(timer);
+  }, [spinner]);
+  useEffect(() => {
+    if (!slow) return undefined;
+    const animation = Animated.timing(spinnerOpacity, {
+      toValue: 1,
+      duration: reducedMotion ? 0 : 200,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [reducedMotion, slow, spinnerOpacity]);
   return (
     <Animated.View
       accessible
@@ -133,6 +188,28 @@ export function SkeletonReveal({ children, label, style }: { children: ReactNode
       style={[{ opacity }, style]}
     >
       {children}
+      {slow ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.View
+            style={{
+              opacity: spinnerOpacity,
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: palette.surface,
+              shadowColor: palette.shadow,
+              shadowOpacity: 0.12,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: 3,
+            }}
+          >
+            <ActivityIndicator color={palette.primary} />
+          </Animated.View>
+        </View>
+      ) : null}
     </Animated.View>
   );
 }

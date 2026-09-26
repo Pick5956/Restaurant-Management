@@ -314,6 +314,26 @@ function BackgroundStrengthControl({
   );
 }
 
+const HERO_SIZE = 148;
+
+/** A small pill under the photo: pick another one, or frame this one again. */
+function HeroAction({ icon, label, onPress, disabled }: { icon: 'images-outline' | 'crop-outline'; label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [styles.heroAction, disabled && styles.disabled, pressed && styles.pressed]}
+    >
+      <AppIcon color={palette.primaryInk} name={icon} size={15} />
+      <Text style={styles.heroActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function MenuImageCropper({
   currentImageUrl,
   copy,
@@ -827,7 +847,7 @@ export function MenuImageCropper({
   if (!editing) {
     return (
       <View style={styles.field}>
-        <View style={styles.thumbnailRow}>
+        <View style={styles.hero}>
           <Pressable
             accessibilityHint={copy(
               'เปิดคลังรูปเพื่อเลือกรูปเมนู',
@@ -847,7 +867,8 @@ export function MenuImageCropper({
             <MenuImage
               accessible={false}
               imageUrl={currentImageUrl}
-              size={96}
+              size={HERO_SIZE}
+              style={styles.heroImage}
               variant="editor-thumbnail"
             />
             <View
@@ -856,25 +877,26 @@ export function MenuImageCropper({
               pointerEvents="none"
               style={styles.replaceBadge}
             >
-              <AppIcon color={palette.primaryText} name="image-outline" size={16} />
+              <AppIcon color={palette.primaryText} name="camera" size={17} />
             </View>
           </Pressable>
-          {currentImageUrl.trim() ? (
-            <Button
-              compact
+          <View style={styles.heroActions}>
+            <HeroAction
               disabled={disabled}
-              label={copy('ปรับตำแหน่งรูป', 'Adjust image')}
-              onPress={() => openSource(currentImageUrl.trim(), 'menu-image')}
-              variant="secondary"
+              icon="images-outline"
+              label={currentImageUrl.trim() ? copy('เปลี่ยนรูป', 'Change photo') : copy('เพิ่มรูป', 'Add photo')}
+              onPress={() => { void selectImage(); }}
             />
-          ) : null}
+            {currentImageUrl.trim() ? (
+              <HeroAction
+                disabled={disabled}
+                icon="crop-outline"
+                label={copy('ปรับตำแหน่งรูป', 'Adjust image')}
+                onPress={() => openSource(currentImageUrl.trim(), 'menu-image')}
+              />
+            ) : null}
+          </View>
         </View>
-        <Text style={styles.supportText}>
-          {copy(
-            'รองรับ jpg, png, webp ไม่เกิน 5MB · เลือกตัดพื้นหลังได้หลังจัดวางรูป',
-            'Supports jpg, png, webp up to 5MB · Background removal is optional after positioning',
-          )}
-        </Text>
       </View>
     );
   }
@@ -882,14 +904,8 @@ export function MenuImageCropper({
   return (
     <View style={styles.editor}>
       <View style={styles.cropIntroduction}>
-        <Text style={styles.fieldLabel}>
+        <Text accessibilityRole="header" style={styles.editorTitle}>
           {copy('จัดวางรูปเมนู', 'Position menu image')}
-        </Text>
-        <Text style={styles.cropHint}>
-          {copy(
-            'กรอบนี้ตรงกับรูปบนการ์ดเมนู ลากเพื่อจัดตำแหน่ง และปรับ Zoom ได้ตั้งแต่ -100% ถึง +100%',
-            'This frame matches the menu card. Drag to reposition and adjust Zoom from -100% to +100%.',
-          )}
         </Text>
       </View>
 
@@ -1048,18 +1064,15 @@ export function MenuImageCropper({
             (disabled || applying) && styles.disabled,
           ]}
         >
+          <AppIcon color={palette.placeholder} name="cut-outline" size={19} />
+          <View style={styles.backgroundToggleCopy}>
+            <Text style={styles.fieldLabel}>{copy('ตัดพื้นหลัง', 'Remove background')}</Text>
+          </View>
           <View style={[
             styles.backgroundToggleIndicator,
             removeBackground && styles.backgroundToggleIndicatorActive,
           ]}>
-            {removeBackground ? <AppIcon color={palette.primaryText} name="checkmark" size={16} /> : null}
-          </View>
-          <View style={styles.backgroundToggleCopy}>
-            <Text style={styles.fieldLabel}>{copy('ตัดพื้นหลัง', 'Remove background')}</Text>
-            <Text style={styles.supportText}>{copy(
-              'ปิดไว้เป็นค่าเริ่มต้น เปิดเมื่อต้องการให้เหลือเฉพาะอาหาร',
-              'Off by default. Turn on when you want to keep only the food.',
-            )}</Text>
+            <View style={[styles.backgroundToggleThumb, removeBackground && styles.backgroundToggleThumbActive]} />
           </View>
         </Pressable>
 
@@ -1090,8 +1103,8 @@ export function MenuImageCropper({
             ) : approvedBackgroundPreview ? (
               <Text accessibilityLiveRegion="polite" style={styles.backgroundSuccess}>
                 {copy(
-                  `ตัดพื้นหลังแล้วประมาณ ${removedPercent.toLocaleString('th-TH')}% · เส้นสีส้มคือขอบที่เก็บไว้`,
-                  `About ${removedPercent.toLocaleString('en-US')}% removed · the orange line marks the kept edge.`,
+                  `ตัดพื้นหลังแล้วประมาณ ${removedPercent.toLocaleString('th-TH')}%`,
+                  `About ${removedPercent.toLocaleString('en-US')}% removed`,
                 )}
               </Text>
             ) : backgroundError ? (
@@ -1144,33 +1157,62 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   fieldLabel: {
-    color: palette.text,
-    fontSize: 13,
-    fontWeight: '700',
+    color: palette.textStrong,
+    fontSize: 14.5,
+    fontWeight: '600',
   },
-  thumbnailRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: spacing.md,
+  hero: {
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: spacing.xs,
   },
   thumbnailButton: {
-    width: 96,
-    height: 96,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
+    width: HERO_SIZE,
+    height: HERO_SIZE,
+    borderRadius: 28,
+    borderCurve: 'continuous',
+    backgroundColor: palette.surfaceSubtle,
+    shadowColor: palette.shadow,
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
+  heroImage: {
+    borderRadius: 28,
   },
   replaceBadge: {
     position: 'absolute',
-    right: 6,
-    bottom: 6,
-    width: 28,
-    height: 28,
+    right: -6,
+    bottom: -6,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: palette.canvas,
     backgroundColor: palette.primary,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  heroAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 34,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    backgroundColor: palette.surfaceSubtle,
+  },
+  heroActionText: {
+    color: palette.primaryInk,
+    fontSize: 13,
+    fontWeight: '600',
   },
   supportText: {
     color: palette.muted,
@@ -1178,24 +1220,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   editor: {
-    gap: spacing.md,
+    gap: 14,
   },
   cropIntroduction: {
     gap: 2,
   },
-  cropHint: {
-    color: palette.muted,
-    fontSize: 12,
-    lineHeight: 19,
+  editorTitle: {
+    color: palette.textStrong,
+    fontSize: 15,
+    fontWeight: '700',
   },
   cropViewport: {
     width: '100%',
     aspectRatio: 1,
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: radius.md,
+    borderRadius: 20,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: palette.borderStrong,
+    borderColor: palette.fieldBorder,
     backgroundColor: palette.surfaceSubtle,
   },
   captureWrapper: {
@@ -1229,10 +1272,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    borderRadius: radius.md,
+    borderRadius: 999,
     backgroundColor: palette.navigationBorder,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   aspectBadgeText: {
     color: palette.primaryText,
@@ -1250,9 +1293,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: palette.borderStrong,
-    borderRadius: radius.md,
-    backgroundColor: palette.surface,
+    borderColor: palette.fieldBorder,
+    borderRadius: 22,
+    backgroundColor: palette.fieldFill,
   },
   zoomColumn: {
     minWidth: 0,
@@ -1282,23 +1325,28 @@ const styles = StyleSheet.create({
   sliderTrack: {
     height: 5,
     borderRadius: radius.full,
-    backgroundColor: palette.borderStrong,
+    backgroundColor: '#E4D8CD',
   },
   sliderFill: {
     height: 5,
     borderRadius: radius.full,
-    backgroundColor: palette.accent,
+    backgroundColor: palette.primary,
   },
   sliderThumb: {
     position: 'absolute',
-    top: -7.5,
-    width: 20,
-    height: 20,
-    marginLeft: -10,
-    borderWidth: 2,
-    borderColor: palette.surface,
+    top: -8.5,
+    width: 22,
+    height: 22,
+    marginLeft: -11,
+    borderWidth: 0.5,
+    borderColor: 'rgba(33,19,12,0.12)',
     borderRadius: radius.full,
-    backgroundColor: palette.accent,
+    backgroundColor: '#fff',
+    shadowColor: '#21130C',
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   zoomScaleRow: {
     flexDirection: 'row',
@@ -1318,28 +1366,40 @@ const styles = StyleSheet.create({
   backgroundRemovalSection: {
     gap: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: palette.border,
-    paddingTop: spacing.md,
+    borderTopColor: palette.divider,
+    paddingTop: spacing.sm,
   },
   backgroundToggle: {
-    minHeight: 52,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: 12,
   },
+  // Drawn like the platform switch the other forms use, since this row has to
+  // stay one Pressable with role "switch" for the whole row to be the target.
   backgroundToggleIndicator: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: palette.borderStrong,
-    borderRadius: radius.md,
-    backgroundColor: palette.surface,
+    width: 51,
+    height: 31,
+    padding: 2,
+    borderRadius: 16,
+    backgroundColor: '#E4D8CD',
   },
   backgroundToggleIndicatorActive: {
-    borderColor: palette.primary,
     backgroundColor: palette.primary,
+  },
+  backgroundToggleThumb: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    shadowColor: '#21130C',
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  backgroundToggleThumbActive: {
+    transform: [{ translateX: 20 }],
   },
   backgroundToggleCopy: {
     minWidth: 0,

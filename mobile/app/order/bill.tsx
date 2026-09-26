@@ -14,6 +14,7 @@ import { MenuImage } from '@/src/components/menu-image';
 import { PaymentBlockLine } from '@/src/components/payment/payment-block-line';
 import { PaymentForm, type PaymentFormProps } from '@/src/components/payment/payment-form';
 import { PaymentSheet } from '@/src/components/payment/payment-sheet';
+import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
 import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { useOrderEvents } from '@/src/hooks/use-order-events';
@@ -611,12 +612,29 @@ export default function BillScreen() {
         {error !== null ? (
           <Feedback title={copy('โหลดบิลไม่สำเร็จ', 'Could not load the bill')} detail={error || undefined} tone="danger" />
         ) : loading ? (
-          <Panel>
-            <EmptyState
-              title={copy('กำลังเตรียมบิล', 'Preparing the bill')}
-              detail={copy('ระบบกำลังตรวจรายการและยอดล่าสุด', 'Checking the latest items and totals.')}
-            />
-          </Panel>
+          // The bill's own shape - its lines, then the totals - while it loads.
+          <SkeletonReveal label={copy('กำลังเตรียมบิล', 'Preparing the bill')} style={{ gap: spacing.lg }}>
+            <Panel>
+              <View style={{ gap: 14 }}>
+                {[0.62, 0.48, 0.7, 0.55].map((share, index) => (
+                  <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Bone width={`${Math.round(share * 100)}%`} height={15} />
+                      <Bone width="30%" height={11} />
+                    </View>
+                    <Bone width={64} height={16} />
+                  </View>
+                ))}
+              </View>
+            </Panel>
+            <Panel>
+              <View style={{ gap: 10 }}>
+                <Bone width="45%" height={13} />
+                <Bone width="60%" height={13} />
+                <Bone width="35%" height={20} radius={6} />
+              </View>
+            </Panel>
+          </SkeletonReveal>
         ) : (
           <EmptyState
             title={copy('ไม่พบบิลนี้', 'Bill not found')}
@@ -1115,7 +1133,7 @@ export default function BillScreen() {
         </View>
       ) : null}
 
-      <View style={{ flexDirection: splitWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
+      <ContentReveal style={{ flexDirection: splitWorkspace ? 'row' : 'column', alignItems: 'flex-start', gap: spacing.lg }}>
         <View style={{ width: splitWorkspace ? undefined : '100%', minWidth: 0, flex: splitWorkspace ? 1.45 : undefined, gap: spacing.lg }}>
           {billItemsPanel}
           {billSummaryPanel}
@@ -1127,7 +1145,7 @@ export default function BillScreen() {
             {paymentPanel}
           </View>
         ) : null}
-      </View>
+      </ContentReveal>
 
       <PaymentSheet
         open={paymentOpen && !splitWorkspace && paymentStage === 'due' && canPay}

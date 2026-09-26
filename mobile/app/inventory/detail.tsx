@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adjustStock, deleteIngredient, listIngredients, listTransactions } from '@/src/api/ingredient';
@@ -13,6 +13,7 @@ import {
   CountSheet,
   DockButton,
   FloatingHeader,
+  InventoryCardsSkeleton,
   LevelBar,
   RestockSheet,
   StatusPill,
@@ -24,6 +25,7 @@ import {
   shortTime,
   statusColour,
 } from '@/src/components/inventory/parts';
+import { ContentReveal } from '@/src/components/skeleton';
 import { EmptyState, Feedback } from '@/src/components/ui';
 import { apiFailureDetail, apiFailureKind, apiFailureSays } from '@/src/lib/api-failure';
 import { money } from '@/src/lib/format';
@@ -172,11 +174,11 @@ export default function IngredientDetailScreen() {
       />
       <ScrollView contentContainerStyle={{ paddingTop: headerContentTop(insets.top, false), paddingHorizontal: 12, paddingBottom: insets.bottom + 24, gap: 10 }}>
         {error ? <Feedback title={t('โหลดข้อมูลไม่ได้', 'Could not load')} detail={error.detail} tone="danger" /> : null}
-        {loading && !item ? <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator color={palette.primary} /></View> : null}
+        {loading && !item ? <InventoryCardsSkeleton label={t('กำลังโหลดวัตถุดิบ', 'Loading ingredient')} heights={[112, 64, 180]} /> : null}
         {missing ? <EmptyState title={t('ไม่พบวัตถุดิบ', 'Ingredient not found')} detail={t('อาจถูกลบไปแล้ว', 'It may have been deleted.')} /> : null}
 
         {item ? (
-          <>
+          <ContentReveal style={{ gap: 10 }}>
             <Card style={{ padding: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
                 <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 28, color: status === 'ok' ? palette.textStrong : colour.ink, fontVariant: ['tabular-nums'] }}>{fmt(item.stock, locale)}</Text>
@@ -228,7 +230,7 @@ export default function IngredientDetailScreen() {
                 </View>
               ))
             )}
-          </>
+          </ContentReveal>
         ) : null}
       </ScrollView>
 
