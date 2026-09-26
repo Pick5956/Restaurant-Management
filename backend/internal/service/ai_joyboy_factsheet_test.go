@@ -660,8 +660,27 @@ func TestProfitSheetCarriesGrossMeaningAndNetAfterRecordedExpenses(t *testing.T)
 
 	// An empty ledger: the net equals gross, and the sheet says why.
 	body = joyboyProfitForPeriodBody("เมื่อวาน", metrics, &ExpenseListResponse{})
-	if !strings.Contains(body, "expense_items=0 net_after_expenses=16300.00") || !strings.Contains(body, "ยังไม่มีรายจ่ายบันทึกไว้เลย") {
+	if !strings.Contains(body, "expense_items=0 net_after_expenses=16300.00") || !strings.Contains(body, "ยังไม่มีรายจ่ายอื่นนอกจากวัตถุดิบ") {
 		t.Errorf("an empty ledger should give net = gross with the caveat:\n%s", body)
+	}
+
+	// Ingredient purchases are not taken off again: gross profit already took
+	// off the recipe cost of what sold (26 ก.ย. 2569). 5,130.74 of which
+	// 3,734.45 is ingredients → only 1,396.29 comes off.
+	body = joyboyProfitForPeriodBody("เดือนสิงหาคม 2569", metrics, &ExpenseListResponse{
+		Total: 5130.74, Entries: 5,
+		Categories: []repository.ExpenseCategoryTotal{
+			{Category: "ingredient", Amount: 3734.45, Entries: 4},
+			{Category: "utilities", Amount: 1396.29, Entries: 1},
+		},
+	})
+	for _, want := range []string{
+		"expenses_recorded=1396.29 expense_items=1 net_after_expenses=14903.71",
+		"ingredient_purchases=3734.45 ingredient_purchase_items=4",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ingredient purchases must be named but not netted, missing %q:\n%s", want, body)
+		}
 	}
 
 	// Ledger not fetched: no net line at all, rather than one that implies zero.

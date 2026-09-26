@@ -1749,8 +1749,11 @@ export default function InventoryPage() {
                 table's own square corners paint straight over the rounded border.
                 clip, not hidden or auto: those make this a scroll container, and
                 the sticky column titles would anchor to it instead of to the page
-                — which is to say, not stick at all. */}
-            <section className="overflow-x-clip rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                — which is to say, not stick at all. The 1px clip margin lets the
+                stuck header's corner patches reach over this border; clipped at
+                the padding edge, the straight border showed past the rounded
+                corner once the header was stuck. */}
+            <section className="overflow-x-clip [overflow-clip-margin:1px] rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div>
                 {filtered.length === 0 ? (
                   <div className="m-2 flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-slate-200 px-6 py-12 text-center dark:border-gray-800">

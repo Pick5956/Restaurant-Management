@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"time"
 )
 
 // Proactive Insights — the "things you should know today" an owner sees without
@@ -206,23 +207,29 @@ func computeProactiveInsights(snapshot AISnapshot) []AIInsight {
 	// 2) Weekly sales anomaly (7 days vs the prior 7 days).
 	if snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 		trend := computeSalesTrendAsOf(snapshot.SalesDays, snapshotDateKey(snapshot.GeneratedAt))
+		// The card names its days. It leaves today out (a day still open), so
+		// its "7 วันล่าสุด" was 19–25 ก.ย. while the chat's, which counts today,
+		// was 20–26 - two different totals under one name on the same screen
+		// (26 ก.ย. 2569). Dates make both true and visibly so.
+		recentDays := insightDayRange(trend.RecentEnd.AddDate(0, 0, -6), trend.RecentEnd)
+		priorDays := insightDayRange(trend.RecentEnd.AddDate(0, 0, -13), trend.RecentEnd.AddDate(0, 0, -7))
 		if trend.HasPrior {
 			switch {
 			case trend.RevenueChangePct <= -insightSalesChangePct:
 				insights = append(insights, AIInsight{
 					Kind:     "sales_drop",
 					Severity: "warning",
-					Title:    fmt.Sprintf("ยอดขาย 7 วันล่าสุดตกลง %.0f%%", -trend.RevenueChangePct),
+					Title:    fmt.Sprintf("ยอดขาย 7 วัน (%s) ตกลง %.0f%%", recentDays, -trend.RevenueChangePct),
 					Metric:   insightBaht(trend.RecentRevenue),
-					Detail:   fmt.Sprintf("เทียบ 7 วันก่อนหน้า %s", insightBaht(trend.PriorRevenue)),
+					Detail:   fmt.Sprintf("เทียบ %s %s", priorDays, insightBaht(trend.PriorRevenue)),
 				})
 			case trend.RevenueChangePct >= insightSalesChangePct:
 				insights = append(insights, AIInsight{
 					Kind:     "sales_up",
 					Severity: "info",
-					Title:    fmt.Sprintf("ยอดขาย 7 วันล่าสุดโตขึ้น %.0f%%", trend.RevenueChangePct),
+					Title:    fmt.Sprintf("ยอดขาย 7 วัน (%s) โตขึ้น %.0f%%", recentDays, trend.RevenueChangePct),
 					Metric:   insightBaht(trend.RecentRevenue),
-					Detail:   fmt.Sprintf("เทียบ 7 วันก่อนหน้า %s", insightBaht(trend.PriorRevenue)),
+					Detail:   fmt.Sprintf("เทียบ %s %s", priorDays, insightBaht(trend.PriorRevenue)),
 				})
 			}
 		}
@@ -295,4 +302,14 @@ func (s *AIService) ProactiveInsightsForOwner(actor AIActorContext) ([]AIInsight
 		}
 	}
 	return kept, nil
+}
+
+// insightDayRange writes a span of days short, the way a card has room for:
+// "19–25 ก.ย.", or "30 ส.ค.–5 ก.ย." when it crosses a month.
+func insightDayRange(from, to time.Time) string {
+	months := [...]string{"ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."}
+	if from.Month() == to.Month() {
+		return fmt.Sprintf("%d–%d %s", from.Day(), to.Day(), months[to.Month()-1])
+	}
+	return fmt.Sprintf("%d %s–%d %s", from.Day(), months[from.Month()-1], to.Day(), months[to.Month()-1])
 }

@@ -19,7 +19,10 @@ import type { AIConversationSummary } from "@/src/types/ai";
 //
 // Renaming happens in place: the title turns into a text field on the row,
 // Enter keeps it, Escape drops it, clicking elsewhere keeps it.
-type Variant = "sheet" | "panel";
+// "sheet": the whole screen (the AI page on a phone). "inset": fills the box it
+// sits in (the floating chat - a whole-screen sheet there covered the page
+// beside the chat on a computer, 26 ก.ย. 2569). "panel": the card on wide screens.
+type Variant = "sheet" | "inset" | "panel";
 
 function copy(language: "th" | "en") {
   return language === "th"
@@ -470,6 +473,36 @@ export default function AIChatList({
     );
   }
 
+  const titleBar = (
+    <>
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold text-gray-900 dark:text-white">
+        <MessageSquareText className="h-4 w-4 text-orange-500" /> {t.title}
+      </h2>
+      <button
+        type="button"
+        onClick={requestClose}
+        aria-label={t.close}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200/80 bg-white/80 text-gray-600 shadow-sm dark:border-gray-800/80 dark:bg-gray-800/70 dark:text-gray-300"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </>
+  );
+
+  // The floating chat: over the chat's own box and nothing else. That box is
+  // relative and clips, so absolute inset-0 fills it, corners included.
+  if (variant === "inset") {
+    return (
+      <div className={`absolute inset-0 z-30 flex flex-col bg-[#faf8f2] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
+        <div className="flex items-center justify-between px-3 pb-2 pt-3">{titleBar}</div>
+        {newChatButton}
+        {searchBox}
+        {list}
+        {dialogs}
+      </div>
+    );
+  }
+
   // Phones: the whole screen, above the menu tab (z-30) so the tab does not sit
   // on the title. It was absolute inside the chat's padded box, which left
   // bands of the page showing on three sides (19 ก.ย. 2569). Portalled to
@@ -478,19 +511,7 @@ export default function AIChatList({
   if (typeof document === "undefined") return null;
   return createPortal(
     <div className={`fixed inset-0 z-40 flex flex-col bg-[#faf8f2] pb-[env(safe-area-inset-bottom)] dark:bg-gray-900 ${closing ? "ai-chatlist-sheet-out" : "ai-chatlist-sheet-in"}`}>
-      <div className="flex items-center justify-between px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-gray-900 dark:text-white">
-          <MessageSquareText className="h-4 w-4 text-orange-500" /> {t.title}
-        </h2>
-        <button
-          type="button"
-          onClick={requestClose}
-          aria-label={t.close}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200/80 bg-white/80 text-gray-600 shadow-sm dark:border-gray-800/80 dark:bg-gray-800/70 dark:text-gray-300"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <div className="flex items-center justify-between px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">{titleBar}</div>
       {newChatButton}
       {searchBox}
       {list}

@@ -570,13 +570,13 @@ func buildProfitByMonthChart(rows []repository.AIMonthlyProfit, currentYearMonth
 			{Name: "สุทธิ", Values: net},
 			{Name: "ยอดขาย", Values: revenue, Role: "tooltip"},
 			{Name: "ต้นทุน", Values: cost, Role: "tooltip"},
-			{Name: "รายจ่าย", Values: expenses, Role: "tooltip"},
+			{Name: "รายจ่ายอื่น", Values: expenses, Role: "tooltip"},
 		},
 		Notes: notes,
 	}
 	if len(muted) > 0 && len(muted) < len(categories) {
 		chart.Muted = muted
-		chart.MutedLabel = "ก่อนหัก ยังไม่มีรายจ่ายบันทึก"
+		chart.MutedLabel = "ยังไม่มีรายจ่ายอื่นบันทึก (ค่าแรง ค่าเช่า ฯลฯ)"
 	}
 	return chart
 }

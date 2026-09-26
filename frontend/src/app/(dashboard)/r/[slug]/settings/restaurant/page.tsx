@@ -30,7 +30,7 @@ import {
   type FormField,
   type FormState,
 } from "./restaurantSettingsForm";
-import { MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, billPreview, useSettingsPhone } from "../_components/SettingsMobileKit";
+import { MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, useSettingsPhone } from "../_components/SettingsMobileKit";
 
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
@@ -572,10 +572,6 @@ export default function RestaurantSettingsPage() {
 
   if (phone) {
     const th = language === "th";
-    const serviceRate = Number(form.service_charge_rate);
-    const vatRate = Number(form.vat_rate);
-    const preview = billPreview(100, form.service_charge_enabled, serviceRate, form.vat_enabled, vatRate);
-    const money = (value: number) => value.toLocaleString(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 });
     const tables = Math.min(500, Math.max(1, Number(form.table_count) || 1));
     // A rate is a pill when it is one of the usual ones, and typed otherwise.
     const ratePills = (field: "service_charge_rate" | "vat_rate", presets: string[]) => {
@@ -718,15 +714,6 @@ export default function RestaurantSettingsPage() {
             <MobileSwitchTile title={copy.vat} hint={form.vat_enabled ? undefined : copy.vatHint} checked={form.vat_enabled} onChange={(value) => commitSwitch("vat_enabled", value)}>
               {form.vat_enabled ? ratePills("vat_rate", ["7"]) : null}
             </MobileSwitchTile>
-            <div className="rounded-2xl border border-dashed border-(--inv-surface-strong) px-3.5 py-2.5 text-[13px] text-(--inv-body)">
-              <p className="mb-1 text-[11.5px] font-semibold text-(--inv-muted)">{th ? "ตัวอย่างบิล 100 บาท" : "A 100-baht bill"}</p>
-              <p className="flex justify-between"><span>{th ? "อาหาร" : "Food"}</span><span className="tabular-nums">100</span></p>
-              {preview.service ? <p className="flex justify-between"><span>Service {form.service_charge_rate}%</span><span className="tabular-nums">{money(preview.service)}</span></p> : null}
-              {preview.vat ? <p className="flex justify-between"><span>VAT {form.vat_rate}%</span><span className="tabular-nums">{money(preview.vat)}</span></p> : null}
-              <p className="mt-1 flex justify-between border-t border-(--inv-hairline) pt-1 font-bold text-(--inv-heading)">
-                <span>{th ? "ลูกค้าจ่าย" : "Guest pays"}</span><span className="tabular-nums">{money(preview.total)} {th ? "บาท" : "THB"}</span>
-              </p>
-            </div>
           </MobileSection>
 
           <MobileSection

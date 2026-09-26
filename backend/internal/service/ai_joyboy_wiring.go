@@ -725,7 +725,9 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 				until = end.Format("2006-01-02")
 			}
 			if list, err := t.service.actionExpenses.List(t.restaurantID, from, until, ""); err == nil && list != nil {
-				expenses, entries = list.Total, list.Entries
+				// The margin already takes the ingredients off each baht sold;
+				// what the sales have to cover is everything else.
+				expenses, entries, _, _ = joyboyOperatingExpenses(list)
 			} else if err != nil {
 				aiStage("warn", "joyboy: %s expenses failed (%v) → sheet without expenses", tool, err)
 			}

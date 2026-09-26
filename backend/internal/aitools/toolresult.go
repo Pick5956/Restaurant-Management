@@ -1,6 +1,10 @@
 package aitools
 
-import "Project-M/internal/repository"
+import (
+	"time"
+
+	"Project-M/internal/repository"
+)
 
 // AIToolResult is what one read-only tool produced. Only the field for the tool
 // that ran is populated; the rest stay nil. The renderers downstream read the
@@ -132,4 +136,7 @@ type AISalesTrend struct {
 	PriorOrders      int64
 	RevenueChangePct float64 // percentage change vs the prior 7-day period
 	HasPrior         bool    // false when there is no prior-period data to compare against
+	// RecentEnd is the newest day counted (UTC midnight); the recent window is
+	// the six days before it and it, the prior window the seven before those.
+	RecentEnd time.Time
 }

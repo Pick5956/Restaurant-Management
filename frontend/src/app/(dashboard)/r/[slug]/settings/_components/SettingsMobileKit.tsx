@@ -269,20 +269,3 @@ export function MobileBadge({ tone, children }: { tone: "ok" | "brand" | "neutra
   const cls = tone === "ok" ? "bg-(--inv-ok-soft) text-(--inv-ok)" : tone === "brand" ? "bg-(--inv-action-soft) text-(--inv-action)" : "bg-(--inv-surface-strong) text-(--inv-muted)";
   return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${cls}`}>{children}</span>;
 }
-
-// ---------------------------------------------------------------------------
-// The bill preview
-
-const round2 = (value: number) => Math.round(value * 100) / 100;
-
-/**
- * What a bill of `base` comes to with the rates set - the same arithmetic the
- * server does in order_flow_helpers.go unpaidCharges: service on the food,
- * then VAT on food + service, each rounded to satang. A preview that did it
- * differently would tell the owner a price the till then contradicts.
- */
-export function billPreview(base: number, serviceOn: boolean, serviceRate: number, vatOn: boolean, vatRate: number) {
-  const service = serviceOn && Number.isFinite(serviceRate) ? round2((base * serviceRate) / 100) : 0;
-  const vat = vatOn && Number.isFinite(vatRate) ? round2(((base + service) * vatRate) / 100) : 0;
-  return { service, vat, total: round2(base + service + vat) };
-}
