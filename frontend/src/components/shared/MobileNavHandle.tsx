@@ -13,9 +13,13 @@ import { useLanguage } from '@/src/providers/LanguageProvider';
 // place as on a computer.
 //
 // It starts just under the page header; it used to start at the top-left,
-// over the first control on some pages (a search box, "ทุกโซน"). A long press
-// lifts it and it can be dragged up or down. It stays on the left edge; a
-// dragged height is kept on this device and wins over the default.
+// over the first control on some pages (a search box, "ทุกโซน"). It can be
+// dragged up or down, and stays on the left edge; a dragged height is kept on
+// this device and wins over the default.
+//
+// A drag starts as soon as the finger moves — no hold first (เจ้าของขอ
+// 25 ก.ย. 2569; it used to wait 150ms). A touch that stays within
+// DRAG_START_PX of where it began is a tap and opens the menu.
 //
 // Touch goes through native touch listeners that cancel the browser's own
 // handling from the first touch. With pointer events alone, iPhone Safari
@@ -25,9 +29,8 @@ import { useLanguage } from '@/src/providers/LanguageProvider';
 // v2: the default moved under the page header on 2026-09-22; a new key lets
 // a height dragged before that give way to it once.
 const STORAGE_KEY = 'dishy.navHandleTop.v2';
-// 350ms felt too long on the phone (19 ก.ย. 2569); 150ms still tells a tap from a hold.
-const HOLD_MS = 150;
-const MOVE_CANCEL_PX = 8;
+// How far a finger may wander and still be a tap rather than a drag.
+const DRAG_START_PX = 6;
 const EDGE_GAP = 8;
 const HANDLE_H = 40;
 
@@ -36,7 +39,7 @@ function clampTop(top: number) {
   return Math.round(Math.min(Math.max(top, EDGE_GAP), Math.max(EDGE_GAP, max)));
 }
 
-type Press = { startY: number; offset: number; timer: number | null; lifted: boolean; cancelled: boolean };
+type Press = { startY: number; offset: number; lifted: boolean };
 
 export default function MobileNavHandle() {
   const { mobileOpen, setMobileOpen } = useSidebar();
@@ -57,6 +60,9 @@ export default function MobileNavHandle() {
   // height from page to page and grow once their data loads, so the header
   // is found again on every navigation and watched for size changes.
   const pathname = usePathname();
+  // The settings pages have their own back arrow in the header, and the tab
+  // sat over their first row (25 ก.ย. 2569), so it steps aside there.
+  const onSettings = Boolean(pathname?.includes('/settings'));
   useEffect(() => {
     const button = buttonRef.current;
     if (!button) return;
@@ -109,23 +115,15 @@ export default function MobileNavHandle() {
     };
     const begin = (clientY: number) => {
       const rect = button.getBoundingClientRect();
-      const current: Press = { startY: clientY, offset: clientY - rect.top, lifted: false, cancelled: false, timer: null };
-      current.timer = window.setTimeout(() => {
-        current.timer = null;
-        if (current.cancelled) return;
-        current.lifted = true;
-        setDragging(true);
-        navigator.vibrate?.(10);
-      }, HOLD_MS);
-      press = current;
+      press = { startY: clientY, offset: clientY - rect.top, lifted: false };
     };
     const move = (clientY: number) => {
       const current = press;
-      if (!current || current.cancelled) return;
+      if (!current) return;
       if (!current.lifted) {
-        // Moved before the hold finished: a slip, neither a tap nor a drag.
-        if (Math.abs(clientY - current.startY) > MOVE_CANCEL_PX) current.cancelled = true;
-        return;
+        if (Math.abs(clientY - current.startY) <= DRAG_START_PX) return;
+        current.lifted = true;
+        setDragging(true);
       }
       placeAt(clientY - current.offset);
     };
@@ -135,13 +133,12 @@ export default function MobileNavHandle() {
       const current = press;
       press = null;
       if (!current) return 'none';
-      if (current.timer) window.clearTimeout(current.timer);
       if (current.lifted) {
         setDragging(false);
         save();
         return 'drag';
       }
-      return current.cancelled ? 'none' : 'tap';
+      return 'tap';
     };
 
     try {
@@ -219,7 +216,7 @@ export default function MobileNavHandle() {
         dragging
           ? 'scale-110 border-orange-300 shadow-xl dark:border-orange-700'
           : 'border-gray-200 shadow-md dark:border-gray-800'
-      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
+      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'} ${onSettings ? 'hidden' : ''}`}
     >
       <Menu className="h-5 w-5" strokeWidth={2.25} />
     </button>

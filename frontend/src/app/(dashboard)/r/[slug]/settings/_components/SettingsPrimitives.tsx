@@ -51,6 +51,19 @@ export const TEXT_FOCUS = FLAT_FIELD_EDGE;
  * was 24px - short enough to slice the tone marks off stacked Thai vowels
  * (ตี๋, ปั๊ม, กี้). A textarea keeps its padding; its lines are not clipped.
  */
+/** A phone field sits in its row with no box: right-aligned text, like the
+ *  stock page's add-ingredient form. */
+function mobileFieldClass(error: boolean, multiline = false) {
+  return [
+    multiline
+      ? "block w-full min-w-0 rounded-(--inv-radius) bg-(--inv-canvas) p-2.5 text-left"
+      : "block h-10 w-full min-w-0 bg-transparent text-right",
+    "text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-faint) focus:text-(--inv-action)",
+    error ? "text-(--inv-out)" : "",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+  ].join(" ");
+}
+
 function fieldClass(error: boolean, fullWidth = false, multiline = false) {
   return [
     multiline ? "block min-w-0 rounded p-2" : "block h-10 min-w-0 rounded px-2 leading-10",
@@ -73,6 +86,22 @@ const FIELD_ERROR = "mt-1.5 text-[12px] leading-5 text-red-700 dark:text-red-400
 /** What the settings search box holds; rows that do not match hide. */
 export const SettingsSearchContext = createContext("");
 
+/**
+ * On a phone the settings borrow the stock page's phone look (inventory/mobile,
+ * chosen 26 ก.ย. 2569): every row is a 50px line inside a white card, label on
+ * the left and control on the right, painted with its --inv-* tokens. The
+ * layout sets this; a computer never does, so its rows stay exactly as they were.
+ * `group` is the one restaurant group a phone page shows (?group=billing).
+ */
+export const SettingsMobileContext = createContext<{ mobile: boolean; group: string | null; showTitles: boolean; flash?: string | null }>({ mobile: false, group: null, showTitles: false, flash: null });
+
+function useSettingsMobile() {
+  return useContext(SettingsMobileContext).mobile;
+}
+
+const MOBILE_TITLE = "block text-[15px] leading-5 text-(--inv-body)";
+const MOBILE_HINT = "mt-0.5 line-clamp-2 text-[11.5px] leading-4 text-(--inv-faint)";
+
 /** Every word of the query has to appear in the row's title or description. */
 export function matchesSetting(query: string, ...texts: Array<string | undefined>): boolean {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -85,6 +114,9 @@ export function matchesSetting(query: string, ...texts: Array<string | undefined
 // The row
 
 type RowProps = {
+  /** Phone only: the control goes under the label at full width (a textarea,
+   *  a segmented choice, an action) instead of on the right. */
+  stack?: boolean;
   title: string;
   /** Left out when the title already says it ("ชื่อ", "ละติจูด"): a line that
    *  only repeats the label is noise, not help. */
@@ -102,8 +134,29 @@ type RowProps = {
  * moves up beside the title, because a line holding nothing but a control left
  * the row looking broken open. A hairline under either shape; phones stack.
  */
-export function SettingsItem({ title, description, children, htmlFor, titleId }: RowProps) {
+export function SettingsItem({ title, description, children, htmlFor, titleId, stack = false }: RowProps) {
   const query = useContext(SettingsSearchContext);
+  const mobile = useSettingsMobile();
+  if (mobile) {
+    const label = htmlFor ? (
+      <label htmlFor={htmlFor} id={titleId} className={MOBILE_TITLE}>{title}</label>
+    ) : (
+      <p id={titleId} className={MOBILE_TITLE}>{title}</p>
+    );
+    return (
+      <div
+        data-setting-row
+        hidden={!matchesSetting(query, title, description)}
+        className={`border-b border-(--inv-hairline) px-3 ${stack ? "py-3" : "flex min-h-[50px] items-center gap-3 py-2"}`}
+      >
+        <div className={stack ? "" : "w-[42%] min-w-0 shrink-0"}>
+          {label}
+          {description ? <p className={MOBILE_HINT}>{description}</p> : null}
+        </div>
+        <div className={stack ? "mt-2.5" : "flex min-w-0 flex-1 flex-col items-end"}>{children}</div>
+      </div>
+    );
+  }
   const titleClass = "block text-[18px] leading-7 text-gray-950 dark:text-white";
   const titleNode = htmlFor ? (
     <label htmlFor={htmlFor} id={titleId} className={titleClass}>{title}</label>
@@ -130,6 +183,35 @@ export function SettingsItem({ title, description, children, htmlFor, titleId }:
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+
+/**
+ * A named group of rows. A computer shows the rows as they always were; a
+ * phone puts them in one white card, the stock page's grouped-inset form, with
+ * the name above it - or, on a page that shows a single restaurant group
+ * (?group=billing), shows only that group, its name already in the header.
+ * A card whose rows a search hid all goes with them.
+ */
+export function SettingsGroup({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  const { mobile, group, showTitles } = useContext(SettingsMobileContext);
+  const query = useContext(SettingsSearchContext);
+  if (!mobile) return <>{children}</>;
+  if (group && !query.trim() && group !== id) return null;
+  return (
+    <section data-settings-group={id} aria-label={title} className="mb-[22px] [&:not(:has([data-setting-row]:not([hidden])))]:hidden">
+      {!showTitles ? null : (
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-(--inv-muted)">{title}</p>
+      )}
+      {/* Every row draws its own bottom line; the last one tucks under the
+          card's edge (-mb-px), whichever wrapper a page put the rows in. */}
+      <div className="overflow-hidden rounded-(--inv-radius-lg) border border-(--inv-hairline) bg-(--inv-surface)">
+        <div className="-mb-px">{children}</div>
+      </div>
+    </section>
   );
 }
 
@@ -177,13 +259,14 @@ export function SettingsButton({
   className?: string;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "children">) {
+  const mobile = useSettingsMobile();
   return (
     <button
       {...rest}
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={settingsButtonClass(variant, className)}
+      className={mobile ? mobileButtonClass(variant) : settingsButtonClass(variant, className)}
     >
       <span className={loading ? "opacity-0" : undefined}>{children}</span>
       {loading ? <Loader2 aria-hidden="true" className="absolute inset-0 m-auto h-5 w-5 motion-safe:animate-spin" /> : null}
@@ -191,10 +274,27 @@ export function SettingsButton({
   );
 }
 
+const MOBILE_BUTTON_TONE: Record<ButtonVariant, string> = {
+  primary: "bg-(--inv-action) text-white",
+  secondary: "bg-(--inv-surface-strong) text-(--inv-heading)",
+  danger: "bg-(--inv-out) text-white",
+  "danger-secondary": "w-full bg-(--inv-out-soft) text-(--inv-out)",
+};
+
+/** A phone button: 44px to the thumb, the stock page's radius and weights. */
+function mobileButtonClass(variant: ButtonVariant) {
+  return [
+    "ui-press relative inline-flex min-h-[44px] shrink-0 items-center justify-center overflow-hidden rounded-(--inv-radius) px-4 text-[15px] font-semibold",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+    FOCUS_RING,
+    MOBILE_BUTTON_TONE[variant],
+  ].join(" ");
+}
+
 /** A row whose control is one action button. */
 export function SettingsActionRow({ title, description, ...button }: { title: string; description?: string } & Parameters<typeof SettingsButton>[0]) {
   return (
-    <SettingsItem title={title} description={description}>
+    <SettingsItem title={title} description={description} stack>
       <SettingsButton {...button} className={`${ACTION_WIDTH} ${button.className ?? ""}`} />
     </SettingsItem>
   );
@@ -225,10 +325,11 @@ export function SettingsField({ label, description, value, onChange, error, type
   const inputId = useId();
   const titleId = useId();
   const errorId = useId();
+  const mobile = useSettingsMobile();
   if (type === "time") {
     return (
       <SettingsItem title={label} description={description} titleId={titleId}>
-        <div className={FIELD_WIDTH}>
+        <div className={mobile ? "w-full max-w-[160px]" : FIELD_WIDTH}>
           <ThemedTimeInput value={value} onChange={onChange} disabled={disabled} error={error} boundary="filled" aria-labelledby={titleId} />
         </div>
       </SettingsItem>
@@ -271,6 +372,9 @@ export function SettingsInput({
   fullWidth = false,
   "aria-label": ariaLabel,
 }: Omit<FieldProps, "label" | "description" | "type"> & { id: string; errorId: string; fullWidth?: boolean; "aria-label"?: string }) {
+  // A dialog's field (fullWidth) keeps its box on a phone too; only a row's
+  // field goes bare.
+  const mobile = useSettingsMobile() && !fullWidth;
   return (
     <>
       <input
@@ -292,9 +396,9 @@ export function SettingsInput({
           // Enter finishes the field the way leaving it does; the blur saves.
           if (onCommit && event.key === "Enter") event.currentTarget.blur();
         }}
-        className={fieldClass(Boolean(error), fullWidth)}
+        className={mobile ? mobileFieldClass(Boolean(error)) : fieldClass(Boolean(error), fullWidth)}
       />
-      {error ? <p id={errorId} className={FIELD_ERROR}>{error}</p> : null}
+      {error ? <p id={errorId} className={mobile ? `${FIELD_ERROR} text-right` : FIELD_ERROR}>{error}</p> : null}
     </>
   );
 }
@@ -302,8 +406,9 @@ export function SettingsInput({
 export function SettingsTextArea({ label, description, value, onChange, error, disabled, onCommit }: Omit<FieldProps, "type" | "placeholder" | "inputMode" | "autoComplete">) {
   const inputId = useId();
   const errorId = useId();
+  const mobile = useSettingsMobile();
   return (
-    <SettingsItem title={label} description={description} htmlFor={inputId}>
+    <SettingsItem title={label} description={description} htmlFor={inputId} stack>
       <textarea
         id={inputId}
         value={value}
@@ -313,7 +418,7 @@ export function SettingsTextArea({ label, description, value, onChange, error, d
         aria-describedby={error ? errorId : undefined}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onCommit}
-        className={`${fieldClass(Boolean(error), false, true)} resize-y leading-6`}
+        className={`${mobile ? mobileFieldClass(Boolean(error), true) : fieldClass(Boolean(error), false, true)} resize-y leading-6`}
       />
       {error ? <p id={errorId} className={FIELD_ERROR}>{error}</p> : null}
     </SettingsItem>
@@ -322,9 +427,35 @@ export function SettingsTextArea({ label, description, value, onChange, error, d
 
 export function SettingsSelect({ label, description, value, onChange, options }: { label: string; description?: string; value: string; onChange: (value: string) => void; options: ThemedSelectOption[] }) {
   const titleId = useId();
+  const mobile = useSettingsMobile();
+  if (mobile && options.length <= 3) {
+    return (
+      <SettingsItem title={label} description={description} titleId={titleId} stack>
+        <div role="radiogroup" aria-labelledby={titleId} className="flex gap-1 rounded-(--inv-radius) bg-(--inv-surface-strong) p-1">
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => onChange(option.value)}
+                className={`ui-press flex-1 rounded-(--inv-radius) px-2 py-2 text-[13px] font-semibold transition ${FOCUS_RING} ${
+                  selected ? "bg-(--inv-surface) text-(--inv-heading) shadow-(--inv-shadow)" : "text-(--inv-muted)"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </SettingsItem>
+    );
+  }
   return (
     <SettingsItem title={label} description={description} titleId={titleId}>
-      <ThemedSelect value={value} onChange={onChange} options={options} boundary="filled" aria-labelledby={titleId} className={FIELD_WIDTH} />
+      <ThemedSelect value={value} onChange={onChange} options={options} boundary="filled" aria-labelledby={titleId} className={mobile ? "w-full max-w-[200px]" : FIELD_WIDTH} />
     </SettingsItem>
   );
 }
@@ -333,7 +464,7 @@ export function SettingsSelect({ label, description, value, onChange, options }:
 export function SettingsValue({ label, description, value }: { label: string; description?: string; value: string }) {
   return (
     <SettingsItem title={label} description={description}>
-      <p className={`${FIELD_WIDTH} truncate text-[16px] leading-10 text-gray-950 dark:text-white md:text-right`}>{value}</p>
+      <p className={useSettingsMobile() ? "max-w-full truncate text-right text-[15px] text-(--inv-muted)" : `${FIELD_WIDTH} truncate text-[16px] leading-10 text-gray-950 dark:text-white md:text-right`}>{value}</p>
     </SettingsItem>
   );
 }
@@ -350,6 +481,26 @@ export function SettingsSwitch({ label, description, checked, onChange, disabled
   const { language } = useLanguage();
   const titleId = useId();
   const [offWord, onWord] = language === "en" ? ["Off", "On"] : ["ปิด", "เปิด"];
+  if (useSettingsMobile()) {
+    // The phone's own switch shape: a 48x28 track in the stock page's orange.
+    return (
+      <SettingsItem title={label} description={description} titleId={titleId}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-labelledby={titleId}
+          disabled={disabled}
+          onClick={() => onChange(!checked)}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${
+            checked ? "bg-(--inv-action)" : "bg-(--inv-surface-strong)"
+          }`}
+        >
+          <span className={`absolute top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow transition-[left] duration-200 motion-reduce:transition-none ${checked ? "left-[23px]" : "left-[3px]"}`} />
+        </button>
+      </SettingsItem>
+    );
+  }
   return (
     <SettingsItem title={label} description={description} titleId={titleId}>
       <button
@@ -413,6 +564,31 @@ export function SettingsMediaRow({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const actionLabel = imageSrc ? replaceLabel : uploadLabel;
+  if (useSettingsMobile()) {
+    return (
+      <SettingsItem title={title} description={description}>
+        <div className="flex items-center gap-3">
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-(--inv-radius) bg-(--inv-surface-strong) ${shape === "wide" ? "h-10 w-16" : "h-10 w-10"}`}>
+            {imageSrc ? (
+              <Image src={imageSrc} alt={imageAlt} width={shape === "wide" ? 64 : 40} height={40} unoptimized className={`h-full w-full ${fit === "contain" ? "object-contain" : "object-cover"}`} />
+            ) : (
+              <span className="px-1 text-center text-[10px] leading-3 text-(--inv-faint)">{emptyLabel}</span>
+            )}
+          </div>
+          <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFile} tabIndex={-1} />
+          <button
+            type="button"
+            disabled={busy}
+            aria-label={`${actionLabel} ${title}`}
+            onClick={() => inputRef.current?.click()}
+            className={`ui-press min-h-[44px] text-[15px] font-semibold text-(--inv-action) disabled:opacity-50 ${FOCUS_RING}`}
+          >
+            {busy ? <Loader2 aria-hidden="true" className="h-5 w-5 motion-safe:animate-spin" /> : actionLabel}
+          </button>
+        </div>
+      </SettingsItem>
+    );
+  }
   return (
     <SettingsItem title={title} description={description}>
       <div className="flex items-center gap-4">

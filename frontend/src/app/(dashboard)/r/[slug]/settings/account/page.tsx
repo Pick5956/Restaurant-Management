@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Mail } from "lucide-react";
+import { Camera, Mail } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
@@ -13,13 +13,8 @@ import type { User } from "@/src/types/auth";
 import { updateProfile, uploadProfileImage } from "@/src/lib/auth";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { roleLabel } from "@/src/lib/roleLabels";
-import {
-  SettingsBadge,
-  SettingsButton,
-  SettingsField,
-  SettingsItem,
-  SettingsValue,
-} from "../_components/SettingsPrimitives";
+import { SettingsBadge, SettingsButton, SettingsField, SettingsItem, SettingsValue, SettingsGroup } from "../_components/SettingsPrimitives";
+import { MobileBadge, MobileInput, MobileSection, useSettingsPhone } from "../_components/SettingsMobileKit";
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d+\-\s]/g, "").slice(0, 24);
@@ -46,7 +41,8 @@ function profileOf(user: User): ProfileForm {
 }
 
 export default function AccountSettingsPage() {
-  const { user, updateUser, memberships } = useAuth();
+  const { user, updateUser, memberships, activeMembership } = useAuth();
+  const phone = useSettingsPhone();
   const { language } = useLanguage();
   const { showToast } = useToast();
   // Saves run one after another so two quick changes are both kept.
@@ -63,6 +59,7 @@ export default function AccountSettingsPage() {
 
   const copy = language === "th"
     ? {
+        groupTitle: "บัญชี",
         photo: "รูปโปรไฟล์",
         photoHint: "รูปที่แสดงคู่กับชื่อของคุณในแถบเมนูและรายชื่อพนักงาน ใช้ไฟล์ jpg, png หรือ webp ไม่เกิน 5MB",
         upload: "อัปโหลดรูป",
@@ -92,6 +89,7 @@ export default function AccountSettingsPage() {
         unnamed: "ไม่ระบุชื่อร้าน",
       }
     : {
+        groupTitle: "Account",
         photo: "Profile photo",
         photoHint: "Shown beside your name in the menu bar and the staff list. Use a jpg, png or webp file up to 5MB.",
         upload: "Upload photo",
@@ -198,8 +196,53 @@ export default function AccountSettingsPage() {
 
   const photoAction = user?.profile_image ? copy.replace : copy.upload;
 
+  if (phone) {
+    const fullName = [form.first_name, form.last_name].map((part) => part.trim()).filter(Boolean).join(" ") || displayName;
+    const hero = (
+      <div className="flex items-center gap-3.5 bg-gradient-to-br from-(--inv-action-soft) to-(--inv-surface) px-4 pb-3.5 pt-[18px]">
+        <input ref={profileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadPhoto} tabIndex={-1} />
+        <button
+          type="button"
+          disabled={!user || uploading}
+          onClick={() => profileInputRef.current?.click()}
+          aria-label={`${photoAction} ${copy.photo}`}
+          className="relative shrink-0 rounded-full disabled:opacity-60"
+        >
+          <UserAvatar src={user?.profile_image} name={displayName} size={64} className="h-16 w-16 text-[21px]" />
+          <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-(--inv-surface) bg-(--inv-action) text-white">
+            <Camera aria-hidden="true" className="h-3 w-3" strokeWidth={2.5} />
+          </span>
+        </button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[18px] font-bold text-(--inv-heading)">{fullName}</h2>
+          <p className="truncate text-[13px] text-(--inv-muted)">{user?.email || copy.noEmail}</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <MobileBadge tone={isGoogleAccount ? "ok" : "neutral"}>{isGoogleAccount ? `Google ${copy.connected}` : copy.local}</MobileBadge>
+            {activeMembership ? <MobileBadge tone="brand">{roleLabel(activeMembership.role, language)}</MobileBadge> : null}
+          </div>
+        </div>
+      </div>
+    );
+    return (
+      <MobileSection
+        id="account"
+        title={copy.groupTitle}
+        keywords={[copy.photo, copy.email, copy.nickname, copy.phone, copy.firstName, copy.lastName, copy.google].join(" ")}
+        hero={hero}
+      >
+        <div className="grid grid-cols-2 gap-2.5">
+          <MobileInput label={copy.firstName} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
+          <MobileInput label={copy.lastName} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
+          <MobileInput label={copy.nickname} value={form.nickname} placeholder={language === "th" ? "ใช้ชื่อจริง" : "Your first name"} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
+          <MobileInput label={copy.phone} value={form.phone} placeholder="08x-xxx-xxxx" onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
+        </div>
+        <p className="-mt-1 ml-0.5 text-[12px] leading-[17px] text-(--inv-muted)">{copy.nicknameHint}</p>
+      </MobileSection>
+    );
+  }
+
   return (
-    <>
+    <SettingsGroup id="account" title={copy.groupTitle}>
       <div>
         <SettingsItem title={copy.photo} description={copy.photoHint}>
           <div className="flex items-center gap-4">
@@ -273,6 +316,6 @@ export default function AccountSettingsPage() {
           {null}
         </SettingsItem>
       )}
-    </>
+    </SettingsGroup>
   );
 }

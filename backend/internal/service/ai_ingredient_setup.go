@@ -163,7 +163,14 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		switch {
 		case view.NeedsStock:
 			if answers.Stock != nil {
-				if *answers.Stock < 0 || *answers.Stock > aiActionMaxQuantity {
+				// Above zero, the same rule as the price: the card asked for
+				// both and took 0 for one of them, which read as a rule with
+				// an exception (เจ้าของ 25 ก.ย. 2569). Nothing on hand yet is
+				// nothing to add yet; it is added when it is bought.
+				if *answers.Stock <= 0 {
+					return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("จำนวนเริ่มต้นต้องมากกว่า 0")
+				}
+				if *answers.Stock > aiActionMaxQuantity {
 					return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
 				}
 				stock = *answers.Stock

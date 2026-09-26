@@ -215,9 +215,9 @@ func TestIngredientSetupAsksEverythingTheInventoryNeeds(t *testing.T) {
 	if payload.Quantity != 3 || payload.CostPerUnit != 60 || preview.Setup.Total != 180 {
 		t.Fatalf("3 กก. × 60 = 180 บาท, got stock %v cost %v total %v", payload.Quantity, payload.CostPerUnit, preview.Setup.Total)
 	}
+	// Zero on hand is refused, like a zero price: nothing to add yet.
 	zero := 0.0
-	payload, preview, _ = buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &zero, PriceMode: "per_unit", Price: 60})
-	if len(payload.Missing) != 0 || preview.Setup.Total != 0 {
-		t.Fatalf("none on hand yet is an answer, and books no expense: %v total %v", payload.Missing, preview.Setup.Total)
+	if _, _, err := buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &zero}); err == nil {
+		t.Fatal("an opening stock of 0 must be refused")
 	}
 }

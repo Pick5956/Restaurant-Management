@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, Camera, Clock, ImagePlus, MapPin, QrCode, Receipt, Trash2, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -16,21 +17,7 @@ import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useDialogFocus } from "@/src/hooks/useDialogFocus";
 import { restaurantRepository } from "@/src/app/repositories/restaurantRepository";
 import { createSerialQueue } from "@/src/lib/serialQueue";
-import {
-  ACTION_WIDTH,
-  FOCUS_RING,
-  SettingsActionRow,
-  SettingsButton,
-  SettingsField,
-  SettingsInput,
-  SettingsItem,
-  SettingsMediaRow,
-  SettingsSelect,
-  SettingsSkeleton,
-  SettingsSwitch,
-  SettingsTextArea,
-  settingsButtonClass,
-} from "../_components/SettingsPrimitives";
+import { ACTION_WIDTH, FOCUS_RING, SettingsActionRow, SettingsButton, SettingsField, SettingsInput, SettingsItem, SettingsMediaRow, SettingsSelect, SettingsSkeleton, SettingsSwitch, SettingsTextArea, settingsButtonClass, SettingsGroup } from "../_components/SettingsPrimitives";
 import {
   GEOFENCE_FIELDS,
   buildRestaurantPayload,
@@ -43,6 +30,7 @@ import {
   type FormField,
   type FormState,
 } from "./restaurantSettingsForm";
+import { MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, billPreview, useSettingsPhone } from "../_components/SettingsMobileKit";
 
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
@@ -88,6 +76,14 @@ export default function RestaurantSettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const deletePanelRef = useRef<HTMLFormElement>(null);
   const confirmInputRef = useRef<HTMLInputElement>(null);
+  // Phone look (SettingsMobileKit): its own file inputs, and whether a rate is
+  // being typed rather than picked from the pills.
+  const phone = useSettingsPhone();
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const qrInputRef = useRef<HTMLInputElement>(null);
+  const typeSelectId = useId();
+  const [customRate, setCustomRate] = useState<Record<"service_charge_rate" | "vat_rate", boolean>>({ service_charge_rate: false, vat_rate: false });
   const deleteTitleId = useId();
   const deleteBodyId = useId();
   const confirmInputId = useId();
@@ -516,96 +512,7 @@ export default function RestaurantSettingsPage() {
 
   const deleteNameMatches = Boolean(restaurant?.name) && confirmRestaurantName === restaurant?.name;
 
-  return (
-    <>
-      <div>
-        <SettingsMediaRow
-          title={copy.logo}
-          description={copy.logoHint}
-          imageSrc={form.logo}
-          imageAlt={form.name || copy.logo}
-          emptyLabel={copy.noLogo}
-          uploadLabel={copy.upload}
-          replaceLabel={copy.replace}
-          busy={uploading}
-          onFile={uploadLogo}
-        />
-        <SettingsMediaRow
-          title={copy.coverImage}
-          description={copy.coverHint}
-          imageSrc={form.cover_image}
-          imageAlt={form.name || copy.coverImage}
-          emptyLabel={copy.noCover}
-          shape="wide"
-          uploadLabel={copy.upload}
-          replaceLabel={copy.replace}
-          busy={uploadingCover}
-          onFile={uploadCover}
-        />
-        <SettingsField label={copy.name} description={copy.nameHint} value={form.name} onChange={(value) => setField("name", value)} onCommit={() => commit(["name"])} error={errors.name} />
-        <SettingsField label={copy.branch} description={copy.branchHint} value={form.branch_name} onChange={(value) => setField("branch_name", value)} onCommit={() => commit(["branch_name"])} error={errors.branch_name} />
-        <SettingsSelect
-          label={copy.type}
-          value={form.restaurant_type}
-          onChange={(value) => commit(["restaurant_type"], { restaurant_type: value })}
-          options={RESTAURANT_TYPES.map((item) => ({ value: item, label: getRestaurantTypeLabel(item, language) }))}
-        />
-        <SettingsField label={copy.phone} description={copy.phoneHint} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commit(["phone"])} error={errors.phone} inputMode="tel" autoComplete="tel" />
-        <SettingsTextArea label={copy.address} description={copy.addressHint} value={form.address} onChange={(value) => setField("address", value)} onCommit={() => commit(["address"])} />
-        <SettingsField label={copy.openTime} description={copy.openHint} type="time" value={form.open_time} onChange={(value) => commit(["open_time"], { open_time: value })} error={errors.open_time} />
-        <SettingsField label={copy.closeTime} description={copy.closeHint} type="time" value={form.close_time} onChange={(value) => commit(["close_time"], { close_time: value })} error={errors.close_time} />
-        <SettingsField label={copy.tableCount} description={copy.tablesHint} value={form.table_count} onChange={(value) => setField("table_count", value)} onCommit={() => commit(["table_count"])} error={errors.table_count} inputMode="numeric" />
-        <SettingsSwitch label={copy.service} description={copy.serviceHint} checked={form.service_charge_enabled} onChange={(value) => commitSwitch("service_charge_enabled", value)} />
-        <SettingsField label={`${copy.service} (%)`} description={copy.serviceRateHint} value={form.service_charge_rate} onChange={(value) => setField("service_charge_rate", value)} onCommit={() => commit(["service_charge_rate"])} error={errors.service_charge_rate} inputMode="decimal" />
-        <SettingsSwitch label={copy.vat} description={copy.vatHint} checked={form.vat_enabled} onChange={(value) => commitSwitch("vat_enabled", value)} />
-        <SettingsField label={`${copy.vat} (%)`} description={copy.vatRateHint} value={form.vat_rate} onChange={(value) => setField("vat_rate", value)} onCommit={() => commit(["vat_rate"])} error={errors.vat_rate} inputMode="decimal" />
-        <SettingsField label={copy.promptpayName} description={copy.promptpayNameHint} value={form.promptpay_name} onChange={(value) => setField("promptpay_name", value)} onCommit={() => commit(["promptpay_name"])} />
-        <SettingsMediaRow
-          title={copy.promptpayQr}
-          description={copy.promptpayQrHint}
-          imageSrc={form.promptpay_qr_image}
-          imageAlt={copy.promptpayQr}
-          emptyLabel={copy.noQr}
-          fit="contain"
-          uploadLabel={copy.upload}
-          replaceLabel={copy.replace}
-          busy={uploadingQr}
-          onFile={uploadQr}
-        />
-        {/* Turning the check on with no coordinates yet cannot be saved: the
-            switch stays on here, the missing value is said under its field,
-            and the check saves once the coordinates are in. */}
-        <SettingsSwitch label={copy.geofenceEnable} description={copy.geofenceHint} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
-        {form.geofence_enabled ? (
-          <>
-            <SettingsField label={copy.latitude} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
-            <SettingsField label={copy.longitude} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
-            <SettingsField label={copy.radius} description={copy.radiusHint} value={form.order_radius_meters} onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} inputMode="numeric" />
-            <SettingsActionRow title={copy.useCurrentLocation} description={copy.locateHint} loading={locating} onClick={useCurrentLocation}>
-              {copy.useCurrentLocation}
-            </SettingsActionRow>
-          </>
-        ) : null}
-      </div>
-
-      {/* Only the owner can delete a restaurant, so nobody else is shown the
-          control at all. */}
-      {isOwner ? (
-        <SettingsActionRow
-          title={copy.deleteTitle}
-          description={copy.deleteWarning}
-          variant="danger-secondary"
-          aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
-          onClick={() => {
-            setDeleteModalClosing(false);
-            setDeleteModalOpen(true);
-          }}
-        >
-          {copy.deleteAction}
-        </SettingsActionRow>
-      ) : null}
-
-      {deleteModalOpen && (
+  const deleteModal = deleteModalOpen && (
         <div
           {...deleteBackdrop}
           className={`${deleteModalClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-[var(--z-modal)] flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}
@@ -661,7 +568,356 @@ export default function RestaurantSettingsPage() {
             </div>
           </form>
         </div>
-      )}
+      );
+
+  if (phone) {
+    const th = language === "th";
+    const serviceRate = Number(form.service_charge_rate);
+    const vatRate = Number(form.vat_rate);
+    const preview = billPreview(100, form.service_charge_enabled, serviceRate, form.vat_enabled, vatRate);
+    const money = (value: number) => value.toLocaleString(th ? "th-TH" : "en-US", { maximumFractionDigits: 2 });
+    const tables = Math.min(500, Math.max(1, Number(form.table_count) || 1));
+    // A rate is a pill when it is one of the usual ones, and typed otherwise.
+    const ratePills = (field: "service_charge_rate" | "vat_rate", presets: string[]) => {
+      const current = String(Number(form[field]));
+      const custom = !presets.includes(current);
+      return (
+        <>
+          <MobilePills
+            label={field === "vat_rate" ? copy.vat : copy.service}
+            value={custom || customRate[field] ? "custom" : current}
+            onChange={(next) => {
+              if (next === "custom") {
+                setCustomRate((open) => ({ ...open, [field]: true }));
+                return;
+              }
+              setCustomRate((open) => ({ ...open, [field]: false }));
+              commit([field], { [field]: next });
+            }}
+            options={[...presets.map((rate) => ({ value: rate, label: `${rate}%` })), { value: "custom", label: th ? "อื่น ๆ" : "Other" }]}
+          />
+          {custom || customRate[field] ? (
+            <MobileInput
+              className="mb-0 mt-3"
+              label={th ? "อัตรา" : "Rate"}
+              value={form[field]}
+              suffix="%"
+              inputMode="decimal"
+              onChange={(value) => setField(field, value)}
+              onCommit={() => commit([field])}
+              error={errors[field]}
+            />
+          ) : null}
+        </>
+      );
+    };
+    const cover = (
+      <div>
+        <input ref={coverInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadCover} tabIndex={-1} />
+        <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadLogo} tabIndex={-1} />
+        <div className="relative h-[120px] bg-gradient-to-br from-orange-200 to-orange-300 dark:from-orange-900/60 dark:to-orange-800/40">
+          {form.cover_image ? <Image src={form.cover_image} alt="" fill unoptimized className="object-cover" /> : null}
+          <button
+            type="button"
+            disabled={uploadingCover}
+            onClick={() => coverInputRef.current?.click()}
+            className={`ui-press absolute right-3 top-3 inline-flex min-h-[32px] items-center gap-1.5 rounded-full bg-white/90 px-3 text-[12px] font-semibold text-gray-800 disabled:opacity-60 ${FOCUS_RING}`}
+          >
+            <Camera aria-hidden="true" className="h-3.5 w-3.5" />
+            {uploadingCover ? "…" : th ? "เปลี่ยนภาพปก" : "Change cover"}
+          </button>
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => logoInputRef.current?.click()}
+            aria-label={`${form.logo ? copy.replace : copy.upload} ${copy.logo}`}
+            className="absolute -bottom-7 left-4 flex h-16 w-16 items-center justify-center overflow-hidden rounded-[18px] border-[3px] border-(--inv-surface) bg-(--inv-surface) text-[11px] text-(--inv-muted) shadow-md disabled:opacity-60"
+          >
+            {form.logo ? <Image src={form.logo} alt="" width={64} height={64} unoptimized className="h-full w-full object-cover" /> : copy.logo}
+          </button>
+        </div>
+        <div className="px-4 pb-1 pt-9">
+          <h2 className="truncate text-[18px] font-bold text-(--inv-heading)">{form.name || copy.unnamed}</h2>
+          <p className="truncate text-[12.5px] text-(--inv-muted)">
+            {[getRestaurantTypeLabel(form.restaurant_type, language), form.branch_name].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      </div>
+    );
+    return (
+      <>
+        <div className="flex flex-col gap-4">
+          <MobileSection id="identity" title={copy.identity} keywords={[copy.logo, copy.coverImage, copy.name, copy.branch, copy.type, copy.phone, copy.address].join(" ")} hero={cover}>
+            <div className="pt-3">
+              <MobileInput label={copy.name} value={form.name} onChange={(value) => setField("name", value)} onCommit={() => commit(["name"])} error={errors.name} />
+              <div className="grid grid-cols-2 gap-2.5">
+                <MobileInput label={copy.branch} value={form.branch_name} onChange={(value) => setField("branch_name", value)} onCommit={() => commit(["branch_name"])} error={errors.branch_name} />
+                <div className="mb-3">
+                  <MobileLabel htmlFor={typeSelectId}>{copy.type}</MobileLabel>
+                  <select
+                    id={typeSelectId}
+                    value={form.restaurant_type}
+                    onChange={(event) => commit(["restaurant_type"], { restaurant_type: event.target.value })}
+                    className="h-12 w-full min-w-0 rounded-[14px] bg-(--inv-canvas) px-3 text-[16px] text-(--inv-heading) outline-none focus:ring-2 focus:ring-(--inv-action)/30"
+                  >
+                    {RESTAURANT_TYPES.map((item) => (
+                      <option key={item} value={item}>{getRestaurantTypeLabel(item, language)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <MobileInput label={copy.phone} value={form.phone} placeholder="0x-xxx-xxxx" onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commit(["phone"])} error={errors.phone} inputMode="tel" autoComplete="tel" />
+              <MobileInput className="mb-0" label={copy.address} value={form.address} placeholder={copy.addressHint} multiline onChange={(value) => setField("address", value)} onCommit={() => commit(["address"])} />
+            </div>
+          </MobileSection>
+
+          <MobileSection
+            id="operations"
+            title={copy.operations}
+            summary={form.open_time && form.close_time ? `${th ? "เปิดรับออเดอร์" : "Open"} ${form.open_time} – ${form.close_time}` : copy.openHint}
+            icon={Clock}
+            tone="bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300"
+            keywords={[copy.openTime, copy.closeTime, copy.tableCount].join(" ")}
+          >
+            <div className="mb-3.5 flex items-center gap-2.5">
+              {(["open_time", "close_time"] as const).map((field) => (
+                <label key={field} className="flex-1 rounded-2xl bg-(--inv-canvas) px-3.5 py-2.5">
+                  <span className="block text-[12px] text-(--inv-muted)">{field === "open_time" ? copy.openTime : copy.closeTime}</span>
+                  <input
+                    type="time"
+                    value={form[field]}
+                    onChange={(event) => commit([field], { [field]: event.target.value })}
+                    className="w-full bg-transparent text-[24px] font-bold tabular-nums text-(--inv-heading) outline-none"
+                    aria-label={field === "open_time" ? copy.openTime : copy.closeTime}
+                  />
+                </label>
+              ))}
+            </div>
+            {errors.open_time || errors.close_time ? <p className="-mt-2 mb-2 text-[12px] text-red-600">{errors.open_time || errors.close_time}</p> : null}
+            <MobileStepper
+              label={copy.tableCount}
+              value={tables}
+              min={1}
+              max={500}
+              onChange={(next) => commit(["table_count"], { table_count: String(next) })}
+            />
+            <p className="mt-2 ml-0.5 text-[12px] leading-[17px] text-(--inv-muted)">{copy.tablesHint}</p>
+          </MobileSection>
+
+          <MobileSection
+            id="billing"
+            title={copy.billing}
+            summary={`Service ${form.service_charge_enabled ? `${form.service_charge_rate}%` : th ? "ปิด" : "off"} · VAT ${form.vat_enabled ? `${form.vat_rate}%` : th ? "ปิด" : "off"}`}
+            icon={Receipt}
+            tone="bg-(--inv-ok-soft) text-(--inv-ok)"
+            keywords={[copy.service, copy.vat].join(" ")}
+          >
+            <MobileSwitchTile title={copy.service} hint={form.service_charge_enabled ? undefined : copy.serviceHint} checked={form.service_charge_enabled} onChange={(value) => commitSwitch("service_charge_enabled", value)}>
+              {form.service_charge_enabled ? ratePills("service_charge_rate", ["5", "10", "15"]) : null}
+            </MobileSwitchTile>
+            <MobileSwitchTile title={copy.vat} hint={form.vat_enabled ? undefined : copy.vatHint} checked={form.vat_enabled} onChange={(value) => commitSwitch("vat_enabled", value)}>
+              {form.vat_enabled ? ratePills("vat_rate", ["7"]) : null}
+            </MobileSwitchTile>
+            <div className="rounded-2xl border border-dashed border-(--inv-surface-strong) px-3.5 py-2.5 text-[13px] text-(--inv-body)">
+              <p className="mb-1 text-[11.5px] font-semibold text-(--inv-muted)">{th ? "ตัวอย่างบิล 100 บาท" : "A 100-baht bill"}</p>
+              <p className="flex justify-between"><span>{th ? "อาหาร" : "Food"}</span><span className="tabular-nums">100</span></p>
+              {preview.service ? <p className="flex justify-between"><span>Service {form.service_charge_rate}%</span><span className="tabular-nums">{money(preview.service)}</span></p> : null}
+              {preview.vat ? <p className="flex justify-between"><span>VAT {form.vat_rate}%</span><span className="tabular-nums">{money(preview.vat)}</span></p> : null}
+              <p className="mt-1 flex justify-between border-t border-(--inv-hairline) pt-1 font-bold text-(--inv-heading)">
+                <span>{th ? "ลูกค้าจ่าย" : "Guest pays"}</span><span className="tabular-nums">{money(preview.total)} {th ? "บาท" : "THB"}</span>
+              </p>
+            </div>
+          </MobileSection>
+
+          <MobileSection
+            id="promptpay"
+            title={copy.promptpay}
+            summary={form.promptpay_qr_image ? (th ? "มี QR แล้ว · ลูกค้าเห็นตอนจ่าย" : "QR set") : th ? "ยังไม่มี QR" : "No QR yet"}
+            icon={Wallet}
+            tone="bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"
+            keywords={[copy.promptpayName, copy.promptpayQr].join(" ")}
+          >
+            <input ref={qrInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadQr} tabIndex={-1} />
+            <div className="flex items-end gap-3.5">
+              <button
+                type="button"
+                disabled={uploadingQr}
+                onClick={() => qrInputRef.current?.click()}
+                aria-label={`${form.promptpay_qr_image ? copy.replace : copy.upload} ${copy.promptpayQr}`}
+                className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-(--inv-surface-strong) text-center text-[12px] leading-4 text-(--inv-faint) disabled:opacity-60"
+              >
+                {form.promptpay_qr_image ? (
+                  <Image src={form.promptpay_qr_image} alt="" width={96} height={96} unoptimized className="h-full w-full object-contain" />
+                ) : (
+                  <span className="flex flex-col items-center gap-1"><ImagePlus aria-hidden="true" className="h-5 w-5" />{th ? "อัปโหลด QR" : "Upload QR"}</span>
+                )}
+              </button>
+              <MobileInput className="mb-0 flex-1" label={copy.promptpayName} value={form.promptpay_name} onChange={(value) => setField("promptpay_name", value)} onCommit={() => commit(["promptpay_name"])} />
+            </div>
+          </MobileSection>
+
+          <MobileSection
+            id="qr"
+            title={copy.qrOrdering}
+            summary={form.geofence_enabled ? `${th ? "ตรวจตำแหน่ง · รัศมี" : "Location check ·"} ${form.order_radius_meters || "—"} ${th ? "ม." : "m"}` : th ? "กันคนถ่าย QR ไปสั่งจากนอกร้าน" : copy.geofenceHint}
+            icon={QrCode}
+            tone="bg-(--inv-low-soft) text-amber-700 dark:text-amber-300"
+            keywords={[copy.geofenceEnable, copy.latitude, copy.longitude, copy.radius].join(" ")}
+          >
+            <MobileSwitchTile title={copy.geofenceEnable} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
+            {form.geofence_enabled ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="relative mb-3 h-[120px] rounded-2xl bg-[radial-gradient(circle_at_50%_55%,rgba(197,60,0,.22)_0_38px,rgba(197,60,0,.08)_39px_58px,var(--inv-canvas)_59px)]"
+                >
+                  <span className="absolute left-1/2 top-[55%] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-(--inv-action)" />
+                  <span className="absolute bottom-2 right-2.5 rounded-full bg-(--inv-surface) px-2.5 py-0.5 text-[12px] font-semibold text-(--inv-heading)">
+                    {th ? "รัศมี" : "Radius"} {form.order_radius_meters || "—"} {th ? "ม." : "m"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={useCurrentLocation}
+                  disabled={locating}
+                  className={`ui-press mb-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-(--inv-action-soft) text-[14px] font-semibold text-(--inv-action) disabled:opacity-60 ${FOCUS_RING}`}
+                >
+                  <MapPin aria-hidden="true" className="h-4 w-4" />
+                  {locating ? "…" : copy.useCurrentLocation}
+                </button>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <MobileInput label={copy.latitude} value={form.latitude} placeholder="13.736717" inputMode="decimal" onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} />
+                  <MobileInput label={copy.longitude} value={form.longitude} placeholder="100.523186" inputMode="decimal" onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
+                </div>
+                <MobileInput className="mb-0" label={copy.radius} value={form.order_radius_meters} suffix={th ? "ม." : "m"} inputMode="numeric" onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} />
+              </>
+            ) : null}
+          </MobileSection>
+
+          {isOwner ? (
+            <MobileSection id="delete" title={copy.deleteTitle} summary={copy.deleteWarning} icon={Trash2} tone="bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400" danger>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalClosing(false);
+                  setDeleteModalOpen(true);
+                }}
+                aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
+                className={`ui-press flex min-h-[44px] w-full items-center justify-center rounded-[14px] border border-red-200 bg-(--inv-surface) text-[15px] font-semibold text-red-600 dark:border-red-900/60 dark:text-red-400 ${FOCUS_RING}`}
+              >
+                {copy.deleteAction}
+              </button>
+            </MobileSection>
+          ) : null}
+        </div>
+        {deleteModal}
+      </>
+    );
+  }
+
+
+  return (
+    <>
+      <div>
+        <SettingsGroup id="identity" title={copy.identity}>
+        <SettingsMediaRow
+          title={copy.logo}
+          description={copy.logoHint}
+          imageSrc={form.logo}
+          imageAlt={form.name || copy.logo}
+          emptyLabel={copy.noLogo}
+          uploadLabel={copy.upload}
+          replaceLabel={copy.replace}
+          busy={uploading}
+          onFile={uploadLogo}
+        />
+        <SettingsMediaRow
+          title={copy.coverImage}
+          description={copy.coverHint}
+          imageSrc={form.cover_image}
+          imageAlt={form.name || copy.coverImage}
+          emptyLabel={copy.noCover}
+          shape="wide"
+          uploadLabel={copy.upload}
+          replaceLabel={copy.replace}
+          busy={uploadingCover}
+          onFile={uploadCover}
+        />
+        <SettingsField label={copy.name} description={copy.nameHint} value={form.name} onChange={(value) => setField("name", value)} onCommit={() => commit(["name"])} error={errors.name} />
+        <SettingsField label={copy.branch} description={copy.branchHint} value={form.branch_name} onChange={(value) => setField("branch_name", value)} onCommit={() => commit(["branch_name"])} error={errors.branch_name} />
+        <SettingsSelect
+          label={copy.type}
+          value={form.restaurant_type}
+          onChange={(value) => commit(["restaurant_type"], { restaurant_type: value })}
+          options={RESTAURANT_TYPES.map((item) => ({ value: item, label: getRestaurantTypeLabel(item, language) }))}
+        />
+        <SettingsField label={copy.phone} description={copy.phoneHint} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commit(["phone"])} error={errors.phone} inputMode="tel" autoComplete="tel" />
+        <SettingsTextArea label={copy.address} description={copy.addressHint} value={form.address} onChange={(value) => setField("address", value)} onCommit={() => commit(["address"])} />
+        </SettingsGroup>
+        <SettingsGroup id="operations" title={copy.operations}>
+        <SettingsField label={copy.openTime} description={copy.openHint} type="time" value={form.open_time} onChange={(value) => commit(["open_time"], { open_time: value })} error={errors.open_time} />
+        <SettingsField label={copy.closeTime} description={copy.closeHint} type="time" value={form.close_time} onChange={(value) => commit(["close_time"], { close_time: value })} error={errors.close_time} />
+        <SettingsField label={copy.tableCount} description={copy.tablesHint} value={form.table_count} onChange={(value) => setField("table_count", value)} onCommit={() => commit(["table_count"])} error={errors.table_count} inputMode="numeric" />
+        </SettingsGroup>
+        <SettingsGroup id="billing" title={copy.billing}>
+        <SettingsSwitch label={copy.service} description={copy.serviceHint} checked={form.service_charge_enabled} onChange={(value) => commitSwitch("service_charge_enabled", value)} />
+        <SettingsField label={`${copy.service} (%)`} description={copy.serviceRateHint} value={form.service_charge_rate} onChange={(value) => setField("service_charge_rate", value)} onCommit={() => commit(["service_charge_rate"])} error={errors.service_charge_rate} inputMode="decimal" />
+        <SettingsSwitch label={copy.vat} description={copy.vatHint} checked={form.vat_enabled} onChange={(value) => commitSwitch("vat_enabled", value)} />
+        <SettingsField label={`${copy.vat} (%)`} description={copy.vatRateHint} value={form.vat_rate} onChange={(value) => setField("vat_rate", value)} onCommit={() => commit(["vat_rate"])} error={errors.vat_rate} inputMode="decimal" />
+        </SettingsGroup>
+        <SettingsGroup id="promptpay" title={copy.promptpay}>
+        <SettingsField label={copy.promptpayName} description={copy.promptpayNameHint} value={form.promptpay_name} onChange={(value) => setField("promptpay_name", value)} onCommit={() => commit(["promptpay_name"])} />
+        <SettingsMediaRow
+          title={copy.promptpayQr}
+          description={copy.promptpayQrHint}
+          imageSrc={form.promptpay_qr_image}
+          imageAlt={copy.promptpayQr}
+          emptyLabel={copy.noQr}
+          fit="contain"
+          uploadLabel={copy.upload}
+          replaceLabel={copy.replace}
+          busy={uploadingQr}
+          onFile={uploadQr}
+        />
+        </SettingsGroup>
+        <SettingsGroup id="qr" title={copy.qrOrdering}>
+        {/* Turning the check on with no coordinates yet cannot be saved: the
+            switch stays on here, the missing value is said under its field,
+            and the check saves once the coordinates are in. */}
+        <SettingsSwitch label={copy.geofenceEnable} description={copy.geofenceHint} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
+        {form.geofence_enabled ? (
+          <>
+            <SettingsField label={copy.latitude} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
+            <SettingsField label={copy.longitude} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
+            <SettingsField label={copy.radius} description={copy.radiusHint} value={form.order_radius_meters} onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} inputMode="numeric" />
+            <SettingsActionRow title={copy.useCurrentLocation} description={copy.locateHint} loading={locating} onClick={useCurrentLocation}>
+              {copy.useCurrentLocation}
+            </SettingsActionRow>
+          </>
+        ) : null}
+        </SettingsGroup>
+      </div>
+
+      {/* Only the owner can delete a restaurant, so nobody else is shown the
+          control at all. */}
+      {isOwner ? (
+        <SettingsGroup id="delete" title={copy.dangerZone}>
+        <SettingsActionRow
+          title={copy.deleteTitle}
+          description={copy.deleteWarning}
+          variant="danger-secondary"
+          aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
+          onClick={() => {
+            setDeleteModalClosing(false);
+            setDeleteModalOpen(true);
+          }}
+        >
+          {copy.deleteAction}
+        </SettingsActionRow>
+        </SettingsGroup>
+      ) : null}
+
+      {deleteModal}
     </>
   );
 }
