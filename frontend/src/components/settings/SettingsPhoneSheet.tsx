@@ -213,10 +213,13 @@ export default function SettingsPhoneSheet({
             type="button"
             onClick={onClose}
             aria-label={copy.close}
-            className={`ui-press -ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
+            className={`ui-press -ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
           >
             <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
           </button>
+          {/* The box stands no taller than the back button beside it (owner,
+              27 ก.ย. 2569: at 40px it outweighed the arrow). 16px text all the
+              same, or iPhone zooms in when it is tapped. */}
           <div role="search" className="relative min-w-0 flex-1">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
             <input
@@ -231,14 +234,14 @@ export default function SettingsPhoneSheet({
               }}
               placeholder={copy.searchLabel}
               aria-label={copy.searchLabel}
-              className="h-10 w-full rounded-xl bg-(--inv-surface-strong) pl-9 pr-10 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
+              className="h-9 w-full rounded-[10px] bg-(--inv-surface-strong) pl-9 pr-9 text-[16px] text-(--inv-heading) outline-none placeholder:text-(--inv-muted) focus:ring-2 focus:ring-(--inv-action)/30 [&::-webkit-search-cancel-button]:hidden"
             />
             {query ? (
               <button
                 type="button"
                 onClick={() => setQuery("")}
                 aria-label={copy.clear}
-                className={`absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-(--inv-muted) ${FOCUS_RING}`}
+                className={`absolute right-0.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-(--inv-muted) ${FOCUS_RING}`}
               >
                 <X aria-hidden="true" className="h-4 w-4" />
               </button>
