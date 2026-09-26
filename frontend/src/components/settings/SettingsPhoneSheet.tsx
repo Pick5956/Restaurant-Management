@@ -247,6 +247,10 @@ export default function SettingsPhoneSheet({
               </button>
             ) : null}
           </div>
+          {/* An empty slot the size of the back button, so the box sits in the
+              middle of the bar with the same space on both ends (owner,
+              27 ก.ย. 2569). */}
+          <div aria-hidden="true" className="-mr-2 h-9 w-9 shrink-0" />
         </div>
 
         {/* While a query is typed the chips step aside: the cards they point at may be hidden. */}
