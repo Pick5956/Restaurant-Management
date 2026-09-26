@@ -10,10 +10,11 @@
 //
 // From lg: the full rail, which the owner can shrink to icons.
 export const RAIL_FULL_QUERY = "(width >= 64rem)";
-// From md up to lg — an iPad held upright — the rail shows icons only, and its
-// menu button opens the full menu over the page (owner, 27 ก.ย. 2569). Below
-// md a phone keeps the menu tab on the left edge.
-export const RAIL_ICONS_QUERY = "(48rem <= width < 64rem)";
-// The icon rail's width; the md:max-lg:left-[68px] classes on fixed bars
-// repeat it.
+// From the tablet breakpoint (46.5rem = 744px, an iPad mini held upright; see
+// --breakpoint-tablet in globals.css) up to lg, the rail shows icons only, and
+// its menu button opens the full menu over the page (owner, 27 ก.ย. 2569).
+// Below it a phone keeps the menu tab on the left edge.
+export const RAIL_ICONS_QUERY = "(46.5rem <= width < 64rem)";
+// The icon rail's width; the tablet:…left-[68px] classes on fixed bars repeat
+// it.
 export const RAIL_ICONS_WIDTH = "68px";

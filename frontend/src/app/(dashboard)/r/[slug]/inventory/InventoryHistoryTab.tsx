@@ -466,7 +466,10 @@ export default function InventoryHistoryTab({
           margin lets the stuck header's corner patches cover this border. */}
       <div className="overflow-x-clip [overflow-clip-margin:1px] rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <div>
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
+          {/* 640px below lg: an iPad held upright has 704px beside the icon
+              rail (820 − 68 − padding), and the clip above cut the notes
+              column off at 760 (27 ก.ย. 2569). */}
+          <table className="w-full min-w-[640px] border-separate border-spacing-0 text-left text-sm lg:min-w-[760px]">
             <thead
               className="inv-thead text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500"
               style={{ "--inv-th-top": `${stickyTop}px` } as CSSProperties}

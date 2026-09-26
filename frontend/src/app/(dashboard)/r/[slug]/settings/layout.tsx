@@ -278,7 +278,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       >
         <div
           ref={phoneBarRef}
-          className="fixed inset-x-0 top-0 z-30 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur"
+          className="fixed inset-x-0 top-0 z-30 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 tablet:left-[68px] pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur"
         >
           <div className="flex items-center gap-2 px-4">
             {phoneSearch ? (

@@ -180,15 +180,23 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
     }))
     .filter((section) => section.items.length > 0);
 
+  // Collapsed, every item is a 44px square at 12px from the rail's edge, in px
+  // like the 68px rail itself, so each icon sits on the rail's centre line
+  // (x=34) — the same line as the menu button above. They used to fill the
+  // row and centre the icon in it: when the rail is too short for every item,
+  // its scrollbar took ~11px off the right of each row, every icon slid left
+  // off the menu button's line, and the highlight came out 33px wide by 36px
+  // tall instead of square (owner, 27 ก.ย. 2569). A fixed square leaves the
+  // scrollbar its own strip on the right.
   return (
-    <nav className="sidebar-nav-scroll flex-1 overflow-y-auto overscroll-contain px-3 py-3 [@media(max-height:760px)]:py-2">
+    <nav className={`sidebar-nav-scroll flex-1 overflow-y-auto overscroll-contain py-3 [@media(max-height:760px)]:py-2 ${collapsed ? 'px-[12px]' : 'px-3'}`}>
       {visibleNav.map(({ id, items }, groupIndex) => (
         <div key={id}>
           {groupIndex > 0 && (
             <div
               role="separator"
               aria-orientation="horizontal"
-              className="mx-1 my-2 border-t border-[var(--rail-border)] [@media(max-height:760px)]:my-1.5"
+              className={`my-2 border-t border-[var(--rail-border)] [@media(max-height:760px)]:my-1.5 ${collapsed ? 'ml-[4px] w-[36px]' : 'mx-1'}`}
             />
           )}
           <div className="space-y-0.5">
@@ -202,7 +210,11 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
               // Active if either this parent href matches or one of its child sub-items matches
               const active = !comingSoon && (isActive(href) || (hasSubItems && visibleSubItems.some(sub => isActive(sub.href))));
 
-              const itemClassName = `relative flex w-full items-center rounded-md px-2.5 py-2 text-[14px] font-medium transition-[background-color,border-color,box-shadow,color,gap] duration-200 ease-out motion-reduce:transition-none [@media(max-height:760px)]:py-1.5 ${
+              const itemClassName = `relative flex items-center rounded-md text-[14px] font-medium transition-[background-color,border-color,box-shadow,color,gap] duration-200 ease-out motion-reduce:transition-none ${
+                collapsed
+                  ? 'size-[44px] [@media(max-height:760px)]:ml-[2px] [@media(max-height:760px)]:size-[40px]'
+                  : 'w-full px-2.5 py-2 [@media(max-height:760px)]:py-1.5'
+              } ${
                 active
                   ? 'border border-transparent bg-[var(--rail-active-bg)] text-[var(--rail-active-fg)] shadow-[0_0_6px_rgba(15,23,42,0.18)] active:shadow-[0_0_3px_rgba(15,23,42,0.16)] dark:border-orange-700 dark:shadow-[0_0_7px_rgba(249,115,22,0.24)] dark:active:shadow-[0_0_3px_rgba(249,115,22,0.18)]'
                   : 'border border-transparent text-[var(--rail-fg)] hover:border-[var(--rail-border)] hover:bg-[var(--rail-hover-bg)] hover:text-[var(--rail-hover-fg)]'
@@ -212,8 +224,8 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
                 <>
                   <span className={`grid h-5 w-5 shrink-0 place-items-center ${active ? 'text-[var(--rail-active-fg)]' : 'text-[var(--rail-fg-muted)]'}`}>{icon}</span>
                   <span
-                    className={`flex min-w-0 flex-1 items-center justify-between gap-2 transition-all duration-300 ${
-                      collapsed ? 'w-0 opacity-0 pointer-events-none overflow-hidden' : 'w-auto opacity-100'
+                    className={`flex min-w-0 items-center justify-between gap-2 transition-all duration-300 ${
+                      collapsed ? 'w-0 flex-none opacity-0 pointer-events-none overflow-hidden' : 'w-auto flex-1 opacity-100'
                     }`}
                   >
                     <span className="truncate leading-[1.6]">{label}</span>
@@ -362,7 +374,7 @@ export default function Sidebar() {
   const landingHref = getDefaultWorkspaceRoute(activeMembership);
   const mobileDrawerRef = useRef<HTMLElement>(null);
   const mobileBackdrop = useBackdropClose(() => setMobileOpen(false));
-  // An iPad held upright (md up to lg) gets the rail as icons only; there is
+  // An iPad held upright (744px up to lg) gets the rail as icons only; there is
   // no room to push the page over for the labels, so its menu button opens the
   // full menu over the page instead of widening the rail (owner, 27 ก.ย. 2569).
   const iconsOnly = useMediaQuery(RAIL_ICONS_QUERY);
@@ -463,26 +475,29 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* md:max-lg:w-[68px] holds the icon width in CSS as well, so the rail
+      {/* tablet:max-lg:w-[68px] holds the icon width in CSS as well, so the rail
           is never drawn full width on an iPad before iconsOnly is known. */}
       <aside
         data-nav-rail=""
         className={`
-          dashboard-shell-border-r fixed left-0 top-0 z-30 hidden h-dvh flex-col overflow-hidden bg-[var(--rail-bg)] md:flex
+          dashboard-shell-border-r fixed left-0 top-0 z-30 hidden h-dvh flex-col overflow-hidden bg-[var(--rail-bg)] tablet:flex
           transition-[width] duration-300 ease-in-out will-change-[width]
-          ${railCollapsed ? 'w-[68px]' : 'w-[235px]'} md:max-lg:w-[68px]
+          ${railCollapsed ? 'w-[68px]' : 'w-[235px]'} tablet:max-lg:w-[68px]
         `}
       >
-        <div className="flex h-[62px] shrink-0 flex-col justify-center px-3">
+        <div className="flex h-[62px] shrink-0 flex-col justify-center px-[12px]">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => (iconsOnly ? setMobileOpen(true) : setCollapsed(!collapsed))}
-              /* 44px wide with the icon centred puts its axis at x=34, the same
-                 place the collapsed rail centres every nav icon. Widening rather
-                 than re-aligning keeps the left edge fixed, so the icon does not
-                 shift when the rail collapses. */
-              className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-md text-[var(--rail-fg-muted)] transition-colors hover:bg-[var(--rail-hover-bg)]"
+              /* A 44px square at 12px from the edge puts its axis at x=34, the
+                 same line as every collapsed nav item below. In px, as they are:
+                 it was w-11/px-3, which are rem and grow with the browser's
+                 font size while the 68px rail does not, so with a bigger font
+                 the button drifted right of the icons (27 ก.ย. 2569). The left
+                 edge stays put, so the icon does not shift when the rail
+                 collapses. */
+              className="inline-flex size-[44px] shrink-0 items-center justify-center rounded-md text-[var(--rail-fg-muted)] transition-colors hover:bg-[var(--rail-hover-bg)]"
               title={collapseTitle}
               aria-label={collapseTitle}
               aria-expanded={iconsOnly ? mobileOpen : !collapsed}

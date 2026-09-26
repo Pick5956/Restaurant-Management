@@ -314,7 +314,7 @@ export default function BulkAddScreen({
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-30 space-y-2 bg-(--inv-canvas) px-4 pt-3"
+        className="fixed inset-x-0 bottom-0 z-30 space-y-2 bg-(--inv-canvas) px-4 pt-3 tablet:left-[68px]"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-center justify-between text-[13px]">

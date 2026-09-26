@@ -3,6 +3,13 @@
 /* class-based dark mode — toggled by ThemeProvider */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* `tablet:` — 744px, the narrowest iPad held upright (iPad mini). From here
+   the nav rail shows as icons; below it is a phone (27 ก.ย. 2569). In rem like
+   Tailwind's own breakpoints; src/lib/navRail.ts asks the same width in JS. */
+@theme {
+  --breakpoint-tablet: 46.5rem;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -1178,9 +1185,9 @@ textarea {
   background-color: transparent !important;
 }
 
-/* The rail is drawn from md: as icons on an iPad held upright, in full from
-   lg. It sits "sunk" behind its inset shadow at both, never a hairline. */
-@media (min-width: 48rem) {
+/* The rail is drawn from tablet: as icons on an iPad held upright, in full
+   from lg. It sits "sunk" behind its inset shadow at both, never a hairline. */
+@media (min-width: 46.5rem) {
   [data-nav-rail].dashboard-shell-border-r::after {
     display: none;
   }

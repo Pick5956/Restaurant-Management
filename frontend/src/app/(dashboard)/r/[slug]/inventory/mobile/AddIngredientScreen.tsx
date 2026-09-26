@@ -555,7 +555,7 @@ export default function AddIngredientScreen({
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-30 flex gap-2 bg-(--inv-canvas) px-4 pt-3"
+        className="fixed inset-x-0 bottom-0 z-30 flex gap-2 bg-(--inv-canvas) px-4 pt-3 tablet:left-[68px]"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
         <SecondaryButton onClick={onCancel}>{copy.cancel}</SecondaryButton>
