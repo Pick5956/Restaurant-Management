@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import DateRangeButton from "@/src/components/shared/DateRangeButton";
 import { AlertTriangle, BarChart3, ChevronRight, Info, TrendingUp, Wallet } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
@@ -25,6 +26,7 @@ import {
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { tableName } from "@/src/app/(dashboard)/r/[slug]/orders/ordersPageUtils";
+import { formatHistoryRange } from "@/src/app/(dashboard)/r/[slug]/inventory/inventoryHistoryUtils";
 import type { Bill } from "@/src/types/order";
 import type { ManagerReport, SalesDetailReport } from "@/src/types/report";
 
@@ -37,8 +39,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   // The period, chosen by the owner (15 ก.ย. 2569) — the same presets and the
-  // same 93-day limit as the app. `draft` is what the date inputs hold until
-  // "ดู" applies it, so typing a date does not reload on every keystroke.
+  // same 93-day limit as the app. `draft` is what the date fields hold; it
+  // becomes `range` once it is a range the server accepts.
   const [today] = useState(() => bangkokToday());
   const [range, setRange] = useState<ReportRange>(() => presetRange("last14", bangkokToday()));
   const [draft, setDraft] = useState<ReportRange>(range);
@@ -82,15 +84,11 @@ export default function ReportsPage() {
         marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
           `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${per100} บาท · รายได้ ${revenue} − ต้นทุนวัตถุดิบตามสูตรของที่ขายไป ${cost} − รายจ่ายอื่นที่ไม่ใช่วัตถุดิบ ${operating} = กำไรสุทธิ ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ค่าซื้อวัตถุดิบอยู่ในรายจ่ายรวม แต่ไม่หักจากกำไรซ้ำ เพราะต้นทุนวัตถุดิบหักไปแล้ว`,
         period: "ช่วงเวลา",
-        custom: "กำหนดเอง",
         from: "ตั้งแต่",
         to: "ถึง",
-        apply: "ดู",
         days: (n: number) => `${n} วัน`,
-        presets: { today: "วันนี้", yesterday: "เมื่อวาน", last7: "7 วันล่าสุด", last14: "14 วันล่าสุด", last30: "30 วันล่าสุด", thisMonth: "เดือนนี้", lastMonth: "เดือนก่อน" } as Record<ReportPreset, string>,
+        presets: { today: "วันนี้", yesterday: "เมื่อวาน", last7: "7 วัน", last14: "14 วัน", last30: "30 วัน", thisMonth: "เดือนนี้", lastMonth: "เดือนก่อน" } as Record<ReportPreset, string>,
         problems: { order: "วันเริ่มต้องไม่หลังวันจบ", future: "ยังไม่ถึงวันที่เลือก", tooLong: `เลือกได้ไม่เกิน ${REPORT_MAX_DAYS} วัน` },
-        sameRange: "กำลังแสดงช่วงนี้อยู่แล้ว",
-        applyHint: "โหลดรายงานของช่วงวันที่ที่เลือก",
       }
     : {
         denied: "You do not have permission to view reports.",
@@ -128,15 +126,11 @@ export default function ReportsPage() {
         marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
           `Margin is the share of revenue left as net profit. In this period every 100 baht of revenue left ${per100} baht · revenue ${revenue} − recipe cost of what sold ${cost} − expenses other than ingredients ${operating} = net profit ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ingredient purchases are in total expenses but not taken off again, as their cost is already counted.`,
         period: "Period",
-        custom: "Custom",
         from: "From",
         to: "To",
-        apply: "Show",
         days: (n: number) => `${n} days`,
-        presets: { today: "Today", yesterday: "Yesterday", last7: "Last 7 days", last14: "Last 14 days", last30: "Last 30 days", thisMonth: "This month", lastMonth: "Last month" } as Record<ReportPreset, string>,
+        presets: { today: "Today", yesterday: "Yesterday", last7: "7 days", last14: "14 days", last30: "30 days", thisMonth: "This month", lastMonth: "Last month" } as Record<ReportPreset, string>,
         problems: { order: "The start must not be after the end", future: "That day has not come yet", tooLong: `Choose ${REPORT_MAX_DAYS} days or fewer` },
-        sameRange: "Already showing this range",
-        applyHint: "Show the report for the selected range",
       }, [language]);
 
   // A day opens in a dialog. Only one is open at a time, so a single slot for
@@ -223,22 +217,15 @@ export default function ReportsPage() {
   const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const preset = matchPreset(range, today);
   const draftProblem = rangeProblem(draft, today);
-  // Why "ดู" is not clickable: an invalid range, or a draft that already matches
-  // what is on screen so there is nothing new to load. Surfaced as a tooltip.
-  const sameAsShown = draft.from === range.from && draft.to === range.to;
-  const applyDisabled = Boolean(draftProblem) || sameAsShown;
-  const applyHint = draftProblem
-    ? copy.problems[draftProblem]
-    : sameAsShown
-    ? copy.sameRange
-    : copy.applyHint;
-  const applyDraft = () => {
-    if (draftProblem) return;
-    setRange({ from: draft.from, to: draft.to > today ? today : draft.to });
+  // A typed date applies as soon as the range is one the server accepts; until
+  // then the note under the fields says why, and the report stays as it was.
+  const editDraft = (next: ReportRange) => {
+    setDraft(next);
+    if (rangeProblem(next, today)) return;
+    setRange({ from: next.from, to: next.to > today ? today : next.to });
   };
-  const choosePreset = (value: string) => {
-    if (value === "custom") return;
-    const next = presetRange(value as ReportPreset, today);
+  const choosePreset = (value: ReportPreset) => {
+    const next = presetRange(value, today);
     setRange(next);
     setDraft(next);
   };
@@ -253,51 +240,27 @@ export default function ReportsPage() {
 
   return (
     <div className="min-h-dvh bg-slate-100 px-4 py-4 text-gray-900 dark:bg-gray-950 dark:text-white sm:px-6 lg:px-8 lg:py-6">
-      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0">
-          <h1 className="sr-only">{copy.title}</h1>
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(event) => { event.preventDefault(); applyDraft(); }}
-          >
-            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
-              {copy.period}
-              <select
-                id="report-period-preset"
-                value={preset ?? "custom"}
-                onChange={(event) => choosePreset(event.target.value)}
-                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
-              >
-                {REPORT_PRESETS.map((key) => <option key={key} value={key}>{copy.presets[key]}</option>)}
-                <option value="custom">{copy.custom}</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
-              {copy.from}
-              <input id="report-period-from" type="date" value={draft.from} max={today} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
-            </label>
-            <label className="flex flex-col gap-1 text-[12px] font-semibold text-gray-500">
-              {copy.to}
-              <input id="report-period-to" type="date" value={draft.to} max={today} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] tabular-nums text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100" />
-            </label>
-            {/* The span carries the tooltip so it still shows while the button is
-                disabled — a disabled button swallows hover in Chrome, so
-                disabled:pointer-events-none lets the cursor fall through to it. */}
-            <span title={applyHint} className={`inline-flex${applyDisabled ? " cursor-not-allowed" : ""}`}>
-              <button
-                type="submit"
-                title={applyHint}
-                disabled={applyDisabled}
-                className="ui-press h-10 rounded-xl bg-orange-600 px-4 text-[13px] font-semibold text-white disabled:pointer-events-none disabled:opacity-40"
-              >
-                {copy.apply}
-              </button>
-            </span>
-            <span className="pb-2 text-[12px] text-gray-500 tabular-nums">
-              {draftProblem ? <span className="text-red-600">{copy.problems[draftProblem]}</span> : copy.days(rangeDayCount(range))}
-            </span>
-          </form>
-        </div>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <h1 className="sr-only">{copy.title}</h1>
+        {/* The same range button as the inventory history (26 ก.ย. 2569), in
+            place of a dropdown, two date fields and a "ดู" button. */}
+        <DateRangeButton
+          label={formatHistoryRange(range.from, range.to, lang)}
+          ariaLabel={copy.period}
+          presets={REPORT_PRESETS.map((key) => ({ key, label: copy.presets[key] }))}
+          activeKey={preset}
+          onPreset={choosePreset}
+          from={draft.from}
+          to={draft.to}
+          onFrom={(from) => editDraft({ ...draft, from })}
+          onTo={(to) => editDraft({ ...draft, to })}
+          fromLabel={copy.from}
+          toLabel={copy.to}
+          maxDate={today}
+          highlighted={preset !== "last14"}
+          note={draftProblem ? <span className="text-red-600 dark:text-red-400">{copy.problems[draftProblem]}</span> : null}
+        />
+        <span className="text-[12px] text-gray-500 tabular-nums">{copy.days(rangeDayCount(range))}</span>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
