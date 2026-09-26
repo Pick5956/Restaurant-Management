@@ -1749,7 +1749,9 @@ textarea {
 .inv-thead {
   --inv-head-bg: var(--color-slate-50);
   --inv-head-line: var(--color-slate-200);
-  --inv-head-page: #f1f5f9;
+  /* The page behind the card: the app background is white now, not slate-100,
+     and a grey patch here read as a square corner. */
+  --inv-head-page: #fff;
 }
 .dark .inv-thead {
   --inv-head-bg: #151515;
