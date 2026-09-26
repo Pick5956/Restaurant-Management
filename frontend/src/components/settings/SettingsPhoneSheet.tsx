@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, Search, X } from "lucide-react";
+import { CircleX, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { useIOSActiveStates } from "@/src/app/(dashboard)/r/[slug]/inventory/mobile/primitives";
 import { useLanguage } from "@/src/providers/LanguageProvider";
@@ -13,8 +13,9 @@ import RestaurantSettings from "./RestaurantSettings";
 // The settings window on a phone (27 ก.ย. 2569): the owner opens it from the
 // account menu like on a computer, but inside it keeps the phone settings he
 // chose on 26 ก.ย. - a bar, a strip of chips, and one long page of cards
-// (SettingsMobileKit). The bar is the back arrow and a search box across the
-// rest of it; the owner cut the "ตั้งค่า" title (27 ก.ย. 2569). A chip lights the
+// (SettingsMobileKit). The bar is a search box and a close ✕: the owner cut
+// the "ตั้งค่า" title, then the back arrow (27 ก.ย. 2569), so the box starts
+// on the same 16px line as the chips and cards below it. A chip lights the
 // moment it is tapped, the page glides to its card and the card flashes once,
 // so the last cards, which can never reach the top, still show where the tap
 // went. This was the /settings page's phone layout; it now scrolls inside the
@@ -208,18 +209,8 @@ export default function SettingsPhoneSheet({
     >
       <div className="shrink-0 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center gap-2 px-4">
-          {/* Back to the page the window was opened over. */}
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={copy.close}
-            className={`ui-press -ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--inv-action) ${FOCUS_RING}`}
-          >
-            <ChevronLeft aria-hidden="true" className="h-6 w-6" strokeWidth={2} />
-          </button>
-          {/* The box stands no taller than the back button beside it (owner,
-              27 ก.ย. 2569: at 40px it outweighed the arrow). 16px text all the
-              same, or iPhone zooms in when it is tapped. */}
+          {/* 36px, the close button's height. 16px text, or iPhone zooms in
+              when it is tapped. */}
           <div role="search" className="relative min-w-0 flex-1">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--inv-muted)" />
             <input
@@ -243,14 +234,19 @@ export default function SettingsPhoneSheet({
                 aria-label={copy.clear}
                 className={`absolute right-0.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-(--inv-muted) ${FOCUS_RING}`}
               >
-                <X aria-hidden="true" className="h-4 w-4" />
+                <CircleX aria-hidden="true" className="h-4 w-4" />
               </button>
             ) : null}
           </div>
-          {/* An empty slot the size of the back button, so the box sits in the
-              middle of the bar with the same space on both ends (owner,
-              27 ก.ย. 2569). */}
-          <div aria-hidden="true" className="-mr-2 h-9 w-9 shrink-0" />
+          {/* Closes the window, back to the page it was opened over. */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={copy.close}
+            className={`ui-press -mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--inv-body) ${FOCUS_RING}`}
+          >
+            <X aria-hidden="true" className="h-5 w-5" strokeWidth={2.25} />
+          </button>
         </div>
 
         {/* While a query is typed the chips step aside: the cards they point at may be hidden. */}
