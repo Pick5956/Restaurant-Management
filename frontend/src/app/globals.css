@@ -3,6 +3,24 @@
 /* class-based dark mode — toggled by ThemeProvider */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Breakpoints in px, not Tailwind's default rem. A media query's rem is the
+   browser's default font size, whatever the page sets on html below, so with
+   Chrome's font size at ~18px on the owner's desktop 64rem came out at 1150px
+   and 46.5rem at 830px: DevTools' iPad mini (768) got the phone layout that a
+   real iPad mini (Safari, 16px) never shows (27 ก.ย. 2569). In px the layout
+   switches at the same width on every browser.
+   `tablet:` — 744px, the narrowest iPad held upright (iPad mini). From here
+   the nav rail shows as icons; below it is a phone. src/lib/navRail.ts asks
+   the same widths in JS. */
+@theme {
+  --breakpoint-sm: 640px;
+  --breakpoint-tablet: 744px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -125,6 +143,14 @@ body {
 }
 
 html {
+  /* Pinned, so every rem (spacing, icon and control sizes) is 16px whatever
+     font size the browser is set to. Most text is px (about 1,400 text-[Npx]
+     against 250 text-sm/text-xs/…, all times --app-text-scale), so a bigger
+     browser font grew one word in seven and the spacing around all of them,
+     and the ≡ button grew out of line with the fixed-width rail
+     (27 ก.ย. 2569). The cost: someone who enlarges the browser font gets
+     nothing larger here; page zoom still enlarges everything evenly. */
+  font-size: 16px;
   /* Painted here too, not only on body: phone Safari reads the root's colour
      for the bands around the page. */
   background: var(--background);
@@ -1178,6 +1204,19 @@ textarea {
   background-color: transparent !important;
 }
 
+/* The rail is drawn from tablet: as icons on an iPad held upright, in full
+   from lg. It sits "sunk" behind its inset shadow at both, never a hairline. */
+@media (min-width: 744px) {
+  [data-nav-rail].dashboard-shell-border-r::after {
+    display: none;
+  }
+}
+
+/* Tailwind's lg (1024px, set in px in @theme above). This block and the lg:
+   classes must switch at the same width: with this in px and lg in rem, a
+   bigger browser font split them, and the sheet below took over the
+   scrolling while the pages still laid themselves out for a phone
+   (27 ก.ย. 2569). */
 @media (min-width: 1024px) {
   html:has([data-shell-frame]) {
     overflow: hidden;
@@ -1188,10 +1227,6 @@ textarea {
      that says the desktop shell is active and owns the scrolling. */
   [data-shell-frame] {
     background: none;
-  }
-
-  [data-nav-rail].dashboard-shell-border-r::after {
-    display: none;
   }
 
   /* The canvas beside the rail. It is flush and square now - the inset

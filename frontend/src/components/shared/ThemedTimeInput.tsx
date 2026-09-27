@@ -607,7 +607,7 @@ export default function ThemedTimeInput({
           role="dialog"
           aria-labelledby={buttonId}
           aria-label={copy.choose}
-          className="motion-dialog-stationary fixed z-[var(--z-dropdown)] rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40"
+          className="motion-dialog-stationary fixed z-[calc(var(--z-modal)+1)] rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40"
           style={{ left: 0, top: 0, width: PANEL_WIDTH, padding: PANEL_PADDING, willChange: "transform" }}
           // Forms put this field inside a <label>, and the panel sits inside it
           // in the DOM. A click on anything in the panel that is not a button —

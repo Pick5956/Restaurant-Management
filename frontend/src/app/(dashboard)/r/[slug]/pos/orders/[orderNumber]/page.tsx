@@ -1026,7 +1026,7 @@ export default function PosOrderDetailPage() {
 
   return (
     <div className={`min-h-dvh w-full bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${showCurrentRoundAction ? "pb-24" : "pb-6"}`}>
-      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto">
+      <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out tablet:max-lg:left-[68px] lg:inset-auto">
         <div className="px-4 py-2 sm:px-6 lg:px-8">
           <div className="grid w-full gap-1.5 lg:h-[var(--dashboard-shell-row)] lg:min-h-[var(--dashboard-shell-row)] lg:grid-cols-[2.5rem_minmax(10rem,20rem)_minmax(8rem,10rem)_minmax(0,1fr)_auto] lg:items-center">
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-1.5 lg:contents">
@@ -1167,7 +1167,7 @@ export default function PosOrderDetailPage() {
 
 
       {showCurrentRoundAction ? (
-        <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1.5rem)] z-30 lg:left-[calc(var(--sidebar-w)+0.75rem)]">
+        <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1.5rem)] z-30 tablet:max-lg:left-[calc(68px+0.75rem)] lg:left-[calc(var(--sidebar-w)+0.75rem)]">
           <button
             type="button"
             onClick={openCurrentRound}

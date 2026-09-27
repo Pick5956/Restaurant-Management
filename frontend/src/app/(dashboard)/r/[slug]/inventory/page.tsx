@@ -436,10 +436,6 @@ export default function InventoryPage() {
   // One tree renders at a time rather than two hidden by CSS: both mounted would
   // run the inventory fetch twice and keep two copies of the same state.
   const isMobile = useIsMobile();
-  // The page glides on the mouse wheel and coasts on after it, like the
-  // overview page. The scroller belongs to the shell layout, so it is wired
-  // up here and let go when the page is left.
-  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { language } = useLanguage();
   const { showToast } = useToast();
   // Every "are you sure" on this page is the warm dialog the AI chat uses for
@@ -1443,7 +1439,7 @@ export default function InventoryPage() {
       <div
         data-shell-sticky=""
         ref={stickyToolbarRef}
-        className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out lg:inset-auto"
+        className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out tablet:max-lg:left-[68px] lg:inset-auto"
       >
         <h1 className="sr-only">{copy.title}</h1>
         <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-4">

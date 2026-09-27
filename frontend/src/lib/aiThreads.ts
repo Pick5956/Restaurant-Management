@@ -248,6 +248,22 @@ export function useConversationsVersion(): number {
   return useSyncExternalStore(subscribeConversations, () => conversationsVersion, () => 0);
 }
 
+// Every chat went to the trash at once (Dishy AI's settings, 27 ก.ย. 2569).
+// The settings live in the app's settings window now, not beside the chat, so
+// the chat that was open hears it this way and starts a fresh one.
+const ALL_CLEARED_EVENT = "dishy:ai-conversations-cleared";
+
+export function notifyAllConversationsCleared(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(ALL_CLEARED_EVENT));
+}
+
+/** Runs `onCleared` when every chat has been moved to the trash. Returns the unsubscribe. */
+export function onAllConversationsCleared(onCleared: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(ALL_CLEARED_EVENT, onCleared);
+  return () => window.removeEventListener(ALL_CLEARED_EVENT, onCleared);
+}
+
 /** Display data a stored turn carries, as the server wrote it. */
 export type AITurnDisplay = {
   chart?: AIChartData;

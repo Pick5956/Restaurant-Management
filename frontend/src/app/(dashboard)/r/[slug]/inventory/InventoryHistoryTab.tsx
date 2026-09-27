@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
-import DropdownChevron from "@/src/components/shared/DropdownChevron";
+import { ArrowDown, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
+import DateRangeButton from "@/src/components/shared/DateRangeButton";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
 import type { IngredientCategory, IngredientTransaction, TransactionQuery, TransactionType } from "@/src/types/ingredient";
@@ -159,7 +159,6 @@ export default function InventoryHistoryTab({
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [rangeOpen, setRangeOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filtersClosing, setFiltersClosing] = useState(false);
   // Same close as the stock tab's filter panel: it shrinks away before it goes.
@@ -393,81 +392,24 @@ export default function InventoryHistoryTab({
 
           {viewTabs}
 
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={rangeOpen}
-              aria-label={copy.range}
-              onClick={() => setRangeOpen((open) => !open)}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold shadow-(--dashboard-control-shadow) transition ${
-                rangeOpen || rangeKey !== "30d"
-                  ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
-              }`}
-            >
-              <CalendarDays className="h-4 w-4" />
-              {formatHistoryRange(from, to, lang)}
-              <DropdownChevron open={rangeOpen} />
-            </button>
-            {rangeOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
-                <div className="smooth-pop absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl border border-slate-200 bg-white p-3 shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900">
-                  {/* A four-column grid, not a wrapping row: the labels differ in
-                      width per language and one of them kept falling to its own line. */}
-                  <div className="mb-3 grid grid-cols-4 gap-1.5">
-                    {HISTORY_RANGE_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          const next = historyRangeFor(preset);
-                          setFrom(next.from);
-                          setTo(next.to);
-                          setRangeOpen(false);
-                        }}
-                        className={`rounded-full border px-1 py-1 text-center text-[11.5px] font-semibold transition ${
-                          rangeKey === preset
-                            ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300"
-                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300 dark:hover:text-white"
-                        }`}
-                      >
-                        {historyRangeLabel(preset, lang)}
-                      </button>
-                    ))}
-                  </div>
-                  {/* The fields stay for the odd window a preset cannot express.
-                      Stacked, not side by side: a native date field is as wide as
-                      the locale makes it, and Safari in Thai renders "13 Aug BE
-                      2569" — half again what Chrome shows — which spilled the
-                      second field straight out of the panel. */}
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-2">
-                      <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.from}</span>
-                      <input
-                        type="date"
-                        value={from}
-                        max={to || undefined}
-                        onChange={(event) => setFrom(event.target.value)}
-                        className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
-                      />
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <span className="w-10 shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{copy.to}</span>
-                      <input
-                        type="date"
-                        value={to}
-                        min={from || undefined}
-                        onChange={(event) => setTo(event.target.value)}
-                        className={`${inputCls} !h-8 min-w-0 flex-1 !px-2 text-[12px]`}
-                      />
-                    </label>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <DateRangeButton
+            label={formatHistoryRange(from, to, lang)}
+            ariaLabel={copy.range}
+            presets={HISTORY_RANGE_PRESETS.map((preset) => ({ key: preset, label: historyRangeLabel(preset, lang) }))}
+            activeKey={rangeKey === "custom" ? null : rangeKey}
+            onPreset={(preset) => {
+              const next = historyRangeFor(preset);
+              setFrom(next.from);
+              setTo(next.to);
+            }}
+            from={from}
+            to={to}
+            onFrom={setFrom}
+            onTo={setTo}
+            fromLabel={copy.from}
+            toLabel={copy.to}
+            highlighted={rangeKey !== "30d"}
+          />
 
         {filtersTouched && (
             <button

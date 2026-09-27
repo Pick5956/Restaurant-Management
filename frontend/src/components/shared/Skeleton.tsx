@@ -185,10 +185,10 @@ export function DashboardContentSkeleton() {
 export function DashboardPageSkeleton() {
   return (
     <div className="min-h-dvh bg-white dark:bg-gray-950">
-      <div className="hidden lg:block fixed inset-y-0 left-0 w-[235px] border-r border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950">
+      <div className="hidden tablet:block fixed inset-y-0 left-0 w-[68px] border-r border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950 tablet:max-lg:px-3 lg:w-[235px]">
         <div className="flex items-center gap-2.5">
-          <Skeleton className="h-9 w-9" />
-          <div className="space-y-1.5">
+          <Skeleton className="h-9 w-9 shrink-0" />
+          <div className="space-y-1.5 tablet:max-lg:hidden">
             <Skeleton className="h-2.5 w-16" />
             <Skeleton className="h-4 w-20" />
           </div>
@@ -200,7 +200,7 @@ export function DashboardPageSkeleton() {
         </div>
       </div>
 
-      <div className="lg:ml-60">
+      <div className="tablet:ml-[68px] lg:ml-60">
         <main className="px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>

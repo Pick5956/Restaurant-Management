@@ -2,8 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, Camera, Clock, ImagePlus, MapPin, QrCode, Receipt, Trash2, Wallet, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { AlertTriangle, Camera, ChevronDown, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet, X } from "lucide-react";
+import RestaurantLocationMap from "./RestaurantLocationMap";
+import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
@@ -17,7 +19,7 @@ import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useDialogFocus } from "@/src/hooks/useDialogFocus";
 import { restaurantRepository } from "@/src/app/repositories/restaurantRepository";
 import { createSerialQueue } from "@/src/lib/serialQueue";
-import { ACTION_WIDTH, FOCUS_RING, SettingsActionRow, SettingsButton, SettingsField, SettingsInput, SettingsItem, SettingsMediaRow, SettingsSelect, SettingsSkeleton, SettingsSwitch, SettingsTextArea, settingsButtonClass, SettingsGroup } from "../_components/SettingsPrimitives";
+import { FOCUS_RING, SettingsActionRow, SettingsButton, SettingsField, SettingsInput, SettingsItem, SettingsMediaRow, SettingsSelect, SettingsSkeleton, SettingsSwitch, SettingsTextArea, settingsButtonClass, SettingsGroup } from "./SettingsPrimitives";
 import {
   GEOFENCE_FIELDS,
   buildRestaurantPayload,
@@ -30,7 +32,7 @@ import {
   type FormField,
   type FormState,
 } from "./restaurantSettingsForm";
-import { MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, useSettingsPhone } from "../_components/SettingsMobileKit";
+import { MobileDangerZone, MobileInput, MobileLabel, MobilePills, MobileSection, MobileStepper, MobileSwitchTile, SettingsDangerSlotContext, useSettingsPhone } from "./SettingsMobileKit";
 
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
@@ -41,7 +43,7 @@ const DIALOG_EXIT_MS = 180;
 /** Long enough to read the steps for allowing location in the browser. */
 const GEO_TOAST_MS = 9000;
 
-export default function RestaurantSettingsPage() {
+export default function RestaurantSettings() {
   const { activeMembership, refreshMemberships } = useAuth();
   const { language } = useLanguage();
   const [runUploadOnce] = useState(() => createSingleFlight());
@@ -70,6 +72,10 @@ export default function RestaurantSettingsPage() {
     formStateRef.current = form;
   });
 
+  const dangerSlot = useContext(SettingsDangerSlotContext);
+  // Phone: the coordinates stay folded under the map until asked for.
+  const [showCoords, setShowCoords] = useState(false);
+  const geoIdPrefix = useId();
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteModalClosing, setDeleteModalClosing] = useState(false);
   const [confirmRestaurantName, setConfirmRestaurantName] = useState("");
@@ -140,10 +146,18 @@ export default function RestaurantSettingsPage() {
         geofenceHint: "กันคนถ่ายรูป QR ไปสั่งจากนอกร้าน ถ้าอ่านตำแหน่งลูกค้าไม่ได้ ออเดอร์จะรอพนักงานยืนยันแทนการถูกปฏิเสธ",
         radiusHint: "ระยะที่ลูกค้าสั่งได้นับจากพิกัดร้าน แนะนำ 100-200 เมตร เผื่อ GPS คลาดเคลื่อนในอาคาร",
         locateHint: "เติมพิกัดจากตำแหน่งของเครื่องนี้ กดตอนอยู่ที่ร้าน",
+        mapLabel: "แผนที่ตำแหน่งร้าน",
+        mapHint: "แตะบนแผนที่หรือลากหมุดส้มไปที่ร้าน",
+        mapTitle: "ตำแหน่งร้านและรัศมี",
+        mapHintWide: "แตะบนแผนที่หรือลากหมุดส้มไปที่ร้าน · วงคือรัศมีที่ลูกค้าสั่งได้",
+        editCoords: "แก้พิกัดเอง",
+        radiusShort: "รัศมี (เมตร)",
         noRestaurantHint: "เลือกร้านก่อน แล้วค่อยตั้งค่าข้อมูลร้าน",
         loadErrorHint: "ข้อมูลร้านยังโหลดไม่ขึ้น",
         deleteTitle: "ลบร้านอาหาร",
         deleteAction: "ลบร้าน",
+        deleteWarningShort: "ลบแล้วกู้คืนไม่ได้",
+        deleteNamed: (name: string) => `ลบร้าน “${name}”`,
         save: "บันทึกข้อมูลร้าน",
         saveError: "บันทึกข้อมูลร้านไม่สำเร็จ",
         uploadError: "อัปโหลดโลโก้ไม่สำเร็จ",
@@ -232,10 +246,18 @@ export default function RestaurantSettingsPage() {
         geofenceHint: "Stops someone who photographed a QR code from ordering off-site. If the customer's location cannot be read, the order waits for staff to confirm instead of being refused.",
         radiusHint: "How far from the restaurant a customer may order. 100-200 m allows for indoor GPS drift.",
         locateHint: "Fills in the coordinates from this device. Press it while at the restaurant.",
+        mapLabel: "Map of the restaurant's location",
+        mapHint: "Tap the map or drag the orange pin to the restaurant",
+        mapTitle: "Location and radius",
+        mapHintWide: "Tap the map or drag the orange pin to the restaurant · the circle is where customers may order",
+        editCoords: "Edit coordinates",
+        radiusShort: "Radius (m)",
         noRestaurantHint: "Choose a restaurant first, then set it up here.",
         loadErrorHint: "The restaurant details have not loaded.",
         deleteTitle: "Delete restaurant",
         deleteAction: "Delete",
+        deleteWarningShort: "This cannot be undone",
+        deleteNamed: (name: string) => `Delete “${name}”`,
         save: "Save restaurant",
         saveError: "Could not save restaurant details.",
         uploadError: "Could not upload the logo.",
@@ -403,6 +425,14 @@ export default function RestaurantSettingsPage() {
     );
   };
 
+  // A tap on the map or the pin dragged (27 ก.ย. 2569) - saved the way
+  // "use current location" saves, both coordinates at once.
+  const pickLocation = (lat: number, lng: number) => {
+    setErrors((current) => ({ ...current, latitude: undefined }));
+    commit(["latitude", "longitude"], { latitude: lat.toFixed(6), longitude: lng.toFixed(6) });
+  };
+  const coordinate = (value: string) => (value.trim() === "" || !Number.isFinite(Number(value)) ? null : Number(value));
+
   /**
    * Saves one setting the moment it is changed - there is no save button, as
    * on the reference settings page. Controls that pick a value (switch, list,
@@ -493,7 +523,7 @@ export default function RestaurantSettingsPage() {
   if (!restaurantId) {
     return (
       <SettingsItem title={copy.noRestaurant} description={copy.noRestaurantHint}>
-        <Link href="/restaurants" className={settingsButtonClass("primary", ACTION_WIDTH)}>{copy.goRestaurants}</Link>
+        <Link href="/restaurants" className={settingsButtonClass("primary")}>{copy.goRestaurants}</Link>
       </SettingsItem>
     );
   }
@@ -512,10 +542,13 @@ export default function RestaurantSettingsPage() {
 
   const deleteNameMatches = Boolean(restaurant?.name) && confirmRestaurantName === restaurant?.name;
 
-  const deleteModal = deleteModalOpen && (
+  // Portalled to <body> and stacked over the settings window: the window's
+  // card keeps a transform from its entrance, and a fixed box inside it would
+  // be pinned to the card and clipped by it instead of covering the screen.
+  const deleteModal = deleteModalOpen && typeof document !== "undefined" && createPortal(
         <div
           {...deleteBackdrop}
-          className={`${deleteModalClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-[var(--z-modal)] flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}
+          className={`${deleteModalClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-[calc(var(--z-modal)+2)] flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}
         >
           <form
             ref={deletePanelRef}
@@ -567,10 +600,24 @@ export default function RestaurantSettingsPage() {
               </SettingsButton>
             </div>
           </form>
-        </div>
+        </div>,
+        document.body,
       );
-
   if (phone) {
+    const shopName = restaurant?.name?.trim() || copy.unnamed;
+    const phoneDanger = isOwner ? (
+      <MobileDangerZone
+        id="delete"
+        title={copy.deleteTitle}
+        warning={copy.deleteWarningShort}
+        action={copy.deleteNamed(shopName)}
+        actionLabel={`${copy.deleteAction} ${shopName}`}
+        onAction={() => {
+          setDeleteModalClosing(false);
+          setDeleteModalOpen(true);
+        }}
+      />
+    ) : null;
     const th = language === "th";
     const tables = Math.min(500, Math.max(1, Number(form.table_count) || 1));
     // A rate is a pill when it is one of the usual ones, and typed otherwise.
@@ -754,15 +801,17 @@ export default function RestaurantSettingsPage() {
             <MobileSwitchTile title={copy.geofenceEnable} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
             {form.geofence_enabled ? (
               <>
-                <div
-                  aria-hidden="true"
-                  className="relative mb-3 h-[120px] rounded-2xl bg-[radial-gradient(circle_at_50%_55%,rgba(197,60,0,.22)_0_38px,rgba(197,60,0,.08)_39px_58px,var(--inv-canvas)_59px)]"
-                >
-                  <span className="absolute left-1/2 top-[55%] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-(--inv-action)" />
-                  <span className="absolute bottom-2 right-2.5 rounded-full bg-(--inv-surface) px-2.5 py-0.5 text-[12px] font-semibold text-(--inv-heading)">
-                    {th ? "รัศมี" : "Radius"} {form.order_radius_meters || "—"} {th ? "ม." : "m"}
-                  </span>
-                </div>
+                <RestaurantLocationMap
+                  lat={coordinate(form.latitude)}
+                  lng={coordinate(form.longitude)}
+                  radius={coordinate(form.order_radius_meters)}
+                  onPick={pickLocation}
+                  className="h-60"
+                  label={copy.mapLabel}
+                />
+                <p className={`mb-3 ml-0.5 mt-1.5 text-[12px] ${errors.latitude ? "text-red-600 dark:text-red-400" : "text-(--inv-muted)"}`}>
+                  {errors.latitude ?? copy.mapHint}
+                </p>
                 <button
                   type="button"
                   onClick={useCurrentLocation}
@@ -772,30 +821,29 @@ export default function RestaurantSettingsPage() {
                   <MapPin aria-hidden="true" className="h-4 w-4" />
                   {locating ? "…" : copy.useCurrentLocation}
                 </button>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <MobileInput label={copy.latitude} value={form.latitude} placeholder="13.736717" inputMode="decimal" onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} />
-                  <MobileInput label={copy.longitude} value={form.longitude} placeholder="100.523186" inputMode="decimal" onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
-                </div>
-                <MobileInput className="mb-0" label={copy.radius} value={form.order_radius_meters} suffix={th ? "ม." : "m"} inputMode="numeric" onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} />
+                <MobileInput label={copy.radius} value={form.order_radius_meters} suffix={th ? "ม." : "m"} inputMode="numeric" onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} />
+                <button
+                  type="button"
+                  onClick={() => setShowCoords((open) => !open)}
+                  aria-expanded={showCoords}
+                  className={`ml-0.5 flex items-center gap-1 rounded-md text-[13px] font-semibold text-(--inv-muted) ${FOCUS_RING}`}
+                >
+                  {copy.editCoords}
+                  <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${showCoords ? "rotate-180" : ""}`} />
+                </button>
+                {showCoords ? (
+                  <div className="mt-2 grid grid-cols-2 gap-2.5">
+                    <MobileInput className="mb-0" label={copy.latitude} value={form.latitude} placeholder="13.736717" inputMode="decimal" onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
+                    <MobileInput className="mb-0" label={copy.longitude} value={form.longitude} placeholder="100.523186" inputMode="decimal" onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
+                  </div>
+                ) : null}
               </>
             ) : null}
           </MobileSection>
 
-          {isOwner ? (
-            <MobileSection id="delete" title={copy.deleteTitle} summary={copy.deleteWarning} icon={Trash2} tone="bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400" danger>
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteModalClosing(false);
-                  setDeleteModalOpen(true);
-                }}
-                aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
-                className={`ui-press flex min-h-[44px] w-full items-center justify-center rounded-[14px] border border-red-200 bg-(--inv-surface) text-[15px] font-semibold text-red-600 dark:border-red-900/60 dark:text-red-400 ${FOCUS_RING}`}
-              >
-                {copy.deleteAction}
-              </button>
-            </MobileSection>
-          ) : null}
+          {/* The delete card goes to the bottom of the page, under Dishy AI's
+              card, when the page has a slot for it (27 ก.ย. 2569). */}
+          {dangerSlot ? (phoneDanger ? createPortal(phoneDanger, dangerSlot) : null) : phoneDanger}
         </div>
         {deleteModal}
       </>
@@ -805,7 +853,7 @@ export default function RestaurantSettingsPage() {
 
   return (
     <>
-      <div>
+      <div className="flex flex-col gap-5">
         <SettingsGroup id="identity" title={copy.identity}>
         <SettingsMediaRow
           title={copy.logo}
@@ -874,12 +922,45 @@ export default function RestaurantSettingsPage() {
         <SettingsSwitch label={copy.geofenceEnable} description={copy.geofenceHint} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
         {form.geofence_enabled ? (
           <>
-            <SettingsField label={copy.latitude} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
-            <SettingsField label={copy.longitude} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
-            <SettingsField label={copy.radius} description={copy.radiusHint} value={form.order_radius_meters} onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} inputMode="numeric" />
-            <SettingsActionRow title={copy.useCurrentLocation} description={copy.locateHint} loading={locating} onClick={useCurrentLocation}>
-              {copy.useCurrentLocation}
-            </SettingsActionRow>
+            {/* The map on the left, the numbers it fills in beside it - a pin
+                dragged shows its figures without a scroll (27 ก.ย. 2569). */}
+            <SettingsItem title={copy.mapTitle} description={`${copy.mapHintWide} · ${copy.radiusHint}`} stack>
+              <div className="grid grid-cols-[minmax(0,1fr)_11rem] gap-3">
+                <RestaurantLocationMap
+                  lat={coordinate(form.latitude)}
+                  lng={coordinate(form.longitude)}
+                  radius={coordinate(form.order_radius_meters)}
+                  onPick={pickLocation}
+                  className="h-56"
+                  label={copy.mapLabel}
+                />
+                <div className="flex min-w-0 flex-col gap-2.5">
+                  {([
+                    { id: `${geoIdPrefix}-lat`, label: copy.latitude, field: "latitude", placeholder: "13.736717", mode: "decimal", error: errors.latitude },
+                    { id: `${geoIdPrefix}-lng`, label: copy.longitude, field: "longitude", placeholder: "100.523186", mode: "decimal", error: undefined },
+                    { id: `${geoIdPrefix}-radius`, label: copy.radiusShort, field: "order_radius_meters", placeholder: "150", mode: "numeric", error: errors.order_radius_meters },
+                  ] as const).map((row) => (
+                    <div key={row.id} className="flex flex-col gap-1">
+                      <label htmlFor={row.id} className="text-[12px] font-medium text-gray-600 dark:text-gray-300">{row.label}</label>
+                      <SettingsInput
+                        id={row.id}
+                        errorId={`${row.id}-error`}
+                        value={form[row.field]}
+                        onChange={(value) => setField(row.field, value)}
+                        onCommit={() => commit(GEOFENCE_FIELDS)}
+                        placeholder={row.placeholder}
+                        inputMode={row.mode}
+                        error={row.error}
+                        fullWidth
+                      />
+                    </div>
+                  ))}
+                  <SettingsButton onClick={useCurrentLocation} loading={locating} className="mt-auto w-full">
+                    <span className="inline-flex items-center gap-1.5"><MapPin aria-hidden="true" className="h-3.5 w-3.5" /> {copy.useCurrentLocation}</span>
+                  </SettingsButton>
+                </div>
+              </div>
+            </SettingsItem>
           </>
         ) : null}
         </SettingsGroup>

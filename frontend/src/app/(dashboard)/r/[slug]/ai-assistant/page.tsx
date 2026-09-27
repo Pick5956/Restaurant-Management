@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
-import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2, Settings } from "lucide-react";
+import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2 } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
@@ -31,6 +31,7 @@ import {
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
+  onAllConversationsCleared,
   adoptUnsentThread,
   saveThreadCache,
   setActiveThread,
@@ -48,7 +49,6 @@ import InlineDbConfirmBar from "@/src/components/shared/InlineDbConfirmBar";
 import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import AIIngredientSetupCard, { planNeedsSetup } from "@/src/components/shared/AIIngredientSetupCard";
 import AIInlineConfirm from "@/src/components/shared/AIInlineConfirm";
-import AISettingsModal from "@/src/components/shared/AISettingsModal";
 import ForecastChart from "@/src/components/shared/ForecastChart";
 import AIChart from "@/src/components/shared/AIChart";
 import AIInsightsPanel from "@/src/components/shared/AIInsightsPanel";
@@ -162,7 +162,6 @@ export default function AIAssistantPage() {
   // trying to cancel an already-executed action.
   const actionResolvedRef = useRef(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [insightsCount, setInsightsCount] = useState(0);
   const [actionConfirming, setActionConfirming] = useState(false);
   const [actionCancelling, setActionCancelling] = useState(false);
@@ -221,7 +220,7 @@ export default function AIAssistantPage() {
   const skipServerLoadRef = useRef<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   // A card off the chats button on a wide screen, a full sheet on a phone.
-  const wideScreen = useMediaQuery("(min-width: 640px)");
+  const wideScreen = useMediaQuery("(min-width: 640px)"); // Tailwind's sm
   // Switching chats leaves the current one behind, and a preview waiting on
   // it must be settled first — the server holds one at a time.
   const openThread = async (conversationId: string | null) => {
@@ -348,7 +347,9 @@ export default function AIAssistantPage() {
 
   const conversationHistory = (): AIConversationMessage[] =>
     messages
-      .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system")
+      // The on-screen greeting is not a turn: sent along, the model read
+      // "สวัสดีพู่กัน" as something it had already said.
+      .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system" && m.id !== "welcome")
       .slice(-6)
       .map((m) => ({ id: m.id, role: m.role, content: m.content }));
 
@@ -368,6 +369,18 @@ export default function AIAssistantPage() {
     setActionPreviewError("");
     setMessages([{ id: "welcome", role: "assistant", content: welcomeText, createdAt: new Date() }]);
   }, [conversationRequests, welcomeText]);
+
+  // Every chat was moved to the trash from the settings window, this one
+  // included: start a fresh one (the window used to call this directly when it
+  // lived on this page).
+  useEffect(
+    () =>
+      onAllConversationsCleared(() => {
+        setActiveThread(storageKey, null);
+        resetConversation();
+      }),
+    [storageKey, resetConversation],
+  );
 
   useEffect(() => subscribeToChatClear((clearedKey) => {
     if (clearedKey === threadStorageKey) resetConversation();
@@ -845,30 +858,9 @@ export default function AIAssistantPage() {
                 )}
               </button>
             </HoverTip>
-            <HoverTip
-              label={language === "th" ? "ตั้งค่า AI" : "AI settings"}
-              placement="bottom"
-            >
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-                aria-label={language === "th" ? "ตั้งค่า AI" : "AI settings"}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200/80 bg-white/80 text-gray-600 shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:text-gray-900 hover:shadow-md dark:border-gray-800/80 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:text-white"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            </HoverTip>
+            {/* No gear here: Dishy AI's settings are a section of the app's
+                settings, under the account menu (27 ก.ย. 2569). */}
           </div>
-          <AISettingsModal
-            open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            language={language}
-            onConversationsCleared={() => {
-              // Every chat just went to the trash, this one included.
-              setActiveThread(storageKey, null);
-              resetConversation();
-            }}
-          />
           {/* Messages — scroll area bleeds to the window's right edge so its
               scrollbar sits flush; pr-8 keeps the bubbles off the scrollbar. */}
           {/* The top fade lives on this wrapper, not on the scroller. A mask on
@@ -923,6 +915,11 @@ export default function AIAssistantPage() {
                 </div>
               ) : (
                 messages.map((msg) => {
+                // The greeting is the empty screen's headline, never a reply: once
+                // the owner asked something it showed up as the assistant's first
+                // message, as if it had spoken first (27 ก.ย. 2569; the floating
+                // chat had the same fault, fixed 26 ก.ย.).
+                if (msg.id === "welcome") return null;
                 if (msg.role === "user") {
                   return (
                     <div key={msg.id} className="ml-auto flex max-w-[96%] items-end justify-end gap-2.5 sm:max-w-[85%]">
@@ -1136,10 +1133,20 @@ export default function AIAssistantPage() {
       {/* Dim overlay — click to dismiss. Full-viewport on a phone (the panel
           covers the screen there); a light scrim on a desktop, where the panel
           is a popover and the page behind it stays visible. */}
+        {/* The chat list's card gets the same backdrop on a computer (the owner,
+            26 ก.ย. 2569): drawn here over the whole chat page, as this one is,
+            rather than inside the list's own box, which leaves the page's
+            padding unblurred. Clicks still reach the list's own catcher. */}
+        {listOpen && wideScreen && (
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-[29] bg-black/15 backdrop-blur-[1px] dark:bg-black/30" />
+        )}
         {drawerOpen && (
           <div
             onClick={() => setDrawerOpen(false)}
-            className="fixed inset-0 z-[59] bg-black/30 backdrop-blur-[1px] dark:bg-black/50 sm:absolute sm:bg-black/15 sm:backdrop-blur-0 sm:dark:bg-black/30"
+            // The 1px blur shows at every width: the owner liked it on the
+            // computer (26 ก.ย. 2569), where the "sm:backdrop-blur-0" meant to
+            // switch it off never existed in Tailwind v4 anyway.
+            className="fixed inset-0 z-[59] bg-black/30 backdrop-blur-[1px] dark:bg-black/50 sm:absolute sm:bg-black/15 sm:dark:bg-black/30"
             aria-hidden
           />
         )}

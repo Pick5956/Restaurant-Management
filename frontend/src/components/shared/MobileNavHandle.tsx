@@ -6,8 +6,10 @@ import { Menu } from 'lucide-react';
 import { useSidebar } from '@/src/providers/SidebarProvider';
 import { useLanguage } from '@/src/providers/LanguageProvider';
 
-// Phones and tablets below lg: a tab sticking out of the left edge, with the
-// three-line menu icon, opens the menu. It replaced the 56px top bar on
+// Phones (below the tablet breakpoint, 744px): a tab sticking out of the left
+// edge, with the three-line menu icon, opens the menu. From there an iPad held
+// upright, iPad mini included, has the icon rail instead (27 ก.ย. 2569), so
+// the tab is gone. It replaced the 56px top bar on
 // 19 ก.ย. 2569 — the owner wanted that height back for the page; the bar's bell
 // did nothing, and the account menu now sits at the foot of the menu, the same
 // place as on a computer.
@@ -60,9 +62,6 @@ export default function MobileNavHandle() {
   // height from page to page and grow once their data loads, so the header
   // is found again on every navigation and watched for size changes.
   const pathname = usePathname();
-  // The settings pages have their own back arrow in the header, and the tab
-  // sat over their first row (25 ก.ย. 2569), so it steps aside there.
-  const onSettings = Boolean(pathname?.includes('/settings'));
   useEffect(() => {
     const button = buttonRef.current;
     if (!button) return;
@@ -212,11 +211,11 @@ export default function MobileNavHandle() {
       aria-label={language === 'th' ? 'เปิดเมนู' : 'Open menu'}
       aria-hidden={mobileOpen}
       tabIndex={mobileOpen ? -1 : undefined}
-      className={`fixed left-0 top-[max(0.75rem,env(safe-area-inset-top))] z-30 flex h-10 w-11 origin-left touch-none select-none items-center justify-center rounded-r-xl border border-l-0 bg-white/95 text-gray-500 transition-[opacity,box-shadow,scale,border-color] duration-200 [-webkit-touch-callout:none] active:bg-gray-100 dark:bg-gray-900/95 dark:text-gray-300 lg:hidden ${
+      className={`fixed left-0 top-[max(0.75rem,env(safe-area-inset-top))] z-30 flex h-10 w-11 origin-left touch-none select-none items-center justify-center rounded-r-xl border border-l-0 bg-white/95 text-gray-500 transition-[opacity,box-shadow,scale,border-color] duration-200 [-webkit-touch-callout:none] active:bg-gray-100 dark:bg-gray-900/95 dark:text-gray-300 tablet:hidden ${
         dragging
           ? 'scale-110 border-orange-300 shadow-xl dark:border-orange-700'
           : 'border-gray-200 shadow-md dark:border-gray-800'
-      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'} ${onSettings ? 'hidden' : ''}`}
+      } ${mobileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
     >
       <Menu className="h-5 w-5" strokeWidth={2.25} />
     </button>

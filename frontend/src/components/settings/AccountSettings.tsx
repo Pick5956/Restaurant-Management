@@ -13,8 +13,8 @@ import type { User } from "@/src/types/auth";
 import { updateProfile, uploadProfileImage } from "@/src/lib/auth";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { roleLabel } from "@/src/lib/roleLabels";
-import { SettingsBadge, SettingsButton, SettingsField, SettingsItem, SettingsValue, SettingsGroup } from "../_components/SettingsPrimitives";
-import { MobileBadge, MobileInput, MobileSection, useSettingsPhone } from "../_components/SettingsMobileKit";
+import { SettingsBadge, SettingsButton, SettingsField, SettingsItem, SettingsValue, SettingsGroup } from "./SettingsPrimitives";
+import { MobileBadge, MobileInput, MobileSection, useSettingsPhone } from "./SettingsMobileKit";
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d+\-\s]/g, "").slice(0, 24);
@@ -40,7 +40,7 @@ function profileOf(user: User): ProfileForm {
   };
 }
 
-export default function AccountSettingsPage() {
+export default function AccountSettings() {
   const { user, updateUser, memberships, activeMembership } = useAuth();
   const phone = useSettingsPhone();
   const { language } = useLanguage();
@@ -60,6 +60,8 @@ export default function AccountSettingsPage() {
   const copy = language === "th"
     ? {
         groupTitle: "บัญชี",
+        groupProfile: "โปรไฟล์",
+        groupSignIn: "การเข้าสู่ระบบ",
         photo: "รูปโปรไฟล์",
         photoHint: "รูปที่แสดงคู่กับชื่อของคุณในแถบเมนูและรายชื่อพนักงาน ใช้ไฟล์ jpg, png หรือ webp ไม่เกิน 5MB",
         upload: "อัปโหลดรูป",
@@ -90,6 +92,8 @@ export default function AccountSettingsPage() {
       }
     : {
         groupTitle: "Account",
+        groupProfile: "Profile",
+        groupSignIn: "Sign-in",
         photo: "Profile photo",
         photoHint: "Shown beside your name in the menu bar and the staff list. Use a jpg, png or webp file up to 5MB.",
         upload: "Upload photo",
@@ -242,44 +246,46 @@ export default function AccountSettingsPage() {
   }
 
   return (
-    <SettingsGroup id="account" title={copy.groupTitle}>
-      <div>
-        <SettingsItem title={copy.photo} description={copy.photoHint}>
-          <div className="flex items-center gap-4">
-            <UserAvatar src={user?.profile_image} name={displayName} size={48} className="h-12 w-12 text-base" />
+    <>
+    <SettingsGroup id="profile" title={copy.groupProfile}>
+      <SettingsItem title={copy.photo} description={copy.photoHint}>
+          <div className="flex items-center gap-2.5">
+            <UserAvatar src={user?.profile_image} name={displayName} size={40} className="h-10 w-10 text-[14px]" />
             <input ref={profileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadPhoto} tabIndex={-1} />
             <SettingsButton
               loading={uploading}
               disabled={!user}
               aria-label={`${photoAction} ${copy.photo}`}
               onClick={() => profileInputRef.current?.click()}
-              className="flex-1 md:w-[220px] md:flex-none"
             >
               {photoAction}
             </SettingsButton>
           </div>
         </SettingsItem>
-        <SettingsValue label={copy.email} description={copy.emailHint} value={user?.email || copy.noEmail} />
-        <SettingsField label={copy.nickname} description={copy.nicknameHint} value={form.nickname} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
-        <SettingsField label={copy.phone} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
-        <SettingsField label={copy.firstName} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
-        <SettingsField label={copy.lastName} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
-      </div>
+      <SettingsValue label={copy.email} description={copy.emailHint} value={user?.email || copy.noEmail} />
+      <SettingsField label={copy.nickname} description={copy.nicknameHint} value={form.nickname} onChange={(value) => setField("nickname", value)} onCommit={() => commitProfile("nickname")} autoComplete="nickname" />
+      <SettingsField label={copy.phone} value={form.phone} onChange={(value) => setField("phone", normalizePhone(value))} onCommit={() => commitProfile("phone")} inputMode="tel" autoComplete="tel" />
+      <SettingsField label={copy.firstName} value={form.first_name} onChange={(value) => setField("first_name", value)} onCommit={() => commitProfile("first_name")} error={firstNameError} autoComplete="given-name" />
+      <SettingsField label={copy.lastName} value={form.last_name} onChange={(value) => setField("last_name", value)} onCommit={() => commitProfile("last_name")} autoComplete="family-name" />
+    </SettingsGroup>
 
+    <SettingsGroup id="sign-in" title={copy.groupSignIn}>
       {[
-        { key: "google", label: copy.google, connected: isGoogleAccount, icon: <GoogleGlyph className="h-[18px] w-[18px]" /> },
-        { key: "local", label: copy.local, connected: !isGoogleAccount, icon: <Mail aria-hidden="true" className="h-[18px] w-[18px] text-gray-700 dark:text-gray-200" /> },
+        { key: "google", label: copy.google, connected: isGoogleAccount, icon: <GoogleGlyph className="h-4 w-4" /> },
+        { key: "local", label: copy.local, connected: !isGoogleAccount, icon: <Mail aria-hidden="true" className="h-4 w-4 text-gray-700 dark:text-gray-200" /> },
       ].map((account) => (
-        <SettingsItem key={account.key} title={account.label}>
-          <div className="flex items-center gap-3 md:justify-end">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-(--settings-field)">{account.icon}</span>
+      <SettingsItem key={account.key} title={account.label}>
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">{account.icon}</span>
             <SettingsBadge tone={account.connected ? "success" : "neutral"}>
               {account.connected ? copy.connected : copy.notConnected}
             </SettingsBadge>
           </div>
         </SettingsItem>
       ))}
+    </SettingsGroup>
 
+    <SettingsGroup id="places" title={copy.places}>
       {memberships.length ? (
         memberships.map((membership) => {
           const name = membership.restaurant?.name?.trim() || copy.unnamed;
@@ -298,11 +304,11 @@ export default function AccountSettingsPage() {
 
           return (
             <SettingsItem key={membership.ID} title={name} description={detail}>
-              <div className="flex items-center gap-3 md:justify-end">
+              <div className="flex items-center gap-2.5">
                 {logo ? (
-                  <Image src={logo} alt="" width={40} height={40} unoptimized className="h-10 w-10 shrink-0 rounded object-cover" />
+                  <Image src={logo} alt="" width={32} height={32} unoptimized className="h-8 w-8 shrink-0 rounded-lg object-cover" />
                 ) : (
-                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-(--settings-field) text-[14px] font-semibold text-gray-700 dark:text-gray-200">
+                  <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-[14px] font-semibold text-gray-700 dark:text-gray-200">
                     {name.charAt(0)}
                   </span>
                 )}
@@ -312,10 +318,11 @@ export default function AccountSettingsPage() {
           );
         })
       ) : (
-        <SettingsItem title={copy.places} description={copy.noPlaces}>
+      <SettingsItem title={copy.places} description={copy.noPlaces}>
           {null}
         </SettingsItem>
       )}
     </SettingsGroup>
+    </>
   );
 }

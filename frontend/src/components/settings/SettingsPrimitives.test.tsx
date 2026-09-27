@@ -5,13 +5,14 @@ import {
   FOCUS_RING,
   SettingsButton,
   SettingsField,
+  SettingsGroup,
   SettingsItem,
   SettingsMediaRow,
-  SettingsSearchContext,
+  SettingsSelect,
   SettingsSkeleton,
   SettingsSwitch,
-  matchesSetting,
 } from "./SettingsPrimitives";
+import { matchesSearch } from "@/src/components/shared/settingsModalKit";
 
 function attribute(markup: string, tag: string, name: string): string | undefined {
   const element = markup.match(new RegExp(`<${tag}\\b[^>]*>`))?.[0] ?? "";
@@ -21,57 +22,56 @@ function attribute(markup: string, tag: string, name: string): string | undefine
 const noop = () => {};
 
 describe("SettingsItem", () => {
-  it("lays out title, description and control as the reference row does", () => {
+  it("is a row of the Dishy AI settings: 13px name, 11.5px note, control on the right", () => {
     const markup = renderToStaticMarkup(<SettingsItem title="VAT" description="บวกภาษีเข้าไปในบิล">control</SettingsItem>);
 
-    expect(markup).toContain("text-[18px]");
-    expect(markup).toContain("md:max-w-[50%]");
-    expect(markup).toContain("md:flex-row");
-    // Every row starts its description and its control on the same line, so
-    // the gap under the title is identical in all of them.
-    expect(markup).toContain("md:items-start");
-    expect(markup).toContain("mt-1");
-    // A hairline under every row, coloured by the shell token.
-    expect(markup).toContain("border-b");
-    expect(markup).toContain("border-[color:var(--dashboard-shell-border)]");
+    expect(markup).toContain("text-[13px]");
+    expect(markup).toContain("text-[11.5px]");
+    expect(markup).toContain("justify-between");
+    // A hairline between rows, none above the first.
+    expect(markup).toContain("border-t");
+    expect(markup).toContain("first:border-t-0");
   });
 
-  it("draws no description line when the title already says it", () => {
+  it("draws no note when the title already says it", () => {
     const markup = renderToStaticMarkup(<SettingsItem title="ละติจูด">control</SettingsItem>);
 
-    expect(markup).not.toContain("md:max-w-[50%]");
-    expect(markup).toContain("text-[18px]");
-    // The control moves up beside the title rather than holding a line of its
-    // own, and still sits at the right-hand end.
-    expect(markup).toContain("md:justify-between");
-    expect(markup).not.toContain("mt-1");
+    expect(markup).not.toContain("text-[11.5px]");
   });
 
-  it("still matches a search on its title alone when it has no description", () => {
-    const row = <SettingsItem title="ละติจูด">control</SettingsItem>;
-    const match = renderToStaticMarkup(<SettingsSearchContext.Provider value="ละติจูด">{row}</SettingsSearchContext.Provider>);
-    const miss = renderToStaticMarkup(<SettingsSearchContext.Provider value="โลโก้">{row}</SettingsSearchContext.Provider>);
+  it("carries its name and note for the window's search", () => {
+    const markup = renderToStaticMarkup(<SettingsItem title="VAT" description="บวกภาษีเข้าไปในบิล">control</SettingsItem>);
 
-    expect(attribute(match, "div", "hidden")).toBeUndefined();
-    expect(attribute(miss, "div", "hidden")).toBe("");
+    expect(attribute(markup, "div", "data-setting-label")).toBe("VAT");
+    expect(attribute(markup, "div", "data-setting-hint")).toBe("บวกภาษีเข้าไปในบิล");
+    expect(attribute(markup, "div", "data-setting-id")).toBeTruthy();
   });
 
-  it("hides when the search query does not match its title or description", () => {
-    const row = <SettingsItem title="VAT" description="บวกภาษีเข้าไปในบิล">control</SettingsItem>;
-    const match = renderToStaticMarkup(<SettingsSearchContext.Provider value="ภาษี">{row}</SettingsSearchContext.Provider>);
-    const miss = renderToStaticMarkup(<SettingsSearchContext.Provider value="โลโก้">{row}</SettingsSearchContext.Provider>);
+  it("puts a stacked control under the text at full width", () => {
+    const markup = renderToStaticMarkup(<SettingsItem title="ที่อยู่ร้าน" stack>control</SettingsItem>);
 
-    expect(attribute(match, "div", "hidden")).toBeUndefined();
-    expect(attribute(miss, "div", "hidden")).toBe("");
+    expect(markup).toContain("flex-col");
+    expect(markup).not.toContain("justify-between");
   });
 });
 
-describe("matchesSetting", () => {
+describe("SettingsGroup", () => {
+  it("names its rows with the reference's 15px heading and tags itself for jumps", () => {
+    const markup = renderToStaticMarkup(<SettingsGroup id="billing" title="การคิดเงิน">rows</SettingsGroup>);
+
+    expect(attribute(markup, "section", "data-settings-group")).toBe("billing");
+    expect(attribute(markup, "section", "data-settings-group-title")).toBe("การคิดเงิน");
+    expect(markup).toContain("text-[15px]");
+    expect(markup).toContain("การคิดเงิน");
+  });
+});
+
+describe("matchesSearch", () => {
   it("needs every word, in any case, somewhere in the texts", () => {
-    expect(matchesSetting("", "anything")).toBe(true);
-    expect(matchesSetting("  vat  ", "VAT", "")).toBe(true);
-    expect(matchesSetting("service rate", "Service charge (%)", "the rate from 0 to 30")).toBe(true);
-    expect(matchesSetting("service logo", "Service charge (%)", "the rate")).toBe(false);
+    expect(matchesSearch("", "anything")).toBe(true);
+    expect(matchesSearch("  vat  ", "VAT", "")).toBe(true);
+    expect(matchesSearch("service rate", "Service charge (%)", "the rate from 0 to 30")).toBe(true);
+    expect(matchesSearch("service logo", "Service charge (%)", "the rate")).toBe(false);
   });
 });
 
@@ -111,20 +111,10 @@ describe("SettingsField", () => {
     expect(attribute(markup, "input", "aria-describedby")).toBeUndefined();
   });
 
-  it("is the reference's flat field: 40px, tinted, 300px wide from md", () => {
+  it("is the Dishy AI settings' text box: 32px, 16px text on a phone so iPhone does not zoom", () => {
     const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} />), "input", "class") ?? "").split(" ");
 
-    expect(classes).toEqual(expect.arrayContaining(["h-10", "rounded", "bg-(--settings-field)", "md:w-[300px]"]));
-  });
-
-  it("gives a one-line field a full 40px line box so Thai tone marks are not clipped", () => {
-    // With p-2 the input's line box was 24px and the marks above stacked
-    // vowels (ตี๋, ปั๊ม) were sliced off.
-    const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="สุกี้ตี๋ใหญ่" onChange={noop} />), "input", "class") ?? "").split(" ");
-
-    expect(classes).toContain("leading-10");
-    expect(classes).not.toContain("p-2");
-    expect(classes.some((name) => /^py-/.test(name))).toBe(false);
+    expect(classes).toEqual(expect.arrayContaining(["h-8", "w-44", "rounded-lg", "text-[16px]", "sm:text-[12.5px]", "focus:border-orange-300"]));
   });
 
   it("marks an invalid time field as invalid", () => {
@@ -133,20 +123,23 @@ describe("SettingsField", () => {
     expect(markup).toMatch(/\s(?:aria-invalid|data-invalid)="true"/);
   });
 
-  it("focuses like every other text box in the app, not with the heavy button ring", () => {
-    // The 2px orange-700 ring read as a dark frame on a field being typed in;
-    // text boxes app-wide take a 1px orange-500 edge, grey-300 on hover.
-    const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} />), "input", "class") ?? "").split(" ");
-
-    expect(classes).toEqual(expect.arrayContaining(["ring-inset", "focus:ring-1", "focus:ring-orange-500", "hover:ring-1", "hover:ring-gray-300"]));
-    expect(classes).not.toContain("focus-visible:outline-orange-700");
-  });
-
-  it("keeps an invalid field's red edge while it is hovered or focused", () => {
+  it("draws an invalid field's edge in red", () => {
     const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} error="e" />), "input", "class") ?? "").split(" ");
 
-    expect(classes).toEqual(expect.arrayContaining(["ring-2", "ring-inset", "ring-red-700"]));
-    expect(classes.some((name) => name.startsWith("focus:ring") || name.startsWith("hover:ring"))).toBe(false);
+    expect(classes).toContain("border-red-300");
+    expect(classes).not.toContain("border-gray-200");
+  });
+});
+
+describe("SettingsSelect", () => {
+  const options = [{ value: "th", label: "ไทย" }, { value: "en", label: "English" }];
+
+  it("shows two or three choices as a segmented control named by the row", () => {
+    const markup = renderToStaticMarkup(<SettingsSelect label="ภาษา" value="th" onChange={noop} options={options} />);
+
+    expect(markup).toContain('role="radiogroup"');
+    expect(markup).toMatch(/role="radio" aria-checked="true"[^>]*>ไทย</);
+    expect(markup).toMatch(/role="radio" aria-checked="false"[^>]*>English</);
   });
 });
 
@@ -159,12 +152,12 @@ describe("SettingsButton", () => {
     expect(markup).toContain("บันทึก");
   });
 
-  it("is a 40px button otherwise, the height every settings control shares", () => {
+  it("is a 32px button otherwise, the height every settings control shares", () => {
     const markup = renderToStaticMarkup(<SettingsButton>บันทึก</SettingsButton>);
 
     expect(attribute(markup, "button", "aria-busy")).toBeUndefined();
     expect(attribute(markup, "button", "type")).toBe("button");
-    expect((attribute(markup, "button", "class") ?? "").split(" ")).toContain("h-10");
+    expect((attribute(markup, "button", "class") ?? "").split(" ")).toContain("h-8");
   });
 
   it("draws the brand focus ring in both themes", () => {

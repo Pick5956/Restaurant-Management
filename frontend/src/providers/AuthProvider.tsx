@@ -7,7 +7,7 @@ import { getCurrentUser } from '../lib/auth';
 import { getMyMemberships } from '../lib/restaurant';
 import { authRepository } from '../app/repositories/authRepository';
 import { restaurantRepository } from '../app/repositories/restaurantRepository';
-import AuthModal from '../components/auth/AuthModal';
+import AuthModal, { type AuthModalMode } from '../components/auth/AuthModal';
 import { useConfirm } from '../components/shared/FeedbackProvider';
 import { useLanguage } from './LanguageProvider';
 import { safeInternalPath } from '../lib/safeRedirect';
@@ -18,7 +18,7 @@ interface AuthContextType {
   activeMembership: Membership | null;
   loading: boolean;
   logout: () => void;
-  openLoginModal: (redirectTo?: string) => void;
+  openLoginModal: (redirectTo?: string, mode?: AuthModalMode) => void;
   closeLoginModal: () => void;
   updateUser: (user: User) => void;
   setActiveRestaurant: (restaurantId: number) => void;
@@ -47,6 +47,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginRedirectTo, setLoginRedirectTo] = useState<string | undefined>(undefined);
+  const [loginModalMode, setLoginModalMode] = useState<AuthModalMode>("login");
 
   const applyMemberships = useCallback((list: Membership[]) => {
     setMemberships(list);
@@ -128,8 +129,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     window.location.href = '/';
   };
 
-  const openLoginModal = (redirectTo?: string) => {
+  const openLoginModal = (redirectTo?: string, mode: AuthModalMode = "login") => {
     setLoginRedirectTo(safeInternalPath(redirectTo));
+    setLoginModalMode(mode);
     setIsLoginModalOpen(true);
   };
   const closeLoginModal = () => {
@@ -178,7 +180,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       <AuthModal
         isOpen={isLoginModalOpen}
         onClose={closeLoginModal}
-        initialMode="login"
+        initialMode={loginModalMode}
         onAuthenticated={handleAuthenticated}
         redirectTo={loginRedirectTo}
       />

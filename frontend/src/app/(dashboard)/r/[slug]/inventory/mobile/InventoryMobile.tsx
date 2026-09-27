@@ -769,14 +769,14 @@ export default function InventoryMobile({
       </div>
 
       {toast && (
-        <div className="pointer-events-none fixed inset-x-4 bottom-24 z-[60] rounded-(--inv-radius) bg-(--inv-heading) px-4 py-3 text-center text-[13px] font-medium text-(--inv-surface) shadow-lg">
+        <div className="pointer-events-none fixed inset-x-4 bottom-24 z-[60] tablet:left-[calc(68px+1rem)] rounded-(--inv-radius) bg-(--inv-heading) px-4 py-3 text-center text-[13px] font-medium text-(--inv-surface) shadow-lg">
           {toast}
         </div>
       )}
 
       {canManage && (
         <div
-          className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-(--inv-canvas) via-(--inv-canvas) to-transparent px-4 pb-3 pt-6"
+          className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-(--inv-canvas) via-(--inv-canvas) to-transparent px-4 pb-3 pt-6 tablet:left-[68px]"
           style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
         >
           {selecting ? (

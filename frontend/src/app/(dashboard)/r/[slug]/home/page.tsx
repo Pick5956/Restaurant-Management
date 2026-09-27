@@ -587,7 +587,7 @@ function CollapsibleCard({
       // `sm`), so there is no "room" to share out: every topic starts folded
       // to its bar, and the one tapped opens to its own rows, at most half
       // the screen, scrolling past that.
-      const phone = !window.matchMedia("(min-width: 640px)").matches;
+      const phone = !window.matchMedia("(min-width: 640px)").matches; // Tailwind's sm
       if (activeKey === null && !phone) {
         for (const block of blocks) {
           block.style.flex = "";
@@ -917,10 +917,6 @@ function orderStatusClass(status: OrderStatus) {
 
 export default function Home() {
   const router = useRestaurantRouter();
-  // The page itself glides on the mouse wheel like the lists in its cards
-  // (and the time wheel): the shell's scroller lives in the layout, so it is
-  // wired up from here and let go again when the page is left.
-  useEffect(() => smoothScroll(document.querySelector<HTMLElement>("[data-shell-scroll]")), []);
   const { href: restaurantPageHref } = useRestaurantNav();
   const { activeMembership } = useAuth();
   const restaurantId = activeMembership?.restaurant_id ?? null;
