@@ -22,7 +22,9 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://api.dishy.pro https://lh3.googleusercontent.com https://images.unsplash.com http://localhost:8080 http://127.0.0.1:8080",
+  // tile.openstreetmap.org: the map tiles behind the QR-ordering card's
+  // location map (settings, 27 ก.ย. 2569). Images only - nothing else of theirs loads.
+  "img-src 'self' data: blob: https://api.dishy.pro https://lh3.googleusercontent.com https://images.unsplash.com https://tile.openstreetmap.org http://localhost:8080 http://127.0.0.1:8080",
   "font-src 'self' data:",
   `connect-src 'self' https://api.dishy.pro${isDev ? " http://localhost:8080 http://127.0.0.1:8080 ws: wss:" : ""}`,
   "frame-src 'self'",

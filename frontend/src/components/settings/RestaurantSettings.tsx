@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, Camera, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet, X } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet, X } from "lucide-react";
+import RestaurantLocationMap from "./RestaurantLocationMap";
 import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/src/providers/AuthProvider";
@@ -72,6 +73,9 @@ export default function RestaurantSettings() {
   });
 
   const dangerSlot = useContext(SettingsDangerSlotContext);
+  // Phone: the coordinates stay folded under the map until asked for.
+  const [showCoords, setShowCoords] = useState(false);
+  const geoIdPrefix = useId();
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteModalClosing, setDeleteModalClosing] = useState(false);
   const [confirmRestaurantName, setConfirmRestaurantName] = useState("");
@@ -142,6 +146,12 @@ export default function RestaurantSettings() {
         geofenceHint: "กันคนถ่ายรูป QR ไปสั่งจากนอกร้าน ถ้าอ่านตำแหน่งลูกค้าไม่ได้ ออเดอร์จะรอพนักงานยืนยันแทนการถูกปฏิเสธ",
         radiusHint: "ระยะที่ลูกค้าสั่งได้นับจากพิกัดร้าน แนะนำ 100-200 เมตร เผื่อ GPS คลาดเคลื่อนในอาคาร",
         locateHint: "เติมพิกัดจากตำแหน่งของเครื่องนี้ กดตอนอยู่ที่ร้าน",
+        mapLabel: "แผนที่ตำแหน่งร้าน",
+        mapHint: "แตะบนแผนที่หรือลากหมุดส้มไปที่ร้าน",
+        mapTitle: "ตำแหน่งร้านและรัศมี",
+        mapHintWide: "แตะบนแผนที่หรือลากหมุดส้มไปที่ร้าน · วงคือรัศมีที่ลูกค้าสั่งได้",
+        editCoords: "แก้พิกัดเอง",
+        radiusShort: "รัศมี (เมตร)",
         noRestaurantHint: "เลือกร้านก่อน แล้วค่อยตั้งค่าข้อมูลร้าน",
         loadErrorHint: "ข้อมูลร้านยังโหลดไม่ขึ้น",
         deleteTitle: "ลบร้านอาหาร",
@@ -236,6 +246,12 @@ export default function RestaurantSettings() {
         geofenceHint: "Stops someone who photographed a QR code from ordering off-site. If the customer's location cannot be read, the order waits for staff to confirm instead of being refused.",
         radiusHint: "How far from the restaurant a customer may order. 100-200 m allows for indoor GPS drift.",
         locateHint: "Fills in the coordinates from this device. Press it while at the restaurant.",
+        mapLabel: "Map of the restaurant's location",
+        mapHint: "Tap the map or drag the orange pin to the restaurant",
+        mapTitle: "Location and radius",
+        mapHintWide: "Tap the map or drag the orange pin to the restaurant · the circle is where customers may order",
+        editCoords: "Edit coordinates",
+        radiusShort: "Radius (m)",
         noRestaurantHint: "Choose a restaurant first, then set it up here.",
         loadErrorHint: "The restaurant details have not loaded.",
         deleteTitle: "Delete restaurant",
@@ -408,6 +424,14 @@ export default function RestaurantSettings() {
       { enableHighAccuracy: true, timeout: 8000 },
     );
   };
+
+  // A tap on the map or the pin dragged (27 ก.ย. 2569) - saved the way
+  // "use current location" saves, both coordinates at once.
+  const pickLocation = (lat: number, lng: number) => {
+    setErrors((current) => ({ ...current, latitude: undefined }));
+    commit(["latitude", "longitude"], { latitude: lat.toFixed(6), longitude: lng.toFixed(6) });
+  };
+  const coordinate = (value: string) => (value.trim() === "" || !Number.isFinite(Number(value)) ? null : Number(value));
 
   /**
    * Saves one setting the moment it is changed - there is no save button, as
@@ -777,15 +801,17 @@ export default function RestaurantSettings() {
             <MobileSwitchTile title={copy.geofenceEnable} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
             {form.geofence_enabled ? (
               <>
-                <div
-                  aria-hidden="true"
-                  className="relative mb-3 h-[120px] rounded-2xl bg-[radial-gradient(circle_at_50%_55%,rgba(197,60,0,.22)_0_38px,rgba(197,60,0,.08)_39px_58px,var(--inv-canvas)_59px)]"
-                >
-                  <span className="absolute left-1/2 top-[55%] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-(--inv-action)" />
-                  <span className="absolute bottom-2 right-2.5 rounded-full bg-(--inv-surface) px-2.5 py-0.5 text-[12px] font-semibold text-(--inv-heading)">
-                    {th ? "รัศมี" : "Radius"} {form.order_radius_meters || "—"} {th ? "ม." : "m"}
-                  </span>
-                </div>
+                <RestaurantLocationMap
+                  lat={coordinate(form.latitude)}
+                  lng={coordinate(form.longitude)}
+                  radius={coordinate(form.order_radius_meters)}
+                  onPick={pickLocation}
+                  className="h-60"
+                  label={copy.mapLabel}
+                />
+                <p className={`mb-3 ml-0.5 mt-1.5 text-[12px] ${errors.latitude ? "text-red-600 dark:text-red-400" : "text-(--inv-muted)"}`}>
+                  {errors.latitude ?? copy.mapHint}
+                </p>
                 <button
                   type="button"
                   onClick={useCurrentLocation}
@@ -795,11 +821,22 @@ export default function RestaurantSettings() {
                   <MapPin aria-hidden="true" className="h-4 w-4" />
                   {locating ? "…" : copy.useCurrentLocation}
                 </button>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <MobileInput label={copy.latitude} value={form.latitude} placeholder="13.736717" inputMode="decimal" onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} />
-                  <MobileInput label={copy.longitude} value={form.longitude} placeholder="100.523186" inputMode="decimal" onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
-                </div>
-                <MobileInput className="mb-0" label={copy.radius} value={form.order_radius_meters} suffix={th ? "ม." : "m"} inputMode="numeric" onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} />
+                <MobileInput label={copy.radius} value={form.order_radius_meters} suffix={th ? "ม." : "m"} inputMode="numeric" onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} />
+                <button
+                  type="button"
+                  onClick={() => setShowCoords((open) => !open)}
+                  aria-expanded={showCoords}
+                  className={`ml-0.5 flex items-center gap-1 rounded-md text-[13px] font-semibold text-(--inv-muted) ${FOCUS_RING}`}
+                >
+                  {copy.editCoords}
+                  <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${showCoords ? "rotate-180" : ""}`} />
+                </button>
+                {showCoords ? (
+                  <div className="mt-2 grid grid-cols-2 gap-2.5">
+                    <MobileInput className="mb-0" label={copy.latitude} value={form.latitude} placeholder="13.736717" inputMode="decimal" onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
+                    <MobileInput className="mb-0" label={copy.longitude} value={form.longitude} placeholder="100.523186" inputMode="decimal" onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} />
+                  </div>
+                ) : null}
               </>
             ) : null}
           </MobileSection>
@@ -885,12 +922,45 @@ export default function RestaurantSettings() {
         <SettingsSwitch label={copy.geofenceEnable} description={copy.geofenceHint} checked={form.geofence_enabled} onChange={(value) => commitSwitch("geofence_enabled", value)} />
         {form.geofence_enabled ? (
           <>
-            <SettingsField label={copy.latitude} value={form.latitude} onChange={(value) => setField("latitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.latitude} inputMode="decimal" placeholder="13.736717" />
-            <SettingsField label={copy.longitude} value={form.longitude} onChange={(value) => setField("longitude", value)} onCommit={() => commit(GEOFENCE_FIELDS)} inputMode="decimal" placeholder="100.523186" />
-            <SettingsField label={copy.radius} description={copy.radiusHint} value={form.order_radius_meters} onChange={(value) => setField("order_radius_meters", value)} onCommit={() => commit(GEOFENCE_FIELDS)} error={errors.order_radius_meters} inputMode="numeric" />
-            <SettingsActionRow title={copy.useCurrentLocation} description={copy.locateHint} loading={locating} onClick={useCurrentLocation}>
-              {copy.useCurrentLocation}
-            </SettingsActionRow>
+            {/* The map on the left, the numbers it fills in beside it - a pin
+                dragged shows its figures without a scroll (27 ก.ย. 2569). */}
+            <SettingsItem title={copy.mapTitle} description={`${copy.mapHintWide} · ${copy.radiusHint}`} stack>
+              <div className="grid grid-cols-[minmax(0,1fr)_11rem] gap-3">
+                <RestaurantLocationMap
+                  lat={coordinate(form.latitude)}
+                  lng={coordinate(form.longitude)}
+                  radius={coordinate(form.order_radius_meters)}
+                  onPick={pickLocation}
+                  className="h-56"
+                  label={copy.mapLabel}
+                />
+                <div className="flex min-w-0 flex-col gap-2.5">
+                  {([
+                    { id: `${geoIdPrefix}-lat`, label: copy.latitude, field: "latitude", placeholder: "13.736717", mode: "decimal", error: errors.latitude },
+                    { id: `${geoIdPrefix}-lng`, label: copy.longitude, field: "longitude", placeholder: "100.523186", mode: "decimal", error: undefined },
+                    { id: `${geoIdPrefix}-radius`, label: copy.radiusShort, field: "order_radius_meters", placeholder: "150", mode: "numeric", error: errors.order_radius_meters },
+                  ] as const).map((row) => (
+                    <div key={row.id} className="flex flex-col gap-1">
+                      <label htmlFor={row.id} className="text-[12px] font-medium text-gray-600 dark:text-gray-300">{row.label}</label>
+                      <SettingsInput
+                        id={row.id}
+                        errorId={`${row.id}-error`}
+                        value={form[row.field]}
+                        onChange={(value) => setField(row.field, value)}
+                        onCommit={() => commit(GEOFENCE_FIELDS)}
+                        placeholder={row.placeholder}
+                        inputMode={row.mode}
+                        error={row.error}
+                        fullWidth
+                      />
+                    </div>
+                  ))}
+                  <SettingsButton onClick={useCurrentLocation} loading={locating} className="mt-auto w-full">
+                    <span className="inline-flex items-center gap-1.5"><MapPin aria-hidden="true" className="h-3.5 w-3.5" /> {copy.useCurrentLocation}</span>
+                  </SettingsButton>
+                </div>
+              </div>
+            </SettingsItem>
           </>
         ) : null}
         </SettingsGroup>
