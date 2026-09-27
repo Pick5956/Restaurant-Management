@@ -271,7 +271,7 @@ func deductInventoryForCompletedKitchenItem(tx *repository.OrderRepository, rest
 		if required <= 0 {
 			continue
 		}
-		alreadyDeducted, err := tx.HasInventoryDeduction(item.ID, snapshot.IngredientID)
+		alreadyDeducted, err := tx.HasInventoryDeduction(order.ID, item.ID, snapshot.IngredientID)
 		if err != nil {
 			return err
 		}
