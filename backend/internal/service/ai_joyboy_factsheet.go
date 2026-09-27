@@ -1988,10 +1988,16 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 	previousDays := joyboyDaysCovered(previous)
 	lines := []string{
 		"scope=one_menu_compared_across_two_periods",
-		fmt.Sprintf("current_period=%s from=%s to=%s days=%d%s", current.Label,
+		fmt.Sprintf("asked_period=%s from=%s to=%s days=%d%s", current.Label,
 			current.Start.Format("2006-01-02"), joyboyLastDateCovered(current), currentDays, joyboyStillRunningNote(current)),
-		fmt.Sprintf("previous_period=%s from=%s to=%s days=%d%s", previous.Label,
+		fmt.Sprintf("before_asked_period=%s from=%s to=%s days=%d%s", previous.Label,
 			previous.Start.Format("2006-01-02"), joyboyLastDateCovered(previous), previousDays, joyboyStillRunningNote(previous)),
+		// 27 ก.ย. 2569: the sides were "current" and "previous", and "สัปดาห์ก่อนชาไทยเย็น
+		// ขายได้กี่แก้ว" was answered with the previous side - the week before the one
+		// asked about (51 instead of 56). "ก่อน" in the question read as "previous".
+		"note=ยอดที่เจ้าของถามคือฝั่ง asked_* เสมอ แม้คำถามจะมีคำว่า ก่อน / ที่แล้ว เช่น สัปดาห์ก่อน เดือนที่แล้ว "+
+			"เพราะช่วงนั้นคือ asked_period แล้ว · ฝั่ง before_asked_* คือช่วงก่อนหน้าช่วงที่ถามอีกที ใช้เทียบเท่านั้น "+
+			"ถ้าพูดถึงให้บอกวันที่ของมันกำกับ",
 	}
 	if partial {
 		lines = append(lines, "note=รายการด้านล่างคือตัวที่ชื่อใกล้เคียงกับที่ถาม ให้เลือกตัวที่ตรงแล้วตอบเฉพาะตัวนั้น ถ้าไม่แน่ใจให้ถามกลับ")
@@ -2003,8 +2009,8 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 		now, soldNow := currentByName[aiNormalizeName(name)]
 		then, soldThen := previousByName[aiNormalizeName(name)]
 		lines = append(lines, "menu="+name)
-		lines = append(lines, joyboyComparisonSide("current", now, soldNow, currentDays))
-		lines = append(lines, joyboyComparisonSide("previous", then, soldThen, previousDays))
+		lines = append(lines, joyboyComparisonSide("asked", now, soldNow, currentDays))
+		lines = append(lines, joyboyComparisonSide("before_asked", then, soldThen, previousDays))
 		if soldNow && soldThen && then.Quantity > 0 {
 			lines = append(lines, fmt.Sprintf("change_qty_pct=%s change_revenue_pct=%s change_profit_pct=%s",
 				joyboyNum(joyboyPctChange(float64(then.Quantity), float64(now.Quantity))),

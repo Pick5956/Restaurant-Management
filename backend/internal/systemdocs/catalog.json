@@ -1835,6 +1835,13 @@
             "th": "เปิดผู้ช่วย AI",
             "en": "Open AI assistant"
           }
+        },
+        {
+          "href": "/settings/ai",
+          "label": {
+            "th": "ตั้งค่า Dishy AI",
+            "en": "Dishy AI settings"
+          }
         }
       ],
       "sections": [
@@ -1879,35 +1886,51 @@
           "keywords": {
             "th": [
               "AI แก้ข้อมูลอะไรได้บ้าง",
-              "AI เปลี่ยนข้อมูล"
+              "AI เปลี่ยนข้อมูล",
+              "ตั้งค่าให้ AI ลงมือทำ",
+              "ให้ AI ทำแทน",
+              "สิทธิ์ของผู้ช่วย",
+              "เปิดสิทธิ์ AI",
+              "ตั้งค่า Dishy AI"
             ],
             "en": [
               "what can AI edit",
-              "AI write actions"
+              "AI write actions",
+              "let the AI act",
+              "assistant permissions",
+              "Dishy AI settings"
             ]
           },
           "title": {
-            "th": "การเปลี่ยนข้อมูลผ่าน AI",
-            "en": "AI-assisted changes"
+            "th": "การเปลี่ยนข้อมูลผ่าน AI และที่ตั้งสิทธิ์",
+            "en": "AI-assisted changes and where to allow them"
           },
           "paragraphs": [
             {
-              "th": "ความสามารถเปลี่ยนข้อมูลอาจถูกปิดไว้ตามการตั้งค่าระบบ หากเปิดใช้ การเปลี่ยนแปลงที่รองรับตอนนี้มีเพียงสถานะพร้อมขายของเมนู ผู้ช่วยจะแสดงตัวอย่างการเปลี่ยนแปลงและรอเจ้าของยืนยันก่อนบันทึก",
-              "en": "Data-changing capability may be disabled by system configuration. When enabled, the only current write action is menu availability. The assistant presents a preview and waits for the owner to confirm before saving."
+              "th": "เจ้าของร้านเปิดให้ Dishy AI แก้ข้อมูลร้านได้ที่หน้าตั้งค่า หมวด Dishy AI หัวข้อ “สิทธิ์ของผู้ช่วย” (กดรูปโปรไฟล์ล่างซ้าย → ตั้งค่า → Dishy AI) เปิดสวิตช์หลัก “ให้ผู้ช่วยแก้ข้อมูลร้านได้” แล้วเลือกเปิดทีละเรื่อง ปิดสวิตช์หลัก = ผู้ช่วยดูข้อมูลได้อย่างเดียว",
+              "en": "The owner lets Dishy AI change restaurant data in Settings, Dishy AI section, under “Assistant permissions” (tap the profile picture at the bottom left → Settings → Dishy AI). Turn on the main switch “Let the assistant edit restaurant data”, then choose each kind of change. With the main switch off the assistant can only read."
+            },
+            {
+              "th": "ทุกคำสั่งที่เปลี่ยนข้อมูล ผู้ช่วยจะแสดงตัวอย่างก่อน และรอเจ้าของร้านกดยืนยันภายใน 1 นาทีจึงจะบันทึก ถ้าระบบกลางปิดความสามารถนี้ไว้ สวิตช์จะใช้ไม่ได้",
+              "en": "Every change is shown as a preview first and saved only after the owner confirms within one minute. If the server has this capability turned off, the switches cannot be used."
             }
           ],
           "bullets": [
             {
-              "th": "ไม่สั่งซื้อวัตถุดิบหรือแก้สต็อก",
-              "en": "It does not place purchase orders or modify inventory."
+              "th": "เมนู: เปิด–ปิดขายเมนู · เปลี่ยนราคาเมนู · เพิ่มเมนูใหม่",
+              "en": "Menu: open or close an item · change a price · add a new item."
             },
             {
-              "th": "ไม่รับเงินหรือทำธุรกรรมแทนพนักงาน",
-              "en": "It does not take payments or perform transactions for staff."
+              "th": "วัตถุดิบ: ปรับจำนวนสต๊อก · ตั้งสต๊อกขั้นต่ำ · ตั้งต้นทุนต่อหน่วย · เพิ่มวัตถุดิบใหม่",
+              "en": "Ingredients: adjust stock · set a minimum · set a unit cost · add a new ingredient."
             },
             {
-              "th": "ไม่มีสิทธิ์เขียนฐานข้อมูลทั่วไป",
-              "en": "It has no generic database write access."
+              "th": "เงิน: บันทึกรายจ่าย (พิมพ์บอกหรือถ่ายรูปใบเสร็จ)",
+              "en": "Money: record an expense (typed or from a receipt photo)."
+            },
+            {
+              "th": "ไม่รับเงินหรือปิดบิลแทนพนักงาน และไม่มีสิทธิ์เขียนฐานข้อมูลทั่วไป",
+              "en": "It does not take payments or close bills for staff, and has no generic database write access."
             }
           ]
         },
