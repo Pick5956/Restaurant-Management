@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Download, Filter, RotateCcw, Search, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Download, Filter, RotateCcw, Search, X } from "lucide-react";
 import DateRangeButton from "@/src/components/shared/DateRangeButton";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
 import { exportTransactionsCSV, listAllTransactions } from "@/src/lib/ingredient";
@@ -10,6 +10,7 @@ import type { IngredientCategory, IngredientTransaction, TransactionQuery, Trans
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { inputCls } from "./inventoryPageUtils";
 import { InventoryHistoryRowsSkeleton } from "./InventorySkeletons";
+import InventoryPager from "./InventoryPager";
 import {
   HISTORY_PAGE_SIZE,
   HISTORY_RANGE_PRESETS,
@@ -51,7 +52,6 @@ function buildCopy(lang: "th" | "en") {
         setTo: "ตั้งเป็น",
         empty: "ไม่มีรายการในช่วงนี้",
         loading: "กำลังโหลด…",
-        page: (current: number, last: number) => `หน้า ${current} / ${last}`,
         exported: "ดาวน์โหลดแล้ว",
         exportedRows: (n: number) => `${n} รายการ`,
         truncated: "ไฟล์ถูกตัด",
@@ -85,7 +85,6 @@ function buildCopy(lang: "th" | "en") {
         setTo: "Set to",
         empty: "No movements in this period",
         loading: "Loading…",
-        page: (current: number, last: number) => `Page ${current} / ${last}`,
         exported: "Downloaded",
         exportedRows: (n: number) => `${n} rows`,
         truncated: "File was capped",
@@ -569,24 +568,8 @@ export default function InventoryHistoryTab({
       </div>
 
       {lastPage > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-[12px] tabular-nums text-slate-500 dark:text-slate-400">{copy.page(page, lastPage)}</span>
-          <button
-            type="button"
-            disabled={page >= lastPage || loading}
-            onClick={() => setPage((current) => Math.min(lastPage, current + 1))}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+        <div className="flex justify-end">
+          <InventoryPager page={page} totalPages={lastPage} onChange={setPage} lang={lang} disabled={loading} />
         </div>
       )}
     </div>

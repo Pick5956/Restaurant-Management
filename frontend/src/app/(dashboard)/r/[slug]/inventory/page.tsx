@@ -12,8 +12,6 @@ import {
   Check,
   ClipboardCheck,
   Download,
-  ChevronLeft,
-  ChevronRight,
   Filter,
   History,
   MoreHorizontal,
@@ -55,6 +53,7 @@ import type {
 } from "@/src/types/ingredient";
 import { InventoryPageSkeleton } from "./InventorySkeletons";
 import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
+import InventoryPager from "./InventoryPager";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
@@ -1942,30 +1941,7 @@ export default function InventoryPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPage(safePage - 1)}
-                        disabled={safePage <= 1}
-                        aria-label="previous page"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <span className="flex items-center gap-1 font-medium tabular-nums text-slate-600 dark:text-slate-300">
-                        <PageNumberInput page={safePage} totalPages={totalPages} onChange={setPage} />
-                        / {formatNumber(totalPages, lang)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPage(safePage + 1)}
-                        disabled={safePage >= totalPages}
-                        aria-label="next page"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
+                    <InventoryPager page={safePage} totalPages={totalPages} onChange={setPage} lang={lang} />
                   </div>
                 </div>
               )}
@@ -2829,48 +2805,3 @@ export default function InventoryPage() {
 
 // The current page as a typeable box: type a number, Enter (or click away) jumps
 // there. Out-of-range numbers clamp to the first/last page; junk snaps back.
-function PageNumberInput({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
-  // What is being typed, or null when the box just shows the current page —
-  // so an arrow press or a filter change is shown without syncing state.
-  const [draft, setDraft] = useState<string | null>(null);
-  // Esc blurs the box, and the blur would commit what was typed before the
-  // cleared draft reaches it — this says the blur is a cancel.
-  const cancelled = useRef(false);
-
-  function commit() {
-    if (cancelled.current) {
-      cancelled.current = false;
-      setDraft(null);
-      return;
-    }
-    const n = Number.parseInt(draft ?? "", 10);
-    setDraft(null);
-    if (Number.isNaN(n)) return;
-    const next = Math.min(totalPages, Math.max(1, n));
-    if (next !== page) onChange(next);
-  }
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      aria-label="page number"
-      value={draft ?? String(page)}
-      onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
-      onFocus={(e) => {
-        setDraft(String(page));
-        e.target.select();
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          cancelled.current = true;
-          e.currentTarget.blur();
-        }
-      }}
-      style={{ width: `${Math.max(2, String(totalPages).length) + 1.5}ch` }}
-      className="h-8 rounded-md border border-slate-200 bg-white text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-200 dark:focus:ring-orange-900"
-    />
-  );
-}
