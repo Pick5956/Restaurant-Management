@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import ReportSummaryCards from "./ReportSummaryCards";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
-import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
+import { RestaurantCardSkeleton, Skeleton } from "@/src/components/shared/Skeleton";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { formatCurrency, formatNumber } from "@/src/lib/format";
@@ -381,7 +381,35 @@ export default function ReportsPage() {
             <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
               {receiptError ? <p className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{receiptError}</p> : null}
               {dayDetailLoading ? (
-                <p className="py-8 text-center text-xs text-gray-500">{copy.loadingDay}</p>
+                // Skeleton rows in the order table's own shape (28 ก.ย. 2569),
+                // so the dialog does not jump from one line of text to a table.
+                <div role="status" className="overflow-x-auto overflow-y-hidden">
+                  <span className="sr-only">{copy.loadingDay}</span>
+                  <table aria-hidden="true" className="w-full min-w-[520px] border-separate border-spacing-0 text-left text-xs [&_tbody_td]:border-b [&_tbody_td]:border-gray-200 dark:[&_tbody_td]:border-gray-800">
+                    <thead className="text-gray-500">
+                      <tr>
+                        <th className="py-1 font-medium">{copy.order}</th>
+                        <th className="py-1 font-medium">{copy.table}</th>
+                        <th className="py-1 text-right font-medium">{copy.time}</th>
+                        <th className="py-1 text-right font-medium">{copy.revenue}</th>
+                        <th className="py-1 text-right font-medium">{copy.cost}</th>
+                        <th className="py-1 text-right font-medium">{copy.profit}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: 10 }, (_, row) => (
+                        <tr key={row}>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] h-3 w-24" /></td>
+                          <td className="py-1.5"><Skeleton className={`my-[2.5px] h-3 ${row % 3 === 0 ? "w-16" : "w-10"}`} /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-10" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-14" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-12" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-12" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : dayDetail?.orders.length ? (
                 <>
                   <div className="overflow-x-auto overflow-y-hidden">
