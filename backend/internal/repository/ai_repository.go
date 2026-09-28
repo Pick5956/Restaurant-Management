@@ -451,7 +451,7 @@ func (r *AIRepository) SalesForRange(restaurantID uint, start, end time.Time) (A
 func (r *AIRepository) TopMenuItems(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+aiItemRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
 			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
@@ -511,7 +511,7 @@ func (r *AIRepository) MenuCatalogue(restaurantID uint) ([]AIMenuCatalogueItem, 
 func (r *AIRepository) MenusByRevenue(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+aiItemRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
 			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
@@ -588,30 +588,12 @@ func (r *AIRepository) AllMenuMargins(restaurantID uint, since time.Time) ([]AIM
 	return r.menuMargins(restaurantID, since, "quantity desc, revenue desc", 100)
 }
 
-// BillDiscounts is the money promotions took off whole bills ("ซื้อครบ 300 ลด
-// 20") in [start, end). A menu line cannot carry it - it belongs to no dish -
-// so per-menu revenue is before it, and a store total summed from menus must
-// take it off. Without that the profit sheet's revenue ran above the sales
-// total by exactly these discounts (28 ก.ย. 2569: สิงหาคม 378,410 against
-// 375,630 sold, 2,780 of bill discounts).
-func (r *AIRepository) BillDiscounts(restaurantID uint, start, end time.Time) (float64, error) {
-	var total float64
-	err := r.db.Table("order_promotions").
-		Select("COALESCE(SUM(order_promotions.amount), 0)").
-		Joins("JOIN orders ON orders.id = order_promotions.order_id").
-		Where(
-			"order_promotions.restaurant_id = ? AND order_promotions.deleted_at IS NULL AND order_promotions.type = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at < ? AND orders.completed_at <= NOW()",
-			restaurantID,
-			entity.PromotionTypeBillDiscount,
-			restaurantID,
-			entity.OrderStatusCompleted,
-			entity.PaymentStatusPaid,
-			start,
-			end,
-		).
-		Scan(&total).Error
-	return total, err
-}
+// aiItemRevenue is what one order line sold for: its own subtotal. Until 28
+// ก.ย. 2569 it was the subtotal less the line's promotion discount, and a
+// separate query took whole-bill promotions off the totals. Promotions are
+// being taken out of Dishy, and the assistant reads neither any more: nothing
+// here touches order_items.discount_amount or order_promotions.
+const aiItemRevenue = "order_items.subtotal"
 
 // MenuMarginsByCategory returns every menu sold in the window with its category
 // attached, so profit can be totalled per section of the menu board. Nothing else
@@ -816,7 +798,7 @@ func (r *AIRepository) SlowMovingMenus(restaurantID uint, since time.Time) ([]AI
 	err := r.db.Table("menu_items").
 		Select("menu_items.name AS menu_name, COALESCE(sales.qty, 0) AS quantity, COALESCE(sales.revenue, 0) AS revenue").
 		Joins(`LEFT JOIN (
-			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(`+orderItemNetRevenue+`) AS revenue
+			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(`+aiItemRevenue+`) AS revenue
 			FROM order_items
 			JOIN orders ON orders.id = order_items.order_id
 			WHERE order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ?
@@ -885,11 +867,11 @@ const (
 	aiMenuMarginSelect = `
 			order_items.menu_name,
 			COALESCE(SUM(order_items.quantity), 0) AS quantity,
-			COALESCE(SUM(` + orderItemNetRevenue + `), 0) AS revenue,
+			COALESCE(SUM(` + aiItemRevenue + `), 0) AS revenue,
 			COALESCE(SUM(deductions.cost), 0) AS cost,
-			COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
-			CASE WHEN COALESCE(SUM(` + orderItemNetRevenue + `), 0) > 0
-				THEN ((COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(` + orderItemNetRevenue + `), 0)) * 100
+			COALESCE(SUM(` + aiItemRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
+			CASE WHEN COALESCE(SUM(` + aiItemRevenue + `), 0) > 0
+				THEN ((COALESCE(SUM(` + aiItemRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(` + aiItemRevenue + `), 0)) * 100
 				ELSE 0
 			END AS margin`
 
@@ -955,7 +937,6 @@ type AIBill struct {
 	StaffName           string     `json:"staff_name"`
 	CustomerCount       int        `json:"customer_count"`
 	Subtotal            float64    `json:"subtotal"`
-	DiscountAmount      float64    `json:"discount_amount"`
 	ServiceChargeAmount float64    `json:"service_charge_amount"`
 	VATAmount           float64    `json:"vat_amount"`
 	GrandTotal          float64    `json:"grand_total"`
@@ -974,7 +955,7 @@ type AIBill struct {
 const aiBillSelect = `orders.id, orders.order_number, orders.order_type, orders.status,
 	orders.payment_status, COALESCE(restaurant_tables.table_number, '') AS table_number,
 	COALESCE(users.first_name, '') AS staff_name, orders.customer_count,
-	orders.subtotal, orders.discount_amount, orders.service_charge_amount, orders.vat_amount,
+	orders.subtotal, orders.service_charge_amount, orders.vat_amount,
 	orders.grand_total, orders.opened_at, orders.completed_at,
 	COALESCE(orders.cancelled_reason, '') AS cancelled_reason,
 	COALESCE((SELECT op.method FROM order_payments op

@@ -74,13 +74,6 @@ func (s *AIService) answerTotalProfitQuery(restaurantID uint, question string) (
 			costedRevenue += m.Revenue
 		}
 	}
-	menuRevenue := revenue
-	if revenue > 0 {
-		if discounts, err := s.repo.BillDiscounts(restaurantID, start, end); err == nil && discounts > 0 {
-			revenue -= discounts
-			profit -= discounts
-		}
-	}
 
 	var answer string
 	switch {
@@ -96,7 +89,7 @@ func (s *AIService) answerTotalProfitQuery(restaurantID uint, question string) (
 	default:
 		answer = fmt.Sprintf("กำไร%s ประมาณ %s บาทครับ\n- รายได้จากเมนู %s บาท\n- ต้นทุนวัตถุดิบ %s บาท",
 			label, formatMoney(profit), formatMoney(revenue), formatMoney(cost))
-		if coverage := costedRevenue / menuRevenue; coverage < 0.99 {
+		if coverage := costedRevenue / revenue; coverage < 0.99 {
 			answer += fmt.Sprintf(
 				"\n\n(ตัวเลขนี้อิงจากเมนูที่มีข้อมูลต้นทุนราว %.0f%% ของยอดขาย ส่วนที่เหลือยังไม่ได้ผูกต้นทุน กำไรจริงอาจต่ำกว่านี้ครับ)",
 				coverage*100)
@@ -159,10 +152,6 @@ func (s *AIService) rollingProfit(restaurantID uint, now time.Time) (string, boo
 	}
 	if revenue == 0 {
 		return "", false
-	}
-	if discounts, err := s.repo.BillDiscounts(restaurantID, start, end); err == nil && discounts > 0 {
-		revenue -= discounts
-		profit -= discounts
 	}
 	return fmt.Sprintf("ถ้าดูช่วง 30 วันล่าสุด กำไรประมาณ %s บาทครับ (รายได้จากเมนู %s, ต้นทุนวัตถุดิบ %s)",
 		formatMoney(profit), formatMoney(revenue), formatMoney(cost)), true

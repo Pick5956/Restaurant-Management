@@ -303,9 +303,6 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 				joyboyNum(profit.Revenue), joyboyNum(profit.Cost),
 				joyboyNum(profit.Profit), joyboyNum(profit.Margin)),
 		}
-		if profit.BillDiscounts > 0 {
-			lines = append(lines, joyboyBillDiscountLine(profit.BillDiscounts))
-		}
 		// Below full coverage the cost is understated (uncosted menus add revenue
 		// with no cost), so profit is a floor. Flag it so the answer can say so
 		// rather than presenting a partial figure as the whole store's profit.
@@ -1398,7 +1395,7 @@ func joyboyPercent(part, whole float64) float64 {
 // expenses as a figure of its own, computed here. The caveat that the ledger
 // holds only what was written down travels with it, because a net over an empty
 // ledger reads as "nothing else was spent".
-func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSummary, billDiscounts float64, expenses *ExpenseListResponse) string {
+func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSummary, expenses *ExpenseListResponse) string {
 	var revenue, cost, profit, costedRevenue float64
 	for _, m := range metrics {
 		revenue += m.Revenue
@@ -1407,13 +1404,6 @@ func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSu
 		if m.Cost > 0 {
 			costedRevenue += m.Revenue
 		}
-	}
-	// Coverage is judged on menu revenue (before the bill discounts, which no
-	// menu carries); the totals shown are after them.
-	menuRevenue := revenue
-	if revenue > 0 && billDiscounts > 0 {
-		revenue -= billDiscounts
-		profit -= billDiscounts
 	}
 	if revenue == 0 {
 		return joyboyJoin([]string{"period=" + label, "revenue=0.00 cost=0.00 profit=0.00", joyboyNoData("no_paid_sales_in_period")})
@@ -1426,23 +1416,12 @@ func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSu
 		"gross_profit_means=กำไรขั้นต้น = ยอดขาย − ต้นทุนวัตถุดิบตามสูตร ยังไม่หักรายจ่ายอื่น (ค่าแรง ค่าเช่า ค่าน้ำไฟ ฯลฯ) " +
 			"เวลาพูดถึงเลขนี้ต้องบอกว่าเป็นกำไรก่อนหักรายจ่าย",
 	}
-	if billDiscounts > 0 {
-		lines = append(lines, joyboyBillDiscountLine(billDiscounts))
-	}
-	if coverage := costedRevenue / menuRevenue * 100; coverage < 99.5 {
+	if coverage := costedRevenue / revenue * 100; coverage < 99.5 {
 		lines = append(lines, fmt.Sprintf(
 			"note=cost_covers_only_%s_pct_of_revenue_so_profit_is_a_floor", joyboyNum(roundBaht(coverage))))
 	}
 	lines = append(lines, joyboyNetAfterExpensesLines(profit, expenses)...)
 	return joyboyJoin(lines)
-}
-
-// joyboyBillDiscountLine says the whole-bill promotions are already off the
-// revenue, so the model neither subtracts them again nor wonders why the menu
-// rows add up to more.
-func joyboyBillDiscountLine(amount float64) string {
-	return fmt.Sprintf("bill_discounts=%s note=ส่วนลดท้ายบิล (เช่น ซื้อครบแล้วลด) หักออกจาก revenue และกำไรแล้ว "+
-		"revenue จึงเท่ากับยอดขายจริง ห้ามหักซ้ำ ยอดรายเมนูรวมกันจะสูงกว่านี้เท่าส่วนลดนี้", joyboyNum(roundBaht(amount)))
 }
 
 // joyboyNetAfterExpensesLines is gross profit less the recorded expenses of the

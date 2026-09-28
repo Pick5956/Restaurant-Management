@@ -165,10 +165,7 @@ func joyboyBillHeadline(bill repository.AIBill, now time.Time) string {
 // shop actually charged appear: a shop with VAT switched off should not read a
 // "VAT = 0.00" line and conclude it has one.
 func joyboyBillMoneyLine(bill repository.AIBill) string {
-	parts := []string{"ยอดก่อนหักลด=" + joyboyNum(bill.Subtotal)}
-	if bill.DiscountAmount > 0 {
-		parts = append(parts, "ส่วนลด=-"+joyboyNum(bill.DiscountAmount))
-	}
+	parts := []string{"ยอดอาหาร=" + joyboyNum(bill.Subtotal)}
 	if bill.ServiceChargeAmount > 0 {
 		parts = append(parts, "เซอร์วิสชาร์จ=+"+joyboyNum(bill.ServiceChargeAmount))
 	}
