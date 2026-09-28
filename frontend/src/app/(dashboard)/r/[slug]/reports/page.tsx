@@ -303,7 +303,10 @@ export default function ReportsPage() {
                             className={`cursor-pointer transition-colors ${open ? "bg-gray-100 dark:bg-gray-800" : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/60"}`}
                           >
                             <td className="px-4 py-2.5 font-medium">
-                              <span className="inline-flex items-center gap-1.5">
+                              {/* flex, not inline-flex: an inline box with the
+                                  icon sat on the text baseline and made each row
+                                  2px taller than the menu table's rows. */}
+                              <span className="flex items-center gap-1.5">
                                 <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
                                 {day.order_date}
                               </span>
@@ -333,24 +336,26 @@ export default function ReportsPage() {
                 <h2 className="text-sm font-semibold">{copy.menuMargins}</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm">
+                {/* The same header and row sizes as the daily table beside it, so
+                    their lines run level across the page (28 ก.ย. 2569). */}
+                <table className="w-full min-w-[560px] border-separate border-spacing-0 text-left text-sm [&_tbody_td]:border-b [&_tbody_td]:border-gray-100 dark:[&_tbody_td]:border-gray-800">
                   <thead className="text-xs text-gray-500">
-                    <tr className="border-b border-gray-200 dark:border-gray-800">
-                      <th className="px-4 py-3">{copy.menu}</th>
-                      <th className="px-4 py-3 text-right">{copy.qty}</th>
-                      <th className="px-4 py-3 text-right">{copy.revenue}</th>
-                      <th className="px-4 py-3 text-right">{copy.cost}</th>
-                      <th className="px-4 py-3 text-right">{copy.margin}</th>
+                    <tr className="[&_th]:border-b [&_th]:border-gray-200 dark:[&_th]:border-gray-800">
+                      <th className="px-4 py-2 font-medium">{copy.menu}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.qty}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.revenue}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.cost}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.margin}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  <tbody>
                     {report.menu_margins.length ? report.menu_margins.map((item) => (
                       <tr key={`${item.menu_id}-${item.menu_name}`}>
-                        <td className="px-4 py-3 font-medium">{item.menu_name}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatNumber(item.quantity, lang)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(item.revenue, lang)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(item.cost, lang)}</td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatNumber(item.margin, lang)}%</td>
+                        <td className="px-4 py-2.5 font-medium">{item.menu_name}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(item.quantity, lang)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(item.revenue, lang)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(item.cost, lang)}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{formatNumber(item.margin, lang)}%</td>
                       </tr>
                     )) : <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">{copy.noData}</td></tr>}
                   </tbody>
