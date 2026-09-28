@@ -275,6 +275,9 @@ func defaultAIProviderAdapters(service *AIService) []aiProviderAdapter {
 	return []aiProviderAdapter{
 		&groqProviderAdapter{service: service},
 		&geminiProviderAdapter{service: service},
+		// Last, so "auto" keeps its Groq -> Gemini order and reaches Claude only
+		// when both are down and CLAUDE_API_KEYS is set (28 ก.ย. 2569).
+		&claudeProviderAdapter{service: service},
 	}
 }
 

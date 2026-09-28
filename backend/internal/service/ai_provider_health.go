@@ -193,7 +193,8 @@ func isProviderOverloaded(err error) bool {
 	if errors.As(err, &httpErr) {
 		return httpErr.StatusCode == http.StatusServiceUnavailable ||
 			httpErr.StatusCode == http.StatusBadGateway ||
-			httpErr.StatusCode == http.StatusGatewayTimeout
+			httpErr.StatusCode == http.StatusGatewayTimeout ||
+			httpErr.StatusCode == claudeOverloadedStatus
 	}
 	// A request that never got headers back is the same story from the caller's
 	// side: the provider is not answering.
