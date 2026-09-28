@@ -15,8 +15,10 @@ const FOLLOW_UPS_KEY = "aiFollowUpsEnabled";
 const OWNER_TITLE_KEY = "aiOwnerTitle";
 const CHANGE_EVENT = "ai-prefs-change";
 
-export const DEFAULT_OWNER_TITLE_TH = "คุณผู้จัดการ";
-export const DEFAULT_OWNER_TITLE_EN = "Manager";
+// The server's default too (aiDefaultOwnerTitle); it answers with this when the
+// owner has not set one, which is how the screens tell "not set" apart.
+export const DEFAULT_OWNER_TITLE_TH = "เจ้าของร้าน";
+export const DEFAULT_OWNER_TITLE_EN = "Owner";
 
 function read(key: string): string | null {
   try {

@@ -103,7 +103,7 @@ function buildCopy(language: "th" | "en") {
     ? {
         title: "ผู้ช่วยวิเคราะห์ร้าน AI",
         subtitle: "ถามจากยอดขายและคลังวัตถุดิบล่าสุดของร้าน",
-        welcome: "สวัสดีคุณผู้จัดการ",
+        welcome: "สวัสดีเจ้าของร้าน",
         askPlaceholder: "พิมพ์คำถามของคุณที่นี่...",
         send: "ส่ง",
         thinking: "กำลังวิเคราะห์...",
@@ -119,7 +119,7 @@ function buildCopy(language: "th" | "en") {
     : {
         title: "AI Operations Assistant",
         subtitle: "Analyzing sales and real-time inventory levels",
-        welcome: "Hello, manager.",
+        welcome: "Hello, owner.",
         askPlaceholder: "Type your question here...",
         send: "Send",
         thinking: "Analyzing...",

@@ -147,7 +147,7 @@ type Request struct {
 	// interpret it: what it says, and whether it deserves to be trusted, is
 	// decided where it was written.
 	Digest string
-	// OwnerTitle is what the assistant should call the owner ("คุณผู้จัดการ",
+	// OwnerTitle is what the assistant should call the owner ("เจ้าของร้าน",
 	// "พี่เก่ง"). Empty leaves the persona as it is.
 	OwnerTitle string
 	// RestaurantName is the shop's own name ("บ้านกูเอง"). Without it the only

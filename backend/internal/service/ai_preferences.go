@@ -61,8 +61,9 @@ var aiSettableActionTypes = []string{
 var aiInsightKinds = []string{"ingredient_low", "dead_stock", "sales_drop", "sales_up", "plowhorse"}
 
 // aiDefaultOwnerTitle is how the assistant addresses the owner when they have
-// not said otherwise — the greeting the screen has always shown.
-const aiDefaultOwnerTitle = "คุณผู้จัดการ"
+// not said otherwise. It was "คุณผู้จัดการ" until 28 ก.ย. 2569, when the owner
+// asked for "เจ้าของร้าน": the assistant is theirs only, not a manager's.
+const aiDefaultOwnerTitle = "เจ้าของร้าน"
 
 // aiOwnerTitleMaxRunes bounds the title so it stays a form of address rather
 // than a paragraph the persona has to carry on every call.
