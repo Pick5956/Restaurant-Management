@@ -62,6 +62,10 @@ const COUNT_STEP_CLASS =
 // The glyph inside a stepper: it dips under the finger, so a tap is felt
 // without the row around it moving.
 const COUNT_STEP_GLYPH = "inline-block transition-transform duration-100 ease-out group-active:scale-75 group-disabled:scale-100";
+// Reservation history and takeaway in the toolbar: a bare icon below lg,
+// a bordered labelled button from lg up.
+const TOOLBAR_ACTION_CLASS =
+  "ui-press inline-flex h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-xl text-[13px] font-semibold text-gray-700 hover:text-gray-950 disabled:cursor-wait disabled:opacity-60 dark:text-gray-300 dark:hover:text-white lg:w-auto lg:border lg:border-[color:var(--dashboard-shell-border)] lg:bg-white lg:px-3 lg:text-gray-800 lg:shadow-(--dashboard-control-shadow) lg:hover:border-gray-300 lg:hover:bg-gray-100 lg:dark:bg-gray-900 lg:dark:text-gray-100 lg:dark:hover:bg-gray-800";
 
 // Thai numbers are 9 digits (landline) or 10 (mobile): keep digits only and cap at 10.
 const PHONE_MAX_DIGITS = 10;
@@ -722,9 +726,14 @@ export default function PosTablesPage() {
       ) : null}
       <div data-shell-sticky="" className="fixed inset-x-0 top-0 z-20 bg-white/82 backdrop-blur-md dark:bg-[#0f0f0f]/82 transition-[left] duration-300 ease-in-out tablet:max-lg:left-[68px] lg:inset-auto">
         <h1 className="sr-only">{copy.eyebrow}</h1>
-        <div className="px-4 py-2 sm:px-6 lg:px-8 lg:pb-2 lg:pt-5">
-          <div className="grid w-full gap-1.5 lg:flex lg:items-center lg:gap-2">
-            <label className="relative min-w-0">
+        {/* 12px above the search on a phone: it sat tight against the top
+            (owner, 28 ก.ย. 2569). The phone top bar now covers the notch. */}
+        <div className="px-4 pb-2 pt-3 sm:px-6 lg:px-8 lg:pb-2 lg:pt-5">
+          {/* Below lg: search and the two actions as bare icons on one line,
+              the zone filter on a full line under them. lg: one row, the
+              actions as labelled buttons. */}
+          <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1.5 lg:flex-nowrap lg:gap-2">
+            <label className="relative min-w-0 flex-1 lg:flex-none">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               <input
                 value={search}
@@ -735,40 +744,46 @@ export default function PosTablesPage() {
                 aria-label={copy.search}
               />
             </label>
-            <div className="flex gap-2 lg:order-last lg:ml-auto">
-              <button
-                type="button"
-                onClick={() => setReservationsOpen(true)}
-                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:border-gray-300 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
-              >
-                <CalendarClock className="h-4 w-4" />
-                {copy.reservationHistory}
-              </button>
-              <button
-                type="button"
-                disabled={isNavigating}
-                onClick={openTakeawaySheet}
-                className="ui-press inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[color:var(--dashboard-shell-border)] bg-white px-3 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) hover:border-gray-300 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:flex-none"
-              >
-                <ShoppingBag className="h-4 w-4" />
-                {copy.takeaway}
-              </button>
-            </div>
             {hasAnyZone && (
-              <div className="w-full min-w-0 sm:w-44">
+              <div className="order-last w-full min-w-0 lg:order-none lg:w-44 lg:shrink-0">
                 <ThemedSelect
                   value={zoneFilter}
                   onChange={setZoneFilter}
                   options={zoneSelectOptions}
                   aria-label={allZonesLabel}
- triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
+                  triggerClassName="rounded-xl shadow-(--dashboard-control-shadow)"
                 />
               </div>
             )}
+            <div className="flex shrink-0 lg:ml-auto lg:gap-2">
+              <button
+                type="button"
+                onClick={() => setReservationsOpen(true)}
+                aria-label={copy.reservationHistory}
+                title={copy.reservationHistory}
+                className={TOOLBAR_ACTION_CLASS}
+              >
+                <CalendarClock className="h-5 w-5 lg:h-4 lg:w-4" aria-hidden="true" />
+                <span className="hidden lg:inline">{copy.reservationHistory}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isNavigating}
+                onClick={openTakeawaySheet}
+                aria-label={copy.takeaway}
+                title={copy.takeaway}
+                className={TOOLBAR_ACTION_CLASS}
+              >
+                <ShoppingBag className="h-5 w-5 lg:h-4 lg:w-4" aria-hidden="true" />
+                <span className="hidden lg:inline">{copy.takeaway}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
-      <div aria-hidden="true" className="h-[104px] lg:hidden" />
+      {/* The toolbar's height below lg: its 12px top gap, one 40px row (two
+          with the zone filter, 6px apart) and 8px of bottom padding. */}
+      <div aria-hidden="true" className={`${hasAnyZone ? "h-[106px]" : "h-[60px]"} lg:hidden`} />
       <OperationalPageShell
         eyebrow={copy.eyebrow}
         title={copy.title}
@@ -824,31 +839,12 @@ export default function PosTablesPage() {
                       className={`ui-press group relative flex min-h-[118px] overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,translate,box-shadow,border-color] dark:border-gray-800 dark:bg-gray-800 ${disabled ? "cursor-default opacity-70" : "hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:hover:border-gray-700 dark:hover:bg-gray-800"}`}
                     >
                       <span className={`w-1.5 shrink-0 ${tableAccentClass(status)}`} />
-                      <div className="flex min-w-0 flex-1 flex-col px-3 py-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">{copy.table}</p>
-                                <p className="truncate text-[19px] font-semibold leading-none tracking-tight text-gray-950 dark:text-white">{table.display_label || table.table_number}</p>
-                              </div>
-                            </div>
-                            <div className="mt-2 space-y-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                              {hasAnyZone && (
-                                <p className="flex min-w-0 items-start gap-1.5">
-                                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                                  <span className="min-w-0 break-words leading-4">{table.table_zone?.name || table.zone || copy.noZone}</span>
-                                </p>
-                              )}
-                              <p className="flex items-center gap-1.5">
-                                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                                {/* Occupied tables show live guest count; free/reserved tables show seat capacity. */}
-                                <span>{order ? `${order.customer_count} ${copy.customers}` : `${table.capacity} ${copy.seats}`}</span>
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <span className={`rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${tableStatusPillClass(status)}`}>{statusLabel}</span>
+                      {/* Same layout as the takeaway cards: name beside the badge,
+                          zone and seats on one line under it, number and total last. */}
+                      <div className="flex min-w-0 flex-1 flex-col gap-2.5 px-3 pb-2.5 pt-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-[16px] font-semibold leading-tight tracking-tight text-gray-950 dark:text-white">{table.display_label || table.table_number}</p>
+                          <div className="flex shrink-0 items-center gap-1">
                             {/* A booking for later leaves the table free to sell, so
                                 without this it is invisible until the guests are at
                                 the door. Clock only: the card has no room for a date,
@@ -856,29 +852,39 @@ export default function PosTablesPage() {
                             {bookingClock ? (
                               <span
                                 title={bookingReminder ?? undefined}
-                                className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-1 text-[11px] font-semibold leading-none tabular-nums text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"
+                                className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-1 text-[12px] font-semibold leading-none tabular-nums text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"
                               >
                                 <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
                                 {copy.bookedLabel} {bookingClock}
                               </span>
                             ) : null}
+                            <span className={`rounded-md px-2 py-1 text-[12px] font-semibold leading-none ${tableStatusPillClass(status)}`}>{statusLabel}</span>
                           </div>
                         </div>
-                        <div className="mt-auto">
-                          {order ? (
-                            <div className="flex min-h-[22px] items-end justify-between gap-2">
-                              <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-[12px] font-medium tabular-nums text-gray-500 dark:text-gray-400">
-                                <ReceiptText className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-                                <span className="truncate">{order.order_number}</span>
-                              </p>
-                              <p className="shrink-0 text-[12px] font-bold tabular-nums text-gray-950 dark:text-white">฿{order.total_amount.toLocaleString()}</p>
-                            </div>
-                          ) : status === "reserved" && table.reservation_phone ? (
-                            <p className="truncate text-[12px] font-semibold text-sky-700 dark:text-sky-200">{table.reservation_name ? `${table.reservation_name} · ` : ""}{copy.reservationInfo}: {table.reservation_phone}</p>
-                          ) : (
-                            <div className="min-h-[22px]" />
-                          )}
+                        <div className="flex min-w-0 items-center justify-between gap-3 text-[13px] font-medium text-gray-600 dark:text-gray-300">
+                          {hasAnyZone ? (
+                            <p className="flex min-w-0 items-center gap-1.5">
+                              <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span className="truncate">{table.table_zone?.name || table.zone || copy.noZone}</span>
+                            </p>
+                          ) : <span />}
+                          <p className="flex shrink-0 items-center gap-1.5">
+                            <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            {/* Occupied tables show live guest count; free/reserved tables show seat capacity. */}
+                            <span>{order ? `${order.customer_count} ${copy.customers}` : `${table.capacity} ${copy.seats}`}</span>
+                          </p>
                         </div>
+                        {order ? (
+                          <div className="mt-auto flex items-end justify-between gap-3 border-t border-gray-300 pt-2.5 dark:border-gray-600">
+                            <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-[13px] font-medium tabular-nums text-gray-500 dark:text-gray-400">
+                              <ReceiptText className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+                              <span className="truncate">{order.order_number}</span>
+                            </p>
+                            <p className="shrink-0 text-[13px] font-bold leading-5 tabular-nums text-gray-950 dark:text-white">฿{order.total_amount.toLocaleString()}</p>
+                          </div>
+                        ) : status === "reserved" && table.reservation_phone ? (
+                          <p className="mt-auto truncate border-t border-gray-300 pt-2.5 text-[13px] font-semibold text-sky-700 dark:border-gray-600 dark:text-sky-200">{table.reservation_name ? `${table.reservation_name}, ` : ""}{copy.reservationInfo}: {table.reservation_phone}</p>
+                        ) : null}
                       </div>
                     </button>
                   );

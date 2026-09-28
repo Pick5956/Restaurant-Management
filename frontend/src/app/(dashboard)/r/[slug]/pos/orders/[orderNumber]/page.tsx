@@ -12,7 +12,7 @@ import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiErrorMessage } from "@/src/lib/apiErrors";
 import { apiFailureText } from "@/src/lib/apiFailure";
 import { menuRefusal, orderItemStatusRefusal, stockRefusalOf, type MenuRefusal, type OrderItemStatusRefusal, type StockRefusal } from "@/src/lib/knownApiErrors";
-import { MENU_CARD_GRID_CLASS, MENU_CARD_SHELL_CLASS } from "@/src/lib/menuGrid";
+import { LOW_STOCK_THRESHOLD, MENU_CARD_GRID_CLASS, MENU_CARD_SHELL_CLASS, menuStockBadgeClass } from "@/src/lib/menuGrid";
 import { menuCategoryIds, menuOptionLimits } from "@/src/lib/menuUtils";
 import { billDiscountLines } from "@/src/lib/billPromotions";
 import { groupOrderItems, newestPendingItem, type OrderItemGroup } from "@/src/lib/orderItemGroups";
@@ -1123,7 +1123,7 @@ export default function PosOrderDetailPage() {
                 // Every dish shows what is left (owner, 2026-09-22); ten or fewer
                 // turns the badge amber. A dish with no recipe is never counted.
                 const remaining = typeof item.remaining_servings === "number" ? item.remaining_servings : null;
-                const lowStock = !soldOut && remaining !== null && remaining <= 10;
+                const lowStock = !soldOut && remaining !== null && remaining <= LOW_STOCK_THRESHOLD;
 
                 return (
                   <button key={item.ID} type="button" disabled={isTerminal || submitting || soldOut} onClick={() => openMenuPicker(item)} className={`ui-press ${MENU_CARD_SHELL_CLASS} disabled:cursor-not-allowed disabled:opacity-50 sm:hover:-translate-y-0.5`}>
@@ -1147,7 +1147,7 @@ export default function PosOrderDetailPage() {
                       <div className="mt-0.5 flex items-center justify-between gap-2">
                         <p className="font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-white">฿{item.price.toLocaleString()}</p>
                         {!soldOut ? (
-                          <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${lowStock ? "bg-amber-500 text-white dark:bg-amber-400 dark:text-gray-950" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"}`}>
+                          <span className={menuStockBadgeClass(lowStock)}>
                             {remaining !== null ? copy.lowStockLeft(remaining) : copy.noStockLimit}
                           </span>
                         ) : null}

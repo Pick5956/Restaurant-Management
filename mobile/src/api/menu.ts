@@ -2,12 +2,8 @@ import { File as FileSystemFile } from 'expo-file-system';
 
 import { apiRequest } from './client';
 import {
-  MENU_IMAGE_BACKGROUND_PREVIEW_PATH,
   MENU_IMAGE_UPLOAD_PATH,
-  appendMenuImageBackgroundPreview,
   appendMenuImageUpload,
-  type MenuImageBackgroundOptions,
-  type MenuImageBackgroundPreview,
   type MenuImageUploadFile,
   type MenuImageUploadPart,
 } from '@/src/lib/menu-image';
@@ -85,26 +81,11 @@ export function setMenuItemAvailability(id: number, isAvailable: boolean) {
   });
 }
 
-export async function previewMenuImageBackground(
-  source: MenuImageUploadFile,
-  backgroundStrength: number,
-  signal?: AbortSignal,
-) {
+export async function uploadMenuImage(source: MenuImageUploadFile) {
   const formData = new FormData();
   const file = await toMenuImageUploadPart(source);
-  appendMenuImageBackgroundPreview(formData, file, backgroundStrength);
-  return apiRequest<MenuImageBackgroundPreview>(MENU_IMAGE_BACKGROUND_PREVIEW_PATH, {
-    method: 'POST',
-    body: formData,
-    signal,
-  });
-}
-
-export async function uploadMenuImage(source: MenuImageUploadFile, options: MenuImageBackgroundOptions) {
-  const formData = new FormData();
-  const file = await toMenuImageUploadPart(source);
-  appendMenuImageUpload(formData, file, options);
-  return apiRequest<{ image_url: string; path: string; background_removed: boolean }>(MENU_IMAGE_UPLOAD_PATH, {
+  appendMenuImageUpload(formData, file);
+  return apiRequest<{ image_url: string; path: string }>(MENU_IMAGE_UPLOAD_PATH, {
     method: 'POST',
     body: formData,
   });

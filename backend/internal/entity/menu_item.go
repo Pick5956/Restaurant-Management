@@ -9,9 +9,18 @@ type MenuItem struct {
 	Name         string  `json:"name" gorm:"not null;size:160"`
 	Price        float64 `json:"price" gorm:"type:numeric(14,2);not null;check:menu_item_price_nonnegative,price >= 0"`
 	ImageURL     string  `json:"image_url" gorm:"size:2048"`
-	Description  string  `json:"description" gorm:"size:2000"`
-	IsAvailable  bool    `json:"is_available" gorm:"default:true;index;index:idx_menu_items_catalog,priority:2"`
-	DisplayOrder int     `json:"display_order" gorm:"default:0;index:idx_menu_items_catalog,priority:3"`
+	// The photo ImageURL was cut from, and where it sat in the square frame
+	// (zoom -100..100, position 0..1 on each axis). The web editor reopens the
+	// original with this framing, so a second adjust starts from the whole photo
+	// instead of the square it produced (owner, 28 ก.ย. 2569). Empty original:
+	// the dish has only the square, as every item saved before this did.
+	ImageOriginalURL string  `json:"image_original_url" gorm:"size:2048"`
+	ImageCropZoom    float64 `json:"image_crop_zoom" gorm:"not null;default:0"`
+	ImageCropX       float64 `json:"image_crop_x" gorm:"not null;default:0.5"`
+	ImageCropY       float64 `json:"image_crop_y" gorm:"not null;default:0.5"`
+	Description      string  `json:"description" gorm:"size:2000"`
+	IsAvailable      bool    `json:"is_available" gorm:"default:true;index;index:idx_menu_items_catalog,priority:2"`
+	DisplayOrder     int     `json:"display_order" gorm:"default:0;index:idx_menu_items_catalog,priority:3"`
 
 	// RemainingServings is computed at read time (not stored): how many more
 	// portions can still be made given current stock minus what queued orders have

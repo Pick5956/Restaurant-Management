@@ -111,9 +111,11 @@ export function SelectChevron({ open = false }: { open?: boolean }) {
  * on the same left edge. The fill comes from the face (MENU_SURFACE); the corner
  * radius, text inset, size and row height are read off the trigger, because
  * callers restyle triggers (rounded-xl toolbar filters) and the list has to
- * follow them. The trigger's live colour is not copied: hover changes it. A
- * trigger narrower than MIN_ATTACHED_WIDTH gets the old detached card instead,
- * so a tiny unit picker can still show readable options.
+ * follow them. The trigger's live colour is not copied: hover changes it.
+ * Every list attaches, however narrow its field (owner, 28 ก.ย. 2569: every
+ * dropdown on the web looks like the category picker). Narrow triggers used to
+ * get a detached 224px card below 140px, which is what made the recipe's unit
+ * picker look like a different control from the one beside it.
  */
 export type MenuPosition = {
   left: number;
@@ -142,35 +144,27 @@ export const INITIAL_MENU_POSITION: MenuPosition = {
   rowHeight: 36,
 };
 
-const MIN_ATTACHED_WIDTH = 140;
 // Rows in an attached list sit 8px shorter than the field that opened them:
 // a full field height per row read as padded and cost a row of the list.
 const ATTACHED_ROW_INSET = 8;
 const ATTACHED_ROW_MIN = 32;
 const MENU_MARGIN = 8;
-const DETACHED_GAP = 6;
 
-export function menuPositionFor(rect: DOMRect, trigger: HTMLElement, viewportWidth: number, viewportHeight: number): MenuPosition {
+// `viewportWidth` stays in the signature for the callers; an attached list
+// takes the field's own left edge and width, so it is no longer needed here.
+export function menuPositionFor(rect: DOMRect, trigger: HTMLElement, _viewportWidth: number, viewportHeight: number): MenuPosition {
   const style = window.getComputedStyle(trigger);
-  const attached = rect.width >= MIN_ATTACHED_WIDTH;
-  const gap = attached ? 0 : DETACHED_GAP;
-  const width = attached
-    ? rect.width
-    : Math.min(viewportWidth - MENU_MARGIN * 2, Math.max(rect.width, 224));
-  const left = attached
-    ? rect.left
-    : Math.min(Math.max(MENU_MARGIN, rect.left), Math.max(MENU_MARGIN, viewportWidth - width - MENU_MARGIN));
   const below = viewportHeight - rect.bottom - MENU_MARGIN;
   const aboveSpace = rect.top - MENU_MARGIN;
   const above = below < 176 && aboveSpace > below;
-  const maxHeight = Math.min(256, Math.max(128, (above ? aboveSpace : below) - gap));
+  const maxHeight = Math.min(256, Math.max(128, above ? aboveSpace : below));
   return {
-    left,
-    width,
+    left: rect.left,
+    width: rect.width,
     maxHeight,
-    offset: above ? viewportHeight - rect.top + gap : rect.bottom + gap,
+    offset: above ? viewportHeight - rect.top : rect.bottom,
     above,
-    attached,
+    attached: true,
     radius: style.borderTopLeftRadius,
     paddingLeft: style.paddingLeft,
     fontSize: style.fontSize,

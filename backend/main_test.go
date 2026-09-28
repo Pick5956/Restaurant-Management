@@ -183,6 +183,33 @@ func TestCORSAllowsIdempotencyKey(t *testing.T) {
 	}
 }
 
+// A response that differs by Origin must say so on every request, not only
+// the ones that carry an Origin. The menu image's thumbnail loads it as a
+// plain <img>/CSS background (no Origin, so no Allow-Origin); without Vary the
+// browser reused that cached copy for the cropper's crossOrigin load, which
+// then failed CORS and showed "could not open this image".
+func TestCORSVariesByOriginEvenWithoutOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(CORSMiddleware())
+	router.GET("/uploads/menu/1/dish.webp", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	for _, origin := range []string{"", "http://localhost:3000"} {
+		request := httptest.NewRequest(http.MethodGet, "/uploads/menu/1/dish.webp", nil)
+		if origin != "" {
+			request.Header.Set("Origin", origin)
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+
+		if got := response.Header().Values("Vary"); len(got) != 1 || got[0] != "Origin" {
+			t.Fatalf("origin %q: Vary = %q, want exactly [Origin]", origin, got)
+		}
+	}
+}
+
 func TestHTTPServerHasDefensiveTimeoutsWithoutBreakingStreams(t *testing.T) {
 	server := newHTTPServer("127.0.0.1:8080", http.NewServeMux())
 

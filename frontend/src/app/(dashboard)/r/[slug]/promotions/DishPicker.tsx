@@ -1,11 +1,12 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { Check, Plus, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, Tags } from "lucide-react";
 import { formatCurrency, type AppLanguage } from "@/src/lib/format";
 import type { Category, MenuItem } from "@/src/types/menu";
 import type { PromotionCopy } from "./promotionCopy";
-import { targetLabel, type PromotionNames, type TargetRef } from "./promotionRules";
+import { menuCategoryIds } from "@/src/lib/menuUtils";
+import { isTargetTicked, targetLabel, toggleTarget, type PromotionNames, type TargetRef } from "./promotionRules";
 
 type DishPickerProps = {
   label: string;
@@ -19,11 +20,9 @@ type DishPickerProps = {
   invalid?: boolean;
 };
 
-const sameRef = (a: TargetRef, b: TargetRef) => a.kind === b.kind && a.id === b.id;
-
 /**
- * The dishes a promotion counts: chips for what is chosen, and a search list
- * of categories and dishes that opens in place. It expands inside the dialog
+ * The dishes a promotion counts: one line with how many categories and dishes
+ * are chosen, and a search list of categories and dishes that opens in place. It expands inside the dialog
  * body instead of floating, so it never fights the dialog's own transform or
  * scroll (see the ThemedSelect-inside-a-transformed-modal gotcha).
  */
@@ -43,9 +42,17 @@ export default function DishPicker({ label, selected, onChange, menus, categorie
     [menus, needle],
   );
 
-  const isChosen = (ref: TargetRef) => selected.some((item) => sameRef(item, ref));
-  const toggle = (ref: TargetRef) =>
-    onChange(isChosen(ref) ? selected.filter((item) => !sameRef(item, ref)) : [...selected, ref]);
+  const summary = copy.chosenSummary(
+    selected.filter((ref) => ref.kind === "category").length,
+    selected.filter((ref) => ref.kind === "menu").length,
+  );
+
+  const pickerMenus = useMemo(
+    () => menus.map((menu) => ({ id: menu.ID, categoryIds: menuCategoryIds(menu) })),
+    [menus],
+  );
+  const isChosen = (ref: TargetRef) => isTargetTicked(selected, ref, pickerMenus);
+  const toggle = (ref: TargetRef) => onChange(toggleTarget(selected, ref, pickerMenus));
 
   const row = (ref: TargetRef, name: string, detail?: string) => {
     const chosen = isChosen(ref);
@@ -76,45 +83,34 @@ export default function DishPicker({ label, selected, onChange, menus, categorie
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {selected.length === 0 ? (
-          <span className={`text-[13px] ${invalid ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400"}`}>{copy.nothingChosen}</span>
-        ) : (
-          selected.map((ref) => {
-            const text = targetLabel(ref, names, language);
-            return (
-              <span
-                key={`${ref.kind}-${ref.id}`}
-                className="inline-flex max-w-full items-center gap-1 rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-[13px] font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              >
-                <span className="truncate">{text}</span>
-                <button
-                  type="button"
-                  onClick={() => toggle(ref)}
-                  aria-label={copy.removeTarget(text)}
-                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              </span>
-            );
-          })
-        )}
-        <button
-          ref={toggleRef}
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          aria-controls={listId}
-          // The chosen dishes sit beside it as chips of the same size, so
-          // without a mark of its own this button reads as one more chip. The
-          // icon and the brand orange say it is the action.
-          className="ui-press inline-flex h-8 items-center gap-1.5 rounded-md border border-orange-200 bg-white px-2.5 text-[12px] font-semibold text-orange-700 transition-colors hover:bg-orange-50 dark:border-orange-500/40 dark:bg-gray-900 dark:text-orange-300 dark:hover:bg-orange-500/10"
+      {/* One line that says how much is chosen; the list itself is where
+          things are added and taken away. Chips for every pick used to fill
+          five rows once a few categories and dishes were in. */}
+      <button
+        ref={toggleRef}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={`${label}, ${summary || copy.nothingChosen}`}
+        className={`ui-press flex h-10 w-full items-center gap-2 rounded-md border bg-white px-3 text-left text-[14px] transition-colors hover:border-gray-300 dark:bg-gray-900 dark:hover:border-gray-600 ${
+          invalid && !summary
+            ? "border-red-400 dark:border-red-500/70"
+            : open
+              ? "border-orange-500 dark:border-orange-500"
+              : "border-gray-200 dark:border-gray-700"
+        }`}
+      >
+        <Tags className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
+        <span
+          className={`min-w-0 flex-1 truncate ${
+            summary ? "text-gray-900 dark:text-white" : invalid ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400"
+          }`}
         >
-          {open ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-          {open ? copy.done : copy.choose}
-        </button>
-      </div>
+          {summary || copy.nothingChosen}
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform duration-200 dark:text-gray-400 ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
 
       {open ? (
         <div id={listId} className="mt-2 rounded-md border border-gray-200 dark:border-gray-800">

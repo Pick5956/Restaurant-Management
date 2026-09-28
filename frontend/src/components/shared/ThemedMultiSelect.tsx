@@ -89,8 +89,8 @@ function useChipCopy(moreLabel?: (count: number) => string): ChipCopy {
   return moreLabel ? { ...copy, more: moreLabel } : copy;
 }
 
-const CHIP = "inline-flex h-6 min-w-0 max-w-[11rem] items-center gap-0.5 rounded-full bg-black/[0.07] pl-2.5 pr-0.5 text-[12px] font-semibold text-gray-900 dark:bg-white/[0.12] dark:text-white";
-const MORE_CHIP = "inline-flex h-6 shrink-0 items-center rounded-full bg-black/[0.07] px-2.5 text-[12px] font-semibold text-gray-900 dark:bg-white/[0.12] dark:text-white";
+const CHIP = "inline-flex h-7 min-w-0 max-w-[11rem] items-center gap-0.5 rounded-full bg-black/[0.07] pl-2.5 pr-0.5 text-[14px] font-semibold text-gray-900 dark:bg-white/[0.12] dark:text-white";
+const MORE_CHIP = "inline-flex h-7 shrink-0 items-center rounded-full bg-black/[0.07] px-2.5 text-[14px] font-semibold text-gray-900 dark:bg-white/[0.12] dark:text-white";
 /** gap-1.5 between chips. */
 const CHIP_GAP = 6;
 /** Chips shown before the first measurement, and when nothing can be measured (server render). */
@@ -230,7 +230,7 @@ function Checkbox({ checked }: { checked: boolean }) {
  *  the field's height, so they grow with it. */
 function multiSize(compact: boolean, boundary: SelectBoundary) {
   if (boundary === "filled") return "h-11 text-[16px]";
-  return compact ? "h-10 text-[12px]" : "h-11 text-[13px]";
+  return compact ? "h-10 text-[12px]" : "h-11 text-[14px]";
 }
 
 function fieldClass(boundary: SelectBoundary, compact: boolean, open: boolean) {

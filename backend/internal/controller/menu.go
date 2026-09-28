@@ -285,14 +285,22 @@ func (ctrl *MenuController) UpdateMenuItem(c *gin.Context) {
 		return
 	}
 	previousImage := ""
+	previousOriginal := ""
 	if existing, err := ctrl.menuSvc.FindMenuItem(restaurantID, itemID); err == nil {
 		previousImage = existing.ImageURL
+		previousOriginal = existing.ImageOriginalURL
 		// A form opened before another device changed the photo sends the old
 		// URL back, and that file was removed when the photo changed. Saving
 		// it would point the dish at a missing picture and then release - and
 		// delete - the photo it has now. The stored picture stays.
 		if staleMenuImage(restaurantID, req.ImageURL) {
 			req.ImageURL = previousImage
+		}
+		// The same for the original: a missing file is not worth keeping a link
+		// to, the editor would only fail to open it.
+		if req.ImageOriginalURL != nil && staleMenuImage(restaurantID, *req.ImageOriginalURL) {
+			empty := ""
+			req.ImageOriginalURL = &empty
 		}
 	}
 	item, err := ctrl.menuSvc.UpdateMenuItem(restaurantID, itemID, &req)
@@ -303,6 +311,9 @@ func (ctrl *MenuController) UpdateMenuItem(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 	if previousImage != item.ImageURL {
 		ctrl.releaseMenuImage(restaurantID, previousImage)
+	}
+	if previousOriginal != item.ImageOriginalURL {
+		ctrl.releaseMenuImage(restaurantID, previousOriginal)
 	}
 }
 
@@ -338,8 +349,10 @@ func (ctrl *MenuController) DeleteMenuItem(c *gin.Context) {
 		return
 	}
 	previousImage := ""
+	previousOriginal := ""
 	if existing, err := ctrl.menuSvc.FindMenuItem(restaurantID, itemID); err == nil {
 		previousImage = existing.ImageURL
+		previousOriginal = existing.ImageOriginalURL
 	}
 	if err := ctrl.menuSvc.DeleteMenuItem(restaurantID, itemID); err != nil {
 		respondAPIError(c, http.StatusBadRequest, err)
@@ -347,6 +360,7 @@ func (ctrl *MenuController) DeleteMenuItem(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 	ctrl.releaseMenuImage(restaurantID, previousImage)
+	ctrl.releaseMenuImage(restaurantID, previousOriginal)
 }
 
 // releaseMenuImage deletes the file behind previousURL once no menu item of
@@ -379,9 +393,10 @@ func staleMenuImage(restaurantID uint, imageURL string) bool {
 }
 
 // removeUnreferencedMenuImage removes the file previousURL points at when it
-// is one of this restaurant's menu uploads and none of items still uses it.
-// Items are compared by file, not URL text, so the same picture stored under
-// two public hosts still counts as in use.
+// is one of this restaurant's menu uploads and none of items still uses it,
+// as its photo or as the original that photo was cut from. Items are compared
+// by file, not URL text, so the same picture stored under two public hosts
+// still counts as in use.
 func removeUnreferencedMenuImage(restaurantID uint, previousURL string, items []entity.MenuItem) {
 	directory, publicPrefix := menuUploadLocation(restaurantID)
 	previousPath := uploadPathFromURL(previousURL, publicPrefix, directory)
@@ -389,7 +404,8 @@ func removeUnreferencedMenuImage(restaurantID uint, previousURL string, items []
 		return
 	}
 	for _, item := range items {
-		if uploadPathFromURL(item.ImageURL, publicPrefix, directory) == previousPath {
+		if uploadPathFromURL(item.ImageURL, publicPrefix, directory) == previousPath ||
+			uploadPathFromURL(item.ImageOriginalURL, publicPrefix, directory) == previousPath {
 			return
 		}
 	}

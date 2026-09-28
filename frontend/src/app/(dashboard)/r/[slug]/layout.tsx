@@ -1,6 +1,6 @@
 import { SidebarProvider } from "@/src/providers/SidebarProvider";
 import Sidebar from "@/src/components/shared/Sidebar";
-import MobileNavHandle from "@/src/components/shared/MobileNavHandle";
+import PhoneTopBar from "@/src/components/shared/PhoneTopBar";
 import ContentWrapper from "@/src/components/shared/ContentWrapper";
 import ShellScroll from "@/src/components/shared/ShellScroll";
 import DashboardRestaurantGuard from "@/src/components/shared/DashboardRestaurantGuard";
@@ -18,7 +18,7 @@ export default function DashboardLayout({
         <div aria-hidden="true" data-shell-frame="" className="pointer-events-none fixed inset-0 -z-10 hidden lg:block" />
         <Sidebar />
         <ContentWrapper>
-          <MobileNavHandle />
+          <PhoneTopBar />
           {/* Phone Safari (iOS 26) colours the area behind its bottom toolbar
               from a fixed box touching that edge; without one the phone showed
               a black band there once the top bar was gone (19 ก.ย. 2569). A

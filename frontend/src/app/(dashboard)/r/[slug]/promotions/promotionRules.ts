@@ -28,6 +28,57 @@ export function dayLabel(bit: number, language: AppLanguage) {
 export type TargetRef = { kind: "menu" | "category"; id: number };
 export type BundleSlot = { quantity: number; targets: TargetRef[] };
 
+/** A dish as the picker needs it: its id and every category it is filed under. */
+export type PickerMenu = { id: number; categoryIds: number[] };
+
+const sameTarget = (a: TargetRef, b: TargetRef) => a.kind === b.kind && a.id === b.id;
+
+/**
+ * Whether the picker shows a target ticked. A dish is ticked when it was chosen
+ * on its own or when one of its categories is chosen, since the category
+ * already counts it.
+ */
+export function isTargetTicked(selected: TargetRef[], ref: TargetRef, menus: PickerMenu[]): boolean {
+  if (selected.some((item) => sameTarget(item, ref))) return true;
+  if (ref.kind !== "menu") return false;
+  const menu = menus.find((entry) => entry.id === ref.id);
+  return Boolean(menu?.categoryIds.some((categoryId) => selected.some((item) => item.kind === "category" && item.id === categoryId)));
+}
+
+/**
+ * Ticks or unticks one row of the picker.
+ *
+ * Ticking a category ticks its dishes with it; they are not stored twice, so
+ * any of them chosen on their own are folded into the category. Unticking one
+ * of those dishes means the category is no longer whole: the category comes
+ * off and its other dishes stay ticked on their own.
+ */
+export function toggleTarget(selected: TargetRef[], ref: TargetRef, menus: PickerMenu[]): TargetRef[] {
+  const inCategory = (menuId: number, categoryId: number) =>
+    menus.some((menu) => menu.id === menuId && menu.categoryIds.includes(categoryId));
+
+  if (ref.kind === "category") {
+    if (selected.some((item) => sameTarget(item, ref))) {
+      return selected.filter((item) => !sameTarget(item, ref));
+    }
+    return [...selected.filter((item) => !(item.kind === "menu" && inCategory(item.id, ref.id))), ref];
+  }
+
+  if (!isTargetTicked(selected, ref, menus)) return [...selected, ref];
+
+  const menu = menus.find((entry) => entry.id === ref.id);
+  const brokenCategories = selected.filter(
+    (item) => item.kind === "category" && Boolean(menu?.categoryIds.includes(item.id)),
+  );
+  const kept = selected.filter((item) => !sameTarget(item, ref) && !brokenCategories.includes(item));
+  const stillTicked = (menuId: number) => isTargetTicked(kept, { kind: "menu", id: menuId }, menus);
+  const leftBehind = menus
+    .filter((entry) => entry.id !== ref.id && brokenCategories.some((category) => entry.categoryIds.includes(category.id)))
+    .filter((entry) => !stillTicked(entry.id))
+    .map((entry): TargetRef => ({ kind: "menu", id: entry.id }));
+  return [...kept, ...leftBehind];
+}
+
 export type PromotionForm = {
   id: number | null;
   name: string;

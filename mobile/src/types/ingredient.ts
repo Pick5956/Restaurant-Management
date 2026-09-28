@@ -40,6 +40,17 @@ export interface Ingredient {
   daily_use?: number | null;
   /** Bumped by every stock write, so it is a truthful "last moved". */
   UpdatedAt?: string;
+  /**
+   * Every unit an amount may be entered in (กรัม, กก., ...), and how many stock
+   * units one of each makes. Sent by the server on every ingredient read; the
+   * web recipe editor already picks from it, and the app does since 28 ก.ย. 2569.
+   */
+  unit_family?: IngredientUnitOption[];
+}
+
+export interface IngredientUnitOption {
+  unit: string;
+  stock_per_unit: number;
 }
 
 export interface IngredientTransaction {

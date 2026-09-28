@@ -452,14 +452,17 @@ export default function Sidebar() {
 
         <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
 
-        {/* The restaurant and the person at the foot, as on a computer. The
-            account menu used to be the avatar on the phone top bar. */}
+        {/* The restaurant and the person at the foot, as on a computer. On a
+            phone the person is in the top bar again (28 ก.ย. 2569), so only an
+            iPad opening this drawer from its rail shows them here. */}
         <div className="flex shrink-0 flex-col gap-0.5 border-t border-[var(--rail-border)] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RestaurantSwitcherCard collapsed={false} />
           {/* Keyed on the drawer: closing the drawer remounts it, which shuts an
               open account menu too. The menu is portalled to body, so it stayed
               on screen after the drawer slid away (19 ก.ย. 2569). */}
-          <DashboardAccountMenu key={mobileOpen ? 'drawer-open' : 'drawer-closed'} variant="rail" />
+          <div className="hidden tablet:block">
+            <DashboardAccountMenu key={mobileOpen ? 'drawer-open' : 'drawer-closed'} variant="rail" />
+          </div>
         </div>
       </aside>
 

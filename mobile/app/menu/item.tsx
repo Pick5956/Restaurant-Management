@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { listIngredients } from '@/src/api/ingredient';
-import { createMenuItem, deleteMenuItem, listCategories, listMenuItems, previewMenuImageBackground, updateMenuItem, uploadMenuImage } from '@/src/api/menu';
+import { createMenuItem, deleteMenuItem, listCategories, listMenuItems, updateMenuItem, uploadMenuImage } from '@/src/api/menu';
 import { BottomSheet } from '@/src/components/ai/chrome';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppText as Text } from '@/src/components/app-text';
@@ -13,7 +13,7 @@ import { SheetTitle } from '@/src/components/inventory/parts';
 import { MenuImageCropper } from '@/src/components/menu-image-cropper';
 import { StateMessage } from '@/src/components/mobile-screen';
 import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
-import { Button, EmptyState, Feedback, SearchField } from '@/src/components/ui';
+import { Button, ChoiceSheet, EmptyState, Feedback, SearchField } from '@/src/components/ui';
 import { apiFailureDetail } from '@/src/lib/api-failure';
 import { toFloat, toInt } from '@/src/lib/forms';
 import {
@@ -26,9 +26,10 @@ import {
   validateMenuOptionGroups,
   type MenuIngredientDraft,
   type MenuOptionGroupDraft,
+  type MenuOptionIngredientDraft,
   type MenuOptionGroupIssueCode,
 } from '@/src/lib/menu-editor';
-import { menuImageUploadCanCommit, resolveCommittedMenuImageUrl, type MenuImageBackgroundOptions, type MenuImageUploadFile, type MenuImageUploadResult } from '@/src/lib/menu-image';
+import { resolveCommittedMenuImageUrl, type MenuImageUploadFile, type MenuImageUploadResult } from '@/src/lib/menu-image';
 import { can } from '@/src/lib/rbac';
 import { parsePositiveRouteId } from '@/src/lib/route-id';
 import { useAuth } from '@/src/providers/auth-provider';
@@ -48,6 +49,10 @@ const PRICE_WIDTH = 116;
 const CATEGORY_CHIPS_SHOWN = 9;
 
 type FoldableCard = 'details' | 'categories' | 'options' | 'recipe';
+
+type IngredientTarget = { kind: 'recipe' } | { kind: 'option'; groupIndex: number; optionIndex: number };
+// The row whose unit is being picked: a recipe row, or one of an option's rows.
+type UnitTarget = { kind: 'recipe'; index: number } | { kind: 'option'; groupIndex: number; optionIndex: number; rowIndex: number };
 
 const emptyGroup = (index: number): MenuOptionGroupDraft => ({ name: '', required: false, min_select: 0, max_select: 1, display_order: index + 1, is_active: true, options: [] });
 
@@ -119,7 +124,10 @@ export default function MenuItemEditorScreen() {
   const [groupOpen, setGroupOpen] = useState<boolean[]>([]);
   const [foldedCards, setFoldedCards] = useState<FoldableCard[]>([]);
   const [ingredients, setIngredients] = useState<MenuIngredientDraft[]>([]);
-  const [pickingIngredient, setPickingIngredient] = useState(false);
+  // Where a picked ingredient goes: the recipe, or one option's stock rows.
+  // One sheet serves both, so the two lists pick the same way.
+  const [pickerTarget, setPickerTarget] = useState<IngredientTarget | null>(null);
+  const [unitTarget, setUnitTarget] = useState<UnitTarget | null>(null);
   const [ingredientQuery, setIngredientQuery] = useState('');
   // `error` is the step that failed, and the app's line under it when there is one.
   const [saving, setSaving] = useState(false);
@@ -152,9 +160,9 @@ export default function MenuItemEditorScreen() {
       if (item) {
         setName(item.name); setPrice(String(item.price)); setDescription(item.description || ''); setImageUrl(item.image_url || ''); setDisplayOrder(String(item.display_order)); setAvailable(item.is_available);
         setCategoryIds(initialMenuCategoryIds(item, categoryResponse.categories || []));
-        // Option ingredient links are authored on the web only, but they are read
-        // here and posted back untouched. A save replaces the whole option
-        // aggregate, so dropping them on the way in deletes them on the way out.
+        // Option ingredient links are edited here as well as on the web (since
+        // 28 ก.ย. 2569). A save replaces the whole option aggregate, so every
+        // row is read in and posted back, touched or not.
         setOptionGroups(menuOptionGroupDrafts((item.option_groups || []).map((group) => ({ name: group.name, required: group.required, min_select: group.min_select, max_select: group.max_select, display_order: group.display_order, is_active: group.is_active, options: (group.options || []).map((option) => ({ name: option.name, price_delta: option.price_delta, is_default: option.is_default, display_order: option.display_order, is_active: option.is_active, ingredients: (option.ingredients || []).map((row) => ({ ingredient_id: row.ingredient_id, direction: row.direction, quantity: row.quantity, unit: row.unit })) })) }))));
         setGroupOpen((item.option_groups || []).map(() => false));
         setIngredients(menuIngredientDrafts((item.ingredients || []).map((ingredient) => ({ ingredient_id: ingredient.ingredient_id, quantity: ingredient.quantity, unit: ingredient.unit, note: ingredient.note }))));
@@ -169,12 +177,20 @@ export default function MenuItemEditorScreen() {
       .finally(() => setLoading(false));
   }, [canManage, canViewInventory, copy, editing, invalidRoute, itemId, language]);
 
+  // The sheet offers what the list it is filling does not have yet.
+  const takenIngredientIds = useMemo(() => {
+    if (pickerTarget?.kind === 'option') {
+      const rows = optionGroups[pickerTarget.groupIndex]?.options[pickerTarget.optionIndex]?.ingredients ?? [];
+      return new Set(rows.map((row) => row.ingredient_id));
+    }
+    return new Set(ingredients.map((row) => row.ingredient_id));
+  }, [ingredients, optionGroups, pickerTarget]);
   const pickableIngredients = useMemo(() => {
     const query = ingredientQuery.trim().toLowerCase();
     return allIngredients
-      .filter((item) => !ingredients.some((row) => row.ingredient_id === item.ID))
+      .filter((item) => !takenIngredientIds.has(item.ID))
       .filter((item) => !query || item.name.toLowerCase().includes(query));
-  }, [allIngredients, ingredientQuery, ingredients]);
+  }, [allIngredients, ingredientQuery, takenIngredientIds]);
   const canAddIngredient = allIngredients.some((item) => !ingredients.some((row) => row.ingredient_id === item.ID));
   const optionValidation = useMemo(() => validateMenuOptionGroups(menuOptionGroupInputs(optionGroups)), [optionGroups]);
 
@@ -195,10 +211,60 @@ export default function MenuItemEditorScreen() {
   function updateOption(groupIndex: number, optionIndex: number, patch: Partial<MenuOptionGroupDraft['options'][number]>) { setOptionGroups((current) => current.map((group, currentGroupIndex) => currentGroupIndex === groupIndex ? { ...group, options: group.options.map((option, currentOptionIndex) => currentOptionIndex === optionIndex ? { ...option, ...patch } : option) } : group)); }
   function addOption(groupIndex: number) { setOptionGroups((current) => current.map((group, index) => index === groupIndex ? { ...group, options: [...group.options, { name: '', price_delta: '0', is_default: false, display_order: group.options.length + 1, is_active: true }] } : group)); }
   function removeOption(groupIndex: number, optionIndex: number) { setOptionGroups((current) => current.map((group, index) => index === groupIndex ? { ...group, options: group.options.filter((_, currentIndex) => currentIndex !== optionIndex) } : group)); }
-  function addIngredient(item: Ingredient) {
-    setIngredients((current) => [...current, { ingredient_id: item.ID, quantity: '1', unit: item.unit || '', note: '' }]);
-    setPickingIngredient(false);
+  function updateOptionIngredients(groupIndex: number, optionIndex: number, change: (rows: MenuOptionIngredientDraft[]) => MenuOptionIngredientDraft[]) {
+    const option = optionGroups[groupIndex]?.options[optionIndex];
+    if (!option) return;
+    updateOption(groupIndex, optionIndex, { ingredients: change(option.ingredients ?? []) });
+  }
+  function closeIngredientPicker() {
+    setPickerTarget(null);
     setIngredientQuery('');
+  }
+  function addIngredient(item: Ingredient) {
+    if (pickerTarget?.kind === 'option') {
+      // "add": a choice takes stock on top of the recipe, as the web writes it.
+      updateOptionIngredients(pickerTarget.groupIndex, pickerTarget.optionIndex, (rows) => [...rows, { ingredient_id: item.ID, direction: 'add', quantity: '1', unit: item.unit || '' }]);
+    } else {
+      setIngredients((current) => [...current, { ingredient_id: item.ID, quantity: '1', unit: item.unit || '', note: '' }]);
+    }
+    closeIngredientPicker();
+  }
+  function ingredientName(ingredientId: number) {
+    return allIngredients.find((current) => current.ID === ingredientId)?.name || copy(`วัตถุดิบ #${ingredientId}`, `Ingredient #${ingredientId}`);
+  }
+  function ingredientUnit(ingredientId: number, unit?: string) {
+    return unit || allIngredients.find((current) => current.ID === ingredientId)?.unit || undefined;
+  }
+  // The units an amount may be typed in, as the web recipe editor offers them:
+  // the ingredient's family from the server (กรัม, กก., ...). One unit or none
+  // means there is nothing to pick, and the unit stays plain text.
+  function unitChoices(ingredientId: number) {
+    return allIngredients.find((current) => current.ID === ingredientId)?.unit_family ?? [];
+  }
+  // "= 1,500 กรัม" under a row typed in another unit, the same line the web shows.
+  function stockEquivalent(ingredientId: number, unit: string | undefined, quantity: string) {
+    const item = allIngredients.find((current) => current.ID === ingredientId);
+    if (!item || !unit || unit === item.unit) return null;
+    const factor = item.unit_family?.find((option) => option.unit === unit)?.stock_per_unit;
+    const amount = toFloat(quantity, 0);
+    if (!factor || !amount) return null;
+    const inStock = Number((amount * factor).toFixed(6));
+    return `= ${inStock.toLocaleString(language === 'th' ? 'th-TH' : 'en-US', { maximumFractionDigits: 6 })} ${item.unit}`;
+  }
+  const unitTargetIngredientId = unitTarget?.kind === 'recipe'
+    ? ingredients[unitTarget.index]?.ingredient_id
+    : unitTarget
+      ? optionGroups[unitTarget.groupIndex]?.options[unitTarget.optionIndex]?.ingredients?.[unitTarget.rowIndex]?.ingredient_id
+      : undefined;
+  function chooseUnit(unit: string) {
+    const target = unitTarget;
+    setUnitTarget(null);
+    if (!target) return;
+    if (target.kind === 'recipe') {
+      setIngredients((current) => current.map((row, index) => index === target.index ? { ...row, unit } : row));
+      return;
+    }
+    updateOptionIngredients(target.groupIndex, target.optionIndex, (rows) => rows.map((row, index) => index === target.rowIndex ? { ...row, unit } : row));
   }
 
   function optionIssueMessage(code: MenuOptionGroupIssueCode) {
@@ -262,27 +328,21 @@ export default function MenuItemEditorScreen() {
     finally { setSaving(false); }
   }
 
-  async function uploadImage(file: MenuImageUploadFile, options: MenuImageBackgroundOptions): Promise<MenuImageUploadResult> {
+  async function uploadImage(file: MenuImageUploadFile): Promise<MenuImageUploadResult> {
     setUploadingImage(true);
     setImageError(null);
     try {
-      const response = await uploadMenuImage(file, options);
+      const response = await uploadMenuImage(file);
       const nextImageUrl = resolveCommittedMenuImageUrl(imageUrl, response.image_url);
       if (!response.image_url?.trim()) throw new Error('Menu image upload returned no URL.');
-      const backgroundRemoved = response.background_removed === true;
-      if (!menuImageUploadCanCommit(options, backgroundRemoved)) {
-        return { uploaded: true, backgroundRemoved };
-      }
       setImageUrl(nextImageUrl);
-      return { uploaded: true, backgroundRemoved };
+      return { uploaded: true };
     } catch {
-      if (!options.removeBackground) {
-        setImageError(copy(
-          'อัปโหลดรูปไม่สำเร็จ กรุณาใช้ไฟล์ jpg, png หรือ webp ขนาดไม่เกิน 5MB',
-          'Could not upload image. Use jpg, png, or webp up to 5MB.',
-        ));
-      }
-      return { uploaded: false, backgroundRemoved: false };
+      setImageError(copy(
+        'อัปโหลดรูปไม่สำเร็จ กรุณาใช้ไฟล์ jpg, png หรือ webp ขนาดไม่เกิน 5MB',
+        'Could not upload image. Use jpg, png, or webp up to 5MB.',
+      ));
+      return { uploaded: false };
     } finally {
       setUploadingImage(false);
     }
@@ -389,7 +449,6 @@ export default function MenuItemEditorScreen() {
             disabled={saving || uploadingImage}
             onEditingChange={setImageEditing}
             onError={(message) => setImageError(message || null)}
-            onPreview={previewMenuImageBackground}
             onUpload={uploadImage}
           />
           {imageError ? <View style={{ paddingTop: spacing.sm, alignItems: imageEditing ? 'flex-start' : 'center' }}><ErrorLine text={imageError} /></View> : null}
@@ -553,7 +612,8 @@ export default function MenuItemEditorScreen() {
                         <Text style={{ width: PRICE_WIDTH, fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{copy('ราคาเพิ่ม', 'Extra price')}</Text>
                       </View>
                       {group.options.map((option, optionIndex) => (
-                        <View key={optionIndex} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                        <View key={optionIndex} style={{ gap: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                           <Field
                             grow
                             accessibilityLabel={copy(`ชื่อตัวเลือก ${optionIndex + 1}`, `Option ${optionIndex + 1} name`)}
@@ -575,6 +635,40 @@ export default function MenuItemEditorScreen() {
                             <RemoveTap label={copy(`ลบตัวเลือก ${optionIndex + 1}`, `Remove option ${optionIndex + 1}`)} onPress={() => removeOption(groupIndex, optionIndex)} />
                           </View>
                         </View>
+                        {/* The stock a choice takes, drawn as the recipe's rows are,
+                            tucked under the choice by a rule down its left edge. */}
+                        {(option.ingredients?.length || (canViewInventory && allIngredients.some((item) => !(option.ingredients ?? []).some((row) => row.ingredient_id === item.ID)))) ? (
+                          <View style={{ marginLeft: 6, paddingLeft: 12, gap: 6, borderLeftWidth: 2, borderLeftColor: palette.divider }}>
+                            {(option.ingredients ?? []).map((row, rowIndex) => {
+                              const rowName = ingredientName(row.ingredient_id);
+                              const rowUnit = ingredientUnit(row.ingredient_id, row.unit);
+                              const equivalent = stockEquivalent(row.ingredient_id, rowUnit, row.quantity);
+                              return (
+                                <View key={`${row.ingredient_id}-${rowIndex}`} style={{ gap: 4 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text numberOfLines={2} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{rowName}</Text>
+                                  <Field
+                                    width={PRICE_WIDTH + 12}
+                                    accessibilityLabel={copy(`${rowName} ต่อตัวเลือก`, `${rowName} per choice`)}
+                                    value={row.quantity}
+                                    onChangeText={(value) => updateOptionIngredients(groupIndex, optionIndex, (rows) => rows.map((current, index) => index === rowIndex ? { ...current, quantity: value } : current))}
+                                    keyboardType="decimal-pad"
+                                    unit={rowUnit}
+                                    onUnitPress={unitChoices(row.ingredient_id).length > 1 ? () => setUnitTarget({ kind: 'option', groupIndex, optionIndex, rowIndex }) : undefined}
+                                    unitPressLabel={copy(`หน่วยของ ${rowName}: ${rowUnit ?? ''}`, `${rowName} unit: ${rowUnit ?? ''}`)}
+                                  />
+                                  <RemoveTap label={copy(`เอา ${rowName} ออกจากตัวเลือก`, `Remove ${rowName} from this choice`)} onPress={() => updateOptionIngredients(groupIndex, optionIndex, (rows) => rows.filter((_, index) => index !== rowIndex))} />
+                                </View>
+                                {equivalent ? <Text style={{ alignSelf: 'flex-end', paddingRight: 44, fontSize: 12, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>{equivalent}</Text> : null}
+                                </View>
+                              );
+                            })}
+                            {canViewInventory && allIngredients.some((item) => !(option.ingredients ?? []).some((row) => row.ingredient_id === item.ID)) ? (
+                              <AddLink label={copy('เพิ่มวัตถุดิบ', 'Add ingredient')} onPress={() => setPickerTarget({ kind: 'option', groupIndex, optionIndex })} />
+                            ) : null}
+                          </View>
+                        ) : null}
+                        </View>
                       ))}
                     </View>
                   ) : null}
@@ -594,15 +688,18 @@ export default function MenuItemEditorScreen() {
             collapsed={folded('recipe')}
             onToggle={() => toggleCard('recipe')}
             detail={folded('recipe') ? (ingredients.length ? copy(`${ingredients.length} วัตถุดิบ`, `${ingredients.length} ingredients`) : copy('ไม่มีสูตร', 'No recipe')) : undefined}
-            trailing={canAddIngredient ? <AddLink label={copy('เพิ่ม', 'Add')} onPress={() => setPickingIngredient(true)} /> : undefined}
+            trailing={canAddIngredient ? <AddLink label={copy('เพิ่ม', 'Add')} onPress={() => setPickerTarget({ kind: 'recipe' })} /> : undefined}
           >
             <FormBody>
               {!ingredients.length ? <NoneLine text={copy('ไม่มีสูตรวัตถุดิบ', 'No ingredient recipe')} /> : null}
               {ingredients.map((row, index) => {
                 const item = allIngredients.find((current) => current.ID === row.ingredient_id);
                 const ingredientName = item?.name || copy(`วัตถุดิบ #${row.ingredient_id}`, `Ingredient #${row.ingredient_id}`);
+                const rowUnit = row.unit || item?.unit || undefined;
+                const equivalent = stockEquivalent(row.ingredient_id, rowUnit, row.quantity);
                 return (
-                  <View key={`${row.ingredient_id}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View key={`${row.ingredient_id}-${index}`} style={{ gap: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text numberOfLines={2} style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: '600', color: palette.textStrong }}>{ingredientName}</Text>
                     <Field
                       width={PRICE_WIDTH + 12}
@@ -610,9 +707,13 @@ export default function MenuItemEditorScreen() {
                       value={row.quantity}
                       onChangeText={(value) => setIngredients((current) => current.map((currentRow, currentIndex) => currentIndex === index ? { ...currentRow, quantity: value } : currentRow))}
                       keyboardType="decimal-pad"
-                      unit={row.unit || item?.unit || undefined}
+                      unit={rowUnit}
+                      onUnitPress={unitChoices(row.ingredient_id).length > 1 ? () => setUnitTarget({ kind: 'recipe', index }) : undefined}
+                      unitPressLabel={copy(`หน่วยของ ${ingredientName}: ${rowUnit ?? ''}`, `${ingredientName} unit: ${rowUnit ?? ''}`)}
                     />
                     <RemoveTap label={copy(`เอา ${ingredientName} ออกจากสูตร`, `Remove ${ingredientName} from the recipe`)} onPress={() => setIngredients((current) => current.filter((_, currentIndex) => currentIndex !== index))} />
+                  </View>
+                  {equivalent ? <Text style={{ alignSelf: 'flex-end', paddingRight: 44, fontSize: 12, color: palette.placeholder, fontVariant: ['tabular-nums'] }}>{equivalent}</Text> : null}
                   </View>
                 );
               })}
@@ -638,7 +739,7 @@ export default function MenuItemEditorScreen() {
         ) : null}
       </ContentReveal>
 
-      <BottomSheet open={pickingIngredient} onClose={() => { setPickingIngredient(false); setIngredientQuery(''); }} heightFraction={0.72} keyboardLift label={copy('ปิด', 'Close')} showClose>
+      <BottomSheet open={pickerTarget !== null} onClose={closeIngredientPicker} heightFraction={0.72} keyboardLift label={copy('ปิด', 'Close')} showClose>
         <SheetTitle title={copy('เลือกวัตถุดิบ', 'Choose an ingredient')} />
         <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
           <SearchField
@@ -668,6 +769,15 @@ export default function MenuItemEditorScreen() {
           ) : null}
         </ScrollView>
       </BottomSheet>
+      <ChoiceSheet
+        open={unitTarget !== null}
+        title={copy('เลือกหน่วย', 'Choose a unit')}
+        detail={unitTargetIngredientId ? ingredientName(unitTargetIngredientId) : undefined}
+        options={(unitTargetIngredientId ? unitChoices(unitTargetIngredientId) : []).map((option) => ({ label: option.unit, value: option.unit }))}
+        cancelLabel={copy('ปิด', 'Close')}
+        onChoose={chooseUnit}
+        onClose={() => setUnitTarget(null)}
+      />
     </AppScreen>
   );
 }

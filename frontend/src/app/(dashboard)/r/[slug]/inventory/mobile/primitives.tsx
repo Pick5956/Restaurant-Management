@@ -487,7 +487,8 @@ export function ScreenNav({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 px-2 py-2 backdrop-blur">
+    // Pinned under the phone top bar (0 above the tablet breakpoint).
+    <div className="sticky top-[var(--phone-bar-h)] z-20 flex items-center gap-2 border-b border-(--inv-hairline) bg-(--inv-canvas)/95 px-2 py-2 backdrop-blur">
       <button
         type="button"
         onClick={onBack}

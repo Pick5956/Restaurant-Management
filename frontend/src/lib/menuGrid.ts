@@ -23,6 +23,21 @@ export const MENU_CARD_GRID_CLASS = [
   CARD_GRID_COLUMN_CLASS,
 ].join(" ");
 
+/**
+ * The "N left" badge beside a card's price, on both surfaces. Ten or fewer
+ * portions turns it amber (owner, 2026-09-22); otherwise it is a plain grey
+ * chip, darker than the card so it reads as a chip at all.
+ */
+export const LOW_STOCK_THRESHOLD = 10;
+
+export function menuStockBadgeClass(isLow: boolean): string {
+  return `shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${
+    isLow
+      ? "bg-amber-500 text-white dark:bg-amber-400 dark:text-gray-950"
+      : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+  }`;
+}
+
 /** Card shell shared by both surfaces, so a menu item is one object everywhere. */
 export const MENU_CARD_SHELL_CLASS =
   "relative flex min-h-[168px] flex-col overflow-hidden rounded-md border border-gray-200 bg-white text-left transition-transform dark:border-gray-800 dark:bg-gray-900 sm:min-h-[214px]";

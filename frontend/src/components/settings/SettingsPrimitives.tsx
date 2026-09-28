@@ -30,12 +30,14 @@ import { Group, Switch, matchesSearch } from "@/src/components/shared/settingsMo
 export const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 dark:focus-visible:outline-orange-400";
 
-/** The text box of Dishy AI's settings ("ชื่อที่ผู้ช่วยใช้เรียกคุณ"). 16px on a
- *  phone so iPhone Safari does not zoom in when it is tapped. */
+/** The text box every other web form uses (menu, promotions): 40px tall, a
+ *  grey hairline that turns orange on focus, no ring (owner, 27 ก.ย. 2569).
+ *  Type size is the settings' own. 16px on a phone so iPhone Safari does not
+ *  zoom in when it is tapped. */
 const INPUT_BASE =
-  "h-8 rounded-lg border bg-white px-3 text-[16px] text-gray-800 outline-none placeholder:text-gray-400 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:text-[12.5px] dark:bg-gray-900 dark:text-gray-100";
-const INPUT_OK = "border-gray-200 focus:border-orange-300 focus:ring-orange-500/15 dark:border-gray-700";
-const INPUT_ERROR = "border-red-300 focus:border-red-400 focus:ring-red-500/15 dark:border-red-900/60";
+  "h-10 rounded-md border bg-white px-3 text-[16px] text-gray-800 outline-none transition-colors placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-50 sm:text-[12.5px] dark:bg-gray-800 dark:text-gray-100";
+const INPUT_OK = "border-gray-200 focus:border-orange-500 dark:border-gray-700";
+const INPUT_ERROR = "border-red-300 focus:border-orange-500 dark:border-red-900/60";
 
 /** Controls on the right of a row share one width, so the rows line up. */
 export const CONTROL_WIDTH = "w-44";
@@ -339,7 +341,7 @@ export function SettingsSelect({ label, description, value, onChange, options }:
   }
   return (
     <SettingsItem title={label} description={description} titleId={titleId}>
-      <ThemedSelect value={value} onChange={onChange} options={options} compact aria-labelledby={titleId} className={CONTROL_WIDTH} triggerClassName="!h-8 !rounded-lg !text-[12.5px]" />
+      <ThemedSelect value={value} onChange={onChange} options={options} compact aria-labelledby={titleId} className={CONTROL_WIDTH} triggerClassName="!h-10 !rounded-md !text-[12.5px]" />
     </SettingsItem>
   );
 }
@@ -450,7 +452,7 @@ export function SettingsSkeleton({ label, rows = 4 }: { label: string; rows?: nu
             <Skeleton className="h-3.5 w-32 motion-reduce:animate-none" />
             <Skeleton className="h-3 w-full max-w-60 motion-reduce:animate-none" />
           </div>
-          <Skeleton className="h-8 w-44 shrink-0 motion-reduce:animate-none" />
+          <Skeleton className="h-10 w-44 shrink-0 motion-reduce:animate-none" />
         </div>
       ))}
     </div>

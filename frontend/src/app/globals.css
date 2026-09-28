@@ -1192,6 +1192,22 @@ textarea {
   --shell-pad: 0px;
   --shell-gap: 0px;
   --shell-radius: 0px;
+  /* The phone top bar's height (PhoneTopBar.tsx); nothing above tablet. */
+  --phone-bar-h: 0px;
+}
+
+/* Below the tablet breakpoint the top bar is back (28 ก.ย. 2569). Every page
+   pins its own toolbar with a fixed top-0 box carrying [data-shell-sticky];
+   one rule here moves them all down to sit under the bar instead of being
+   covered by it. Unlayered, so it outranks the pages' top-0 utility. */
+@media (max-width: 743.98px) {
+  :root {
+    --phone-bar-h: calc(3.5rem + env(safe-area-inset-top));
+  }
+
+  [data-shell-sticky] {
+    top: var(--phone-bar-h);
+  }
 }
 
 /* Every dashboard page paints bg-slate-100 / slate-50 (dark:bg-gray-950) on its

@@ -5,6 +5,7 @@ import type {
   MenuItem,
   MenuItemCategory,
   MenuOptionGroupInput,
+  MenuOptionIngredientInput,
   MenuOptionInput,
 } from '@/src/types/menu';
 
@@ -41,8 +42,14 @@ export interface MenuOptionGroupValidation {
   issues: MenuOptionGroupIssue[];
 }
 
-export type MenuOptionDraft = Omit<MenuOptionInput, 'price_delta'> & {
+/** An option's stock row while it is being typed: the amount stays text, like the recipe's. */
+export type MenuOptionIngredientDraft = Omit<MenuOptionIngredientInput, 'quantity'> & {
+  quantity: string;
+};
+
+export type MenuOptionDraft = Omit<MenuOptionInput, 'price_delta' | 'ingredients'> & {
   price_delta: string;
+  ingredients?: MenuOptionIngredientDraft[];
 };
 
 export type MenuOptionGroupDraft = Omit<MenuOptionGroupInput, 'options'> & {
@@ -79,6 +86,7 @@ export function menuOptionGroupDrafts(
     options: group.options.map((option) => ({
       ...option,
       price_delta: String(option.price_delta),
+      ingredients: option.ingredients?.map((row) => ({ ...row, quantity: String(row.quantity) })),
     })),
   }));
 }
@@ -91,6 +99,7 @@ export function menuOptionGroupInputs(
     options: group.options.map((option) => ({
       ...option,
       price_delta: decimalInput(option.price_delta),
+      ingredients: option.ingredients?.map((row) => ({ ...row, quantity: decimalInput(row.quantity) })),
     })),
   }));
 }

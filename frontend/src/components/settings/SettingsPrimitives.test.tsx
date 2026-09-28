@@ -111,10 +111,11 @@ describe("SettingsField", () => {
     expect(attribute(markup, "input", "aria-describedby")).toBeUndefined();
   });
 
-  it("is the Dishy AI settings' text box: 32px, 16px text on a phone so iPhone does not zoom", () => {
+  it("is the web's form text box: 40px, orange edge on focus, 16px text on a phone so iPhone does not zoom", () => {
     const classes = (attribute(renderToStaticMarkup(<SettingsField label="x" description="d" value="" onChange={noop} />), "input", "class") ?? "").split(" ");
 
-    expect(classes).toEqual(expect.arrayContaining(["h-8", "w-44", "rounded-lg", "text-[16px]", "sm:text-[12.5px]", "focus:border-orange-300"]));
+    expect(classes).toEqual(expect.arrayContaining(["h-10", "w-44", "rounded-md", "text-[16px]", "sm:text-[12.5px]", "focus:border-orange-500"]));
+    expect(classes).not.toContain("focus:ring-2");
   });
 
   it("marks an invalid time field as invalid", () => {

@@ -26,16 +26,22 @@ type CategoryRequest struct {
 }
 
 type MenuItemRequest struct {
-	CategoryID   uint                     `json:"category_id"`
-	CategoryIDs  []uint                   `json:"category_ids" binding:"max=20"`
-	Name         string                   `json:"name" binding:"required,max=160"`
-	Price        float64                  `json:"price"`
-	ImageURL     string                   `json:"image_url" binding:"max=2048"`
-	Description  string                   `json:"description" binding:"max=2000"`
-	IsAvailable  *bool                    `json:"is_available"`
-	DisplayOrder int                      `json:"display_order"`
-	OptionGroups []MenuOptionGroupRequest `json:"option_groups" binding:"max=20,dive"`
-	Ingredients  []MenuIngredientRequest  `json:"ingredients" binding:"max=100,dive"`
+	CategoryID  uint    `json:"category_id"`
+	CategoryIDs []uint  `json:"category_ids" binding:"max=20"`
+	Name        string  `json:"name" binding:"required,max=160"`
+	Price       float64 `json:"price"`
+	ImageURL    string  `json:"image_url" binding:"max=2048"`
+	// Framing of the photo. Pointers, because a client that does not know about
+	// framing (the Expo editor) must not wipe it by leaving the fields out.
+	ImageOriginalURL *string                  `json:"image_original_url" binding:"omitempty,max=2048"`
+	ImageCropZoom    *float64                 `json:"image_crop_zoom"`
+	ImageCropX       *float64                 `json:"image_crop_x"`
+	ImageCropY       *float64                 `json:"image_crop_y"`
+	Description      string                   `json:"description" binding:"max=2000"`
+	IsAvailable      *bool                    `json:"is_available"`
+	DisplayOrder     int                      `json:"display_order"`
+	OptionGroups     []MenuOptionGroupRequest `json:"option_groups" binding:"max=20,dive"`
+	Ingredients      []MenuIngredientRequest  `json:"ingredients" binding:"max=100,dive"`
 }
 
 type MenuItemAvailabilityRequest struct {
@@ -209,9 +215,14 @@ func (s *MenuService) CreateMenuItem(restaurantID uint, req *MenuItemRequest) (*
 		Description:  strings.TrimSpace(req.Description),
 		IsAvailable:  true,
 		DisplayOrder: req.DisplayOrder,
+		ImageCropX:   0.5,
+		ImageCropY:   0.5,
 	}
 	if req.IsAvailable != nil {
 		item.IsAvailable = *req.IsAvailable
+	}
+	if err := applyMenuImageFraming(item, req, ""); err != nil {
+		return nil, err
 	}
 	if err := s.repo.CreateMenuAggregate(
 		item,
@@ -244,10 +255,14 @@ func (s *MenuService) UpdateMenuItem(restaurantID, itemID uint, req *MenuItemReq
 	if err != nil {
 		return nil, err
 	}
+	previousImageURL := item.ImageURL
 	item.CategoryID = categoryIDs[0]
 	item.Name = name
 	item.Price = req.Price
 	item.ImageURL = strings.TrimSpace(req.ImageURL)
+	if err := applyMenuImageFraming(item, req, previousImageURL); err != nil {
+		return nil, err
+	}
 	item.Description = strings.TrimSpace(req.Description)
 	item.DisplayOrder = req.DisplayOrder
 	if req.IsAvailable != nil {
@@ -627,6 +642,56 @@ func validateMenuItemRequest(req *MenuItemRequest, name string) error {
 	}
 	if len([]rune(strings.TrimSpace(req.Description))) > 2000 {
 		return errors.New("description is too long")
+	}
+	return nil
+}
+
+// applyMenuImageFraming sets the photo's original and framing on item, whose
+// ImageURL is already the one being saved; previousImageURL is what it was.
+//
+//   - Framing sent (the web editor): stored, clamped to the editor's range.
+//   - Nothing sent and the photo unchanged (the Expo editor): kept as it was.
+//   - Nothing sent but the photo changed, or no photo at all: dropped. The old
+//     original is not this photo any more, and reopening it would frame the
+//     wrong picture.
+func applyMenuImageFraming(item *entity.MenuItem, req *MenuItemRequest, previousImageURL string) error {
+	for _, value := range []*float64{req.ImageCropZoom, req.ImageCropX, req.ImageCropY} {
+		if value != nil && !isFiniteMenuNumber(*value) {
+			return errors.New("image framing must be a number")
+		}
+	}
+	reset := func() {
+		item.ImageOriginalURL = ""
+		item.ImageCropZoom = 0
+		item.ImageCropX = 0.5
+		item.ImageCropY = 0.5
+	}
+	if item.ImageURL == "" {
+		reset()
+		return nil
+	}
+	sent := req.ImageOriginalURL != nil || req.ImageCropZoom != nil || req.ImageCropX != nil || req.ImageCropY != nil
+	if !sent {
+		if item.ImageURL != previousImageURL {
+			reset()
+		}
+		return nil
+	}
+	if req.ImageOriginalURL != nil {
+		original := strings.TrimSpace(*req.ImageOriginalURL)
+		if len([]rune(original)) > 2048 {
+			return errors.New("image URL is too long")
+		}
+		item.ImageOriginalURL = original
+	}
+	if req.ImageCropZoom != nil {
+		item.ImageCropZoom = math.Min(100, math.Max(-100, *req.ImageCropZoom))
+	}
+	if req.ImageCropX != nil {
+		item.ImageCropX = math.Min(1, math.Max(0, *req.ImageCropX))
+	}
+	if req.ImageCropY != nil {
+		item.ImageCropY = math.Min(1, math.Max(0, *req.ImageCropY))
 	}
 	return nil
 }

@@ -11,7 +11,11 @@ import {
   promotionStateAt,
   promotionTargetsSummary,
   promotionToForm,
+  isTargetTicked,
+  toggleTarget,
+  type PickerMenu,
   type PromotionForm,
+  type TargetRef,
 } from "./promotionRules";
 
 function promotion(overrides: Partial<Promotion> = {}): Promotion {
@@ -233,5 +237,53 @@ describe("promotionRunsAt / promotionStateAt", () => {
     expect(promotionStateAt(promotion({ start_date: "2026-10-01" }), now)).toBe("upcoming");
     expect(promotionStateAt(promotion({ end_date: "2026-09-17" }), now)).toBe("ended");
     expect(promotionStateAt(promotion({ is_active: false }), now)).toBe("off");
+  });
+});
+
+describe("dish picker ticks", () => {
+  // Drinks (category 1): tea 10, water 11. Rice (category 2): fried rice 20.
+  // Coffee 12 is filed under both drinks and rice.
+  const MENUS: PickerMenu[] = [
+    { id: 10, categoryIds: [1] },
+    { id: 11, categoryIds: [1] },
+    { id: 12, categoryIds: [1, 2] },
+    { id: 20, categoryIds: [2] },
+  ];
+  const cat = (id: number): TargetRef => ({ kind: "category", id });
+  const dish = (id: number): TargetRef => ({ kind: "menu", id });
+
+  it("ticks every dish in a category when the category is ticked", () => {
+    const next = toggleTarget([], cat(1), MENUS);
+    expect(next).toEqual([cat(1)]);
+    expect([10, 11, 12].every((id) => isTargetTicked(next, dish(id), MENUS))).toBe(true);
+    expect(isTargetTicked(next, dish(20), MENUS)).toBe(false);
+  });
+
+  it("folds dishes already chosen into the category instead of storing them twice", () => {
+    expect(toggleTarget([dish(10), dish(20)], cat(1), MENUS)).toEqual([dish(20), cat(1)]);
+  });
+
+  it("drops the category and keeps its other dishes when one of them is unticked", () => {
+    const next = toggleTarget([cat(1)], dish(10), MENUS);
+    expect(next).toEqual([dish(11), dish(12)]);
+    expect(isTargetTicked(next, cat(1), MENUS)).toBe(false);
+    expect(isTargetTicked(next, dish(10), MENUS)).toBe(false);
+  });
+
+  it("keeps a dish that another chosen category still covers", () => {
+    const next = toggleTarget([cat(1), cat(2)], dish(10), MENUS);
+    expect(next).toEqual([cat(2), dish(11)]);
+    expect(isTargetTicked(next, dish(12), MENUS)).toBe(true);
+  });
+
+  it("unticks a category's dishes with it", () => {
+    const next = toggleTarget([cat(1), dish(20)], cat(1), MENUS);
+    expect(next).toEqual([dish(20)]);
+    expect(isTargetTicked(next, dish(10), MENUS)).toBe(false);
+  });
+
+  it("ticks and unticks a dish on its own when no category covers it", () => {
+    expect(toggleTarget([], dish(20), MENUS)).toEqual([dish(20)]);
+    expect(toggleTarget([dish(20)], dish(20), MENUS)).toEqual([]);
   });
 });

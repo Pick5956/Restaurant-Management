@@ -384,7 +384,7 @@ export default function AIAssistantSettings() {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}
             // 16px on a phone, or iPhone zooms in when it is tapped.
-            className="h-8 w-44 rounded-lg border border-gray-200 bg-white px-3 text-[16px] text-gray-800 outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 sm:text-[12.5px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            className="h-10 w-44 rounded-md border border-gray-200 bg-white px-3 text-[16px] text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 sm:text-[12.5px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           />
         </SettingsItem>
         <SettingsSwitch label={t.followUps} description={t.followUpsHint} checked={followUps} onChange={setFollowUps} />
