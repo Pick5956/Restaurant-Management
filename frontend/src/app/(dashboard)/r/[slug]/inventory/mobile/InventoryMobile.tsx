@@ -718,15 +718,16 @@ export default function InventoryMobile({
                         every lot anyway. */}
                     {(expiry === "soon" || expiry === "expired") && item.expiring_lot ? (
                       <p
-                        className={`mt-1.5 text-[11px] font-semibold ${
+                        className={`mt-1.5 flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold ${
                           expiry === "expired" ? "text-(--inv-out)" : "text-(--inv-low)"
                         }`}
                       >
                         {expiry === "expired"
                           ? xcopy.expiredOn(formatExpiryDate(item.expiring_lot.expires_at, lang))
                           : xcopy.expiresOn(formatExpiryDate(item.expiring_lot.expires_at, lang))}
-                        {" · "}
-                        {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-current/10 px-2 py-0.5 tabular-nums leading-none ring-1 ring-current/25">
+                          {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                        </span>
                       </p>
                     ) : null}
 

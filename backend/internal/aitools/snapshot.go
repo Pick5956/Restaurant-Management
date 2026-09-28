@@ -1,9 +1,24 @@
 package aitools
 
-import "Project-M/internal/repository"
+import (
+	"time"
+
+	"Project-M/internal/repository"
+)
 
 // AnalysisWindowDays is the rolling window the read-only tools summarise over.
 const AnalysisWindowDays = 30.0
+
+// RollingWindowStart is where "30 วันล่าสุด" begins: midnight of the day 29 days
+// before now, so the window is thirty whole calendar days ending today. Every
+// tool reads it from here. Until 28 ก.ย. 2569 the snapshot and most tools
+// opened at this minute minus 30×24h while the profit, expense and breakeven
+// sheets opened at midnight - one answer read 357,943 baht of sales for the
+// "30 วันล่าสุด" and the next, on payment methods, 367,098.
+func RollingWindowStart(now time.Time) time.Time {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return today.AddDate(0, 0, -(int(AnalysisWindowDays) - 1))
+}
 
 // AISnapshot is one read of a restaurant's analysis window: every figure the
 // read-only tools work from, computed once so asking for many tools costs one
@@ -21,6 +36,9 @@ type AISnapshot struct {
 	HighMarginMenus    []repository.AIMenuMarginSummary `json:"high_margin_menus"`
 	LowestCostMenus    []repository.AIMenuMarginSummary `json:"lowest_cost_menus"`
 	AllMenuMargins     []repository.AIMenuMarginSummary `json:"all_menu_margins"`
+	// BillDiscounts is what whole-bill promotions took off in the window; the
+	// menu rows above are before it (see AIRepository.BillDiscounts).
+	BillDiscounts float64 `json:"bill_discounts"`
 	SlowMovingMenus    []repository.AIMenuSummary       `json:"slow_moving_menus"`
 	PeakWeekdays       []repository.AIPeriodSummary     `json:"peak_weekdays"`
 	PeakHours          []repository.AIPeriodSummary     `json:"peak_hours"`

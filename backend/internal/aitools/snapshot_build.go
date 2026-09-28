@@ -15,7 +15,7 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 	}
 	// Derived from AnalysisWindowDays so the data, the forecast maths, and the
 	// wording in every answer always describe the same period.
-	since := repository.BangkokNow().AddDate(0, 0, -int(AnalysisWindowDays))
+	since := RollingWindowStart(repository.BangkokNow())
 	ingredients, err := repo.ListIngredients(restaurantID)
 	if err != nil {
 		return AISnapshot{}, err
@@ -57,6 +57,10 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 		return AISnapshot{}, err
 	}
 	allMenuMargins, err := repo.AllMenuMargins(restaurantID, since)
+	if err != nil {
+		return AISnapshot{}, err
+	}
+	billDiscounts, err := repo.BillDiscounts(restaurantID, since, repository.BangkokNow().AddDate(0, 0, 1))
 	if err != nil {
 		return AISnapshot{}, err
 	}
@@ -180,6 +184,7 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 		HighMarginMenus:   highMarginMenus,
 		LowestCostMenus:   lowestCostMenus,
 		AllMenuMargins:    allMenuMargins,
+		BillDiscounts:     billDiscounts,
 		SlowMovingMenus:   slowMovingMenus,
 		PeakWeekdays:      peakWeekdays,
 		PeakHours:         peakHours,

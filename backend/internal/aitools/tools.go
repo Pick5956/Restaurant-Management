@@ -99,11 +99,10 @@ func ExecuteReadOnlyTool(tool AIToolName, snapshot AISnapshot, question ...strin
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
 			return AIToolResult{Tool: tool}, nil
 		}
-		// The snapshot window opens at this minute thirty days ago (see
-		// snapshot_build.go), so its first date and today are both partial.
+		// The snapshot window opens at midnight (RollingWindowStart), so its
+		// first date is a whole day; only today is still partial.
 		now := repository.BangkokNow()
-		best := ComputeBestSalesDayAsOf(snapshot.SalesDays, now.Format("2006-01-02"),
-			now.AddDate(0, 0, -int(AnalysisWindowDays)).Format("2006-01-02"))
+		best := ComputeBestSalesDayAsOf(snapshot.SalesDays, now.Format("2006-01-02"), "")
 		return AIToolResult{Tool: tool, BestSalesDay: &best}, nil
 	case AIToolGetAverageOrderValue:
 		if !snapshot.AnalysisReadiness.CanAnalyzeRevenue {
@@ -250,6 +249,13 @@ func ComputeProfitSummary(snapshot AISnapshot) AIProfitSummary {
 		summary.Revenue += menu.Revenue
 		summary.Cost += menu.Cost
 		summary.Profit += menu.Profit
+	}
+	// A whole-bill discount belongs to no menu row, so it comes off the total
+	// here - revenue then equals what was sold, as every sales tool reports it.
+	if summary.Revenue > 0 && snapshot.BillDiscounts > 0 {
+		summary.BillDiscounts = snapshot.BillDiscounts
+		summary.Revenue -= snapshot.BillDiscounts
+		summary.Profit -= snapshot.BillDiscounts
 	}
 	if summary.Revenue > 0 {
 		summary.Margin = summary.Profit / summary.Revenue * 100

@@ -48,6 +48,8 @@ type AIProfitSummary struct {
 	Profit          float64
 	Margin          float64
 	CoveragePercent float64
+	// BillDiscounts already taken off Revenue and Profit.
+	BillDiscounts float64
 }
 
 // AIStoreSummary is a backend-composed overview so open-ended "summarize the

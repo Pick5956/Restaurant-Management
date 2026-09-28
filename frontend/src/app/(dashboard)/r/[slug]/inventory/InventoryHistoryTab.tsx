@@ -463,8 +463,9 @@ export default function InventoryHistoryTab({
       {toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar}
       {/* clip, not hidden/auto: a scrolling wrapper would become what the
           column titles stick to, and they would not stick at all. The 1px clip
-          margin lets the stuck header's corner patches cover this border. */}
-      <div className="overflow-x-clip [overflow-clip-margin:1px] rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          margin lets the stuck header's corner patches cover this border —
+          but only when both axes clip; Chrome ignores it for overflow-x alone. */}
+      <div className="overflow-clip [overflow-clip-margin:1px] rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <div>
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
             <thead

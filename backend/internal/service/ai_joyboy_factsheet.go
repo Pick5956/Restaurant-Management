@@ -303,6 +303,9 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 				joyboyNum(profit.Revenue), joyboyNum(profit.Cost),
 				joyboyNum(profit.Profit), joyboyNum(profit.Margin)),
 		}
+		if profit.BillDiscounts > 0 {
+			lines = append(lines, joyboyBillDiscountLine(profit.BillDiscounts))
+		}
 		// Below full coverage the cost is understated (uncosted menus add revenue
 		// with no cost), so profit is a floor. Flag it so the answer can say so
 		// rather than presenting a partial figure as the whole store's profit.
@@ -415,7 +418,7 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 			window,
 			fmt.Sprintf("busiest_weekday=%s weekday_orders=%d",
 				thaiWeekdayName(peak.TopWeekday), peak.TopWeekdayOrders),
-			fmt.Sprintf("busiest_hour_across_all_days=%02d:00 hour_orders=%d", peak.TopHour, peak.TopHourOrders),
+			fmt.Sprintf("busiest_hour_across_all_days=%02d:00 bills_opened_in_hour=%d counted_by=ชั่วโมงที่เปิดบิล (ลูกค้าเข้าร้าน)", peak.TopHour, peak.TopHourOrders),
 			"note=สองบรรทัดนี้นับคนละแกน วันที่คับคั่งที่สุดกับชั่วโมงที่คับคั่งที่สุดนับรวมทุกวันในช่วงนี้ " +
 				"ห้ามบอกว่าชั่วโมงนั้นเป็นชั่วโมงที่คับคั่งที่สุดของวันนั้น",
 		}), true
@@ -679,7 +682,7 @@ func joyboyPeakForPeriodBody(label string, weekdays, hours []repository.AIPeriod
 			thaiWeekdayName(weekdays[0].Period), weekdays[0].Orders))
 	}
 	if len(hours) > 0 {
-		lines = append(lines, fmt.Sprintf("busiest_hour_across_all_days=%02d:00 hour_orders=%d",
+		lines = append(lines, fmt.Sprintf("busiest_hour_across_all_days=%02d:00 bills_opened_in_hour=%d counted_by=ชั่วโมงที่เปิดบิล (ลูกค้าเข้าร้าน)",
 			hours[0].Period, hours[0].Orders))
 	}
 	lines = append(lines, "note=สองบรรทัดนี้นับคนละแกน วันที่คับคั่งที่สุดกับชั่วโมงที่คับคั่งที่สุดนับรวมทุกวันในช่วงนี้ "+
@@ -1384,7 +1387,7 @@ func joyboyPercent(part, whole float64) float64 {
 // expenses as a figure of its own, computed here. The caveat that the ledger
 // holds only what was written down travels with it, because a net over an empty
 // ledger reads as "nothing else was spent".
-func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSummary, expenses *ExpenseListResponse) string {
+func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSummary, billDiscounts float64, expenses *ExpenseListResponse) string {
 	var revenue, cost, profit, costedRevenue float64
 	for _, m := range metrics {
 		revenue += m.Revenue
@@ -1393,6 +1396,13 @@ func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSu
 		if m.Cost > 0 {
 			costedRevenue += m.Revenue
 		}
+	}
+	// Coverage is judged on menu revenue (before the bill discounts, which no
+	// menu carries); the totals shown are after them.
+	menuRevenue := revenue
+	if revenue > 0 && billDiscounts > 0 {
+		revenue -= billDiscounts
+		profit -= billDiscounts
 	}
 	if revenue == 0 {
 		return joyboyJoin([]string{"period=" + label, "revenue=0.00 cost=0.00 profit=0.00", joyboyNoData("no_paid_sales_in_period")})
@@ -1405,12 +1415,23 @@ func joyboyProfitForPeriodBody(label string, metrics []repository.AIMenuMarginSu
 		"gross_profit_means=กำไรขั้นต้น = ยอดขาย − ต้นทุนวัตถุดิบตามสูตร ยังไม่หักรายจ่ายอื่น (ค่าแรง ค่าเช่า ค่าน้ำไฟ ฯลฯ) " +
 			"เวลาพูดถึงเลขนี้ต้องบอกว่าเป็นกำไรก่อนหักรายจ่าย",
 	}
-	if coverage := costedRevenue / revenue * 100; coverage < 99.5 {
+	if billDiscounts > 0 {
+		lines = append(lines, joyboyBillDiscountLine(billDiscounts))
+	}
+	if coverage := costedRevenue / menuRevenue * 100; coverage < 99.5 {
 		lines = append(lines, fmt.Sprintf(
 			"note=cost_covers_only_%s_pct_of_revenue_so_profit_is_a_floor", joyboyNum(roundBaht(coverage))))
 	}
 	lines = append(lines, joyboyNetAfterExpensesLines(profit, expenses)...)
 	return joyboyJoin(lines)
+}
+
+// joyboyBillDiscountLine says the whole-bill promotions are already off the
+// revenue, so the model neither subtracts them again nor wonders why the menu
+// rows add up to more.
+func joyboyBillDiscountLine(amount float64) string {
+	return fmt.Sprintf("bill_discounts=%s note=ส่วนลดท้ายบิล (เช่น ซื้อครบแล้วลด) หักออกจาก revenue และกำไรแล้ว "+
+		"revenue จึงเท่ากับยอดขายจริง ห้ามหักซ้ำ ยอดรายเมนูรวมกันจะสูงกว่านี้เท่าส่วนลดนี้", joyboyNum(roundBaht(amount)))
 }
 
 // joyboyNetAfterExpensesLines is gross profit less the recorded expenses of the
@@ -1832,6 +1853,12 @@ func joyboySalesByStaffBody(label string, rows []repository.AIStaffSales) string
 // weekdays, so the totals would say the working week wins by having more days.
 func joyboySalesByTimeBody(label string, hours []repository.AIHourSales, weekdays aitools.AISalesByWeekday, edges aitools.AIPartialEdges) string {
 	lines := []string{"period=" + label, "scope=paid_revenue_in_baht_by_hour_the_bill_closed_and_by_weekday", "unit=บาท"}
+	// 28 ก.ย. 2569: "ควรจัดพนักงานเพิ่มช่วงกี่โมง" loaded this and the peak read
+	// together and answered 13:00 from the paid hour, while guests arrive at
+	// 12:00 - a dine-in bill is paid half an hour after it opens.
+	lines = append(lines, "note=paid_hour คือชั่วโมงที่ลูกค้าจ่ายเงิน (ปิดบิล) ไม่ใช่ชั่วโมงที่เปิดบิล ใช้ตอบเรื่องเงินเข้าช่วงไหนเท่านั้น "+
+		"ถ้าถามว่าร้านคนแน่นช่วงไหน ลูกค้าเข้าช่วงไหน หรือควรจัดพนักงานช่วงไหน ให้ใช้ชั่วโมงเปิดบิล (busiest_hour จากข้อมูลช่วงคนแน่น) "+
+		"ถ้าพูดถึงทั้งสองแบบ ให้บอกว่านับคนละแบบ")
 	if edges.TodayDropped {
 		lines = append(lines, fmt.Sprintf("today_so_far=%s revenue=%s orders=%d excluded_from_weekday_averages=true note=วันนี้ยังไม่จบวัน จึงไม่นับในค่าเฉลี่ยรายวันในสัปดาห์",
 			edges.Today.OrderDate, joyboyNum(roundBaht(edges.Today.Revenue)), edges.Today.Orders))
@@ -1846,11 +1873,11 @@ func joyboySalesByTimeBody(label string, hours []repository.AIHourSales, weekday
 	}
 	peak := aitools.PeakHourByRevenue(hours)
 	if peak.HasData {
-		lines = append(lines, fmt.Sprintf("peak_hour=%02d:00-%02d:59 revenue=%s orders=%d share_of_revenue_pct=%s",
+		lines = append(lines, fmt.Sprintf("peak_paid_hour=%02d:00-%02d:59 revenue=%s paid_orders=%d share_of_revenue_pct=%s",
 			peak.Hour, peak.Hour, joyboyNum(roundBaht(peak.Revenue)), peak.Orders, joyboyNum(peak.SharePct)))
 	}
 	for _, hour := range hours {
-		lines = append(lines, fmt.Sprintf("hour=%02d:00 revenue=%s orders=%d",
+		lines = append(lines, fmt.Sprintf("paid_hour=%02d:00 revenue=%s paid_orders=%d",
 			hour.Hour, joyboyNum(roundBaht(hour.Revenue)), hour.Orders))
 	}
 	lines = append(lines,
@@ -1988,10 +2015,16 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 	previousDays := joyboyDaysCovered(previous)
 	lines := []string{
 		"scope=one_menu_compared_across_two_periods",
-		fmt.Sprintf("current_period=%s from=%s to=%s days=%d%s", current.Label,
+		fmt.Sprintf("asked_period=%s from=%s to=%s days=%d%s", current.Label,
 			current.Start.Format("2006-01-02"), joyboyLastDateCovered(current), currentDays, joyboyStillRunningNote(current)),
-		fmt.Sprintf("previous_period=%s from=%s to=%s days=%d%s", previous.Label,
+		fmt.Sprintf("before_asked_period=%s from=%s to=%s days=%d%s", previous.Label,
 			previous.Start.Format("2006-01-02"), joyboyLastDateCovered(previous), previousDays, joyboyStillRunningNote(previous)),
+		// 27 ก.ย. 2569: the sides were "current" and "previous", and "สัปดาห์ก่อนชาไทยเย็น
+		// ขายได้กี่แก้ว" was answered with the previous side - the week before the one
+		// asked about (51 instead of 56). "ก่อน" in the question read as "previous".
+		"note=ยอดที่เจ้าของถามคือฝั่ง asked_* เสมอ แม้คำถามจะมีคำว่า ก่อน / ที่แล้ว เช่น สัปดาห์ก่อน เดือนที่แล้ว "+
+			"เพราะช่วงนั้นคือ asked_period แล้ว · ฝั่ง before_asked_* คือช่วงก่อนหน้าช่วงที่ถามอีกที ใช้เทียบเท่านั้น "+
+			"ถ้าพูดถึงให้บอกวันที่ของมันกำกับ",
 	}
 	if partial {
 		lines = append(lines, "note=รายการด้านล่างคือตัวที่ชื่อใกล้เคียงกับที่ถาม ให้เลือกตัวที่ตรงแล้วตอบเฉพาะตัวนั้น ถ้าไม่แน่ใจให้ถามกลับ")
@@ -2003,8 +2036,8 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 		now, soldNow := currentByName[aiNormalizeName(name)]
 		then, soldThen := previousByName[aiNormalizeName(name)]
 		lines = append(lines, "menu="+name)
-		lines = append(lines, joyboyComparisonSide("current", now, soldNow, currentDays))
-		lines = append(lines, joyboyComparisonSide("previous", then, soldThen, previousDays))
+		lines = append(lines, joyboyComparisonSide("asked", now, soldNow, currentDays))
+		lines = append(lines, joyboyComparisonSide("before_asked", then, soldThen, previousDays))
 		if soldNow && soldThen && then.Quantity > 0 {
 			lines = append(lines, fmt.Sprintf("change_qty_pct=%s change_revenue_pct=%s change_profit_pct=%s",
 				joyboyNum(joyboyPctChange(float64(then.Quantity), float64(now.Quantity))),
