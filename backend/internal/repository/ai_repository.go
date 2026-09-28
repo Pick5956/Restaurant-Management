@@ -588,6 +588,31 @@ func (r *AIRepository) AllMenuMargins(restaurantID uint, since time.Time) ([]AIM
 	return r.menuMargins(restaurantID, since, "quantity desc, revenue desc", 100)
 }
 
+// BillDiscounts is the money promotions took off whole bills ("ซื้อครบ 300 ลด
+// 20") in [start, end). A menu line cannot carry it - it belongs to no dish -
+// so per-menu revenue is before it, and a store total summed from menus must
+// take it off. Without that the profit sheet's revenue ran above the sales
+// total by exactly these discounts (28 ก.ย. 2569: สิงหาคม 378,410 against
+// 375,630 sold, 2,780 of bill discounts).
+func (r *AIRepository) BillDiscounts(restaurantID uint, start, end time.Time) (float64, error) {
+	var total float64
+	err := r.db.Table("order_promotions").
+		Select("COALESCE(SUM(order_promotions.amount), 0)").
+		Joins("JOIN orders ON orders.id = order_promotions.order_id").
+		Where(
+			"order_promotions.restaurant_id = ? AND order_promotions.deleted_at IS NULL AND order_promotions.type = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at < ? AND orders.completed_at <= NOW()",
+			restaurantID,
+			entity.PromotionTypeBillDiscount,
+			restaurantID,
+			entity.OrderStatusCompleted,
+			entity.PaymentStatusPaid,
+			start,
+			end,
+		).
+		Scan(&total).Error
+	return total, err
+}
+
 // MenuMarginsByCategory returns every menu sold in the window with its category
 // attached, so profit can be totalled per section of the menu board. Nothing else
 // here reads categories at all: every ranked list is one flat list of the whole

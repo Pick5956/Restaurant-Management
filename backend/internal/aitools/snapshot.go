@@ -21,6 +21,9 @@ type AISnapshot struct {
 	HighMarginMenus    []repository.AIMenuMarginSummary `json:"high_margin_menus"`
 	LowestCostMenus    []repository.AIMenuMarginSummary `json:"lowest_cost_menus"`
 	AllMenuMargins     []repository.AIMenuMarginSummary `json:"all_menu_margins"`
+	// BillDiscounts is what whole-bill promotions took off in the window; the
+	// menu rows above are before it (see AIRepository.BillDiscounts).
+	BillDiscounts float64 `json:"bill_discounts"`
 	SlowMovingMenus    []repository.AIMenuSummary       `json:"slow_moving_menus"`
 	PeakWeekdays       []repository.AIPeriodSummary     `json:"peak_weekdays"`
 	PeakHours          []repository.AIPeriodSummary     `json:"peak_hours"`
