@@ -58,6 +58,7 @@ import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { confirmCopy, ingredientChanges, newIngredientSummary } from "./inventoryConfirmCopy";
 import IngredientFormFields, {
   createPayloadFor,
   newIngredientDraft,
@@ -437,6 +438,7 @@ export default function InventoryPage() {
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const ccopy = useMemo(() => confirmCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
@@ -854,6 +856,37 @@ export default function InventoryPage() {
       setFormError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
+    // Say what is about to change before it does — the same check a delete has.
+    // An edit that changed nothing just closes.
+    const createPayload = editingItem ? null : createPayloadFor(formDraft);
+    const changes = editingItem
+      ? ingredientChanges(
+          editingItem,
+          form,
+          (id) => (id ? categoryNameById.get(id) ?? copy.uncategorized : copy.uncategorized),
+          lang,
+        )
+      : [];
+    if (editingItem && changes.length === 0) {
+      closeModal();
+      return;
+    }
+    const confirmed = await ask(
+      createPayload
+        ? {
+            title: ccopy.addTitle(createPayload.name),
+            description: newIngredientSummary(createPayload, lang),
+            confirmLabel: ccopy.add,
+            cancelLabel: ccopy.cancel,
+          }
+        : {
+            title: ccopy.editTitle(editingItem?.name ?? ""),
+            description: changes.join(" · "),
+            confirmLabel: ccopy.save,
+            cancelLabel: ccopy.cancel,
+          },
+    );
+    if (!confirmed) return;
     await saveOnce.current(async () => {
       setSubmitting(true);
       try {
@@ -862,7 +895,7 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const response = await createIngredient(createPayloadFor(formDraft));
+          const response = await createIngredient(createPayload ?? createPayloadFor(formDraft));
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
@@ -882,6 +915,13 @@ export default function InventoryPage() {
       setCategoryError(lang === "th" ? "กรุณาระบุชื่อหมวดหมู่" : "Category name is required");
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.categoryAddTitle(name),
+      description: ccopy.categoryAddBody,
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
 
     setCategoryError("");
     setCategorySubmitting(true);
@@ -905,6 +945,18 @@ export default function InventoryPage() {
       setCategoryError(lang === "th" ? "กรุณาระบุชื่อหมวดหมู่" : "Category name is required");
       return;
     }
+    const before = categoryNameById.get(id) ?? "";
+    if (before === name) {
+      setEditingCategoryId(null);
+      return;
+    }
+    const confirmed = await ask({
+      title: ccopy.categoryRenameTitle,
+      description: ccopy.categoryRenameBody(before, name, ingredients.filter((item) => item.category_id === id).length),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setCategoryError("");
     setCategorySubmitting(true);
     try {
@@ -1096,6 +1148,13 @@ export default function InventoryPage() {
       setBulkError(lang === "th" ? "ยังบันทึกไม่ได้ แก้รายการที่มีเครื่องหมายส้มก่อน" : "Fix the items marked in orange first");
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.bulkTitle(bulkToSave.length),
+      description: bulkToSave.map((item) => item.draft.form.name.trim()).join(" · "),
+      confirmLabel: ccopy.add,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setBulkError("");
     setBulkSaving(true);
     // No bulk endpoint: each goes up as the drawer would send it, in parallel.
@@ -1185,15 +1244,37 @@ export default function InventoryPage() {
       setAdjustError(lang === "th" ? "กรุณาระบุยอดที่จ่ายให้ถูกต้อง" : "Enter a valid amount paid");
       return;
     }
-    if (adjustType !== "in") {
-      const confirmed = await ask({
-        title: copy.confirmAdjustTitle,
-        description: copy.confirmAdjustBody,
-        confirmLabel: copy.confirmAdjust,
-        cancelLabel: copy.cancel,
-      });
-      if (!confirmed) return;
-    }
+    // Every kind asks now, with the shelf before and after — a stock-in used to
+    // go straight through, and it can also book an expense.
+    const stockLine = ccopy.stockLine(
+      formatNumber(adjustTarget.stock, lang),
+      formatNumber(adjustPreview ?? adjustTarget.stock, lang),
+      adjustTarget.unit,
+    );
+    const paidShown =
+      !canManageExpenses ? 0 : adjustPaidAmount.trim() !== "" ? paidAmount : referenceAdjustAmount;
+    const confirmed = await ask(
+      adjustType === "in"
+        ? {
+            title: ccopy.restockTitle(adjustTarget.name, formatNumber(qty, lang), adjustUnit || adjustTarget.unit),
+            description: [
+              stockLine,
+              paidShown > 0 ? ccopy.paidLine(formatCurrency(paidShown, lang, 2)) : null,
+              adjustExpiryDays !== null ? ccopy.expiresLine(formatExpiryDate(expiryDateFromDays(adjustExpiryDays), lang)) : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            confirmLabel: ccopy.restock,
+            cancelLabel: ccopy.cancel,
+          }
+        : {
+            title: copy.confirmAdjustTitle,
+            description: `${stockLine} · ${copy.confirmAdjustBody}`,
+            confirmLabel: copy.confirmAdjust,
+            cancelLabel: ccopy.cancel,
+          },
+    );
+    if (!confirmed) return;
 
     await adjustOnce.current(async () => {
       setAdjusting(true);
@@ -1262,6 +1343,18 @@ export default function InventoryPage() {
 
   async function saveLotExpiry(lot: IngredientLot) {
     if (!txTarget) return;
+    const confirmed = await ask({
+      title: ccopy.lotTitle,
+      description: ccopy.lotLine(
+        formatNumber(lot.remaining, lang),
+        txTarget.unit,
+        lot.expires_at ? formatExpiryDate(lot.expires_at, lang) : ccopy.noDate,
+        lotDraftDays === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(lotDraftDays), lang),
+      ),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setLotSaving(true);
     try {
       await updateLotExpiry(txTarget.ID, lot.ID, lotDraftDays === null ? "" : expiryDateFromDays(lotDraftDays));
