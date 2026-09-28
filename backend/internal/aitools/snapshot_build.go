@@ -60,10 +60,6 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 	if err != nil {
 		return AISnapshot{}, err
 	}
-	billDiscounts, err := repo.BillDiscounts(restaurantID, since, repository.BangkokNow().AddDate(0, 0, 1))
-	if err != nil {
-		return AISnapshot{}, err
-	}
 	slowMovingMenus, err := repo.SlowMovingMenus(restaurantID, since)
 	if err != nil {
 		return AISnapshot{}, err
@@ -184,7 +180,6 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 		HighMarginMenus:   highMarginMenus,
 		LowestCostMenus:   lowestCostMenus,
 		AllMenuMargins:    allMenuMargins,
-		BillDiscounts:     billDiscounts,
 		SlowMovingMenus:   slowMovingMenus,
 		PeakWeekdays:      peakWeekdays,
 		PeakHours:         peakHours,

@@ -250,13 +250,6 @@ func ComputeProfitSummary(snapshot AISnapshot) AIProfitSummary {
 		summary.Cost += menu.Cost
 		summary.Profit += menu.Profit
 	}
-	// A whole-bill discount belongs to no menu row, so it comes off the total
-	// here - revenue then equals what was sold, as every sales tool reports it.
-	if summary.Revenue > 0 && snapshot.BillDiscounts > 0 {
-		summary.BillDiscounts = snapshot.BillDiscounts
-		summary.Revenue -= snapshot.BillDiscounts
-		summary.Profit -= snapshot.BillDiscounts
-	}
 	if summary.Revenue > 0 {
 		summary.Margin = summary.Profit / summary.Revenue * 100
 	}

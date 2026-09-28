@@ -873,12 +873,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 				aiStage("warn", "joyboy: %s expenses for %s failed (%v) → sheet without net", tool, label, err)
 			}
 		}
-		billDiscounts, err := t.service.repo.BillDiscounts(t.restaurantID, start, joyboyQueryEnd(end))
-		if err != nil {
-			aiStage("warn", "joyboy: %s bill discounts for %s failed (%v) → counted as none", tool, label, err)
-			billDiscounts = 0
-		}
-		return t.withPeriodCoverage(joyboyProfitForPeriodBody(label, metrics, billDiscounts, expenses),
+		return t.withPeriodCoverage(joyboyProfitForPeriodBody(label, metrics, expenses),
 			label, start, end, len(metrics) == 0), true, true
 
 	case joyboyToolMenuForPeriod:
