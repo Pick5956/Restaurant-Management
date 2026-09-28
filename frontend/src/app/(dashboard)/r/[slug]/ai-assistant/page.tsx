@@ -1006,7 +1006,6 @@ export default function AIAssistantPage() {
                     aria-live="polite"
                   >
                     <SafeAIResponseContent content={smoothDraft.text} compact language={language} />
-                    <span className="ai-stream-caret" aria-hidden="true" />
                   </div>
                 </div>
               )}

@@ -1873,23 +1873,6 @@ textarea {
   --ai-chart-surface: #111827;
 }
 
-/* The caret at the end of an answer still being written. */
-.ai-stream-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -0.15em;
-  background: #f97316;
-  border-radius: 1px;
-  animation: ai-stream-caret 0.9s steps(2, start) infinite;
-}
-@keyframes ai-stream-caret {
-  to { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ai-stream-caret { animation: none; }
-}
 /* Reduce Motion (on many iPads) used to switch the chat list's animations off
    altogether, so it snapped open and shut. It now keeps a short fade — no
    slide, no scale — which is what the setting asks for. */
