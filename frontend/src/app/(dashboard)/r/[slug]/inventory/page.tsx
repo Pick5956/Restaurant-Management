@@ -768,16 +768,18 @@ export default function InventoryPage() {
   // own, so it rides steady and the underline below can be a plain border.
   // Stickiness, fill and the rounded corners come from `.inv-thead` in
   // globals.css, shared with the history table.
-  const stickyThCls = "px-4 py-2.5";
+  // Tighter below lg: iPad portrait leaves the table ~628px, and 16px either
+  // side of every column was what pushed names onto two lines.
+  const stickyThCls = "px-3 py-2.5 lg:px-4";
 
-  const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
+  const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false, extra = "") => {
     const active = sortKey === key;
     return (
-      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""}`}>
+      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""} ${extra}`}>
         <button
           type="button"
           onClick={() => toggleSort(key)}
-          className={`inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-200 ${active ? "text-slate-600 dark:text-slate-200" : ""}`}
+          className={`inline-flex items-center gap-1 whitespace-nowrap transition hover:text-slate-700 dark:hover:text-slate-200 ${active ? "text-slate-600 dark:text-slate-200" : ""}`}
         >
           <span>{label}</span>
           <SortGlyph dir={active ? sortDir : "none"} />
@@ -1432,7 +1434,7 @@ export default function InventoryPage() {
           <div ref={stockToolbarRef} hidden={tab !== "stock"}>
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
-          <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+          <div className="relative min-w-0 flex-1 sm:min-w-[120px] lg:w-64 lg:flex-none">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -1578,7 +1580,7 @@ export default function InventoryPage() {
               each. The flex-1 spacer only exists to push them right on a wide row,
               so it is hidden where the header is a column. The stock value chip
               that used to lead this group was removed on the owner's call. */}
-          <div className="hidden flex-1 sm:block" />
+          <div className="hidden flex-1 lg:block" />
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <div className="relative shrink-0">
             <button
@@ -1593,7 +1595,8 @@ export default function InventoryPage() {
               }`}
             >
               <MoreHorizontal className="h-4 w-4" />
-              {lang === "th" ? "เพิ่มเติม" : "More"}
+              {/* Icon only on iPad portrait, where the label pushed "เพิ่มวัตถุดิบ" onto a second row. */}
+              <span className="max-lg:sr-only">{lang === "th" ? "เพิ่มเติม" : "More"}</span>
             </button>
             {moreOpen && (
               <>
@@ -1737,7 +1740,7 @@ export default function InventoryPage() {
                     </p>
                   </div>
                 ) : (
-                  <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+                  <table className="w-full min-w-[600px] border-separate border-spacing-0 text-sm lg:min-w-[640px]">
                     <thead className="inv-thead" style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}>
                       <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         {canManage && (
@@ -1763,7 +1766,9 @@ export default function InventoryPage() {
                             : `${copy.name} (${formatNumber(filtered.length, lang)}/${formatNumber(totalItems, lang)})`,
                         )}
                         {sortableTh("stock", copy.current)}
-                        {sortableTh("category", copy.category)}
+                        {/* Below lg the category rides under the name instead — a column
+                            of its own left the name ~58px on iPad portrait. */}
+                        {sortableTh("category", copy.category, false, "hidden lg:table-cell")}
                         {sortableTh("price", copy.costPerUnit, true)}
                         <th className={stickyThCls} />
                       </tr>
@@ -1788,10 +1793,13 @@ export default function InventoryPage() {
                                 />
                               </td>
                             )}
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <span className="text-[13px] font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                              <span className="mt-0.5 block text-[11px] text-slate-400 lg:hidden">
+                                {item.category?.name || categoryNameById.get(item.category_id ?? 0) || copy.uncategorized}
+                              </span>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <div className="w-44">
                                 <div className="flex items-center gap-2 text-[13px]">
                                   <span className={`font-semibold tabular-nums ${meta.value}`}>
@@ -1850,15 +1858,15 @@ export default function InventoryPage() {
                                 })()}
                               </div>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="hidden px-4 py-3 lg:table-cell">
                               <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 dark:bg-gray-800 dark:text-slate-300">
                                 {item.category?.name || categoryNameById.get(item.category_id ?? 0) || copy.uncategorized}
                               </span>
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                            <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-slate-700 dark:text-slate-200 lg:px-4">
                               {item.cost_per_unit > 0 ? formatCurrency(item.cost_per_unit, lang, 2) : "—"}
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
