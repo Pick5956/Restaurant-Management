@@ -78,10 +78,6 @@ export default function ReportsPage() {
         beforeDiscount: "ก่อนหักส่วนลด",
         discountNote: (value: string) => `ส่วนลด −${value}`,
         marginInfo: "มาร์จินคืออะไร",
-        // Net = revenue − recipe cost − non-ingredient expenses (26 ก.ย. 2569).
-        // Purchases stay in "รายจ่ายรวม" but are not taken off twice.
-        marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
-          `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${per100} บาท · รายได้ ${revenue} − ต้นทุนวัตถุดิบตามสูตรของที่ขายไป ${cost} − รายจ่ายอื่นที่ไม่ใช่วัตถุดิบ ${operating} = กำไรสุทธิ ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ค่าซื้อวัตถุดิบอยู่ในรายจ่ายรวม แต่ไม่หักจากกำไรซ้ำ เพราะต้นทุนวัตถุดิบหักไปแล้ว`,
         period: "ช่วงเวลา",
         from: "ตั้งแต่",
         to: "ถึง",
@@ -120,8 +116,6 @@ export default function ReportsPage() {
         beforeDiscount: "Before discounts",
         discountNote: (value: string) => `Discounts −${value}`,
         marginInfo: "What is margin?",
-        marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
-          `Margin is the share of revenue left as net profit. In this period every 100 baht of revenue left ${per100} baht · revenue ${revenue} − recipe cost of what sold ${cost} − expenses other than ingredients ${operating} = net profit ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ingredient purchases are in total expenses but not taken off again, as their cost is already counted.`,
         period: "Period",
         from: "From",
         to: "To",
@@ -211,7 +205,6 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView, language, range.from, range.to]);
 
-  const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const preset = matchPreset(range, today);
   const draftProblem = rangeProblem(draft, today);
   // A typed date applies as soon as the range is one the server accepts; until
@@ -275,25 +268,8 @@ export default function ReportsPage() {
             netProfit={netProfit}
             operatingExpenses={operatingExpenses}
             lang={lang}
-            marginInfoOpen={marginInfoOpen}
-            onToggleMarginInfo={() => setMarginInfoOpen((open) => !open)}
             copy={copy}
           />
-          {marginInfoOpen ? (
-            <div role="note" className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
-              <p className="font-semibold">{copy.marginInfo}</p>
-              <p>
-                {copy.marginExplain(
-                  formatNumber(report.summary.margin, lang),
-                  formatCurrency(report.summary.revenue, lang),
-                  formatCurrency(report.summary.cost, lang),
-                  formatCurrency(operatingExpenses, lang),
-                  formatCurrency(netProfit, lang),
-                  `${formatNumber(report.summary.margin, lang)}%`,
-                )}
-              </p>
-            </div>
-          ) : null}
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
             <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
