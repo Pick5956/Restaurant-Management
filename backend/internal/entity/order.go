@@ -79,14 +79,11 @@ type Order struct {
 	Payments   []OrderPayment            `json:"payments,omitempty" gorm:"foreignKey:OrderID"`
 	StatusLogs []OrderStatusLog          `json:"status_logs,omitempty" gorm:"foreignKey:OrderID"`
 	Deductions []OrderInventoryDeduction `json:"deductions,omitempty" gorm:"foreignKey:OrderID"`
-	// Promotions are the promotions the order service applied; their amounts add
-	// up to DiscountAmount.
-	Promotions []OrderPromotion `json:"promotions,omitempty" gorm:"foreignKey:OrderID"`
 }
 
-// OrderItem is one line of an order. Subtotal is its price before promotions;
-// DiscountAmount is what dish-level promotions took off it, so the line sold
-// for Subtotal - DiscountAmount.
+// OrderItem is one line of an order. Subtotal is its price; DiscountAmount is
+// what the retired automatic promotions took off it on bills paid while they
+// ran, so the line sold for Subtotal - DiscountAmount. New lines keep it at 0.
 type OrderItem struct {
 	gorm.Model
 	OrderID         uint       `json:"order_id" gorm:"not null;index;index:idx_order_items_order_status_batch,priority:1"`

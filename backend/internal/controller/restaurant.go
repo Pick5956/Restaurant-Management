@@ -268,6 +268,21 @@ func (ctrl *RestaurantController) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"restaurant": restaurant})
 }
 
+// orderRepricedAction tells every till that an order's price moved because the
+// restaurant's service charge/VAT changed, not because anyone touched the order.
+const orderRepricedAction = "order.repriced"
+
+// publishOrdersRepriced tells every till which orders a bill-settings change
+// moved.
+func publishOrdersRepriced(orderEvents *realtime.OrderHub, restaurantID uint, orderIDs []uint) {
+	if orderEvents == nil {
+		return
+	}
+	for _, orderID := range orderIDs {
+		orderEvents.Publish(restaurantID, orderRepricedAction, orderID)
+	}
+}
+
 // uploadRestaurantImage is the single path behind upload-logo, upload-cover and
 // upload-promptpay-qr.
 //
@@ -600,12 +615,23 @@ func (ctrl *RestaurantController) ListPendingInvitations(c *gin.Context) {
 		return
 	}
 
-	invs, err := ctrl.invitationSvc.ListPending(userID, restaurantID)
+	list := ctrl.invitationSvc.ListPending
+	if invitationListIncludesClosed(c.Query("scope")) {
+		list = ctrl.invitationSvc.ListRecent
+	}
+	invs, err := list(userID, restaurantID)
 	if err != nil {
 		respondAPIError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"invitations": service.NewAdminInvitationResponses(invs)})
+}
+
+// invitationListIncludesClosed reports whether GET .../invitations asked for
+// every invitation (`?scope=all`, the web staff page) rather than only the
+// open ones, which stays the default so existing clients see no change.
+func invitationListIncludesClosed(scope string) bool {
+	return scope == "all"
 }
 
 // DELETE /api/v1/restaurants/:id/invitations/:invitationId

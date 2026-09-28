@@ -17,11 +17,36 @@ import {
   parseScannedDevice,
   parseScannedDeviceList,
   printerFailureReason,
+  receiptTailFeedCommand,
   toBluetoothPrinterAddress,
 } from './printer.ts';
 
 test('the 58 mm slip is rastered at the printer head width', () => {
   assert.equal(RECEIPT_WIDTH_DOTS_58MM, 384);
+});
+
+test('the tail feed is ESC d n, then a cut a cutterless printer ignores', () => {
+  assert.deepEqual(receiptTailFeedCommand(), [0x1b, 0x64, 5, 0x1d, 0x56, 66, 0]);
+  assert.deepEqual(receiptTailFeedCommand(3).slice(0, 3), [0x1b, 0x64, 3]);
+  // n is one byte: clamped, never wrapped into a tiny feed.
+  assert.equal(receiptTailFeedCommand(999)[2], 255);
+  assert.equal(receiptTailFeedCommand(-4)[2], 0);
+  assert.equal(receiptTailFeedCommand(Number.NaN)[2], 0);
+});
+
+test('the receipt print feeds the slip past the tear bar after its last band', async () => {
+  // The torn receipt was a call-site fault - nothing sent a feed - so the
+  // guard reads the call site, not just the helper.
+  const source = await readFile(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../providers/printer-provider.tsx'),
+    'utf8',
+  );
+  assert.match(source, /NativePrinter\.printRaw\(\s*selectedPrinter\.address,\s*receiptTailFeedCommand\(\)/);
+  assert.match(source, /isCutPaper:\s*false/);
+  assert.match(source, /keepAlive:\s*true/);
+  const bandLoop = source.indexOf('for (let index = 0; index < bands.length');
+  const feed = source.indexOf('NativePrinter.printRaw(');
+  assert.ok(bandLoop > 0 && feed > bandLoop, 'the feed goes out after the bands');
 });
 
 test('normalizeMacAddress accepts the shapes platforms actually report', () => {

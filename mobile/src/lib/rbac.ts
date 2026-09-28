@@ -6,7 +6,6 @@ const fallbackRolePermissions: Record<string, Permission[]> = {
   manager: [
     'view_dashboard',
     'manage_menu',
-    'manage_promotions',
     'view_tables',
     'manage_table',
     'manage_invites',

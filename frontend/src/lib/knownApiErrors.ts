@@ -15,7 +15,7 @@ import { apiErrorCode, apiErrorMessage } from "./apiErrors";
 // page's own line. The strings mirror backend/internal/service:
 // customer_order_service.go, order_flow_helpers.go (ensureMenuCapacity),
 // order_service.go (AddItem, UpdateItem, SendToKitchen, UpdateItemStatus,
-// validateSelectedMenuOptions), expense_service.go and promotion_service.go.
+// validateSelectedMenuOptions) and expense_service.go.
 
 function serverMessage(error: unknown) {
   return apiErrorMessage(error).trim();
@@ -129,11 +129,6 @@ export function expenseRefusal(error: unknown): ExpenseRefusal | null {
     default:
       return null;
   }
-}
-
-/** A dish or category the promotion names was deleted while the form was open. */
-export function promotionTargetsGone(error: unknown): boolean {
-  return /^promotion (menu item|category) not found$/.test(serverMessage(error));
 }
 
 /**

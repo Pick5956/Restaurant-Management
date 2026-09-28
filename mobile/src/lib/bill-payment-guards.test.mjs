@@ -52,8 +52,8 @@ test('one payment call, guarded against a second tap and a stale bill', async ()
 test('a payment the server re-priced says what was recorded, and a paid bill cannot be paid twice', async () => {
   const bill = await read('app', 'order', 'bill.tsx');
   const pay = block(bill, 'async function pay(');
-  // Cash now sends the notes handed over, so a total moved by a promotion
-  // boundary is accepted whenever they cover it; the sheet's change is then wrong.
+  // Cash now sends the notes handed over, so a total moved by a settings
+  // change is accepted whenever they cover it; the sheet's change is then wrong.
   assert.match(pay, /const paid = await payOrder\(orderId, \{/);
   assert.match(pay, /repricedPaymentLine\(bill\.grand_total, paid\?\.payments\?\.at\(-1\), language\)/);
   // A success toast is only spoken; the re-priced one has to be drawn.
@@ -103,9 +103,14 @@ test('the sheet confirm states what it confirms and holds off a fall-through tap
   assert.match(form, /copy\(`ได้รับเงินโอนแล้ว \$\{amount\}`/);
 });
 
-test('the tender starts with nothing handed over', async () => {
-  const hook = await read('src', 'components', 'payment', 'use-cash-tender.ts');
-  assert.match(hook, /useState<TenderChoice \| null>\(null\)/);
+// Owner, 2026-09-28: cash is always the exact amount; no chips to pick one.
+test('cash is taken as exactly the amount due, with no amount chips or keypad', async () => {
+  const [hook, panel] = await Promise.all([
+    read('src', 'components', 'payment', 'use-cash-tender.ts'),
+    read('src', 'components', 'payment', 'cash-tender-panel.tsx'),
+  ]);
+  assert.match(hook, /useState<TenderChoice \| null>\('exact'\)/);
+  assert.doesNotMatch(panel, /พอดี'|จำนวนอื่น|CashKeypad|accessibilityRole="radio"/);
 });
 
 // 2026-09-24: the header menu's print entry stays tappable while a print runs,

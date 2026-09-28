@@ -33,9 +33,3 @@ func TestBillChargesChangedOnlyForWhatABillIsPricedFrom(t *testing.T) {
 		t.Error("an unknown side must count as changed, two unknowns as unchanged")
 	}
 }
-
-// The promotion path and the settings path price open orders through one loop,
-// so the two can never disagree about which orders are skipped.
-func TestPromotionsRepriceThroughTheSharedLoop(t *testing.T) {
-	assertCallers(t, "RepriceOpenOrders", map[string]int{"PromotionService.repriceOpenOrders": 1})
-}

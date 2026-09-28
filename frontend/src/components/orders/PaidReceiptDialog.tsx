@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Download, Printer } from "lucide-react";
-import { billDiscountLines } from "@/src/lib/billPromotions";
+import { billDiscountLines } from "@/src/lib/billDiscount";
 import { groupOrderItems } from "@/src/lib/orderItemGroups";
 import type { Bill, OrderItem } from "@/src/types/order";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";

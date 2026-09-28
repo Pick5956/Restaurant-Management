@@ -8,7 +8,7 @@ import (
 )
 
 // RepriceOpenOrders prices every order still being served again, from the
-// restaurant's current promotions and bill settings, one transaction per order
+// restaurant's current bill settings, one transaction per order
 // so a busy till is never held for long. It returns the orders whose stored
 // money moved, for the caller to announce as order.repriced.
 //
@@ -53,7 +53,7 @@ func RepriceOpenOrders(orders *repository.OrderRepository, restaurantID uint, ca
 
 // BillChargesChanged reports whether a settings save moved anything an open
 // bill is priced from. An open order stores its service charge and VAT, so a
-// change here has to reprice them, the way a promotion change does.
+// change here has to reprice them.
 func BillChargesChanged(before, after *entity.Restaurant) bool {
 	if before == nil || after == nil {
 		return before != after

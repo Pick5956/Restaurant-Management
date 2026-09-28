@@ -11,10 +11,6 @@ func TestSettingsSaveRepricesOpenOrdersWhenBillChargesMove(t *testing.T) {
 			t.Errorf("RestaurantController.Update no longer calls %s", call)
 		}
 	}
-	// The promotion path announces through the same helper.
-	if !handlerCalls(t, "promotion.go", "PromotionController.publishRepriced", "publishOrdersRepriced") {
-		t.Error("PromotionController.publishRepriced no longer goes through publishOrdersRepriced")
-	}
 }
 
 // A stale form's image URL, whose file was removed when the photo changed,

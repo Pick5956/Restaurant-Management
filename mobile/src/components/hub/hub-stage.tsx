@@ -10,7 +10,7 @@ import { StageShelf } from '@/src/components/hub/stage-shelf';
 import { FloorTile, KitchenTile, OrdersTile, STAGE_TILE_INSET, type StageTileVariant } from '@/src/components/hub/stage-tiles';
 import { MotionReveal } from '@/src/components/motion';
 import {
-  pairStacks,
+  pairKitchenLines,
   shelfLayout,
   stageActivity,
   stageContentWidth,
@@ -78,9 +78,9 @@ export function HubStage({ shop, items, data, showTakings, onOpen, footer }: Hub
   const railGuess = width >= breakpoints.expandedRail ? EXPANDED_RAIL_WIDTH : isTablet ? RAIL_WIDTH : 0;
   // The column as measured, so the rail beside it on a tablet is already out of it.
   const contentWidth = measuredWidth > 0 ? measuredWidth : stageContentWidth(width, gutter, metrics.contentMax, railGuess);
-  const stackPair = pairStacks(contentWidth, fontScale);
   const shelf = shelfLayout(contentWidth, fontScale);
   const lines = valueLines(fontScale);
+  const kitchenLines = pairKitchenLines(fontScale);
 
   // The table count this restaurant's floor last showed on this device, so the
   // floor bone is drawn at the strip's real height (two rows past 30 tables)
@@ -120,7 +120,7 @@ export function HubStage({ shop, items, data, showTakings, onOpen, footer }: Hub
       );
     }
     if (key === 'kitchen') {
-      return <KitchenTile heartbeat={beats} item={item} lines={lines} onOpen={onOpen} slot={data.kitchen} variant={variant} />;
+      return <KitchenTile heartbeat={beats} item={item} lines={lines} onOpen={onOpen} slot={data.kitchen} statusLines={kitchenLines} variant={variant} />;
     }
     return <OrdersTile heartbeat={beats} item={item} onOpen={onOpen} slot={data.paidToday} variant={variant} />;
   };
@@ -141,12 +141,12 @@ export function HubStage({ shop, items, data, showTakings, onOpen, footer }: Hub
           {renderTile(row.key, 'wide')}
         </MotionReveal>
       ) : (
-        <View key="pair" style={{ flexDirection: stackPair ? 'column' : 'row', alignItems: 'stretch', gap: metrics.tileGap }}>
-          <MotionReveal delay={nextDelay()} style={stackPair ? undefined : { flex: 1.4, minWidth: 0 }}>
+        <View key="pair" style={{ flexDirection: 'row', alignItems: 'stretch', gap: metrics.tileGap }}>
+          <MotionReveal delay={nextDelay()} style={{ flex: 1.4, minWidth: 0 }}>
             {renderTile('kitchen', 'pair')}
           </MotionReveal>
-          <MotionReveal delay={nextDelay()} style={stackPair ? undefined : { flex: 1, minWidth: 0 }}>
-            {renderTile('orders', stackPair ? 'wide' : 'pair')}
+          <MotionReveal delay={nextDelay()} style={{ flex: 1, minWidth: 0 }}>
+            {renderTile('orders', 'pair')}
           </MotionReveal>
         </View>
       )))}

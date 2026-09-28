@@ -21,7 +21,6 @@ export const RESTAURANT_PAGE_ROOTS = [
   "/kitchen",
   "/tables",
   "/menu",
-  "/promotions",
   "/inventory",
   "/expenses",
   "/ai-assistant",

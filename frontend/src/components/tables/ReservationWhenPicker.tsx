@@ -63,7 +63,7 @@ interface ReservationWhenPickerProps {
  * When the guests are coming: now, today, tomorrow or any day up to a year out,
  * at any minute. The day is our own calendar rather than a native date input -
  * the Thai native date picker renders "4 Aug BE 2569". The time is the same
- * ThemedTimeInput the promotions dialog uses.
+ * ThemedTimeInput every other time field uses.
  */
 export default function ReservationWhenPicker({ value, onChange, error, language, disabled }: ReservationWhenPickerProps) {
   const copy = COPY[language];
@@ -71,7 +71,7 @@ export default function ReservationWhenPicker({ value, onChange, error, language
   return (
     <div>
       <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.when}</span>
-      {/* The day chips and the time field are the promotions dialog's own
+      {/* The day chips and the time field are the app's shared ones
           (owner, 2026-09-22): ChoiceChips and ThemedTimeInput. */}
       <ChoiceChips
         label={copy.when}

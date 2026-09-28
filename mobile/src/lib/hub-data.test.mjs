@@ -455,7 +455,7 @@ test('branch label matches the web: สาขา added only when missing, a miss
 
 // backend/config/seed/seed.go
 const SEEDED = {
-  manager: ['view_dashboard', 'manage_menu', 'manage_promotions', 'view_tables', 'manage_table', 'take_order', 'view_orders', 'take_payment', 'view_kitchen', 'update_order_status', 'view_inventory', 'manage_inventory', 'manage_expenses', 'view_reports', 'manage_invites', 'manage_members', 'manage_roles', 'view_audit_log', 'manage_restaurant_settings'],
+  manager: ['view_dashboard', 'manage_menu', 'view_tables', 'manage_table', 'take_order', 'view_orders', 'take_payment', 'view_kitchen', 'update_order_status', 'view_inventory', 'manage_inventory', 'manage_expenses', 'view_reports', 'manage_invites', 'manage_members', 'manage_roles', 'view_audit_log', 'manage_restaurant_settings'],
   cashier: ['take_order', 'take_payment', 'view_orders', 'view_dashboard', 'view_kitchen', 'view_inventory'],
   waiter: ['take_order', 'take_payment', 'view_orders', 'view_dashboard', 'view_kitchen', 'view_inventory'],
   chef: ['view_kitchen', 'update_order_status', 'view_inventory'],
@@ -521,7 +521,7 @@ const BACKEND_ACCEPTS = {
   floor: (has) => ['view_tables', 'manage_table', 'take_order'].some(has) && (has('view_orders') || has('take_order')),
   kitchen: (has) => has('view_kitchen'),
   paidToday: (has) => has('view_orders'),
-  menu: (has) => ['view_menu', 'manage_menu', 'take_order', 'manage_promotions'].some(has),
+  menu: (has) => ['view_menu', 'manage_menu', 'take_order'].some(has),
   inventory: (has) => has('view_inventory') || has('manage_inventory'),
   insights: (_has, roleName) => roleName === 'owner',
   stream: (has) => HUB_ORDER_STREAM_PERMISSIONS.some(has),
@@ -583,7 +583,7 @@ test('the endpoint gates mirror the backend controllers', { skip: !backendPresen
   for (const permission of HUB_ORDER_STREAM_PERMISSIONS) assert.ok(events.slice(0, 400).includes(`"${permission}"`), permission);
   assert.match(read('table.go'), /"view_tables", "manage_table", "take_order"/);
   assert.match(read('ingredient.go'), /"view_inventory", "manage_inventory"/);
-  assert.match(read('menu.go'), /"view_menu", "manage_menu", "take_order", "manage_promotions"/);
+  assert.match(read('menu.go'), /"view_menu", "manage_menu", "take_order"\)/);
   const insights = read('ai.go');
   assert.match(insights.slice(insights.indexOf('func (ctrl *AIController) ProactiveInsights'), insights.indexOf('func (ctrl *AIController) ProactiveInsights') + 300), /requireAIOwner\(c\)/);
 });

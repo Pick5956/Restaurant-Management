@@ -209,7 +209,7 @@ function Chips({
   );
 }
 
-/** The app's own checkbox (the promotion dish picker's): filled orange with a white tick when on. */
+/** The app's own checkbox: filled orange with a white tick when on. */
 function Checkbox({ checked }: { checked: boolean }) {
   return (
     <span

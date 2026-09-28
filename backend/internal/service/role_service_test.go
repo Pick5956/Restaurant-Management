@@ -19,12 +19,14 @@ func TestNormalizePermissionsAcceptsExpenseManagement(t *testing.T) {
 	}
 }
 
-func TestNormalizePermissionsAcceptsPromotionManagement(t *testing.T) {
-	permissions, err := normalizePermissions([]string{"manage_promotions"})
+// A role saved while promotions ran still lists manage_promotions; saving it
+// again drops the retired key instead of refusing the whole save.
+func TestNormalizePermissionsDropsRetiredPromotionManagement(t *testing.T) {
+	permissions, err := normalizePermissions([]string{"manage_promotions", "manage_menu"})
 	if err != nil {
 		t.Fatalf("normalizePermissions() error = %v", err)
 	}
-	if want := []string{"manage_promotions"}; !reflect.DeepEqual(permissions, want) {
+	if want := []string{"manage_menu"}; !reflect.DeepEqual(permissions, want) {
 		t.Fatalf("normalizePermissions() = %#v, want %#v", permissions, want)
 	}
 }

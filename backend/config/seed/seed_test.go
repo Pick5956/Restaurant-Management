@@ -49,11 +49,13 @@ func TestSystemRoleDefaultsUseGranularAdministrationPermissions(t *testing.T) {
 	for _, required := range []string{
 		"manage_invites", "manage_members", "manage_roles", "view_audit_log",
 		"manage_restaurant_settings", "take_order", "view_tables", "view_inventory",
-		"manage_promotions",
 	} {
 		if !has[required] {
 			t.Fatalf("manager default is missing %s", required)
 		}
+	}
+	if has["manage_promotions"] {
+		t.Fatal("promotions were retired; the manager default must not list manage_promotions")
 	}
 	if has["manage_staff"] {
 		t.Fatal("manager default still writes deprecated manage_staff")

@@ -2,6 +2,8 @@ export type Permission =
   | "*"
   | "view_dashboard"
   | "manage_menu"
+  // Retired with promotions on 29 ก.ย. 2569. Kept in the union only because
+  // aiNavigation.ts still names it; no role grants it any more.
   | "manage_promotions"
   | "view_tables"
   | "manage_table"

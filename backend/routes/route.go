@@ -39,7 +39,6 @@ func SetupRoutes(r *gin.Engine) {
 	SetupIngredientRoutes(v1)
 	SetupExpenseRoutes(v1)
 	SetupOrderRoutes(v1, orderEvents)
-	SetupPromotionRoutes(v1, orderEvents)
 	SetupReportRoutes(v1)
 	SetupAIRoutes(v1)
 }

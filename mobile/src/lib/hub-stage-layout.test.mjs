@@ -8,7 +8,7 @@ import {
   floorCellWidth,
   floorStripHeight,
   floorStripShape,
-  pairStacks,
+  pairKitchenLines,
   parseRememberedFloors,
   REMEMBERED_FLOORS_MAX,
   rememberFloor,
@@ -170,25 +170,14 @@ test('the content column is the window less the rail and both gutters, capped at
 
 // ---------------------------------------------------------------- kitchen and orders pair
 
-test('kitchen and orders pair at the default text size down to 340 dp of content', () => {
-  assert.equal(pairStacks(379, 1), false); // Pixel 6
-  assert.equal(pairStacks(340, 1), false);
-  assert.equal(pairStacks(339, 1), true);
-  assert.equal(pairStacks(328, 1), true); // 360 dp phone, as before
-  assert.equal(pairStacks(288, 1), true); // 320 dp phone
-  // A smaller OS text size never pairs on a narrower screen than the default does.
-  assert.equal(pairStacks(339, 0.85), true);
-});
-
-test('a large OS text size stacks the pair before its words are cut', () => {
-  // 'เกินเวลา 13, เสร็จแล้ว 15' was cut on a Pixel 6 at 1.3 and at 2.0 (stress, 2026-09-23).
-  assert.equal(pairStacks(379, 1.3), true);
-  assert.equal(pairStacks(379, 2), true);
-  // 'Large' (1.15) needs about 379 dp: a 400 dp column keeps the pair, a 390 dp phone's 358 does not.
-  assert.equal(pairStacks(400, 1.15), false);
-  assert.equal(pairStacks(358, 1.15), true);
-  // A landscape tablet has the room even at 200%.
-  assert.equal(pairStacks(884, 2), false);
+test('the kitchen status line wraps one line more than the other tiles, so the pair never has to stack', () => {
+  // 'เกินเวลา 13, เสร็จแล้ว 15' in the narrower paired tile: two lines at the
+  // default text size, three once a large OS size already allows two.
+  assert.equal(pairKitchenLines(0.85), 2);
+  assert.equal(pairKitchenLines(1), 2);
+  assert.equal(pairKitchenLines(1.15), 2);
+  assert.equal(pairKitchenLines(1.3), 3);
+  assert.equal(pairKitchenLines(2), 3);
 });
 
 test('a status line may take a second line only at a large OS text size', () => {

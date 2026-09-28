@@ -298,6 +298,18 @@ func (s *InvitationService) ListPending(actorUserID, restaurantID uint) ([]entit
 	return s.invRepo.ListPendingByRestaurant(restaurantID)
 }
 
+// RecentInvitationLimit caps the staff page's list of every invitation.
+const RecentInvitationLimit = 50
+
+// ListRecent returns the restaurant's newest invitations in every status, for
+// the staff page's record of which links are open and which were used.
+func (s *InvitationService) ListRecent(actorUserID, restaurantID uint) ([]entity.Invitation, error) {
+	if _, err := s.authorizeInvitationManager(actorUserID, restaurantID); err != nil {
+		return nil, err
+	}
+	return s.invRepo.ListRecentByRestaurant(restaurantID, RecentInvitationLimit)
+}
+
 func (s *InvitationService) authorizeInvitationManager(userID, restaurantID uint) (*entity.RestaurantMember, error) {
 	if s.memberRepo == nil {
 		return nil, errors.New("membership authorization is unavailable")

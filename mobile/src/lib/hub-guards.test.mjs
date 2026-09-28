@@ -175,16 +175,21 @@ test('the band\'s capsules and rows grow with the OS text size instead of clippi
   assert.match(fnText(band, 'StageTakings'), /style=\{\(\{ pressed \}\) => \(\{ minHeight: 64,/);
 });
 
-test('Stage stacks kitchen and orders and lets their lines wrap by the OS text size, measured beside the rail', () => {
+test('Stage keeps kitchen and orders side by side on every phone and lets their lines wrap, measured beside the rail', () => {
   const stage = hubCode('hub-stage.tsx');
   assert.match(stage, /const \{ width, fontScale \} = useWindowDimensions\(\);/);
   assert.match(stage, /const contentWidth = measuredWidth > 0 \? measuredWidth : stageContentWidth\(width, gutter, metrics\.contentMax, railGuess\);/);
-  assert.match(stage, /const stackPair = pairStacks\(contentWidth, fontScale\);/);
+  // Always a row (owner, 28 ก.ย. 2569): a narrow phone put orders on a row of its own.
+  assert.match(stage, /<View key="pair" style=\{\{ flexDirection: 'row',/);
+  assert.doesNotMatch(stage, /stackPair|pairStacks/);
   assert.match(stage, /const lines = valueLines\(fontScale\);/);
+  assert.match(stage, /const kitchenLines = pairKitchenLines\(fontScale\);/);
   assert.match(stage, /<KitchenTile [^>]*\blines=\{lines\}/);
+  assert.match(stage, /<KitchenTile [^>]*\bstatusLines=\{kitchenLines\}/);
   assert.match(stage, /<FloorTile\b[^>]*\blines=\{lines\}/);
   const tiles = hubCode('stage-tiles.tsx');
-  assert.match(fnText(tiles, 'KitchenTile'), /<ValueLine lines=\{lines\} segments=\{kitchenSegments\(/);
+  assert.match(fnText(tiles, 'KitchenTile'), /<ValueLine lines=\{statusLines\} segments=\{kitchenSegments\(/);
+  assert.match(fnText(tiles, 'KitchenTile'), /<TileFigure lines=\{lines\}/);
   assert.match(fnText(tiles, 'FloorTile'), /<ValueLine lines=\{lines\} segments=\{floorSegments\(/);
   assert.match(hubCode('value-line.tsx'), /numberOfLines=\{lines\}/);
 });

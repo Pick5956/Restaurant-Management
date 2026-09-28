@@ -18,7 +18,7 @@ import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { SwipeToDeleteRow } from '@/src/components/swipe-to-delete-row';
 import { ActionDock, Button, ChoiceSheet, EmptyState, Feedback, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { useOrderEvents } from '@/src/hooks/use-order-events';
-import { billDiscountLines } from '@/src/lib/bill-promotions';
+import { billDiscountLines } from '@/src/lib/bill-discount';
 import { cashReceivedToSend, formatTender, paidPaymentLine, repricedPaymentLine } from '@/src/lib/cash-tender';
 import {
   currentRoundPresentation,
@@ -276,8 +276,8 @@ export default function BillScreen() {
   //
   // Every event counts, not only this order's: the server keeps one queued
   // event per phone and drops the rest ("one queued invalidation is enough"),
-  // so this order's change can arrive as another order's event - a promotion
-  // or VAT change reprices every open order in one burst.
+  // so this order's change can arrive as another order's event - a service
+  // charge or VAT change reprices every open order in one burst.
   const isFocused = useIsFocused();
   const followingBill = isFocused && canAccessBill && validOrderId && bill?.payment_status !== 'paid';
   useOrderEvents(() => load(true, true), {
@@ -662,8 +662,7 @@ export default function BillScreen() {
   const summaryRows: Array<[string, string]> = [
     [copy('ยอดอาหาร', 'Food subtotal'), formatTender(bill.subtotal, language)],
   ];
-  // One row per promotion the server applied, so the staff can tell a
-  // customer exactly what took the price down.
+  // A bill paid under the retired promotions keeps its discount row.
   for (const line of billDiscountLines(bill, copy('ส่วนลด', 'Discount'))) {
     summaryRows.push([line.label, `−${formatTender(line.amount, language)}`]);
   }

@@ -25,7 +25,7 @@ export function paymentFailureCode(raw: string | null | undefined): PaymentFailu
     return 'kitchen_not_done';
   }
   // The server prices the order again under the payment's own lock; a
-  // promotion boundary crossed since the bill loaded lands here.
+  // service charge or VAT change since the bill loaded lands here.
   if (message.includes('received amount is less than grand total')) return 'total_changed';
   // React Native's fetch says "Network request failed"; a dropped LAN backend
   // reaches us the same way.

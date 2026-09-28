@@ -1,5 +1,5 @@
 import { can } from "@/src/lib/rbac";
-import type { Membership } from "@/src/types/restaurant";
+import type { Invitation, Membership } from "@/src/types/restaurant";
 import type { Role } from "@/src/types/role";
 import { ALL_PERMISSION_KEYS, PERMISSION_DEPENDENCIES, normalizePermissionDependencies, parsePermissions } from "./staffPageConfig";
 
@@ -87,6 +87,37 @@ export function statusTone(status: string) {
   if (status === "active") return "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300";
   if (status === "suspended") return "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300";
   return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+}
+
+export type InvitationLinkState = "open" | "accepted" | "revoked" | "expired";
+
+/**
+ * What a link is now. A pending link past its expiry is still "pending" in the
+ * database (nothing sweeps it), but nobody can use it any more.
+ */
+export function invitationLinkState(invitation: Pick<Invitation, "status" | "expires_at">, now: Date): InvitationLinkState {
+  if (invitation.status === "accepted") return "accepted";
+  if (invitation.status === "revoked") return "revoked";
+  if (invitation.status === "expired") return "expired";
+  if (invitation.expires_at) {
+    const expires = new Date(invitation.expires_at);
+    if (!Number.isNaN(expires.getTime()) && expires.getTime() <= now.getTime()) return "expired";
+  }
+  return "open";
+}
+
+/** Open links first - they are the ones still out there - then the rest, newest first. */
+export function sortInvitationLinks<T extends Pick<Invitation, "ID" | "status" | "expires_at" | "CreatedAt">>(invitations: T[], now: Date): T[] {
+  const time = (value?: string) => {
+    const parsed = value ? new Date(value).getTime() : Number.NaN;
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  return [...invitations].sort((a, b) => {
+    const openA = invitationLinkState(a, now) === "open" ? 0 : 1;
+    const openB = invitationLinkState(b, now) === "open" ? 0 : 1;
+    if (openA !== openB) return openA - openB;
+    return time(b.CreatedAt) - time(a.CreatedAt) || b.ID - a.ID;
+  });
 }
 
 export function replaceMember(current: Membership[], nextMember: Membership) {

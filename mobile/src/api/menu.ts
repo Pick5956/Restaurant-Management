@@ -14,7 +14,7 @@ import type { Category, CategoryInput, MenuItem, MenuItemInput } from '@/src/typ
  * bytes are read only when the body is built, so nothing is held in memory
  * while the request is being assembled.
  */
-async function toMenuImageUploadPart(
+export async function toMenuImageUploadPart(
   source: MenuImageUploadFile,
 ): Promise<MenuImageUploadPart> {
   const handle = new FileSystemFile(source.uri);

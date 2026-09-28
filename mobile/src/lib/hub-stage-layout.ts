@@ -159,28 +159,16 @@ export function valueLines(fontScale: number): 1 | 2 {
 
 // ---------------------------------------------------------------- kitchen and orders
 
-/** At the default text size the pair stacks below this content width, as it always has. */
-export const PAIR_MIN_WIDTH = 340;
-const PAIR_GAP = 10;
-/** The kitchen's share of the pair (flex 1.4 against the orders' 1). */
-const KITCHEN_SHARE = 1.4 / 2.4;
-/** A tile's padding and edge (14 + 1 a side), and the status dot with its gap (6 + 5). */
-const TILE_INSET = 30;
-const STATUS_DOT = 11;
-
-/** What the kitchen's status line has to draw in, beside the orders tile. */
-function kitchenTextRoom(contentWidth: number): number {
-  return (contentWidth - PAIR_GAP) * KITCHEN_SHARE - TILE_INSET - STATUS_DOT;
-}
-
 /**
- * Whether kitchen and orders stack instead of pairing. The words grow with the
- * OS text size and the tiles do not, so the room the status line has at
- * PAIR_MIN_WIDTH has to grow with it: at 1.3 a Pixel 6 stacks, which is where
- * 'เกินเวลา 13, เสร็จแล้ว 15' was seen cut.
+ * Lines the kitchen tile's status line may take. Kitchen and orders always sit
+ * side by side (owner, 28 ก.ย. 2569): on a 360 dp phone, or at a large OS text
+ * size, they used to stack instead, which put orders alone on a row of its own.
+ * The status line was the reason - 'เกินเวลา 13, เสร็จแล้ว 15' was cut in the
+ * narrower tile - so it now wraps to one more line than the other tiles allow
+ * rather than moving the tiles.
  */
-export function pairStacks(contentWidth: number, fontScale: number): boolean {
-  return kitchenTextRoom(contentWidth) < kitchenTextRoom(PAIR_MIN_WIDTH) * Math.max(1, fontScale);
+export function pairKitchenLines(fontScale: number): 2 | 3 {
+  return valueLines(fontScale) === 2 ? 3 : 2;
 }
 
 // ---------------------------------------------------------------- shelf

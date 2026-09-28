@@ -1,4 +1,4 @@
-import { billDiscountLines } from "@/src/lib/billPromotions";
+import { billDiscountLines } from "@/src/lib/billDiscount";
 import { groupOrderItems } from "@/src/lib/orderItemGroups";
 import type { Bill, OrderItem } from "@/src/types/order";
 import type { Restaurant } from "@/src/types/restaurant";

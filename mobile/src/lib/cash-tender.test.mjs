@@ -144,7 +144,7 @@ test('a paid bill says how it was paid on one comma-joined line', () => {
 });
 
 test('a total the server re-priced while paying is told with the change actually recorded', () => {
-  // Shown ฿1,424, handed ฿1,500, but a promotion ended in between: the server
+  // Shown ฿1,424, handed ฿1,500, but the VAT setting changed in between: the server
   // recorded ฿1,450 and ฿50 change, not the ฿76 the sheet worked out.
   assert.equal(
     repricedPaymentLine(1424, { method: 'cash', amount: 1450, received_amount: 1500, change_amount: 50 }, 'th'),

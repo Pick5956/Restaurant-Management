@@ -13,7 +13,6 @@ const fallbackRolePermissions: Record<string, Permission[]> = {
   manager: [
     "view_dashboard",
     "manage_menu",
-    "manage_promotions",
     "view_tables",
     "manage_table",
     "take_order",
@@ -36,7 +35,7 @@ const fallbackRolePermissions: Record<string, Permission[]> = {
   chef: ["view_kitchen", "update_order_status", "view_inventory"],
 };
 
-const deprecatedPermissions = new Set<Permission>(["view_menu"]);
+const deprecatedPermissions = new Set<Permission>(["view_menu", "manage_promotions"]);
 const legacyStaffCapabilities = new Set<Permission>([
   "manage_invites",
   "manage_members",

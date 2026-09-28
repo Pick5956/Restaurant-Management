@@ -13,7 +13,11 @@ export const createInvitation = (restaurantId: number, data: CreateInvitationInp
 export const listPendingInvitations = (restaurantId: number) =>
   apiClient.get<{ invitations: Invitation[] }>(`/api/v1/restaurants/${restaurantId}/invitations`);
 
-export const revokeInvitation = (restaurantId: number, invitationId: number) =>
+/** Every recent invitation, open or closed: the staff page's record of links. */
+export const listAllInvitations = (restaurantId: number) =>
+  apiClient.get<{ invitations: Invitation[] }>(`/api/v1/restaurants/${restaurantId}/invitations`, { params: { scope: "all" } });
+
+export const revokeInvitation =(restaurantId: number, invitationId: number) =>
   apiClient.delete(`/api/v1/restaurants/${restaurantId}/invitations/${invitationId}`);
 
 // Public — invitee can preview before logging in.

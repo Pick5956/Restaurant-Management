@@ -100,11 +100,21 @@ func (r *InvitationRepository) FindByToken(token string) (*entity.Invitation, er
 
 // ListPendingByRestaurant lists pending invitations of a restaurant for owner UI.
 func (r *InvitationRepository) ListPendingByRestaurant(restaurantID uint) ([]entity.Invitation, error) {
+	return r.listByRestaurant(r.db.Where("restaurant_id = ? AND status = ?", restaurantID, entity.InvitationStatusPending), restaurantID)
+}
+
+// ListRecentByRestaurant lists the newest invitations of a restaurant in every
+// status - open, accepted, revoked, expired - so the staff page can show which
+// links are still out and which have been used. Capped at limit.
+func (r *InvitationRepository) ListRecentByRestaurant(restaurantID uint, limit int) ([]entity.Invitation, error) {
+	return r.listByRestaurant(r.db.Where("restaurant_id = ?", restaurantID).Limit(limit), restaurantID)
+}
+
+func (r *InvitationRepository) listByRestaurant(query *gorm.DB, restaurantID uint) ([]entity.Invitation, error) {
 	var invs []entity.Invitation
-	err := r.db.
+	err := query.
 		Preload("Role").
 		Preload("Restaurant").
-		Where("restaurant_id = ? AND status = ?", restaurantID, entity.InvitationStatusPending).
 		Order("created_at desc").
 		Find(&invs).Error
 	if err != nil {

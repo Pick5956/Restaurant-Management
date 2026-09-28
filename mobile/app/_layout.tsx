@@ -29,9 +29,15 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
+// Going into a shop, and back out to the shop list, fades - one screen loads
+// in over the other - instead of sliding sideways (owner, 28 ก.ย. 2569).
 const topLevelScreenOptions = {
-  animation: 'none' as const,
+  animation: 'fade' as const,
   gestureEnabled: false,
+};
+
+const shopListScreenOptions = {
+  animation: 'fade' as const,
 };
 
 // Development only: Expo warns whenever the phone's live-reload socket to Metro
@@ -39,8 +45,11 @@ const topLevelScreenOptions = {
 // The app itself is fine and a release build never shows it; the owner found
 // the banner popping up constantly (2026-09-23). A real bundling or runtime
 // error still shows.
+// The owner also asked (2026-09-28) to hide the dev warning a late Android
+// back leaves when the stack has already moved on: pop-slide re-sends the back
+// after its picture loads, and by then there can be nothing left to go back to.
 if (__DEV__) {
-  LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'Disconnected from Metro']);
+  LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'Disconnected from Metro', "The action 'GO_BACK' was not handled"]);
 }
 
 SplashScreen.preventAutoHideAsync();
@@ -131,7 +140,7 @@ function AppNavigator() {
           <Stack.Screen name="index" />
           <Stack.Screen name="login" />
           <Stack.Screen name="register" />
-          <Stack.Screen name="restaurants" />
+          <Stack.Screen name="restaurants" options={shopListScreenOptions} />
           <Stack.Screen name="create-restaurant" />
           <Stack.Screen name="invite/manual" />
           <Stack.Screen name="invite/[token]" />

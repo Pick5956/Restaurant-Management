@@ -10,226 +10,70 @@ import (
 	"Project-M/internal/entity"
 )
 
-const (
-	mergeTestBeer     uint = 7
-	mergeTestCocktail uint = 8
-	mergeTestDrinks   uint = 3
-	mergeTestFood     uint = 4
-)
+const mergeTestBeer uint = 7
 
 func mergeTestAt(day, hour, minute int) time.Time {
 	return time.Date(2026, 9, day, hour, minute, 0, 0, bangkokLocation())
 }
 
-func mergeTestMenuTarget(menuID uint) entity.PromotionTarget {
-	id := menuID
-	return entity.PromotionTarget{MenuItemID: &id, Quantity: 1}
-}
-
-func mergeTestCategoryTarget(categoryID uint) entity.PromotionTarget {
-	id := categoryID
-	return entity.PromotionTarget{CategoryID: &id, Quantity: 1}
-}
-
-// mergeTestHappyHour is a 17:00-18:00 dish discount on beer.
-func mergeTestHappyHour() entity.Promotion {
-	return entity.Promotion{
-		Type:          entity.PromotionTypeItemDiscount,
-		IsActive:      true,
-		DiscountKind:  entity.PromotionDiscountAmount,
-		DiscountValue: 20,
-		DaysMask:      entity.PromotionEveryDay,
-		StartTime:     "17:00",
-		EndTime:       "18:00",
-		Targets:       []entity.PromotionTarget{mergeTestMenuTarget(mergeTestBeer)},
-	}
-}
-
 // A dish added to an order folds into a matching pending line. The merged units
-// take that line's stored price and its ordered time, and the promotion engine
-// prices every unit of a line at that time, so a merge is only allowed when the
-// new units would have cost exactly the same on a line of their own.
+// take that line's stored price, so a merge is only allowed when the new units
+// would have cost exactly the same on a line of their own.
 func TestMergeKeepsLinePricingOnlyWhenTheNewUnitsCostTheSame(t *testing.T) {
-	at := mergeTestAt
-	line := func(orderedAt time.Time) *entity.OrderItem {
-		item := &entity.OrderItem{MenuID: mergeTestBeer, UnitPrice: 120, OptionsTotal: 15, Quantity: 1}
-		item.CreatedAt = orderedAt
-		return item
-	}
-	// Every promotion targets the beer unless the case says otherwise.
-	promotion := func(kind string, edit func(*entity.Promotion)) entity.Promotion {
-		p := entity.Promotion{
-			Type:          kind,
-			IsActive:      true,
-			DiscountValue: 20,
-			DaysMask:      entity.PromotionEveryDay,
-			Targets:       []entity.PromotionTarget{mergeTestMenuTarget(mergeTestBeer)},
-		}
-		if edit != nil {
-			edit(&p)
-		}
-		return p
-	}
-	happyHour := func(p *entity.Promotion) { p.StartTime, p.EndTime = "17:00", "19:00" }
-	targeting := func(targets ...entity.PromotionTarget) func(*entity.Promotion) {
-		return func(p *entity.Promotion) {
-			happyHour(p)
-			p.Targets = targets
-		}
-	}
-	beerIsADrink := map[uint][]uint{mergeTestBeer: {mergeTestDrinks}}
+	line := &entity.OrderItem{MenuID: mergeTestBeer, UnitPrice: 120, OptionsTotal: 15, Quantity: 1}
 
 	for _, tc := range []struct {
 		name         string
-		existing     *entity.OrderItem
 		unitPrice    float64
 		optionsTotal float64
-		promotions   []entity.Promotion
-		categories   map[uint][]uint
-		now          time.Time
 		want         bool
 	}{
-		{
-			name:     "same prices and no promotions",
-			existing: line(at(18, 12, 0)), unitPrice: 120, optionsTotal: 15,
-			now: at(18, 12, 30), want: true,
-		},
-		{
-			name:     "a float that differs by less than a satang is the same price",
-			existing: line(at(18, 12, 0)), unitPrice: 120.001, optionsTotal: 15,
-			now: at(18, 12, 30), want: true,
-		},
-		{
-			name:     "menu price changed since the line was taken",
-			existing: line(at(18, 12, 0)), unitPrice: 135, optionsTotal: 15,
-			now: at(18, 12, 30), want: false,
-		},
-		{
-			name:     "option price changed since the line was taken",
-			existing: line(at(18, 12, 0)), unitPrice: 120, optionsTotal: 20,
-			now: at(18, 12, 30), want: false,
-		},
-		{
-			name:     "line taken in happy hour, more added after it ended",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, happyHour)},
-			now:        at(18, 19, 5), want: false,
-		},
-		{
-			name:     "line taken before happy hour, more added once it began",
-			existing: line(at(18, 16, 50)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeBuyXGetY, happyHour)},
-			now:        at(18, 17, 10), want: false,
-		},
-		{
-			name:     "both moments inside the same happy hour",
-			existing: line(at(18, 17, 15)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, happyHour)},
-			now:        at(18, 18, 45), want: true,
-		},
-		{
-			name:     "promotion's last date passed between the two adds",
-			existing: line(at(18, 23, 50)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeBundlePrice, func(p *entity.Promotion) { p.EndDate = "2026-09-18" })},
-			now:        at(19, 0, 10), want: false,
-		},
-		{
-			name:     "a bill-level promotion is judged on the order, not the line",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeBillDiscount, happyHour)},
-			now:        at(18, 19, 5), want: true,
-		},
-		{
-			name:     "a switched-off promotion prices nothing",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, func(p *entity.Promotion) {
-				happyHour(p)
-				p.IsActive = false
-			})},
-			now: at(18, 19, 5), want: true,
-		},
-		{
-			name:     "a happy hour on another dish has no say over this one",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, targeting(mergeTestMenuTarget(mergeTestCocktail)))},
-			now:        at(18, 19, 5), want: true,
-		},
-		{
-			name:     "a happy hour on the dish's category splits it",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, targeting(mergeTestCategoryTarget(mergeTestDrinks)))},
-			categories: beerIsADrink,
-			now:        at(18, 19, 5), want: false,
-		},
-		{
-			name:     "a happy hour on another category has no say over this one",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeItemDiscount, targeting(mergeTestCategoryTarget(mergeTestFood)))},
-			categories: beerIsADrink,
-			now:        at(18, 19, 5), want: true,
-		},
-		{
-			name:     "a set with the dish in its second group splits it",
-			existing: line(at(18, 18, 30)), unitPrice: 120, optionsTotal: 15,
-			promotions: []entity.Promotion{promotion(entity.PromotionTypeBundlePrice, func(p *entity.Promotion) {
-				happyHour(p)
-				cocktail, beer := mergeTestMenuTarget(mergeTestCocktail), mergeTestMenuTarget(mergeTestBeer)
-				beer.GroupIndex = 1
-				p.Targets = []entity.PromotionTarget{cocktail, beer}
-			})},
-			now: at(18, 19, 5), want: false,
-		},
+		{name: "same prices", unitPrice: 120, optionsTotal: 15, want: true},
+		{name: "a float that differs by less than a satang is the same price", unitPrice: 120.001, optionsTotal: 15, want: true},
+		{name: "menu price changed since the line was taken", unitPrice: 135, optionsTotal: 15, want: false},
+		{name: "option price changed since the line was taken", unitPrice: 120, optionsTotal: 20, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mergeKeepsLinePricing(tc.existing, tc.unitPrice, tc.optionsTotal, tc.promotions, tc.categories, tc.now)
-			if got != tc.want {
+			if got := mergeKeepsLinePricing(line, tc.unitPrice, tc.optionsTotal); got != tc.want {
 				t.Fatalf("mergeKeepsLinePricing = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-// TestAnAddJoinsTheNewestLineThatSharesItsPrice replays the happy-hour evening
-// that asking only the oldest matching line got wrong: a beer at 17:55 inside
-// happy hour, one at 18:05 after it, then 18:10 and 18:12. The last two belong
-// on the 18:05 line; they used to open a third and a fourth line because the
-// 17:55 line was the only one asked.
+// TestAnAddJoinsTheNewestLineThatSharesItsPrice: a beer at 100, then the price
+// goes to 120 and three more are added. The three belong on one 120 line; asking
+// only the oldest matching line opened a new line for each of them.
 func TestAnAddJoinsTheNewestLineThatSharesItsPrice(t *testing.T) {
-	promotions := []entity.Promotion{mergeTestHappyHour()}
 	order := &entity.Order{}
 	nextID := uint(1)
-	for _, addedAt := range []time.Time{
-		mergeTestAt(18, 17, 55),
-		mergeTestAt(18, 18, 5),
-		mergeTestAt(18, 18, 10),
-		mergeTestAt(18, 18, 12),
-	} {
+	for _, price := range []float64{100, 120, 120, 120} {
 		lines := findMergeableOrderItems(order, mergeTestBeer, entity.OrderItemFulfillmentDineIn, "", nil)
-		if joined := firstLineKeepingPricing(lines, 100, 0, promotions, nil, addedAt); joined != nil {
+		if joined := firstLineKeepingPricing(lines, price, 0); joined != nil {
 			joined.Quantity++
 			continue
 		}
 		line := entity.OrderItem{
 			MenuID:          mergeTestBeer,
-			UnitPrice:       100,
+			UnitPrice:       price,
 			Quantity:        1,
 			FulfillmentType: entity.OrderItemFulfillmentDineIn,
 			Status:          entity.OrderItemStatusPending,
 		}
 		line.ID = nextID
-		line.CreatedAt = addedAt
+		line.CreatedAt = mergeTestAt(18, 12, int(nextID))
 		nextID++
 		order.Items = append(order.Items, line)
 	}
 
 	if len(order.Items) != 2 {
-		t.Fatalf("expected the 17:55 line and the 18:05 line only, got %d lines", len(order.Items))
+		t.Fatalf("expected the 100 line and the 120 line only, got %d lines", len(order.Items))
 	}
 	if got := order.Items[0].Quantity; got != 1 {
-		t.Fatalf("the happy-hour line took %d beers, want 1", got)
+		t.Fatalf("the 100 line took %d beers, want 1", got)
 	}
 	if got := order.Items[1].Quantity; got != 3 {
-		t.Fatalf("the 18:05 line took %d beers, want 3", got)
+		t.Fatalf("the 120 line took %d beers, want 3", got)
 	}
 }
 
@@ -238,10 +82,10 @@ func TestAnAddJoinsTheNewestLineThatSharesItsPrice(t *testing.T) {
 // A line with another note, or one the kitchen already has, is never a
 // candidate.
 func TestMergeableLinesComeNewestFirst(t *testing.T) {
-	line := func(id uint, orderedAt time.Time, note, status string) entity.OrderItem {
+	line := func(id uint, price float64, orderedAt time.Time, note, status string) entity.OrderItem {
 		item := entity.OrderItem{
 			MenuID:          mergeTestBeer,
-			UnitPrice:       100,
+			UnitPrice:       price,
 			Quantity:        1,
 			FulfillmentType: entity.OrderItemFulfillmentDineIn,
 			Note:            note,
@@ -252,10 +96,10 @@ func TestMergeableLinesComeNewestFirst(t *testing.T) {
 		return item
 	}
 	order := &entity.Order{Items: []entity.OrderItem{
-		line(1, mergeTestAt(18, 17, 55), "", entity.OrderItemStatusPending),
-		line(2, mergeTestAt(18, 18, 5), "", entity.OrderItemStatusPending),
-		line(3, mergeTestAt(18, 18, 6), "no ice", entity.OrderItemStatusPending),
-		line(4, mergeTestAt(18, 18, 7), "", entity.OrderItemStatusCooking),
+		line(1, 100, mergeTestAt(18, 17, 55), "", entity.OrderItemStatusPending),
+		line(2, 120, mergeTestAt(18, 18, 5), "", entity.OrderItemStatusPending),
+		line(3, 120, mergeTestAt(18, 18, 6), "no ice", entity.OrderItemStatusPending),
+		line(4, 120, mergeTestAt(18, 18, 7), "", entity.OrderItemStatusCooking),
 	}}
 
 	lines := findMergeableOrderItems(order, mergeTestBeer, entity.OrderItemFulfillmentDineIn, "", nil)
@@ -267,16 +111,18 @@ func TestMergeableLinesComeNewestFirst(t *testing.T) {
 		t.Fatalf("candidates = %v, want [2 1]", ids)
 	}
 
-	promotions := []entity.Promotion{mergeTestHappyHour()}
-	if joined := firstLineKeepingPricing(lines, 100, 0, promotions, nil, mergeTestAt(18, 18, 30)); joined == nil || joined.ID != 2 {
-		t.Fatalf("after happy hour the add should join line 2, got %+v", joined)
+	if joined := firstLineKeepingPricing(lines, 120, 0); joined == nil || joined.ID != 2 {
+		t.Fatalf("at 120 the add should join line 2, got %+v", joined)
 	}
-	// Inside happy hour only the 17:55 line shares the price, and it is still
-	// found behind the newer line that does not.
-	if joined := firstLineKeepingPricing(lines, 100, 0, promotions, nil, mergeTestAt(18, 17, 58)); joined == nil || joined.ID != 1 {
-		t.Fatalf("inside happy hour the add should join line 1, got %+v", joined)
+	// Only the older line shares a price of 100, and it is still found behind
+	// the newer line that does not.
+	if joined := firstLineKeepingPricing(lines, 100, 0); joined == nil || joined.ID != 1 {
+		t.Fatalf("at 100 the add should join line 1, got %+v", joined)
 	}
-	if joined := firstLineKeepingPricing(lines, 120, 0, promotions, nil, mergeTestAt(18, 18, 30)); joined != nil {
+	if joined := firstLineKeepingPricing(lines[:1], 100, 0); joined != nil {
+		t.Fatalf("line 2 alone should turn an add at 100 down, got line %d", joined.ID)
+	}
+	if joined := firstLineKeepingPricing(lines, 135, 0); joined != nil {
 		t.Fatalf("at a new menu price no line shares the price, got line %d", joined.ID)
 	}
 }
@@ -342,48 +188,10 @@ func TestAddItemMergesOnlyThroughThePricingCheck(t *testing.T) {
 	assertCallers(t, "findMergeableOrderItems", map[string]int{"mergeablePendingLine": 1})
 	assertCallers(t, "firstLineKeepingPricing", map[string]int{"mergeablePendingLine": 1})
 	assertCallers(t, "mergeKeepsLinePricing", map[string]int{"firstLineKeepingPricing": 1, "raiseStaysOnLine": 1})
-	// Only a promotion that can price the dish may split its line.
-	assertCallers(t, "promotionTargetsDish", map[string]int{"mergeKeepsLinePricing": 1})
 }
 
-// TestAnAddAfterHappyHourJoinsTheLineTakenBeforeIt: happy hour 18:00-19:00, a
-// beer at 17:50 (line 1) and one at 18:10 (line 2). One more at 19:10 costs
-// what line 1 costs and not what line 2 costs, so it joins line 1 - found only
-// because line 1 is still asked after line 2 turns the add down. Handed the
-// newest line alone, the add opens a third line.
-func TestAnAddAfterHappyHourJoinsTheLineTakenBeforeIt(t *testing.T) {
-	happyHour := mergeTestHappyHour()
-	happyHour.StartTime, happyHour.EndTime = "18:00", "19:00"
-	promotions := []entity.Promotion{happyHour}
-	line := func(id uint, orderedAt time.Time) entity.OrderItem {
-		item := entity.OrderItem{
-			MenuID:          mergeTestBeer,
-			UnitPrice:       100,
-			Quantity:        1,
-			FulfillmentType: entity.OrderItemFulfillmentDineIn,
-			Status:          entity.OrderItemStatusPending,
-		}
-		item.ID = id
-		item.CreatedAt = orderedAt
-		return item
-	}
-	order := &entity.Order{Items: []entity.OrderItem{
-		line(1, mergeTestAt(18, 17, 50)),
-		line(2, mergeTestAt(18, 18, 10)),
-	}}
-	lines := findMergeableOrderItems(order, mergeTestBeer, entity.OrderItemFulfillmentDineIn, "", nil)
-	addedAt := mergeTestAt(18, 19, 10)
-
-	if joined := firstLineKeepingPricing(lines, 100, 0, promotions, nil, addedAt); joined == nil || joined.ID != 1 {
-		t.Fatalf("the 19:10 add should join the 17:50 line, got %+v", joined)
-	}
-	if joined := firstLineKeepingPricing(lines[:1], 100, 0, promotions, nil, addedAt); joined != nil {
-		t.Fatalf("the 18:10 line alone should turn the 19:10 add down, got line %d", joined.ID)
-	}
-}
-
-// TestMergeablePendingLineAsksEveryCandidate reads the call behind the test
-// above: firstLineKeepingPricing only reaches an older line if it is handed all
+// TestMergeablePendingLineAsksEveryCandidate reads the call behind
+// TestMergeableLinesComeNewestFirst: firstLineKeepingPricing only reaches an older line if it is handed all
 // of them, and mergeablePendingLine handing it lines[:1] passed every
 // pure-logic test here. Its first argument has to be the variable
 // findMergeableOrderItems filled, unsliced, and never written again.
@@ -776,13 +584,11 @@ func TestUpdateItemReadsTheMenuOnlyForARaiseOrNewOptions(t *testing.T) {
 // line only at the line's own price with its options still offered.
 func TestRaiseStaysOnLine(t *testing.T) {
 	line := &entity.OrderItem{MenuID: mergeTestBeer, UnitPrice: 100, Quantity: 2}
-	line.CreatedAt = mergeTestAt(18, 12, 0)
 	menu := func(price float64, available bool) *entity.MenuItem {
 		item := &entity.MenuItem{Price: price, IsAvailable: available}
 		item.ID = mergeTestBeer
 		return item
 	}
-	now := mergeTestAt(18, 12, 30)
 
 	for _, tc := range []struct {
 		name      string
@@ -798,7 +604,7 @@ func TestRaiseStaysOnLine(t *testing.T) {
 		{name: "off sale at a new price is refused", menu: menu(120, false), wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stays, err := raiseStaysOnLine(line, tc.menu, tc.optionIDs, nil, nil, now)
+			stays, err := raiseStaysOnLine(line, tc.menu, tc.optionIDs)
 			if tc.wantErr {
 				if err == nil || err.Error() != "menu item is unavailable" {
 					t.Fatalf("raiseStaysOnLine = (%v, %v), want the unavailable refusal", stays, err)

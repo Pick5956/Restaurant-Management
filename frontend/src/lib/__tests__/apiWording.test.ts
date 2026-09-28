@@ -18,7 +18,6 @@ import {
   expenseRefusal,
   memberRoleUnavailable,
   orderItemStatusRefusal,
-  promotionTargetsGone,
   stockRefusal,
 } from "../knownApiErrors";
 import { membershipWith } from "./fixtures";
@@ -64,7 +63,6 @@ const PAGES = {
   kitchen: "src/app/(dashboard)/r/[slug]/kitchen/page.tsx",
   expenses: "src/app/(dashboard)/r/[slug]/expenses/page.tsx",
   orders: "src/app/(dashboard)/r/[slug]/orders/page.tsx",
-  promotionDialog: "src/app/(dashboard)/r/[slug]/promotions/PromotionDialog.tsx",
   tables: "src/app/(dashboard)/r/[slug]/tables/page.tsx",
   staff: "src/app/(dashboard)/r/[slug]/staff/page.tsx",
   customerMenu: "src/app/customer/t/[token]/page.tsx",
@@ -77,7 +75,7 @@ const ALLOWED_RAW_READS: Partial<Record<keyof typeof PAGES, string[]>> = {
   tables: ["const raw = apiErrorMessage(err);"],
 };
 
-describe("server wording on the kitchen, expenses, archive, promotion, tables, staff and QR pages", () => {
+describe("server wording on the kitchen, expenses, archive, tables, staff and QR pages", () => {
   it.each(Object.entries(PAGES))("%s never puts the server's text on screen", (name, path) => {
     const source = read(path);
     expect(source).not.toMatch(/apiErrorMessage\([^)]*\)\s*(\|\||\?\?)/);
@@ -207,22 +205,6 @@ describe("expense ledger", () => {
   });
 });
 
-describe("promotion dialog", () => {
-  it("recognises a deleted dish or category, and nothing else", () => {
-    expect(promotionTargetsGone(failure(400, "promotion menu item not found"))).toBe(true);
-    expect(promotionTargetsGone(failure(400, "promotion category not found"))).toBe(true);
-    expect(promotionTargetsGone(failure(400, "promotion name is required"))).toBe(false);
-    const backend = backendErrorStrings();
-    expect(backend).toContain("promotion menu item not found");
-    expect(backend).toContain("promotion category not found");
-  });
-
-  it("save and delete toasts say the dialog's own words", () => {
-    const dialog = read(PAGES.promotionDialog);
-    expect(dialog).toContain("promotionTargetsGone(error) ? copy.goneTargets : apiFailureText(error, language, copy.saveError)");
-    expect(dialog).toContain('showToast({ title: apiFailureText(error, language, copy.deleteError), tone: "error" });');
-  });
-});
 
 describe("order archive", () => {
   it("opens only under view_orders, which the paid list needs", () => {

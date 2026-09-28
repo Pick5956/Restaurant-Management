@@ -2,8 +2,8 @@
 
 import { useId } from "react";
 
-// The promotions dialog's schedule chips (PromotionDialog `Segmented`
-// appearance="chips"), shared so the reservation sheet can wear the same look.
+// Single-choice chips, first drawn for the retired promotions dialog's
+// schedule; the reservation sheet wears them now.
 const choiceBase =
   "inline-flex h-9 items-center justify-center rounded-md border px-3 text-[13px] font-semibold transition-colors";
 const choiceOn =

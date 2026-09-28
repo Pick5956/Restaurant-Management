@@ -69,6 +69,11 @@ export default function InvitationAcceptPage() {
         backToRestaurants: "ไปหน้าเลือกร้าน",
         fetchError: "ไม่พบคำเชิญนี้ หรือคำเชิญถูกลบไปแล้ว",
         acceptError: "รับคำเชิญไม่สำเร็จ กรุณาตรวจสอบบัญชีหรือขอคำเชิญใหม่",
+        closedAccepted: "ลิงก์นี้มีคนรับไปแล้ว",
+        closedRevoked: "ร้านยกเลิกลิงก์นี้แล้ว",
+        closedExpired: "ลิงก์นี้หมดอายุแล้ว",
+        closedOther: "ลิงก์นี้ใช้ไม่ได้แล้ว",
+        closedAction: "หนึ่งลิงก์ใช้ได้คนเดียว ขอลิงก์ใหม่จากร้าน",
       }
     : {
         logout: "Sign out",
@@ -92,11 +97,29 @@ export default function InvitationAcceptPage() {
         backToRestaurants: "Back to restaurants",
         fetchError: "This invitation could not be found or has been removed.",
         acceptError: "Could not accept the invitation. Please verify the account or request a new link.",
+        closedAccepted: "Someone has already used this link",
+        closedRevoked: "The restaurant cancelled this link",
+        closedExpired: "This link has expired",
+        closedOther: "This link can no longer be used",
+        closedAction: "Each link works for one person. Ask the restaurant for a new one.",
       };
 
   const token = params.token;
   const statusLabel = useMemo(() => invitationStateLabel(invitation, usable, language), [invitation, usable, language]);
   const emailMismatch = invitationEmailMismatch(invitation?.email, user?.email);
+  // A used, cancelled or expired link says so in place of the "ready" line and
+  // drops the accept button: before, it showed a green "ready to accept" box
+  // and a faded button that did nothing, so a second person on a shared link
+  // could not tell they had been turned away.
+  const closed = !loading && Boolean(invitation) && !usable;
+  const closedTitle =
+    invitation?.status === "accepted"
+      ? copy.closedAccepted
+      : invitation?.status === "revoked"
+        ? copy.closedRevoked
+        : invitation?.status === "expired"
+          ? copy.closedExpired
+          : copy.closedOther;
 
   useEffect(() => {
     let active = true;
@@ -242,7 +265,12 @@ export default function InvitationAcceptPage() {
               </div>
             ) : null}
 
-            {user ? (
+            {closed ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 dark:border-red-900/40 dark:bg-red-900/20">
+                <p className="text-[14px] font-semibold text-red-800 dark:text-red-200">{closedTitle}</p>
+                <p className="mt-0.5 text-[13px] text-red-700 dark:text-red-300">{copy.closedAction}</p>
+              </div>
+            ) : user ? (
               <div
                 className={`rounded-md border px-3 py-2 ${
                   emailMismatch
@@ -279,6 +307,7 @@ export default function InvitationAcceptPage() {
             )}
 
             <div className="flex flex-col gap-2 sm:flex-row">
+              {closed ? null : (
               <button
                 type="button"
                 disabled={loading || !invitation || !usable || emailMismatch || accepting}
@@ -287,6 +316,7 @@ export default function InvitationAcceptPage() {
               >
                 {accepting ? copy.acceptBusy : user ? copy.acceptButton : copy.loginToAccept}
               </button>
+              )}
               <Link
                 href="/restaurants"
                 className="inline-flex h-10 flex-1 items-center justify-center rounded-md border border-gray-200 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"

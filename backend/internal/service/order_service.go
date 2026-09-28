@@ -121,26 +121,25 @@ type PayOrderRequest struct {
 	Note           string  `json:"note" binding:"max=500"`
 }
 
-// BillResponse is an order priced for payment. Promotions itemises
-// DiscountAmount, one row per promotion applied.
+// BillResponse is an order priced for payment. DiscountAmount is non-zero only
+// on bills paid while the retired automatic promotions ran.
 type BillResponse struct {
-	Order                *entity.Order           `json:"order"`
-	Items                []entity.OrderItem      `json:"items"`
-	Subtotal             float64                 `json:"subtotal"`
-	DiscountAmount       float64                 `json:"discount_amount"`
-	Promotions           []entity.OrderPromotion `json:"promotions"`
-	ServiceChargeEnabled bool                    `json:"service_charge_enabled"`
-	ServiceChargeRate    float64                 `json:"service_charge_rate"`
-	ServiceChargeAmount  float64                 `json:"service_charge_amount"`
-	VATEnabled           bool                    `json:"vat_enabled"`
-	VATRate              float64                 `json:"vat_rate"`
-	VATAmount            float64                 `json:"vat_amount"`
-	TotalAmount          float64                 `json:"total_amount"`
-	GrandTotal           float64                 `json:"grand_total"`
-	PaymentStatus        string                  `json:"payment_status"`
-	PromptPayName        string                  `json:"promptpay_name"`
-	PromptPayQRImage     string                  `json:"promptpay_qr_image"`
-	Payments             []entity.OrderPayment   `json:"payments"`
+	Order                *entity.Order         `json:"order"`
+	Items                []entity.OrderItem    `json:"items"`
+	Subtotal             float64               `json:"subtotal"`
+	DiscountAmount       float64               `json:"discount_amount"`
+	ServiceChargeEnabled bool                  `json:"service_charge_enabled"`
+	ServiceChargeRate    float64               `json:"service_charge_rate"`
+	ServiceChargeAmount  float64               `json:"service_charge_amount"`
+	VATEnabled           bool                  `json:"vat_enabled"`
+	VATRate              float64               `json:"vat_rate"`
+	VATAmount            float64               `json:"vat_amount"`
+	TotalAmount          float64               `json:"total_amount"`
+	GrandTotal           float64               `json:"grand_total"`
+	PaymentStatus        string                `json:"payment_status"`
+	PromptPayName        string                `json:"promptpay_name"`
+	PromptPayQRImage     string                `json:"promptpay_qr_image"`
+	Payments             []entity.OrderPayment `json:"payments"`
 }
 
 type selectedMenuOption struct {
@@ -471,10 +470,7 @@ func (s *OrderService) AddItem(restaurantID, userID, orderID uint, req *AddOrder
 		// round has gone to the kitchen its quantity is a record of what was sent,
 		// and a served-immediately line is its own event with its own timestamp.
 		if !req.ServeImmediately {
-			existing, err := mergeablePendingLine(tx, order, menu, fulfillmentType, strings.TrimSpace(req.Note), selectedOptions, optionsTotal)
-			if err != nil {
-				return err
-			}
+			existing := mergeablePendingLine(order, menu, fulfillmentType, strings.TrimSpace(req.Note), selectedOptions, optionsTotal)
 			if existing != nil {
 				if err := raisePendingLine(tx, order, existing.ID, qty); err != nil {
 					return err
@@ -1079,7 +1075,7 @@ func (s *OrderService) PayOrder(restaurantID, userID, orderID uint, req *PayOrde
 			return errors.New("invalid payment method")
 		}
 		// Price once more under the payment's own lock, so what is paid is what
-		// the promotions give at this moment.
+		// the lines and bill settings give at this moment.
 		if err := recalcOrderTotals(tx, order); err != nil {
 			return err
 		}
@@ -1379,136 +1375,46 @@ func findMergeableOrderItems(
 // mergeablePendingLine is the pending line an add folds into, or nil when the
 // add needs a line of its own: no matching line, or none whose price the new
 // units would share (see mergeKeepsLinePricing). Every matching line is asked,
-// newest first. Asking only the oldest opened a new line on every add once it
-// stopped sharing today's price - a beer at 17:55 in happy hour, another at
-// 18:05 on its own line, then 18:10 and 18:12 each on a third and fourth line
-// instead of joining the 18:05 one.
+// newest first, so once the menu price changes the adds after it gather on one
+// new line instead of each opening another.
 func mergeablePendingLine(
-	tx *repository.OrderRepository,
 	order *entity.Order,
 	menu *entity.MenuItem,
 	fulfillmentType string,
 	note string,
 	options []selectedMenuOption,
 	optionsTotal float64,
-) (*entity.OrderItem, error) {
+) *entity.OrderItem {
 	lines := findMergeableOrderItems(order, menu.ID, fulfillmentType, note, options)
-	if len(lines) == 0 {
-		return nil, nil
-	}
-	promotions, categories, err := dishPricingPromotions(tx, order.RestaurantID, menu.ID)
-	if err != nil {
-		return nil, err
-	}
-	return firstLineKeepingPricing(lines, menu.Price, optionsTotal, promotions, categories, time.Now()), nil
+	return firstLineKeepingPricing(lines, menu.Price, optionsTotal)
 }
 
 // firstLineKeepingPricing is the first of the lines whose price units added now
 // would share, or nil when none would.
-func firstLineKeepingPricing(
-	lines []*entity.OrderItem,
-	unitPrice float64,
-	optionsTotal float64,
-	promotions []entity.Promotion,
-	categories map[uint][]uint,
-	now time.Time,
-) *entity.OrderItem {
+func firstLineKeepingPricing(lines []*entity.OrderItem, unitPrice float64, optionsTotal float64) *entity.OrderItem {
 	for _, line := range lines {
-		if mergeKeepsLinePricing(line, unitPrice, optionsTotal, promotions, categories, now) {
+		if mergeKeepsLinePricing(line, unitPrice, optionsTotal) {
 			return line
 		}
 	}
 	return nil
 }
 
-// dishPricingPromotions loads what mergeKeepsLinePricing reads: the restaurant's
-// active promotions and, only when one of them targets a category, the
-// categories the dish is listed under.
-func dishPricingPromotions(
-	tx *repository.OrderRepository,
-	restaurantID uint,
-	menuID uint,
-) ([]entity.Promotion, map[uint][]uint, error) {
-	promotions, err := tx.ListActivePromotions(restaurantID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !promotionsTargetCategories(promotions) {
-		return promotions, nil, nil
-	}
-	categories, err := tx.MenuCategoryIDs(restaurantID, []uint{menuID})
-	if err != nil {
-		return nil, nil, err
-	}
-	return promotions, categories, nil
-}
-
 // mergeKeepsLinePricing reports whether units added now would cost what the
 // pending line they fold into costs. A merged unit takes the line's stored unit
-// price and options total, and the promotion engine prices every unit of a line
-// at the line's ordered time. So a price change since the line was taken, or a
-// dish-level promotion whose hours, dates or days cover one moment and not the
-// other, keeps the new units on their own line: merged, a dish added after
-// happy hour ended got the happy-hour price, and one added once it began did
-// not. Only a promotion that can price this dish counts: a cocktail happy hour
-// has no say over fried rice. categories maps the dish to the categories it is
-// listed under, and may be nil when no promotion targets a category. The
-// bill-level promotion is judged on when the order opened, not on any line, so
-// it never splits one.
-func mergeKeepsLinePricing(
-	existing *entity.OrderItem,
-	unitPrice float64,
-	optionsTotal float64,
-	promotions []entity.Promotion,
-	categories map[uint][]uint,
-	now time.Time,
-) bool {
-	if !moneyEqual(existing.UnitPrice, unitPrice) || !moneyEqual(existing.OptionsTotal, optionsTotal) {
-		return false
-	}
-	orderedAt := existing.CreatedAt
-	if orderedAt.IsZero() {
-		orderedAt = now
-	}
-	for i := range promotions {
-		promotion := &promotions[i]
-		if !promotion.IsActive || promotion.Type == entity.PromotionTypeBillDiscount {
-			continue
-		}
-		if !promotionTargetsDish(promotion, existing.MenuID, categories) {
-			continue
-		}
-		if promotionRunsAt(promotion, orderedAt) != promotionRunsAt(promotion, now) {
-			return false
-		}
-	}
-	return true
-}
-
-// promotionTargetsDish reports whether a dish-level promotion can price the
-// dish at all, through the same target matching the promotion engine runs: the
-// dish itself, or a category it is listed under, in any of the promotion's
-// groups.
-func promotionTargetsDish(promotion *entity.Promotion, menuID uint, categories map[uint][]uint) bool {
-	run := promotionRun{categories: categories}
-	unit := promotionUnit{menu: menuID}
-	for _, group := range groupsOf(promotion) {
-		if run.matches(group, unit) {
-			return true
-		}
-	}
-	return false
+// price and options total, so a price change since the line was taken keeps
+// the new units on their own line at today's price.
+func mergeKeepsLinePricing(existing *entity.OrderItem, unitPrice float64, optionsTotal float64) bool {
+	return moneyEqual(existing.UnitPrice, unitPrice) && moneyEqual(existing.OptionsTotal, optionsTotal)
 }
 
 // placeRaisedUnits decides where the units added by raising a pending line's
 // quantity go, and returns the quantity the line itself ends with (see
-// raisedLineQuantity). Raised in place they take the line's stored price and
-// its ordered time, and the web bill's "+" raises the oldest line of a group
-// whose lines differ only by when they were taken - so a beer added after
-// happy hour, on a line taken in it, got the happy-hour price. Units that
-// would not cost what the line costs go the way AddItem sends an add instead:
-// into the newest matching pending line whose price they share, or onto a new
-// line at today's price. A raise at the line's own price stays on the line.
+// raisedLineQuantity). Raised in place they take the line's stored price, so
+// units that would not cost what the line costs go the way AddItem sends an
+// add instead: into the newest matching pending line whose price they share,
+// or onto a new line at today's price. A raise at the line's own price stays
+// on the line.
 func placeRaisedUnits(
 	tx *repository.OrderRepository,
 	order *entity.Order,
@@ -1517,11 +1423,7 @@ func placeRaisedUnits(
 	optionIDs []uint,
 	delta int,
 ) (int, error) {
-	promotions, categories, err := dishPricingPromotions(tx, order.RestaurantID, item.MenuID)
-	if err != nil {
-		return 0, err
-	}
-	stays, err := raiseStaysOnLine(item, menu, optionIDs, promotions, categories, time.Now())
+	stays, err := raiseStaysOnLine(item, menu, optionIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -1533,10 +1435,7 @@ func placeRaisedUnits(
 		if err != nil {
 			return 0, err
 		}
-		existing, err := mergeablePendingLine(tx, order, menu, item.FulfillmentType, item.Note, options, optionsTotal)
-		if err != nil {
-			return 0, err
-		}
+		existing := mergeablePendingLine(order, menu, item.FulfillmentType, item.Note, options, optionsTotal)
 		// The raised line itself is never the answer: it just failed the same
 		// check. The guard keeps a stale copy of it in order.Items from ever
 		// taking the units back.
@@ -1567,19 +1466,12 @@ func placeRaisedUnits(
 // so a dish taken off sale is refused before the price is asked; checked only
 // on the way to another line, it was raised in place at an unchanged price
 // while an add of the same dish was refused.
-func raiseStaysOnLine(
-	item *entity.OrderItem,
-	menu *entity.MenuItem,
-	optionIDs []uint,
-	promotions []entity.Promotion,
-	categories map[uint][]uint,
-	now time.Time,
-) (bool, error) {
+func raiseStaysOnLine(item *entity.OrderItem, menu *entity.MenuItem, optionIDs []uint) (bool, error) {
 	if !menu.IsAvailable {
 		return false, errors.New("menu item is unavailable")
 	}
 	optionsTotal, offered := optionsPriceOnMenu(menu, optionIDs)
-	return offered && mergeKeepsLinePricing(item, menu.Price, optionsTotal, promotions, categories, now), nil
+	return offered && mergeKeepsLinePricing(item, menu.Price, optionsTotal), nil
 }
 
 // raisedLineQuantity is the quantity a pending line ends with after a raise of
@@ -1811,7 +1703,7 @@ func validateSelectedMenuOptions(menu *entity.MenuItem, selectedIDs []uint) ([]s
 	return selected, total, nil
 }
 
-// recalcOrderTotals prices the order from its lines, promotions included, and
+// recalcOrderTotals prices the order from its lines and bill settings, and
 // saves it. Every path that changes an order's dishes ends here, so web POS,
 // the mobile app and the customer QR page always see the same price.
 func recalcOrderTotals(tx *repository.OrderRepository, order *entity.Order) error {
@@ -1853,16 +1745,11 @@ func billFromOrder(order *entity.Order, restaurant *entity.Restaurant) *BillResp
 	if grandTotal <= 0 {
 		grandTotal = roundMoney(total + serviceAmount + vatAmount)
 	}
-	promotions := order.Promotions
-	if promotions == nil {
-		promotions = []entity.OrderPromotion{}
-	}
 	return &BillResponse{
 		Order:                order,
 		Items:                order.Items,
 		Subtotal:             subtotal,
 		DiscountAmount:       discount,
-		Promotions:           promotions,
 		ServiceChargeEnabled: serviceEnabled,
 		ServiceChargeRate:    serviceRate,
 		ServiceChargeAmount:  roundMoney(serviceAmount),

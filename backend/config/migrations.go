@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 36
+	CurrentSchemaVersion int64 = 38
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -697,12 +697,10 @@ func schemaMigrationPlan() []SchemaMigration {
 			Version: 32,
 			Name:    "promotions",
 			Up: func(ctx *MigrationContext) error {
-				// Promotions the owner sets up once and the order service applies
-				// by itself: the rules, the dishes each one counts, and what every
-				// order earned from them.
-				if err := migratePromotions(ctx.DB); err != nil {
-					return fmt.Errorf("migrate promotions: %w", err)
-				}
+				// This migration also created the promotion tables. Promotions were
+				// retired in migration 38, which drops them, so a new database never
+				// makes them at all.
+				//
 				// A line's share of dish-level promotions, so sales per dish can be
 				// read net of them. No existing line had any, so zero is right.
 				for _, statement := range []string{
@@ -714,7 +712,8 @@ func schemaMigrationPlan() []SchemaMigration {
 						return fmt.Errorf("add order item discount: %w", err)
 					}
 				}
-				// Re-seed so manage_promotions reaches the manager system role.
+				// Re-seed so the manager system role picks up the permission
+				// changes made alongside it.
 				if err := seed.SeedRoles(ctx.DB); err != nil {
 					return fmt.Errorf("reseed roles for promotions: %w", err)
 				}
@@ -791,44 +790,130 @@ func schemaMigrationPlan() []SchemaMigration {
 				return nil
 			},
 		},
+		{
+			Version: 37,
+			Name:    "order_item_promotion_free",
+			Up: func(ctx *MigrationContext) error {
+				// This migration added order_items.promotion_free_id for the free
+				// dish a buy-X-get-Y promotion put on the order. Migration 38 drops
+				// the column with the rest of promotions, and OrderItem no longer
+				// has the field, so on a new database this adds nothing.
+				if err := ctx.DB.AutoMigrate(&entity.OrderItem{}); err != nil {
+					return fmt.Errorf("add order item promotion_free_id: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 38,
+			Name:    "drop_promotions",
+			Up: func(ctx *MigrationContext) error {
+				// Automatic promotions were retired (owner, 29 ก.ย. 2569).
+				return dropPromotions(ctx.DB)
+			},
+		},
 	}
 }
 
-// promotionForeignKeys are the links migration 32 adds by hand, named by the
-// model and association that own each one.
-var promotionForeignKeys = []struct {
-	model       any
-	association string
-}{
-	{&entity.Promotion{}, "Restaurant"},
-	{&entity.Promotion{}, "Targets"},
-	{&entity.PromotionTarget{}, "MenuItem"},
-	{&entity.PromotionTarget{}, "Category"},
-	{&entity.Order{}, "Promotions"},
-	{&entity.OrderPromotion{}, "Promotion"},
+// openBillsWithPromotions lists the open, unpaid orders promotions still
+// price: a bill discount, a line discount, or a free line a buy-X-get-Y
+// promotion added. freeLines is false when promotion_free_id never existed.
+func openBillsWithPromotions(database *gorm.DB, freeLines bool) ([]uint, error) {
+	lineCondition := "discount_amount <> 0"
+	if freeLines {
+		lineCondition = "(discount_amount <> 0 OR promotion_free_id IS NOT NULL)"
+	}
+	var ids []uint
+	err := database.Raw(`
+		SELECT id FROM orders
+		 WHERE deleted_at IS NULL
+		   AND payment_status = 'unpaid'
+		   AND status NOT IN ('completed', 'cancelled')
+		   AND (discount_amount <> 0 OR id IN (
+		         SELECT order_id FROM order_items
+		          WHERE deleted_at IS NULL AND ` + lineCondition + `))
+		 ORDER BY id`).Scan(&ids).Error
+	return ids, err
 }
 
-// migratePromotions creates only the three promotion tables, then adds their
-// links to the tables that already exist one by one. Plain AutoMigrate would
-// also walk into restaurants, menu_items and orders on the way; this keeps the
-// migration additive, the same way migration 11 does.
-func migratePromotions(database *gorm.DB) error {
-	migrationDB := database.Session(&gorm.Session{NewDB: true})
-	configCopy := *migrationDB.Config
-	configCopy.IgnoreRelationshipsWhenMigrating = true
-	migrationDB.Config = &configCopy
-	if err := migrationDB.AutoMigrate(&entity.Promotion{}, &entity.PromotionTarget{}, &entity.OrderPromotion{}); err != nil {
-		return err
-	}
-	for _, link := range promotionForeignKeys {
-		if database.Migrator().HasConstraint(link.model, link.association) {
-			continue
+// repriceOpenBillsWithoutPromotions is the SQL twin of priceOrder for an open
+// bill with no discount: subtotal from the lines still on it, service charge
+// on that, VAT on both, each to satang, under the restaurant's settings.
+const repriceOpenBillsWithoutPromotions = `
+	WITH sums AS (
+	  SELECT o.id, o.restaurant_id,
+	         ROUND(COALESCE(SUM(i.subtotal) FILTER (WHERE i.status <> 'cancelled' AND i.deleted_at IS NULL), 0), 2) AS subtotal
+	    FROM orders o LEFT JOIN order_items i ON i.order_id = o.id
+	   WHERE o.id IN @ids
+	   GROUP BY o.id, o.restaurant_id
+	), charged AS (
+	  SELECT s.id, s.subtotal,
+	         CASE WHEN r.service_charge_enabled THEN ROUND(s.subtotal * r.service_charge_rate / 100, 2) ELSE 0 END AS service,
+	         r.vat_enabled, r.vat_rate
+	    FROM sums s JOIN restaurants r ON r.id = s.restaurant_id
+	), priced AS (
+	  SELECT id, subtotal, service,
+	         CASE WHEN vat_enabled THEN ROUND((subtotal + service) * vat_rate / 100, 2) ELSE 0 END AS vat
+	    FROM charged
+	)
+	UPDATE orders o
+	   SET subtotal = p.subtotal,
+	       discount_amount = 0,
+	       total_amount = p.subtotal,
+	       service_charge_amount = p.service,
+	       vat_amount = p.vat,
+	       grand_total = p.subtotal + p.service + p.vat
+	  FROM priced p
+	 WHERE o.id = p.id`
+
+// dropPromotions takes promotions out of the database. Paid bills keep the
+// discount they were paid under, in orders.discount_amount and each line's
+// discount_amount, so receipts and per-dish revenue still add up; only the
+// promotion names go. An open bill is repriced without promotions: the free
+// lines a buy-X-get-Y promotion added are removed (nobody ordered them),
+// every discount goes to zero, and the totals are worked out again.
+func dropPromotions(database *gorm.DB) error {
+	return database.Transaction(func(tx *gorm.DB) error {
+		freeLines := tx.Migrator().HasColumn("order_items", "promotion_free_id")
+		ids, err := openBillsWithPromotions(tx, freeLines)
+		if err != nil {
+			return fmt.Errorf("list open bills with promotions: %w", err)
 		}
-		if err := database.Migrator().CreateConstraint(link.model, link.association); err != nil {
-			return fmt.Errorf("create %T %s constraint: %w", link.model, link.association, err)
+		if len(ids) > 0 {
+			statements := []string{}
+			if freeLines {
+				statements = append(statements, `UPDATE order_items SET deleted_at = NOW()
+				 WHERE order_id IN @ids AND promotion_free_id IS NOT NULL AND deleted_at IS NULL`)
+			}
+			statements = append(statements,
+				`UPDATE order_items SET discount_amount = 0 WHERE order_id IN @ids AND discount_amount <> 0`,
+				repriceOpenBillsWithoutPromotions,
+			)
+			for _, statement := range statements {
+				if err := tx.Exec(statement, map[string]any{"ids": ids}).Error; err != nil {
+					return fmt.Errorf("reprice open bills without promotions: %w", err)
+				}
+			}
 		}
-	}
-	return nil
+		for _, statement := range []string{
+			`DROP TABLE IF EXISTS order_promotions`,
+			`DROP TABLE IF EXISTS promotion_targets`,
+			`DROP TABLE IF EXISTS promotions`,
+			`ALTER TABLE order_items DROP COLUMN IF EXISTS promotion_free_id`,
+			// The permission goes from every saved role and override.
+			`UPDATE roles SET permissions = permissions - 'manage_promotions'
+			  WHERE permissions @> '["manage_promotions"]'`,
+			`UPDATE restaurant_role_permission_overrides SET permissions = permissions - 'manage_promotions'
+			  WHERE permissions @> '["manage_promotions"]'`,
+			`UPDATE restaurant_members SET permissions_override = permissions_override - 'manage_promotions'
+			  WHERE permissions_override @> '["manage_promotions"]'`,
+		} {
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("drop promotions: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 type restaurantSlugRow struct {

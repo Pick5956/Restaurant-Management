@@ -52,6 +52,7 @@ export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 
 export interface Invitation {
   ID: number;
+  CreatedAt?: string;
   restaurant_id: number;
   role_id: number;
   email: string;

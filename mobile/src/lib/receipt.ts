@@ -1,4 +1,4 @@
-import { billDiscountLines } from './bill-promotions.ts';
+import { billDiscountLines } from './bill-discount.ts';
 import type { DisplayLanguage } from '@/src/lib/display-preferences';
 import type { Bill } from '@/src/types/order';
 import type { Restaurant } from '@/src/types/restaurant';

@@ -20,12 +20,13 @@ export interface CashTenderState extends Tender {
 }
 
 /**
- * What the customer handed over for this total. It starts with nothing
- * chosen: the cashier states the amount before cash can be taken, which is
- * what stops a stray tap on the bill from recording a payment by itself.
+ * What the customer handed over for this total. Cash is taken as exactly the
+ * amount due (owner, 28 ก.ย. 2569): the "พอดี" / round-up / other-amount chips
+ * are gone from the app, so there is nothing to choose. The sheet's arming
+ * delay (SHEET_ARM_MS) still keeps the tap that opened it from paying.
  */
 export function useCashTender(total: number): CashTenderState {
-  const [choice, setChoice] = useState<TenderChoice | null>(null);
+  const [choice, setChoice] = useState<TenderChoice | null>('exact');
   const [digits, setDigits] = useState('');
   const quick = useMemo(() => quickTenderAmounts(total), [total]);
 

@@ -51,7 +51,6 @@ const (
 var editablePermissionKeys = map[string]bool{
 	"view_dashboard":                   true,
 	"manage_menu":                      true,
-	"manage_promotions":                true,
 	"view_tables":                      true,
 	"manage_table":                     true,
 	"take_order":                       true,
@@ -73,6 +72,9 @@ var editablePermissionKeys = map[string]bool{
 var deprecatedPermissionKeys = map[string]bool{
 	"view_menu":    true,
 	"manage_staff": true,
+	// Promotions were retired on 29 ก.ย. 2569; a saved role that still lists
+	// the key keeps saving.
+	"manage_promotions": true,
 }
 
 func (s *RoleService) UpdateRolePermissions(roleID uint, restaurantID uint, actor *entity.RestaurantMember, permissions []string) (*entity.Role, error) {

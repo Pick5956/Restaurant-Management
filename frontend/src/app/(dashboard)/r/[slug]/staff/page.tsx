@@ -4,33 +4,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { createRole, deleteRole, getRoles, updateRole, updateRolePermissions } from "@/src/lib/auth";
-import { createInvitation, listPendingInvitations, revokeInvitation } from "@/src/lib/invitation";
+import { createInvitation, listAllInvitations, revokeInvitation } from "@/src/lib/invitation";
+import InvitationLinks from "./InvitationLinks";
+import AuditHistoryDialog from "./AuditTimeline";
 import { listAuditLogs, listMembers, updateMemberPermissions, updateMemberRole, updateMemberStatus } from "@/src/lib/restaurant";
 import { apiFailureText } from "@/src/lib/apiFailure";
 import { memberRoleUnavailable } from "@/src/lib/knownApiErrors";
 import type { Invitation, Membership, MembershipStatus, RestaurantAuditLog } from "@/src/types/restaurant";
 import type { Role } from "@/src/types/role";
 import type { Permission } from "@/src/types/auth";
-import { RestaurantCardSkeleton, Skeleton } from "@/src/components/shared/Skeleton";
+import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
 import { createSingleFlight } from "@/src/lib/singleFlight";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
-import { Check, ChevronRight, Pencil, X } from "lucide-react";
+import { Check, ChevronRight, History, Pencil, Plus, RotateCcw, X } from "lucide-react";
 import {
   PERMISSION_DEPENDENCIES,
   PERMISSION_SECTIONS,
   applyPermissionDependencies,
   STATUS_LABELS,
-  actorName,
-  auditMessage,
   displayUserName,
   effectiveMemberPermissions,
   formatDate,
   inviteMailto,
   inviteUrl,
-  isCustomRole,
   memberPermissionSummary,
   parsePermissions,
   permissionSummary,
@@ -51,7 +50,6 @@ import {
 } from "./staffPageUtils";
 
 const AUDIT_PAGE_SIZE = 20;
-const MOBILE_AUDIT_PAGE_SIZE = 5;
 
 export default function StaffPage() {
   const { activeMembership, refreshMemberships, user } = useAuth();
@@ -83,7 +81,6 @@ export default function StaffPage() {
   const [auditLogs, setAuditLogs] = useState<RestaurantAuditLog[]>([]);
   const [auditHasMore, setAuditHasMore] = useState(false);
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
-  const [auditMobilePage, setAuditMobilePage] = useState(0);
   const [roles, setRoles] = useState<Role[]>([]);
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState<number | "">("");
@@ -112,6 +109,8 @@ export default function StaffPage() {
   const [permissionClosing, setPermissionClosing] = useState(false);
   const [roleManagerOpen, setRoleManagerOpen] = useState(false);
   const [roleManagerClosing, setRoleManagerClosing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyClosing, setHistoryClosing] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteModalClosing, setInviteModalClosing] = useState(false);
 
@@ -137,8 +136,6 @@ export default function StaffPage() {
         roleError: "จัดการบทบาทไม่สำเร็จ",
         roleRequired: "กรอกชื่อบทบาทก่อน",
         rolePanelTitle: "บทบาทที่จัดการได้",
-        rolePanelAction: "เปิดการจัดการบทบาท",
-        rolePanelSummary: "แสดงเฉพาะบทบาทที่มีสิทธิ์ไม่เกินขอบเขตของบัญชีนี้",
         roleManagerTitle: "จัดการบทบาทและสิทธิ์",
         roleManagerHint: "เพิ่มบทบาท แก้ชื่อบทบาทที่ร้านใช้ และกำหนดชุดสิทธิ์ให้แต่ละบทบาท",
         customRoleTitle: "สร้างบทบาทใหม่",
@@ -166,7 +163,9 @@ export default function StaffPage() {
         noPermissionTitle: "บัญชีนี้ไม่มีสิทธิ์เข้าถึงการจัดการทีม",
         noPermissionBody: "ผู้ดูแลที่มีสิทธิ์สูงกว่าสามารถเปิดสิทธิ์คำเชิญ สมาชิก บทบาท หรือประวัติการเปลี่ยนแปลงให้บัญชีนี้ได้",
         membersTitle: "สมาชิกในร้าน",
-        membersHint: "แสดงสมาชิกและสถานะตามขอบเขตสิทธิ์การจัดการทีมของบัญชีนี้",
+        memberCount: (n: number) => `${n} คน`,
+        manageRoles: "จัดการบทบาท",
+        history: "ประวัติทีม",
         name: "ชื่อ",
         role: "บทบาท",
         permission: "สิทธิ์",
@@ -179,44 +178,17 @@ export default function StaffPage() {
         yourAccount: "บัญชีของคุณ",
         noMembers: "ยังไม่มีสมาชิกในร้านนี้",
         pendingTitle: "คำเชิญที่รอรับ",
-        pendingHint: "ลิงก์แบบ token ใช้สำหรับรับคำเชิญผ่านหน้า `/invitations/[token]`",
-        openLink: "ลิงก์เปิดสำหรับทุกบัญชี",
-        rolePrefix: "บทบาท",
-        expiresPrefix: "หมดอายุ",
-        copied: "คัดลอกแล้ว",
         copy: "คัดลอก",
-        sendEmail: "ส่งอีเมล",
-        revoking: "กำลังยกเลิก",
         revoke: "ยกเลิก",
-        noPendingTitle: "ยังไม่มีคำเชิญที่รอรับ",
-        noPendingBody: "สร้างคำเชิญใหม่จากแผงด้านขวา",
-        auditTitle: "ประวัติการเปลี่ยนแปลงทีม",
-        auditHint: "เก็บเหตุการณ์สำคัญของคำเชิญและการจัดการสมาชิกไว้ย้อนหลัง",
-        by: "โดย",
-        target: "เป้าหมาย",
-        noAudit: "ยังไม่มีประวัติในช่วงนี้",
         auditDenied: "บัญชีนี้ยังไม่มีสิทธิ์ดูประวัติการเปลี่ยนแปลงทีม",
-        loadMoreAudit: "โหลดประวัติเพิ่ม",
-        loadingMoreAudit: "กำลังโหลด...",
-        previousAuditPage: "ก่อนหน้า",
-        nextAuditPage: "หน้าถัดไป",
         inviteTitle: "เพิ่มพนักงาน",
-        inviteHint: "เลือกบทบาทแล้วสร้างลิงก์เชิญ จากนั้นคัดลอกหรือเปิดอีเมลเพื่อนำส่งต่อ",
         emailLabel: "อีเมลพนักงาน",
         emailPlaceholder: "staff@example.com หรือเว้นว่าง",
-        emailHelp: "ถ้ามีอีเมล ระบบจะช่วยเปิด mail client เพื่อส่งลิงก์เชิญต่อได้เร็วขึ้น",
         expiry: "วันหมดอายุ",
         day: "วัน",
         noExpiry: "ไม่หมดอายุ",
         creating: "กำลังสร้างคำเชิญ...",
         createLink: "สร้างลิงก์เชิญ",
-        flowTitle: "ขั้นตอนรับคำเชิญ",
-        flow: [
-          "ผู้ที่ได้รับสิทธิ์จัดการคำเชิญกำหนดบทบาทและสร้างลิงก์คำเชิญ",
-          "พนักงานเปิดลิงก์เพื่อตรวจสอบร้าน อีเมล และวันหมดอายุ",
-          "เข้าสู่ระบบหรือสมัครบัญชีในหน้าเดียวกันหากยังไม่ได้ login",
-          "กดรับคำเชิญแล้วระบบเพิ่มสมาชิกและเลือกร้านให้อัตโนมัติ",
-        ],
       }
     : {
         eyebrow: "Team management",
@@ -239,8 +211,6 @@ export default function StaffPage() {
         roleError: "Could not manage role.",
         roleRequired: "Enter a role name first.",
         rolePanelTitle: "Roles you can manage",
-        rolePanelAction: "Open role management",
-        rolePanelSummary: "Only roles within this account's grant scope are shown.",
         roleManagerTitle: "Manage roles and permissions",
         roleManagerHint: "Add roles, rename the roles used by this restaurant, and set each role's default permissions.",
         customRoleTitle: "Create new role",
@@ -268,7 +238,9 @@ export default function StaffPage() {
         noPermissionTitle: "This account cannot access team management.",
         noPermissionBody: "A higher-privileged administrator can grant invitation, member, role, or audit-log access to this account.",
         membersTitle: "Restaurant members",
-        membersHint: "Members and statuses are shown within this account's team-management scope.",
+        memberCount: (n: number) => `${n} ${n === 1 ? "person" : "people"}`,
+        manageRoles: "Manage roles",
+        history: "Team history",
         name: "Name",
         role: "Role",
         permission: "Permissions",
@@ -281,44 +253,17 @@ export default function StaffPage() {
         yourAccount: "Your account",
         noMembers: "No members in this restaurant yet.",
         pendingTitle: "Pending invitations",
-        pendingHint: "Token links are accepted through `/invitations/[token]`.",
-        openLink: "Open link for any account",
-        rolePrefix: "Role",
-        expiresPrefix: "Expires",
-        copied: "Copied",
         copy: "Copy",
-        sendEmail: "Send email",
-        revoking: "Revoking",
         revoke: "Revoke",
-        noPendingTitle: "No pending invitations",
-        noPendingBody: "Create a new invitation from the right panel.",
-        auditTitle: "Team activity history",
-        auditHint: "Important invitation and member-management events are kept here.",
-        by: "By",
-        target: "Target",
-        noAudit: "No recent activity yet.",
         auditDenied: "This account does not have permission to view the team audit log.",
-        loadMoreAudit: "Load more history",
-        loadingMoreAudit: "Loading...",
-        previousAuditPage: "Previous",
-        nextAuditPage: "Next page",
         inviteTitle: "Invite staff",
-        inviteHint: "Choose a role, create an invitation link, then copy it or open an email handoff.",
         emailLabel: "Staff email",
         emailPlaceholder: "staff@example.com or leave blank",
-        emailHelp: "If an email is set, the app can open your mail client with the invitation link ready.",
         expiry: "Expiry",
         day: "day",
         noExpiry: "No expiry",
         creating: "Creating invitation...",
         createLink: "Create invitation link",
-        flowTitle: "Invitation acceptance steps",
-        flow: [
-          "A staff administrator with invitation permission selects the role and creates the link.",
-          "Staff opens the link to review the restaurant, email, and expiry.",
-          "Staff signs in or registers on the same screen if needed.",
-          "Accepting the invitation adds the membership and selects the restaurant automatically.",
-        ],
       };
 
   const manageableRoles = useMemo(() => grantableRoleOptions(activeMembership, roles), [activeMembership, roles]);
@@ -364,7 +309,7 @@ export default function StaffPage() {
       const [membersRes, rolesRes, invitationsRes, logsRes] = await Promise.all([
         listMembers(restaurantId),
         getRoles(),
-        canManageInvites ? listPendingInvitations(restaurantId) : Promise.resolve({ data: { invitations: [] } }),
+        canManageInvites ? listAllInvitations(restaurantId) : Promise.resolve({ data: { invitations: [] } }),
         canViewAuditLog ? listAuditLogs(restaurantId, AUDIT_PAGE_SIZE) : Promise.resolve({ data: { logs: [], has_more: false } }),
       ]);
 
@@ -374,7 +319,6 @@ export default function StaffPage() {
       setInvitations(invitationsRes.data.invitations ?? []);
       setAuditLogs(logsRes.data.logs ?? []);
       setAuditHasMore(Boolean(logsRes.data.has_more));
-      setAuditMobilePage(0);
       setRoles(roleList);
       if (canManageInvites && !roleId) {
         const nextDefault = nextInviteRoles.find((role) => role.name === "waiter") ?? nextInviteRoles[0];
@@ -414,21 +358,18 @@ export default function StaffPage() {
     }
   };
 
-  const goToPreviousAuditPage = () => {
-    setAuditMobilePage((current) => Math.max(0, current - 1));
+  const openHistory = () => {
+    setHistoryClosing(false);
+    setHistoryOpen(true);
   };
 
-  const goToNextAuditPage = async () => {
-    const nextStart = (auditMobilePage + 1) * MOBILE_AUDIT_PAGE_SIZE;
-    if (nextStart < auditLogs.length) {
-      setAuditMobilePage((current) => current + 1);
-      return;
-    }
-    if (!auditHasMore) return;
-    const loaded = await loadMoreAuditLogs();
-    if (loaded) {
-      setAuditMobilePage((current) => current + 1);
-    }
+  const closeHistory = () => {
+    if (historyClosing) return;
+    setHistoryClosing(true);
+    window.setTimeout(() => {
+      setHistoryOpen(false);
+      setHistoryClosing(false);
+    }, 180);
   };
 
   const openInviteModal = () => {
@@ -519,7 +460,8 @@ export default function StaffPage() {
     setError("");
     try {
       await revokeInvitation(restaurantId, invitationId);
-      setInvitations((current) => current.filter((item) => item.ID !== invitationId));
+      // The link stays in the list, marked revoked, until the refresh below.
+      setInvitations((current) => current.map((item) => item.ID === invitationId ? { ...item, status: "revoked" } : item));
       showToast({ title: copy.inviteRevoked });
       await refresh();
     } catch {
@@ -746,6 +688,8 @@ export default function StaffPage() {
   };
 
   const setPermissionRow = (permissions: Permission[], enabled: boolean) => {
+    // Any edit makes a member's permissions their own, even right after a reset.
+    setUseRolePermissions(false);
     setPermissionDraft((current) => {
       let next = current;
       permissions.forEach((permission) => {
@@ -794,10 +738,6 @@ export default function StaffPage() {
     }
   };
 
-  const auditMobileStart = auditMobilePage * MOBILE_AUDIT_PAGE_SIZE;
-  const auditMobileLogs = auditLogs.slice(auditMobileStart, auditMobileStart + MOBILE_AUDIT_PAGE_SIZE);
-  const auditCanGoBack = auditMobilePage > 0;
-  const auditCanGoNext = auditMobileStart + MOBILE_AUDIT_PAGE_SIZE < auditLogs.length || auditHasMore;
   const preservedPermissionCount = permissionDraft.filter((permission) => !grantablePermissionSet.has(permission)).length;
   const permissionEditBlocked = preservedPermissionCount > 0 && !(permissionTarget?.type === "member" && useRolePermissions);
   const permissionBackdrop = useBackdropClose(closePermissionModal);
@@ -811,73 +751,63 @@ export default function StaffPage() {
       <h1 className="sr-only">{copy.title}</h1>
 
       {error && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
           {error}
         </div>
       )}
 
       {!allowed && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-900/15">
-          <p className="text-[13px] font-semibold text-amber-900 dark:text-amber-200">{copy.noPermissionTitle}</p>
-          <p className="mt-1 text-[12px] text-amber-800/80 dark:text-amber-300/80">{copy.noPermissionBody}</p>
+          <p className="text-[14px] font-semibold text-amber-900 dark:text-amber-200">{copy.noPermissionTitle}</p>
+          <p className="mt-1 text-[13px] text-amber-800/80 dark:text-amber-300/80">{copy.noPermissionBody}</p>
         </div>
       )}
 
       <div className="space-y-4">
         <section className="space-y-4">
-          {(canManageInvites || canManageRoles) && (
-            <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                <div className="min-w-0">
-                  <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{canManageInvites ? copy.inviteTitle : copy.roleManagerTitle}</h2>
-                  <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{canManageInvites ? copy.inviteHint : copy.roleManagerHint}</p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
-                  {canManageInvites && (
-                    <button
-                      type="button"
-                      onClick={openInviteModal}
-                      className="h-10 rounded-xl bg-orange-700 px-4 text-[13px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-colors hover:bg-orange-800 dark:bg-orange-700 dark:text-white"
-                    >
-                      {copy.createLink}
-                    </button>
-                  )}
-                  {canManageRoles && (
-                    <button
-                      type="button"
-                      onClick={openRoleManager}
-                      className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-                    >
-                      {copy.rolePanelAction}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="grid border-t border-gray-200 dark:border-gray-800 sm:grid-cols-2 sm:divide-x sm:divide-gray-200 sm:dark:divide-gray-800">
-                <div className="px-4 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{copy.rolePanelTitle}</p>
-                  <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{copy.rolePanelSummary}</p>
-                </div>
-                <div className="grid grid-cols-2 divide-x divide-gray-200 border-t border-gray-200 dark:divide-gray-800 dark:border-gray-800 sm:border-t-0">
-                  <div className="px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{copy.role}</p>
-                    <p className="mt-1 text-[18px] font-semibold tabular-nums text-gray-950 dark:text-white">{manageableRoles.length}</p>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{copy.customRoleBadge}</p>
-                    <p className="mt-1 text-[18px] font-semibold tabular-nums text-gray-950 dark:text-white">
-                      {manageableRoles.filter(isCustomRole).length}
-                    </p>
-                  </div>
-                </div>
-              </div>
+          {/* The page's two actions, and nothing else: the old header card
+              explained the page and counted roles (owner, 28 ก.ย. 2569). */}
+          {(canManageInvites || canManageRoles || canViewAuditLog) && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canViewAuditLog && (
+                <button
+                  type="button"
+                  onClick={openHistory}
+                  aria-label={copy.history}
+                  title={copy.history}
+                  className="ui-press grid h-10 w-10 place-items-center rounded-xl border border-gray-200 bg-white text-gray-700 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 hover:text-gray-950 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+                >
+                  <History className="h-5 w-5" aria-hidden="true" />
+                </button>
+              )}
+              {canManageRoles && (
+                <button
+                  type="button"
+                  onClick={openRoleManager}
+                  className="ui-press h-10 rounded-xl border border-gray-200 bg-white px-4 text-[14px] font-semibold text-gray-800 shadow-(--dashboard-control-shadow) transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                >
+                  {copy.manageRoles}
+                </button>
+              )}
+              {canManageInvites && (
+                <button
+                  type="button"
+                  onClick={openInviteModal}
+                  className="ui-press inline-flex h-10 items-center gap-1.5 rounded-xl bg-orange-700 px-4 text-[14px] font-semibold text-white shadow-(--dashboard-control-shadow) transition-colors hover:bg-orange-800 dark:bg-orange-700 dark:text-white"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  {copy.createLink}
+                </button>
+              )}
             </div>
           )}
 
           <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-              <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{copy.membersTitle}</h2>
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{copy.membersHint}</p>
+            <div className="flex items-baseline justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+              <h2 className="text-[16px] font-semibold text-gray-900 dark:text-white">{copy.membersTitle}</h2>
+              {!loading && members.length ? (
+                <span className="text-[14px] tabular-nums text-gray-500 dark:text-gray-400">{copy.memberCount(members.length)}</span>
+              ) : null}
             </div>
             <div className="p-4">
               {loading ? (
@@ -887,7 +817,7 @@ export default function StaffPage() {
                 </div>
               ) : members.length ? (
                 <div className="space-y-2">
-                  <div className="hidden grid-cols-[minmax(170px,1.35fr)_minmax(150px,1fr)_minmax(76px,0.55fr)_minmax(112px,0.75fr)_minmax(104px,0.85fr)] gap-3 border-b border-gray-100 pb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:border-gray-800 lg:grid">
+                  <div className="hidden grid-cols-[minmax(170px,1.35fr)_minmax(150px,1fr)_minmax(76px,0.55fr)_minmax(112px,0.75fr)_minmax(104px,0.85fr)] gap-3 border-b border-gray-100 pb-2 text-[13px] font-semibold text-gray-500 dark:border-gray-800 lg:grid">
                     <span>{copy.name}</span>
                     <span>{copy.role}</span>
                     <span>{copy.status}</span>
@@ -905,15 +835,15 @@ export default function StaffPage() {
                     return (
                       <div key={member.ID} className="relative grid gap-3 rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 lg:grid-cols-[minmax(170px,1.35fr)_minmax(150px,1fr)_minmax(76px,0.55fr)_minmax(112px,0.75fr)_minmax(104px,0.85fr)] lg:items-center lg:gap-3 lg:border-0 lg:border-b lg:bg-transparent lg:px-0 lg:py-3 lg:last:border-b-0 lg:dark:bg-transparent">
                         <div className="flex min-w-0 items-center gap-3">
-                          <UserAvatar src={member.user?.profile_image} name={displayUserName(member, language)} size={40} className="h-10 w-10 text-[12px]" />
+                          <UserAvatar src={member.user?.profile_image} name={displayUserName(member, language)} size={40} className="h-10 w-10 text-[13px]" />
                           <div className="min-w-0">
-                            <p className="truncate text-[13px] font-semibold text-gray-900 dark:text-white">{displayUserName(member, language)}</p>
-                            <p className="truncate text-[11px] text-gray-500">{member.user?.email}</p>
+                            <p className="truncate text-[14px] font-semibold text-gray-900 dark:text-white">{displayUserName(member, language)}</p>
+                            <p className="truncate text-[13px] text-gray-500 dark:text-gray-400">{member.user?.email}</p>
                           </div>
                         </div>
 
                         <div className="min-w-0">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 lg:hidden">{copy.role}</p>
+                          <p className="mb-1 text-[13px] font-semibold text-gray-500 lg:hidden">{copy.role}</p>
                           {canEditMemberRole ? (
                             <div>
                               <ThemedSelect
@@ -927,55 +857,61 @@ export default function StaffPage() {
                                   label: roleLabel(role, language),
                                 }))}
                               />
-                              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{memberPermissionSummary(member, language)}</p>
+                              {/* Said only when it differs from the role: "uses
+                                  the role's permissions" under every row was noise. */}
+                              {member.permissions_override != null ? (
+                                <p className="mt-1 text-[13px] font-medium text-orange-700 dark:text-orange-400">{memberPermissionSummary(member, language)}</p>
+                              ) : null}
                             </div>
                           ) : (
                             <div>
-                              <p className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{roleLabel(member.role, language)}</p>
-                              <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">{memberPermissionSummary(member, language)}</p>
+                              <p className="text-[14px] font-medium text-gray-800 dark:text-gray-200">{roleLabel(member.role, language)}</p>
+                              {member.permissions_override != null ? (
+                                <p className="mt-0.5 text-[13px] font-medium text-orange-700 dark:text-orange-400">{memberPermissionSummary(member, language)}</p>
+                              ) : null}
                             </div>
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 lg:hidden">{copy.status}</p>
-                          <span className={`inline-flex rounded-md px-2 py-1 text-[11px] font-medium ${statusTone(member.status)}`}>
+                          <p className="mb-1 text-[13px] font-semibold text-gray-500 lg:hidden">{copy.status}</p>
+                          <span className={`inline-flex rounded-md px-2 py-1 text-[13px] font-medium ${statusTone(member.status)}`}>
                             {STATUS_LABELS[language][member.status] ?? member.status}
                           </span>
                         </div>
 
                         <div className="min-w-0">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 lg:hidden">{copy.joined}</p>
-                          <p className="text-[12px] leading-5 text-gray-500 dark:text-gray-400">{formatDate(member.joined_at, language)}</p>
+                          <p className="mb-1 text-[13px] font-semibold text-gray-500 lg:hidden">{copy.joined}</p>
+                          <p className="text-[14px] leading-5 text-gray-600 dark:text-gray-400">{formatDate(member.joined_at, language)}</p>
                         </div>
 
                         <div className="min-w-0">
                           {hasMemberActions ? (
                             <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-1 xl:grid-cols-2">
                               {canEditMemberRole && (
-                                <button type="button" onClick={() => openMemberPermissions(member)} disabled={busy} className="h-8 min-w-0 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 xl:col-span-2">
+                                <button type="button" onClick={() => openMemberPermissions(member)} disabled={busy} className="h-9 min-w-0 rounded-md border border-gray-200 bg-white px-2 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 xl:col-span-2">
                                   {language === "th" ? "สิทธิ์" : "Permissions"}
                                 </button>
                               )}
                               {canEditMemberStatus && (
                                 <>
                                   {member.status !== "active" ? (
-                                    <button type="button" onClick={() => void changeMemberStatus(member.ID, "active")} disabled={busy} className="h-8 min-w-0 rounded-md border border-emerald-200 bg-white px-2 text-[11px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900/50 dark:bg-gray-900 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
+                                    <button type="button" onClick={() => void changeMemberStatus(member.ID, "active")} disabled={busy} className="h-9 min-w-0 rounded-md border border-emerald-200 bg-white px-2 text-[13px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900/50 dark:bg-gray-900 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
                                       {copy.restore}
                                     </button>
                                   ) : (
-                                    <button type="button" onClick={() => void changeMemberStatus(member.ID, "suspended")} disabled={busy} className="h-8 min-w-0 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/50 dark:bg-gray-900 dark:text-amber-300 dark:hover:bg-amber-900/20">
+                                    <button type="button" onClick={() => void changeMemberStatus(member.ID, "suspended")} disabled={busy} className="h-9 min-w-0 rounded-md border border-amber-200 bg-white px-2 text-[13px] font-semibold text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/50 dark:bg-gray-900 dark:text-amber-300 dark:hover:bg-amber-900/20">
                                       {copy.suspend}
                                     </button>
                                   )}
-                                  <button type="button" onClick={() => void changeMemberStatus(member.ID, "removed")} disabled={busy || member.status === "removed"} className="h-8 min-w-0 rounded-md border border-red-200 bg-white px-2 text-[11px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/50 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-900/20">
+                                  <button type="button" onClick={() => void changeMemberStatus(member.ID, "removed")} disabled={busy || member.status === "removed"} className="h-9 min-w-0 rounded-md border border-red-200 bg-white px-2 text-[13px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/50 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-900/20">
                                     {copy.remove}
                                   </button>
                                 </>
                               )}
                             </div>
                           ) : (
-                            <p className="text-[11px] text-gray-500 dark:text-gray-500 lg:text-right">
+                            <p className="text-[13px] text-gray-500 dark:text-gray-500 lg:text-right">
                               {member.user_id === user?.ID ? copy.yourAccount : "-"}
                             </p>
                           )}
@@ -985,7 +921,7 @@ export default function StaffPage() {
                   })}
                 </div>
               ) : (
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400">
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center text-[14px] text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400">
                   {copy.noMembers}
                 </div>
               )}
@@ -993,142 +929,30 @@ export default function StaffPage() {
           </div>
 
           {canManageInvites && (
-          <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-              <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{copy.pendingTitle}</h2>
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{copy.pendingHint}</p>
-            </div>
-            <div className="p-4">
-              {loading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                </div>
-              ) : invitations.length ? (
-                <div className="space-y-2">
-                  {invitations.map((invitation) => (
-                    <div key={invitation.ID} className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-gray-900 dark:text-white">{invitation.email || copy.openLink}</p>
-                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                            {copy.rolePrefix} {roleLabel(invitation.role, language)} · {copy.expiresPrefix} {formatDate(invitation.expires_at, language)}
-                          </p>
-                          <p className="mt-1 truncate font-mono text-[11px] text-gray-500">{inviteUrl(invitation.token)}</p>
-                        </div>
-                        {canManageInvites && (
-                          <div className="flex shrink-0 flex-wrap gap-2">
-                            <button type="button" onClick={() => void copyInvite(invitation.token)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
-                              {copiedToken === invitation.token ? copy.copied : copy.copy}
-                            </button>
-                            {invitation.email && (
-                              <button type="button" onClick={() => sendInviteEmail(invitation)} className="h-9 rounded-md border border-sky-200 bg-white px-3 text-[12px] font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-900/50 dark:bg-gray-900 dark:text-sky-300 dark:hover:bg-sky-900/20">
-                                {copy.sendEmail}
-                              </button>
-                            )}
-                            <button type="button" onClick={() => void revokeInvite(invitation.ID)} disabled={revokingIds.includes(invitation.ID)} className="h-9 rounded-md border border-red-200 bg-white px-3 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/50 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-900/20">
-                              {revokingIds.includes(invitation.ID) ? copy.revoking : copy.revoke}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-800 dark:bg-gray-800">
-                  <p className="text-[13px] font-medium text-gray-900 dark:text-white">{copy.noPendingTitle}</p>
-                  <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{copy.noPendingBody}</p>
-                </div>
-              )}
-            </div>
-          </div>
+            <InvitationLinks
+              invitations={invitations}
+              members={members}
+              loading={loading}
+              language={language}
+              copiedToken={copiedToken}
+              revokingIds={revokingIds}
+              onCopy={(token) => void copyInvite(token)}
+              onEmail={sendInviteEmail}
+              onRevoke={(invitationId) => void revokeInvite(invitationId)}
+            />
           )}
 
-          {canViewAuditLog && (
-          <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-              <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{copy.auditTitle}</h2>
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{copy.auditHint}</p>
-            </div>
-            <div className="p-4">
-              {loading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-14" />
-                  <Skeleton className="h-14" />
-                </div>
-              ) : auditLogs.length ? (
-                  <div className="space-y-3">
-                    <div className="space-y-3 sm:hidden">
-                      <div className="space-y-2">
-                        {auditMobileLogs.map((log) => (
-                          <div key={log.ID} className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-800">
-                            <div className="space-y-1.5">
-                              <p className="break-words text-[12px] font-medium text-gray-900 dark:text-white">{auditMessage(log, language)}</p>
-                              <p className="break-words text-[11px] text-gray-500 dark:text-gray-400">
-                                {copy.by} {actorName(log, language)}
-                                {log.target_user ? ` · ${copy.target} ${log.target_user.email}` : ""}
-                              </p>
-                              <p className="text-[10px] text-gray-500">{formatDate(log.CreatedAt, language)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={goToPreviousAuditPage}
-                          disabled={!auditCanGoBack}
-                          className="h-10 rounded-md border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                          {copy.previousAuditPage}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void goToNextAuditPage()}
-                          disabled={!auditCanGoNext || auditLoadingMore}
-                          className="h-10 rounded-md border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-45 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                          {auditLoadingMore ? copy.loadingMoreAudit : copy.nextAuditPage}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="hidden max-h-[min(52vh,520px)] overflow-y-auto pr-1 sm:block">
-                      <div className="space-y-2">
-                        {auditLogs.map((log) => (
-                      <div key={log.ID} className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-800">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                          <div className="min-w-0">
-                            <p className="break-words text-[12px] font-medium text-gray-900 dark:text-white">{auditMessage(log, language)}</p>
-                            <p className="mt-0.5 break-words text-[11px] text-gray-500 dark:text-gray-400">
-                              {copy.by} {actorName(log, language)}
-                              {log.target_user ? ` · ${copy.target} ${log.target_user.email}` : ""}
-                            </p>
-                          </div>
-                          <span className="shrink-0 whitespace-nowrap text-[10px] text-gray-500">{formatDate(log.CreatedAt, language)}</span>
-                        </div>
-                      </div>
-                        ))}
-                      </div>
-                    </div>
-                    {auditHasMore && (
-                      <button
-                        type="button"
-                        onClick={() => void loadMoreAuditLogs()}
-                        disabled={auditLoadingMore}
-                        className="hidden h-10 w-full rounded-md border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 sm:block"
-                      >
-                        {auditLoadingMore ? copy.loadingMoreAudit : copy.loadMoreAudit}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center text-[13px] text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400">
-                    {copy.noAudit}
-                  </div>
-              )}
-            </div>
-          </div>
+          {historyOpen && canViewAuditLog && (
+            <AuditHistoryDialog
+              logs={auditLogs}
+              loading={loading}
+              hasMore={auditHasMore}
+              loadingMore={auditLoadingMore}
+              language={language}
+              closing={historyClosing}
+              onLoadMore={() => void loadMoreAuditLogs()}
+              onClose={closeHistory}
+            />
           )}
         </section>
       </div>
@@ -1144,8 +968,7 @@ export default function StaffPage() {
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold text-gray-900 dark:text-white">{copy.inviteTitle}</h2>
-                <p className="mt-1 text-[11px] leading-5 text-gray-500 dark:text-gray-400">{copy.inviteHint}</p>
+                <h2 className="text-[16px] font-semibold text-gray-900 dark:text-white">{copy.inviteTitle}</h2>
               </div>
               <button type="button" onClick={() => closeInviteModal()} className="h-8 w-8 shrink-0 rounded-md text-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">×</button>
             </div>
@@ -1153,7 +976,7 @@ export default function StaffPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.emailLabel}</span>
+                  <span className="mb-1.5 block text-[14px] font-medium text-gray-900 dark:text-white">{copy.emailLabel}</span>
                   <input
                     type="email"
                     value={email}
@@ -1164,17 +987,17 @@ export default function StaffPage() {
                     placeholder={copy.emailPlaceholder}
                     disabled={!canManageInvites}
                     aria-invalid={Boolean(inviteError)}
-                    className={`h-10 w-full rounded-md border bg-white px-3 text-[13px] outline-none transition-colors focus:border-orange-500 disabled:opacity-60 dark:bg-gray-800 ${
+                    className={`h-10 w-full rounded-md border bg-white px-3 text-[14px] outline-none transition-colors focus:border-orange-500 disabled:opacity-60 dark:bg-gray-800 ${
                       inviteError ? "border-red-300 dark:border-red-900/60" : "border-gray-200 dark:border-gray-700"
                     }`}
                   />
-                  <p className={`mt-1 text-[11px] ${inviteError ? "font-medium text-red-600 dark:text-red-300" : "text-gray-500 dark:text-gray-500"}`}>
-                    {inviteError || copy.emailHelp}
-                  </p>
+                  {inviteError ? (
+                    <p className="mt-1 text-[13px] font-medium text-red-600 dark:text-red-300">{inviteError}</p>
+                  ) : null}
                 </label>
 
                 <label className="block">
-                  <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.role}</span>
+                  <span className="mb-1.5 block text-[14px] font-medium text-gray-900 dark:text-white">{copy.role}</span>
                   <ThemedSelect
                     aria-label={copy.role}
                     value={String(roleId || inviteRoles[0]?.ID || "")}
@@ -1188,7 +1011,7 @@ export default function StaffPage() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1.5 block text-[12px] font-medium text-gray-700 dark:text-gray-300">{copy.expiry}</span>
+                  <span className="mb-1.5 block text-[14px] font-medium text-gray-900 dark:text-white">{copy.expiry}</span>
                   <ThemedSelect
                     aria-label={copy.expiry}
                     value={expiresInDays}
@@ -1205,19 +1028,6 @@ export default function StaffPage() {
                 </label>
               </div>
 
-              <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-800">
-                <p className="text-[12px] font-semibold text-gray-900 dark:text-white">{copy.flowTitle}</p>
-                <ol className="mt-3 space-y-2 text-[12px] leading-5 text-gray-500 dark:text-gray-400">
-                  {copy.flow.map((item, index) => (
-                    <li key={item} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-[10px] font-semibold tabular-nums text-gray-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400">
-                        {index + 1}
-                      </span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
             </div>
 
             <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
@@ -1439,21 +1249,6 @@ export default function StaffPage() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-              {permissionTarget.type === "member" && (
-                <label className="mb-3 flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-[12px] font-medium text-gray-700 dark:border-gray-800 dark:text-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={useRolePermissions}
-                    onChange={(event) => {
-                      setUseRolePermissions(event.target.checked);
-                      if (event.target.checked) {
-                        setPermissionDraft(parsePermissions(permissionTarget.member.role?.permissions, permissionTarget.member.role?.name));
-                      }
-                    }}
-                  />
-                  {language === "th" ? "ใช้สิทธิ์ตามบทบาทนี้" : "Use this role's default permissions"}
-                </label>
-              )}
               {preservedPermissionCount > 0 && (
                 <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/15 dark:text-sky-200">
                   {language === "th"
@@ -1461,23 +1256,46 @@ export default function StaffPage() {
                     : `${preservedPermissionCount} permission${preservedPermissionCount === 1 ? " is" : "s are"} outside this account's grant scope. The existing value is preserved; a higher-privileged account must save changes.`}
                 </div>
               )}
-              <div className="mb-5 flex flex-wrap gap-2">
+              {/* One row of bulk actions. For a member, "back to default" sits at
+                  the far end: it replaces the old "use this role's permissions"
+                  checkbox, which locked every switch while it was ticked
+                  (owner, 28 ก.ย. 2569). Now the switches always work; touching
+                  one after a reset makes the member's permissions their own again. */}
+              <div className="mb-5 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  disabled={permissionTarget.type === "member" && useRolePermissions}
-                  onClick={() => setPermissionDraft((current) => replaceGrantablePermissionSelection(current, grantablePermissions, true))}
-                  className="h-8 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  onClick={() => {
+                    setUseRolePermissions(false);
+                    setPermissionDraft((current) => replaceGrantablePermissionSelection(current, grantablePermissions, true));
+                  }}
+                  className="ui-press h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
                   {language === "th" ? "เลือกทั้งหมด" : "Select all"}
                 </button>
                 <button
                   type="button"
-                  disabled={permissionTarget.type === "member" && useRolePermissions}
-                  onClick={() => setPermissionDraft((current) => replaceGrantablePermissionSelection(current, grantablePermissions, false))}
-                  className="h-8 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  onClick={() => {
+                    setUseRolePermissions(false);
+                    setPermissionDraft((current) => replaceGrantablePermissionSelection(current, grantablePermissions, false));
+                  }}
+                  className="ui-press h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
                   {language === "th" ? "เอาที่เลือกออกทั้งหมด" : "Clear selected"}
                 </button>
+                {permissionTarget.type === "member" && (
+                  <button
+                    type="button"
+                    disabled={useRolePermissions}
+                    onClick={() => {
+                      setUseRolePermissions(true);
+                      setPermissionDraft(parsePermissions(permissionTarget.member.role?.permissions, permissionTarget.member.role?.name));
+                    }}
+                    className="ui-press ml-auto inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-semibold text-orange-700 transition-colors enabled:hover:bg-orange-50 disabled:cursor-default disabled:text-gray-500 dark:text-orange-400 dark:enabled:hover:bg-orange-500/10 dark:disabled:text-gray-400"
+                  >
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    {language === "th" ? "คืนค่าเริ่มต้น" : "Reset to default"}
+                  </button>
+                )}
               </div>
               <div className="space-y-5">
                 {visiblePermissionSections.map((section) => (
@@ -1487,7 +1305,6 @@ export default function StaffPage() {
                     </div>
                     <div>
                       {section.rows.map((row) => {
-                        const disabled = permissionTarget.type === "member" && useRolePermissions;
                         const prerequisites = row.permissions.flatMap((permission) => PERMISSION_DEPENDENCIES[permission] ?? []);
                         const prerequisiteLabels = prerequisites.map((permission) => {
                           const requiredRow = PERMISSION_SECTIONS.flatMap((item) => item.rows)
@@ -1511,10 +1328,9 @@ export default function StaffPage() {
                               {(() => {
                                 const checked = row.permissions.every((permission) => permissionDraft.includes(permission));
                                 return (
-                                  <div className={`inline-flex overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${disabled ? "opacity-55" : ""}`}>
+                                  <div className="inline-flex overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                                     <button
                                       type="button"
-                                      disabled={disabled}
                                       aria-pressed={!checked}
                                       aria-label={language === "th" ? "ไม่อนุญาต" : "Deny"}
                                       onClick={() => setPermissionRow(row.permissions, false)}
@@ -1528,7 +1344,6 @@ export default function StaffPage() {
                                     </button>
                                     <button
                                       type="button"
-                                      disabled={disabled}
                                       aria-pressed={checked}
                                       aria-label={language === "th" ? "อนุญาต" : "Allow"}
                                       onClick={() => setPermissionRow(row.permissions, true)}

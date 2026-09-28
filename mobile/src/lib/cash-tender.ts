@@ -138,7 +138,7 @@ export function cashReceivedToSend(method: PaymentMethod, total: number, receive
 /**
  * What to tell the cashier when the server recorded a different total from the
  * one on screen. It prices the order once more under the payment's own lock,
- * so a promotion that started or ended since the bill loaded moves the total -
+ * so a service charge or VAT change since the bill loaded moves the total -
  * and a cash payment still goes through whenever the notes handed over cover
  * the new figure, with a change the sheet never showed. Null when the amount
  * recorded is the amount that was shown.

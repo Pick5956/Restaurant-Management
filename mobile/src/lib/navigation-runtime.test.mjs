@@ -266,3 +266,11 @@ test('the tablet rail switches through the workspace exit', async () => {
   assert.doesNotMatch(shell, /router\.replace\(item\.href/);
   assert.doesNotMatch(shell, /router\.navigate\(item\.href/);
 });
+
+test('going into a shop and back out to the shop list fades instead of sliding', async () => {
+  const layout = await read('app/_layout.tsx');
+  assert.match(layout, /const topLevelScreenOptions = \{\n  animation: 'fade' as const,/);
+  assert.match(layout, /const shopListScreenOptions = \{\n  animation: 'fade' as const,/);
+  assert.match(layout, /<Stack\.Screen name="more" options=\{topLevelScreenOptions\} \/>/);
+  assert.match(layout, /<Stack\.Screen name="restaurants" options=\{shopListScreenOptions\} \/>/);
+});

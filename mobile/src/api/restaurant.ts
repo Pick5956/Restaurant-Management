@@ -1,4 +1,6 @@
 import { apiRequest } from './client';
+import { toMenuImageUploadPart } from './menu';
+import { appendMenuImageUpload, type MenuImageUploadFile } from '@/src/lib/menu-image';
 import type {
   AdminInvitation,
   Invitation,
@@ -33,6 +35,23 @@ export function updateRestaurant(id: number, data: RestaurantInput) {
     method: 'PATCH',
     skipRestaurant: true,
     body: JSON.stringify(data),
+  });
+}
+
+export type RestaurantImageKind = 'logo' | 'cover' | 'promptpay-qr';
+
+/**
+ * Uploads the shop's logo, cover or PromptPay QR. The server stores the file
+ * and writes it onto the restaurant straight away, the same endpoints the web
+ * settings use; the returned restaurant carries the new URL.
+ */
+export async function uploadRestaurantImage(id: number, kind: RestaurantImageKind, source: MenuImageUploadFile) {
+  const formData = new FormData();
+  appendMenuImageUpload(formData, await toMenuImageUploadPart(source));
+  return apiRequest<{ restaurant: Restaurant }>(`/api/v1/restaurants/${id}/upload-${kind}`, {
+    method: 'POST',
+    skipRestaurant: true,
+    body: formData,
   });
 }
 

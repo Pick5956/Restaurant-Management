@@ -90,14 +90,8 @@ test('expense management stays in the editable mobile permission registry', () =
   );
 });
 
-test('promotion management stays in the editable mobile permission registry', () => {
-  assert.equal(allPermissions.includes('manage_promotions'), true);
-  assert.equal(
-    permissionGroupsFor('th')
-      .flatMap((group) => group.rows)
-      .find((row) => row.key === 'manage_promotions')?.label,
-    'จัดการโปรโมชัน',
-  );
+test('retired promotion management is gone from the editable mobile permission registry', () => {
+  assert.equal(allPermissions.includes('manage_promotions'), false);
 });
 
 test('team and restaurant administration use granular editable permissions', () => {

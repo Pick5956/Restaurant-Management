@@ -307,7 +307,19 @@ export function FloorTile({
  * orders tile to pair with) adds a labelled lane per round. The tile turns to
  * its danger look while any round is past its time.
  */
-export function KitchenTile({ item, slot, heartbeat, onOpen, variant, lines = 1 }: TileProps<HubKitchen> & { variant: StageTileVariant }) {
+export function KitchenTile({
+  item,
+  slot,
+  heartbeat,
+  onOpen,
+  variant,
+  lines = 1,
+  statusLines = lines,
+}: TileProps<HubKitchen> & {
+  variant: StageTileVariant;
+  /** Lines the status line may take; one more than `lines` beside the orders tile (pairKitchenLines). */
+  statusLines?: 1 | 2 | 3;
+}) {
   const { language } = useDisplayPreferences();
   const lang: HubLanguage = language;
   const kitchen = slot.status === 'ready' ? slot.value : null;
@@ -330,7 +342,7 @@ export function KitchenTile({ item, slot, heartbeat, onOpen, variant, lines = 1 
           <View style={{ gap: 8 }}>
             <TileFigure lines={lines} pieces={kitchenFigure(value, lang)} />
             {wide ? <KitchenLanes lanes={value.lanes} variant="wide" /> : null}
-            <ValueLine lines={lines} segments={kitchenSegments(value, lang)} />
+            <ValueLine lines={statusLines} segments={kitchenSegments(value, lang)} />
           </View>
         )}
       </SlotBody>

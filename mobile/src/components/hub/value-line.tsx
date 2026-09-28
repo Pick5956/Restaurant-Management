@@ -57,7 +57,7 @@ export type ValueLineProps = Omit<ViewProps, 'children'> & {
   /** Ink of the pieces with no tone, and of the commas. Default palette.muted. */
   plainColor?: string;
   /** Lines the pieces may take before the tail is cut. Default 1; with 2 the dot stays level with the first. */
-  lines?: 1 | 2;
+  lines?: 1 | 2 | 3;
   textStyle?: StyleProp<TextStyle>;
 };
 

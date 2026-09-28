@@ -243,8 +243,20 @@ describe("permission audit labels", () => {
       details: JSON.stringify({ from_name: "พนักงานเก่า", to_name: "หัวหน้ากะ" }),
     };
 
-    expect(auditMessage(log, "th")).toBe("เปลี่ยนชื่อบทบาท พนักงานเก่า -> หัวหน้ากะ");
-    expect(auditMessage(log, "en")).toBe("Renamed role พนักงานเก่า -> หัวหน้ากะ");
+    expect(auditMessage(log, "th")).toBe("เปลี่ยนชื่อบทบาท พนักงานเก่า → หัวหน้ากะ");
+    expect(auditMessage(log, "en")).toBe("renamed role พนักงานเก่า → หัวหน้ากะ");
+  });
+
+  it("names a system role in Thai even though the log stored its English display name", () => {
+    const log = {
+      ID: 4,
+      restaurant_id: 1,
+      action: "invitation_accepted",
+      details: JSON.stringify({ role_name: "Waiter" }),
+    };
+
+    expect(auditMessage(log, "th")).toBe("เข้าร่วมร้าน เป็นพนักงานเสิร์ฟ");
+    expect(auditMessage({ ...log, action: "invitation_created" }, "th")).toBe("สร้างลิงก์เชิญ พนักงานเสิร์ฟ");
   });
 
   it("localizes role permission changes with the affected role name", () => {
@@ -255,7 +267,7 @@ describe("permission audit labels", () => {
       details: JSON.stringify({ role_name: "หัวหน้ากะ", from_permissions: [], to_permissions: ["take_order", "view_orders"] }),
     };
 
-    expect(auditMessage(log, "th")).toBe("เปลี่ยนสิทธิ์บทบาท · หัวหน้ากะ · 2 สิทธิ์");
+    expect(auditMessage(log, "th")).toBe("เปลี่ยนสิทธิ์บทบาท หัวหน้ากะ, 2 สิทธิ์");
   });
 
   it("describes the assistant switching a menu on or off instead of showing the raw action key", () => {

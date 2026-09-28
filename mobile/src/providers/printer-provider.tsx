@@ -15,6 +15,7 @@ import {
   RECEIPT_WIDTH_DOTS_58MM,
   mergeScannedPrinters,
   planReceiptRasterBands,
+  receiptTailFeedCommand,
   parseScannedDevice,
   parseScannedDeviceList,
   type DiscoveredPrinter,
@@ -365,7 +366,6 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
       const { ThermalPrinter } = await loadPrinterModule();
       for (let index = 0; index < bands.length; index += 1) {
         const band = bands[index];
-        const isLastBand = index === bands.length - 1;
 
         // A single-band slip is sent as captured, so the common short receipt
         // takes exactly the path it always did.
@@ -392,11 +392,12 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
           {
             widthPx: RECEIPT_WIDTH_DOTS_58MM,
             align: 'center',
-            // Only the final band cuts, otherwise the slip is guillotined into
-            // pieces; the earlier ones hold the socket open so the receipt is
-            // not reconnected - and re-initialised - between bands.
-            isCutPaper: isLastBand,
-            keepAlive: !isLastBand,
+            // Every band holds the socket open, so the slip is not reconnected -
+            // and re-initialised - between bands, and the tail feed below goes
+            // out on the same connection. The feed carries the cut, so no band
+            // cuts on its own.
+            isCutPaper: false,
+            keepAlive: true,
           },
           { paperWidthMm: PAPER_WIDTH_MM_58 },
         );
@@ -408,6 +409,15 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
             message: result?.error?.message,
           };
         }
+      }
+
+      // Carry the bottom of the slip past the tear bar (receiptTailFeedCommand)
+      // and close the connection. The receipt itself is printed by now, so a
+      // failed feed is not reported as a failed print.
+      try {
+        await ThermalPrinter.NativePrinter.printRaw(selectedPrinter.address, receiptTailFeedCommand(), { keepAlive: false });
+      } catch {
+        // Only the blank tail is lost.
       }
 
       return { ok: true };

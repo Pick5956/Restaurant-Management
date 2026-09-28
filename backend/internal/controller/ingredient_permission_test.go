@@ -39,19 +39,14 @@ func TestManagerFallbackIncludesExpenseManagement(t *testing.T) {
 	}
 }
 
-func TestManagerFallbackIncludesPromotionManagement(t *testing.T) {
+func TestManagerFallbackNoLongerGrantsPromotionManagement(t *testing.T) {
 	context, _ := orderPermissionContext()
 	member, _ := contextMember(context)
 	member.Role.Name = "manager"
 	member.Role.Permissions = ""
 
-	if !memberCan(context, "manage_promotions") {
-		t.Fatal("manager fallback permissions must match the seeded manage_promotions permission")
-	}
-
-	member.Role.Name = "cashier"
 	if memberCan(context, "manage_promotions") {
-		t.Fatal("a cashier must not set prices by default")
+		t.Fatal("promotions were retired; the manager fallback must not grant manage_promotions")
 	}
 }
 

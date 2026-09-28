@@ -123,14 +123,6 @@ export const PERMISSION_SECTIONS: PermissionSection[] = [
         permissions: ["manage_menu"],
       },
       {
-        id: "promotions-manage",
-        th: "จัดการโปรโมชัน",
-        en: "Manage promotions",
-        descriptionTh: "อนุญาตให้ตั้ง แก้ไข เปิดปิด และลบโปรโมชันที่ระบบคิดส่วนลดให้เอง",
-        descriptionEn: "Allow creating, editing, switching, and deleting promotions the system applies by itself.",
-        permissions: ["manage_promotions"],
-      },
-      {
         id: "inventory-view",
         th: "ดูสต็อก",
         en: "View stock",
@@ -397,52 +389,52 @@ export function auditMessage(log: RestaurantAuditLog, language: Language) {
 
   if (log.action === "invitation_created") {
     return language === "th"
-      ? `สร้างคำเชิญ ${roleLabel(roleName, language)}${email ? ` · ${email}` : ""}`
-      : `Created invitation for ${roleLabel(roleName, language)}${email ? ` · ${email}` : ""}`;
+      ? `สร้างลิงก์เชิญ ${auditRoleLabel(roleName, language)}${email ? `, ${email}` : ""}`
+      : `created an invitation link for ${auditRoleLabel(roleName, language)}${email ? `, ${email}` : ""}`;
   }
   if (log.action === "invitation_revoked") {
-    return language === "th" ? `ยกเลิกคำเชิญ${email ? ` · ${email}` : ""}` : `Revoked invitation${email ? ` · ${email}` : ""}`;
+    return language === "th" ? `ยกเลิกลิงก์เชิญ${email ? `, ${email}` : ""}` : `revoked an invitation link${email ? `, ${email}` : ""}`;
   }
   if (log.action === "invitation_accepted") {
     return language === "th"
-      ? `รับคำเชิญเข้าร่วมร้าน${roleName ? ` เป็น ${roleLabel(roleName, language)}` : ""}`
-      : `Accepted invitation${roleName ? ` as ${roleLabel(roleName, language)}` : ""}`;
+      ? `เข้าร่วมร้าน${roleName ? ` เป็น${auditRoleLabel(roleName, language)}` : ""}`
+      : `joined${roleName ? ` as ${auditRoleLabel(roleName, language)}` : ""}`;
   }
   if (log.action === "member_status_changed") {
     return language === "th"
-      ? `เปลี่ยนสถานะสมาชิก ${STATUS_LABELS.th[fromStatus] ?? fromStatus} -> ${STATUS_LABELS.th[toStatus] ?? toStatus}`
-      : `Changed member status ${STATUS_LABELS.en[fromStatus] ?? fromStatus} -> ${STATUS_LABELS.en[toStatus] ?? toStatus}`;
+      ? `เปลี่ยนสถานะ ${STATUS_LABELS.th[fromStatus] ?? fromStatus} → ${STATUS_LABELS.th[toStatus] ?? toStatus}`
+      : `changed status ${STATUS_LABELS.en[fromStatus] ?? fromStatus} → ${STATUS_LABELS.en[toStatus] ?? toStatus}`;
   }
   if (log.action === "member_role_changed") {
     return language === "th"
-      ? `เปลี่ยนบทบาท ${ROLE_LABELS.th[fromRole] ?? fromRole} -> ${ROLE_LABELS.th[toRole] ?? toRole}`
-      : `Changed role ${ROLE_LABELS.en[fromRole] ?? fromRole} -> ${ROLE_LABELS.en[toRole] ?? toRole}`;
+      ? `เปลี่ยนบทบาท ${auditRoleLabel(fromRole, language)} → ${auditRoleLabel(toRole, language)}`
+      : `changed role ${auditRoleLabel(fromRole, language)} → ${auditRoleLabel(toRole, language)}`;
   }
   if (log.action === "member_permissions_changed") {
     const usesRolePermissions = details.use_role_permissions === true;
     return language === "th"
-      ? usesRolePermissions ? "คืนสิทธิ์สมาชิกให้ใช้ตามบทบาท" : "เปลี่ยนสิทธิ์เฉพาะสมาชิก"
-      : usesRolePermissions ? "Reset member permissions to role defaults" : "Changed member-specific permissions";
+      ? usesRolePermissions ? "คืนสิทธิ์ให้ใช้ตามบทบาท" : "กำหนดสิทธิ์เฉพาะคน"
+      : usesRolePermissions ? "reset permissions to the role's" : "set member-specific permissions";
   }
   if (log.action === "role_created") {
     return language === "th"
-      ? `สร้างบทบาท${roleDisplayName ? ` · ${roleDisplayName}` : ""}`
-      : `Created role${roleDisplayName ? ` · ${roleDisplayName}` : ""}`;
+      ? `สร้างบทบาท${roleDisplayName ? ` ${auditRoleLabel(roleDisplayName, language)}` : ""}`
+      : `created role${roleDisplayName ? ` ${auditRoleLabel(roleDisplayName, language)}` : ""}`;
   }
   if (log.action === "role_renamed") {
     return language === "th"
-      ? `เปลี่ยนชื่อบทบาท${fromName || toName ? ` ${fromName || "-"} -> ${toName || "-"}` : ""}`
-      : `Renamed role${fromName || toName ? ` ${fromName || "-"} -> ${toName || "-"}` : ""}`;
+      ? `เปลี่ยนชื่อบทบาท${fromName || toName ? ` ${fromName || "-"} → ${toName || "-"}` : ""}`
+      : `renamed role${fromName || toName ? ` ${fromName || "-"} → ${toName || "-"}` : ""}`;
   }
   if (log.action === "role_deleted") {
     return language === "th"
-      ? `ลบบทบาท${roleDisplayName ? ` · ${roleDisplayName}` : ""}`
-      : `Deleted role${roleDisplayName ? ` · ${roleDisplayName}` : ""}`;
+      ? `ลบบทบาท${roleDisplayName ? ` ${auditRoleLabel(roleDisplayName, language)}` : ""}`
+      : `deleted role${roleDisplayName ? ` ${auditRoleLabel(roleDisplayName, language)}` : ""}`;
   }
   if (log.action === "role_permissions_changed") {
     return language === "th"
-      ? `เปลี่ยนสิทธิ์บทบาท${roleDisplayName ? ` · ${roleDisplayName}` : ""}${permissionCount == null ? "" : ` · ${permissionCount} สิทธิ์`}`
-      : `Changed role permissions${roleDisplayName ? ` · ${roleDisplayName}` : ""}${permissionCount == null ? "" : ` · ${permissionCount} permissions`}`;
+      ? `เปลี่ยนสิทธิ์บทบาท${roleDisplayName ? ` ${auditRoleLabel(roleDisplayName, language)}` : ""}${permissionCount == null ? "" : `, ${permissionCount} สิทธิ์`}`
+      : `changed permissions of ${roleDisplayName ? auditRoleLabel(roleDisplayName, language) : "a role"}${permissionCount == null ? "" : `, ${permissionCount} permissions`}`;
   }
   if (log.action === "ai_set_menu_availability") {
     // Written when the owner confirms the assistant's switch. It showed as the
@@ -457,10 +449,23 @@ export function auditMessage(log: RestaurantAuditLog, language: Language) {
     // card's own title and change line, e.g. "หมูสับ · 2000 → 4000".
     const title = typeof details.title === "string" ? details.title.trim() : "";
     const change = typeof details.change === "string" ? details.change.trim() : "";
-    const what = [title, change].filter(Boolean).join(" · ");
-    return language === "th" ? `AI แก้ตามคำสั่ง${what ? ` · ${what}` : ""}` : `AI change${what ? ` · ${what}` : ""}`;
+    const what = [title, change].filter(Boolean).join(", ");
+    return language === "th" ? `AI แก้ตามคำสั่ง${what ? `, ${what}` : ""}` : `AI change${what ? `, ${what}` : ""}`;
   }
   return log.action;
+}
+
+/**
+ * A role name as the audit log stored it. The backend writes a system role's
+ * English display name ("Waiter"), so the Thai page printed English; map it
+ * back to the system key before localising. Custom names pass through.
+ */
+export function auditRoleLabel(name: string, language: Language) {
+  const trimmed = name.trim();
+  const key = Object.keys(ROLE_LABELS.en).find(
+    (candidate) => candidate === trimmed.toLowerCase() || ROLE_LABELS.en[candidate].toLowerCase() === trimmed.toLowerCase(),
+  );
+  return key ? ROLE_LABELS[language][key] : roleLabel(trimmed, language);
 }
 
 export function actorName(log: RestaurantAuditLog, language: Language) {

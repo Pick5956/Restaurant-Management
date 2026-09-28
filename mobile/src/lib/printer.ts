@@ -230,6 +230,25 @@ export function planReceiptRasterBands(
   return bands;
 }
 
+// An XP-58IIH has no cutter: the slip is torn off against a bar that sits a
+// little above the print head. Printing from the web goes through the OS
+// driver, which feeds the paper on at the end of every job; the app talks to
+// the printer directly, and nothing fed it, so the bottom of the receipt - the
+// payment line and below - was still inside the printer and came off torn
+// through (owner, 28 ก.ย. 2569). Five blank lines, about 19 mm at the default
+// line spacing, carry the whole slip past the bar.
+export const RECEIPT_TAIL_FEED_LINES = 5;
+
+/**
+ * The bytes sent after the receipt's last band: ESC d n (print and feed n
+ * lines), then GS V 66 0 (cut) for printers that have a cutter - one without
+ * ignores it, which is all the old `isCutPaper` flag ever did on an XP-58IIH.
+ */
+export function receiptTailFeedCommand(lines: number = RECEIPT_TAIL_FEED_LINES): number[] {
+  const count = Math.max(0, Math.min(255, Math.floor(Number.isFinite(lines) ? lines : 0)));
+  return [0x1b, 0x64, count, 0x1d, 0x56, 66, 0];
+}
+
 export type PrinterFailureCode =
   | 'BLUETOOTH_NOT_ENABLED'
   | 'BLUETOOTH_NOT_SUPPORTED'

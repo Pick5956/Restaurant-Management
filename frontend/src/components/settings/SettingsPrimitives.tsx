@@ -30,7 +30,7 @@ import { Group, Switch, matchesSearch } from "@/src/components/shared/settingsMo
 export const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 dark:focus-visible:outline-orange-400";
 
-/** The text box every other web form uses (menu, promotions): 40px tall, a
+/** The text box every other web form uses (menu): 40px tall, a
  *  grey hairline that turns orange on focus, no ring (owner, 27 ก.ย. 2569).
  *  Type size is the settings' own. 16px on a phone so iPhone Safari does not
  *  zoom in when it is tapped. */

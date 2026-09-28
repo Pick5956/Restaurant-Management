@@ -179,6 +179,13 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// Version 36 adds MenuItem's image framing columns (original URL, zoom,
 		// x, y), so the fingerprint advances.
 		36: "08b28dfb66396bee23a9f01af35bad1dc2e76971a27e72258f2d0311c7a70288",
+		// Version 37 adds OrderItem.PromotionFreeID for the free line a
+		// buy-X-get-Y promotion adds by itself.
+		37: "aa160d62e900913b50671580b077740f20eec12c49e30a35a5a8c4a28c300c7e",
+		// Version 38 drops promotions: Promotion, PromotionTarget and
+		// OrderPromotion leave the registry, Order loses Promotions and OrderItem
+		// loses PromotionFreeID, so the fingerprint advances.
+		38: "04f2a13122a31ad1eeba9cce4dbb3b969e03f033b7cec6ac354e62f205358876",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -209,6 +216,7 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		33: "drop_table_tags",
 		34: "cashier_default_match_waiter",
 		35: "cashier_waiter_frontline_dashboard",
+		38: "drop_promotions",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

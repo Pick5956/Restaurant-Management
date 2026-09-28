@@ -2,7 +2,9 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 
-import { deleteRestaurant, getRestaurant, updateRestaurant } from '@/src/api/restaurant';
+import { deleteRestaurant, getRestaurant, updateRestaurant, uploadRestaurantImage, type RestaurantImageKind } from '@/src/api/restaurant';
+import { ImageUploadField } from '@/src/components/form/image-upload-field';
+import type { MenuImageUploadFile } from '@/src/lib/menu-image';
 import { AppIcon, type AppIconName } from '@/src/components/app-icon';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
@@ -168,6 +170,18 @@ export default function RestaurantSettingsScreen() {
     }
   }
 
+  // The server writes an uploaded picture onto the restaurant at once; the
+  // form takes the stored URL so a later Save keeps it. Removing only clears
+  // the field, and Save writes the blank.
+  const uploadImage = (kind: RestaurantImageKind) => async (file: MenuImageUploadFile) => {
+    if (!restaurantId) return;
+    const { restaurant } = await uploadRestaurantImage(restaurantId, kind, file);
+    if (kind === 'logo') setLogo(restaurant.logo || '');
+    else if (kind === 'cover') setCoverImage(restaurant.cover_image || '');
+    else setPromptpayQr(restaurant.promptpay_qr_image || '');
+    showToast({ title: copy('อัปโหลดรูปแล้ว', 'Picture uploaded') });
+  };
+
   async function remove() {
     if (!restaurantId || !isOwner || saving) return;
     setSaving(true);
@@ -226,8 +240,8 @@ export default function RestaurantSettingsScreen() {
         </View>
         <Field label={copy('ที่อยู่', 'Address')} value={address} onChangeText={setAddress} multiline maxLength={500} icon="location-outline" placeholder={copy('ยังไม่กรอก', 'Not filled in')} />
         <Field label={copy('เบอร์โทรร้าน', 'Restaurant phone')} value={phone} onChangeText={setPhone} keyboardType="phone-pad" maxLength={40} icon="call-outline" />
-        <Field label={copy('ลิงก์โลโก้', 'Logo URL')} value={logo} onChangeText={setLogo} icon="image-outline" keyboardType="url" autoCapitalize="none" placeholder="https://" />
-        <Field label={copy('ลิงก์ภาพปกร้าน', 'Cover image URL')} value={coverImage} onChangeText={setCoverImage} icon="image-outline" keyboardType="url" autoCapitalize="none" placeholder="https://" />
+        <ImageUploadField label={copy('โลโก้', 'Logo')} value={logo} disabled={saving} onUpload={uploadImage('logo')} onRemove={() => setLogo('')} onError={actionFailed} />
+        <ImageUploadField label={copy('ภาพปกร้าน', 'Cover image')} shape="wide" value={coverImage} disabled={saving} onUpload={uploadImage('cover')} onRemove={() => setCoverImage('')} onError={actionFailed} />
       </FormBody>
     </FormCard>
   );
@@ -276,7 +290,7 @@ export default function RestaurantSettingsScreen() {
     <FormCard icon="wallet-outline" title="PromptPay" detail={copy('ขึ้นบนบิลให้ลูกค้าสแกนจ่าย', 'Shown on the bill for customers to scan and pay')}>
       <FormBody>
         <Field label={copy('ชื่อบัญชี', 'Account name')} value={promptpayName} onChangeText={setPromptpayName} icon="person-outline" placeholder={copy('ชื่อที่ขึ้นตอนสแกน', 'The name shown when scanned')} />
-        <Field label={copy('ลิงก์รูป QR PromptPay', 'PromptPay QR image URL')} value={promptpayQr} onChangeText={setPromptpayQr} icon="qr-code-outline" keyboardType="url" autoCapitalize="none" placeholder="https://" />
+        <ImageUploadField label={copy('รูป QR PromptPay', 'PromptPay QR image')} icon="qr-code-outline" value={promptpayQr} disabled={saving} onUpload={uploadImage('promptpay-qr')} onRemove={() => setPromptpayQr('')} onError={actionFailed} />
       </FormBody>
     </FormCard>
   );
@@ -340,7 +354,8 @@ export default function RestaurantSettingsScreen() {
         <ContentReveal style={{ gap: spacing.md }}>
           <ChoiceChips scroll options={sections.map((item) => ({ key: item.key, label: item.label, icon: item.icon }))} value={section} onChange={setSection} />
           {cards[section]}
-          {section === 'promptpay' ? <View style={{ paddingTop: spacing.sm }}>{deleteBlock}</View> : null}
+          {/* With the restaurant's own details, not after the last tab (owner, 28 ก.ย. 2569). */}
+          {section === 'general' ? <View style={{ paddingTop: spacing.sm }}>{deleteBlock}</View> : null}
         </ContentReveal>
       )}
     </AppScreen>
