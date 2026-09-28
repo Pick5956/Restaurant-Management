@@ -45,6 +45,14 @@ type AIStockCommandDraft struct {
 	// a question back, never a silent conversion: "5000 ดอล" once became a
 	// 5,000-baht expense.
 	Currency string `json:"currency,omitempty"`
+	// Used by kind=in only (28 ก.ย. 2569). A delivery used to be booked at the
+	// ingredient's old cost whatever the owner said they paid, and its lot had
+	// no expiry. Amount is the total paid; UnitPrice is a price per said unit
+	// ("กิโลละ 150") that Go multiplies out - the model does no arithmetic.
+	// ExpiresAt is the lot's expiry, "YYYY-MM-DD".
+	Amount    float64 `json:"amount,omitempty"`
+	UnitPrice float64 `json:"unit_price,omitempty"`
+	ExpiresAt string  `json:"expires_at,omitempty"`
 }
 
 // aiMoneyCommandKind reports whether a command's quantity is an amount of
@@ -70,7 +78,8 @@ var aiCurrencyNames = map[string]string{
 // money at all.
 func AIForeignCurrencyQuestion(draft AIStockCommandDraft) string {
 	currency := strings.ToUpper(strings.TrimSpace(draft.Currency))
-	if currency == "" || currency == "THB" || currency == "บาท" || !aiMoneyCommandKind(draft.Kind) {
+	paidDelivery := strings.EqualFold(strings.TrimSpace(draft.Kind), "in") && (draft.Amount > 0 || draft.UnitPrice > 0)
+	if currency == "" || currency == "THB" || currency == "บาท" || (!aiMoneyCommandKind(draft.Kind) && !paidDelivery) {
 		return ""
 	}
 	name := aiCurrencyNames[currency]
@@ -686,15 +695,42 @@ func ResolveStockCommand(shelf []entity.Ingredient, draft AIStockCommandDraft) A
 		}
 	}
 
+	command := AIAdjustStockCommand{
+		IngredientID: match.Exact.ID,
+		Kind:         kind,
+		Quantity:     quantity,
+		Note:         strings.TrimSpace(draft.Note),
+	}
+	if kind == "in" {
+		// What the delivery cost, as said. A price per unit is multiplied by the
+		// amount as said ("2 แผง แผงละ 120" = 240), before any unit conversion.
+		amount := draft.Amount
+		if amount == 0 && draft.UnitPrice > 0 {
+			amount = draft.UnitPrice * draft.Quantity
+		}
+		if amount < 0 {
+			return AICommandResolution{
+				Kind:     AICommandOutcomeAsk,
+				Title:    match.Exact.Name,
+				Question: fmt.Sprintf("“%s” ยอดเงินที่จ่ายติดลบไม่ได้ครับ จ่ายไปเท่าไหร่ครับ", match.Exact.Name),
+			}
+		}
+		command.Amount = roundBaht(amount)
+		if expires := strings.TrimSpace(draft.ExpiresAt); expires != "" {
+			if _, err := time.Parse("2006-01-02", expires); err != nil {
+				return AICommandResolution{
+					Kind:     AICommandOutcomeAsk,
+					Title:    match.Exact.Name,
+					Question: fmt.Sprintf("“%s” หมดอายุวันไหนครับ (บอกเป็นวันที่ เช่น 5 ต.ค.)", match.Exact.Name),
+				}
+			}
+			command.ExpiresAt = expires
+		}
+	}
 	return AICommandResolution{
-		Kind:  AICommandOutcomeReady,
-		Title: match.Exact.Name,
-		Command: AIAdjustStockCommand{
-			IngredientID: match.Exact.ID,
-			Kind:         kind,
-			Quantity:     quantity,
-			Note:         strings.TrimSpace(draft.Note),
-		},
+		Kind:    AICommandOutcomeReady,
+		Title:   match.Exact.Name,
+		Command: command,
 	}
 }
 

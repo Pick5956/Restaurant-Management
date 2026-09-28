@@ -101,36 +101,6 @@ export function hasFieldErrors(errors: IngredientFieldErrors): boolean {
 }
 
 /**
- * Per-row problems in a bulk add, null for a row that is fine or blank. A name
- * already in the inventory, a name repeated inside the batch, and a negative
- * or non-numeric quantity or price all stop the save.
- */
-export function validateBulkRows(
-  rows: { name: string; quantity: string | number; price: string | number }[],
-  existingNames: string[],
-  lang: "th" | "en",
-): (string | null)[] {
-  const text = copy(lang);
-  const existing = new Set(existingNames.map(normalName));
-  const seen = new Map<string, number>();
-  rows.forEach((row) => {
-    const key = normalName(row.name);
-    if (key) seen.set(key, (seen.get(key) ?? 0) + 1);
-  });
-  return rows.map((row) => {
-    const name = row.name.trim();
-    if (!name) return null;
-    const key = normalName(name);
-    if ([...name].length > MAX_NAME_LENGTH) return text.nameTooLong;
-    if (existing.has(key)) return text.nameTaken(name);
-    if ((seen.get(key) ?? 0) > 1) return text.dupInBatch;
-    if (isBadAmount(row.quantity)) return text.stock;
-    if (isBadAmount(row.price)) return text.cost;
-    return null;
-  });
-}
-
-/**
  * The server answers in English. The ones a person can act on are said in
  * Thai with what to do about it; anything else passes through untouched so a
  * real fault is still visible.

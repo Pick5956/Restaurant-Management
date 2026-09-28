@@ -27,6 +27,7 @@ import type { Bill, Order, OrderItem, OrderPayment } from "@/src/types/order";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import RealtimeConnectionNotice from "@/src/components/shared/RealtimeConnectionNotice";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
@@ -1607,29 +1608,39 @@ export default function PosOrderDetailPage() {
         );
       })()}
 
-      {billCancelTarget ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4 backdrop-blur-sm">
-          <div role="dialog" aria-modal="true" aria-labelledby="bill-cancel-title" className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-4 shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900">
-            <h2 id="bill-cancel-title" className="text-[15px] font-semibold text-gray-950 dark:text-white">{billCancelMode === "unit" ? copy.voidUnitTitle : copy.cancelItemTitle}</h2>
-            <p className="mt-1 text-[13px] text-gray-600 dark:text-gray-400">{billCancelMode === "unit" ? copy.voidUnitDescription(billCancelTarget.firstItem.menu_name) : `${billCancelTarget.firstItem.menu_name} · x${billCancelTarget.quantity}`}</p>
-            <label htmlFor="bill-cancel-reason" className="mt-3 block text-[12px] font-semibold text-gray-700 dark:text-gray-300">{copy.cancelItemReason}</label>
-            <textarea
-              id="bill-cancel-reason"
-              value={billCancelReason}
-              onChange={(event) => { setBillCancelReason(event.target.value); if (error) setError(""); }}
-              rows={3}
-              maxLength={500}
-              placeholder={copy.cancelItemPlaceholder}
-              autoFocus
-              className="mt-1.5 w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-2 text-[13px] outline-none focus:border-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            />
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" disabled={submitting} onClick={() => { setBillCancelTarget(null); setBillCancelReason(""); setBillCancelMode("line"); }} className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{copy.keepItemBtn}</button>
-              <button type="button" disabled={submitting || !billCancelReason.trim()} onClick={() => { void confirmCancelBillItem(); }} className="h-10 rounded-md bg-red-600 px-3 text-[13px] font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-400">{copy.confirmCancelItem}</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* The inventory's question dialog, with the reason box in its slot. */}
+      <WarmConfirmDialog
+        open={billCancelTarget !== null}
+        title={billCancelMode === "unit" ? copy.voidUnitTitle : copy.cancelItemTitle}
+        description={billCancelTarget
+          ? billCancelMode === "unit"
+            ? copy.voidUnitDescription(billCancelTarget.firstItem.menu_name)
+            : `${billCancelTarget.firstItem.menu_name} · x${billCancelTarget.quantity}`
+          : ""}
+        confirmLabel={copy.confirmCancelItem}
+        cancelLabel={copy.keepItemBtn}
+        onConfirm={() => void confirmCancelBillItem()}
+        onCancel={() => {
+          if (submitting) return;
+          setBillCancelTarget(null);
+          setBillCancelReason("");
+          setBillCancelMode("line");
+        }}
+        busy={submitting}
+        confirmDisabled={!billCancelReason.trim()}
+        initialFocus="content"
+      >
+        <label htmlFor="bill-cancel-reason" className="warm-dialog-slot-label">{copy.cancelItemReason}</label>
+        <textarea
+          id="bill-cancel-reason"
+          value={billCancelReason}
+          onChange={(event) => { setBillCancelReason(event.target.value); if (error) setError(""); }}
+          rows={3}
+          maxLength={500}
+          placeholder={copy.cancelItemPlaceholder}
+          disabled={submitting}
+        />
+      </WarmConfirmDialog>
     </div>
   );
 }

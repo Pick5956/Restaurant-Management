@@ -19,6 +19,7 @@ import { Skeleton } from "@/src/components/shared/Skeleton";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import {
   createQrMatrix,
@@ -597,7 +598,6 @@ export default function TablesPage() {
     }, 180);
   };
   const tableDrawerBackdrop = useBackdropClose(closeTableDrawer);
-  const deleteBackdrop = useBackdropClose(closeDeleteModal);
 
   if (!canView) return <PermissionDenied title={copy.denied} />;
 
@@ -912,20 +912,18 @@ export default function TablesPage() {
         </ManagerModal>
       )}
 
-      {deleteTarget && (
-        <div {...deleteBackdrop} className={`${deleteClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${deleteClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-              <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{copy.confirmDeleteTitle}</h2>
-              <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{copy.confirmDeleteBody}</p>
-            </div>
-            <div className="flex justify-end gap-2 px-4 py-3">
-              <button type="button" onClick={closeDeleteModal} className="h-9 rounded-md border border-gray-200 px-3 text-[12px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">{copy.cancel}</button>
-              <button type="button" onClick={confirmDelete} disabled={submitting} className="h-9 rounded-md border border-red-200 px-3 text-[12px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-900/20">{copy.delete}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WarmConfirmDialog
+        open={deleteTarget !== null && !deleteClosing}
+        title={copy.confirmDeleteTitle}
+        description={deleteTarget
+          ? `“${deleteTarget.type === "table" ? deleteTarget.table.display_label || deleteTarget.table.table_number : deleteTarget.zone.name}” — ${copy.confirmDeleteBody}`
+          : ""}
+        confirmLabel={copy.delete}
+        cancelLabel={copy.cancel}
+        onConfirm={() => void confirmDelete()}
+        onCancel={closeDeleteModal}
+        busy={submitting}
+      />
     </div>
     </>
   );

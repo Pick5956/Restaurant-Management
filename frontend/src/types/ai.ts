@@ -271,6 +271,19 @@ export type AIIngredientSetup = {
   storage_type: string;
   storage_types: string[];
   min_percent: number;
+  /** The stock list's sections, and the one chosen (0 = none). */
+  categories?: { id: number; name: string }[];
+  category_id?: number;
+  /** The opening lot's shelf life in days (0 = no date); follows the storage type until expiry_set. */
+  expiry_days?: number;
+  expiry_set?: boolean;
+  expiry_options?: number[];
+  expires_at?: string;
+  /** A pack is set, so a case of packs can be. */
+  can_case?: boolean;
+  case_unit?: string;
+  case_units?: string[];
+  case_size?: number;
   /** What the inventory still needs; confirming is refused until empty. */
   missing?: string[];
 };
@@ -288,6 +301,11 @@ export type AIIngredientSetupAnswers = {
   price: number;
   storage_type: string;
   min_percent: number;
+  category_id: number;
+  /** Left out until chosen, so the default keeps following the storage type. */
+  expiry_days?: number;
+  case_unit: string;
+  case_size: number;
   /** The last answer: the confirm bar's minute starts here. */
   finish?: boolean;
 };

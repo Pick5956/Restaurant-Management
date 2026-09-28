@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Info, ReceiptText, ShoppingBag, TrendingUp, Wallet } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/src/lib/format";
 import type { ManagerReport } from "@/src/types/report";
@@ -37,6 +38,65 @@ function MarginRing({ margin }: { margin: number }) {
 }
 
 /**
+ * The margin explained in a bubble over the page (28 ก.ย. 2569), in place of a
+ * note that pushed the tables down. A mouse opens it on hover; a tap pins it
+ * open until a tap elsewhere or Escape, since a touch screen has no hover.
+ */
+function MarginTip({ label, title, per100, sum, note }: { label: string; title: string; per100: string; sum: string; note: string }) {
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const open = hovered || pinned;
+
+  useEffect(() => {
+    if (!pinned) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!boxRef.current?.contains(event.target as Node)) setPinned(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPinned(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pinned]);
+
+  return (
+    <span
+      ref={boxRef}
+      className="relative ml-auto self-start"
+      onPointerEnter={(event) => event.pointerType === "mouse" && setHovered(true)}
+      onPointerLeave={(event) => event.pointerType === "mouse" && setHovered(false)}
+    >
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setPinned((value) => !value)}
+        className="ui-press rounded-full p-0.5 text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
+      >
+        <Info className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <span
+        role="tooltip"
+        className={`absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl bg-gray-900 px-3.5 py-3 text-[12px] leading-5 text-white shadow-xl transition-[opacity,translate] duration-150 ease-out dark:bg-white dark:text-gray-900 ${
+          open ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0"
+        }`}
+      >
+        <span className="absolute bottom-full right-2 border-[6px] border-transparent border-b-gray-900 dark:border-b-white" />
+        <span className="block font-semibold">{title}</span>
+        <span className="mt-1 block">{per100}</span>
+        <span className="mt-1 block tabular-nums text-gray-300 dark:text-gray-600">{sum}</span>
+        <span className="mt-1.5 block text-[11px] text-gray-400 dark:text-gray-500">{note}</span>
+      </span>
+    </span>
+  );
+}
+
+/**
  * The five figures at the top of the revenue page (26 ก.ย. 2569, the owner's
  * pick "แบบ A ย่อ"): revenue on the left with a bar of where that money went,
  * the other four as short cards in a 2×2 beside it. The 2×2 is the height of
@@ -47,16 +107,12 @@ export default function ReportSummaryCards({
   netProfit,
   operatingExpenses,
   lang,
-  marginInfoOpen,
-  onToggleMarginInfo,
   copy,
 }: {
   summary: Summary;
   netProfit: number;
   operatingExpenses: number;
   lang: "th" | "en";
-  marginInfoOpen: boolean;
-  onToggleMarginInfo: () => void;
   copy: {
     grossRevenue: string;
     expenses: string;
@@ -64,13 +120,25 @@ export default function ReportSummaryCards({
     netProfit: string;
     margin: string;
     marginInfo: string;
-    discountNote: (value: string) => string;
+    discountNote: (discount: string, received: string) => string;
   };
 }) {
   const money = (value: number) => formatCurrency(value, lang);
   const text = lang === "th"
-    ? { cost: "ต้นทุน", other: "รายจ่ายอื่น", profit: "กำไร", perBill: "เฉลี่ย", perBillUnit: "/ บิล", split: "รายได้แบ่งเป็นต้นทุนวัตถุดิบ รายจ่ายอื่น และกำไร" }
-    : { cost: "Food cost", other: "Other", profit: "Profit", perBill: "Avg", perBillUnit: "/ bill", split: "Revenue split into food cost, other expenses and profit" };
+    ? {
+        cost: "ต้นทุน", other: "รายจ่ายอื่น", profit: "กำไร", perBill: "เฉลี่ย", perBillUnit: "/ บิล", split: "รายได้แบ่งเป็นต้นทุนวัตถุดิบ รายจ่ายอื่น และกำไร",
+        tipTitle: "มาร์จิน = กำไรสุทธิ ÷ รายได้",
+        tipPer100: (value: string) => `ขายได้ 100 บาท เหลือเป็นกำไร ${value} บาท`,
+        tipSum: (revenue: string, cost: string, other: string, net: string) => `${revenue} − ต้นทุน ${cost} − รายจ่ายอื่น ${other} = กำไร ${net}`,
+        tipNote: "ค่าซื้อวัตถุดิบไม่หักซ้ำ เพราะนับในต้นทุนแล้ว",
+      }
+    : {
+        cost: "Food cost", other: "Other", profit: "Profit", perBill: "Avg", perBillUnit: "/ bill", split: "Revenue split into food cost, other expenses and profit",
+        tipTitle: "Margin = net profit ÷ revenue",
+        tipPer100: (value: string) => `Every 100 baht sold leaves ${value} baht profit`,
+        tipSum: (revenue: string, cost: string, other: string, net: string) => `${revenue} − cost ${cost} − other ${other} = profit ${net}`,
+        tipNote: "Ingredient purchases aren't taken off twice; the cost already counts them.",
+      };
 
   // The bar splits revenue after discounts, which is what cost + other + net
   // add up to. A loss makes the costs larger than revenue; the bar then scales
@@ -91,7 +159,7 @@ export default function ReportSummaryCards({
         </div>
         <p className="text-[24px] font-bold leading-tight tracking-tight tabular-nums">{money(summary.gross_revenue ?? summary.revenue)}</p>
         {discount > 0 ? (
-          <p className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">{copy.discountNote(money(discount))} · {money(summary.revenue)}</p>
+          <p className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">{copy.discountNote(money(discount), money(summary.revenue))}</p>
         ) : null}
         <div className="mt-auto pt-2.5">
         <div role="img" aria-label={text.split} className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
@@ -140,15 +208,13 @@ export default function ReportSummaryCards({
             <p className={label}>{copy.margin}</p>
             <p className="text-[19px] font-bold tracking-tight tabular-nums">{formatNumber(summary.margin, lang)}%</p>
           </div>
-          <button
-            type="button"
-            aria-label={copy.marginInfo}
-            aria-expanded={marginInfoOpen}
-            onClick={onToggleMarginInfo}
-            className="ui-press ml-auto self-start rounded-full p-0.5 text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-          >
-            <Info className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <MarginTip
+            label={copy.marginInfo}
+            title={text.tipTitle}
+            per100={text.tipPer100(formatNumber(summary.margin, lang))}
+            sum={text.tipSum(money(summary.revenue), money(summary.cost), money(operatingExpenses), money(netProfit))}
+            note={text.tipNote}
+          />
         </div>
       </div>
     </div>

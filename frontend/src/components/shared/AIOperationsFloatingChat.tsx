@@ -26,6 +26,7 @@ const ORB_DRAG_THRESHOLD = 6;
 const ORB_SPOT_KEY = "ai_orb_spot";
 type OrbSpot = { side: "left" | "right"; top: number };
 import { askOperationsAIStream } from "@/src/lib/aiStream";
+import { useSmoothReveal } from "@/src/lib/smoothReveal";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage } from "@/src/lib/ai";
 import {
   formatAIActionPreviewAnswer,
@@ -46,8 +47,12 @@ import {
   subscribeToChatWrites,
 } from "@/src/lib/aiChatStorage";
 import {
+  answeredTurns,
+  clearThreadCache,
+  dropFailedQuestion,
   hydrateThreadMessages,
   isConversationGone,
+  markQuestionFailed,
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
@@ -85,6 +90,8 @@ type Message = {
   // ข้อความที่สร้างมัน กล่องจะได้อยู่ใต้คำตอบนั้นแทนที่จะไหลไปท้ายสายเสมอ
   planId?: string;
   previewId?: string;
+  /** A question that got no answer: kept on screen, left out of the history. */
+  failed?: boolean;
 };
 
 type StoredMessage = Omit<Message, "createdAt"> & {
@@ -288,6 +295,8 @@ export default function AIOperationsFloatingChat() {
   // The answer so far while it is being written — shown in place of the
   // "thinking" line, replaced by the finished message when it arrives.
   const [draft, setDraft] = useState<string | null>(null);
+  // The draft as it is revealed on screen: steady, not in the bursts it arrives in.
+  const smoothDraft = useSmoothReveal(draft);
   const [outage, setOutage] = useState<AIOutage | null>(null);
   const [lastQuestion, setLastQuestion] = useState("");
   const [pendingActionPreview, setPendingActionPreview] = useState<AIActionPreview | null>(null);
@@ -359,6 +368,13 @@ export default function AIOperationsFloatingChat() {
       setPlanCardState("cancelled");
     }
     setListOpen(false);
+    // "แชทใหม่" from a chat that is itself still new changes no active id, so
+    // nothing reloaded and the unanswered questions stayed on screen.
+    if (conversationId === null && activeThread === null) {
+      clearThreadCache(storageKey, null);
+      resetConversation();
+      return;
+    }
     setActiveThread(storageKey, conversationId);
   };
 
@@ -444,7 +460,7 @@ export default function AIOperationsFloatingChat() {
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       messagesEndRef.current.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
     }
-  }, [messages, loading, draft]);
+  }, [messages, loading, draft, smoothDraft.text]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -466,7 +482,7 @@ export default function AIOperationsFloatingChat() {
   }, [isOpen]);
 
   const conversationHistory = (): AIConversationMessage[] =>
-    messages
+    answeredTurns(messages)
       // The on-screen greeting is not a turn: sent along, the model read
       // "สวัสดีพู่กัน" as something it had already said.
       .filter((message): message is Message & { role: "user" | "assistant" } => message.role !== "system" && message.id !== "welcome")
@@ -476,6 +492,7 @@ export default function AIOperationsFloatingChat() {
   const resetConversation = useCallback(() => {
     conversationRequests.invalidate();
     setLoading(false);
+    setOutage(null);
     // Also reached when the other chat surface clears: that surface's history is
     // gone, so this one must drop the shared server thread and any pending action.
     setConversationId(null);
@@ -562,9 +579,10 @@ export default function AIOperationsFloatingChat() {
     // its own countdown and terminal states, so leaving it up is safe.
     setActionPreviewError("");
     
+    const questionId = `user-${Date.now()}`;
     setMessages((previous) => [
-      ...previous,
-      { id: `user-${previous.length}`, role: "user", content: trimmed, createdAt: new Date() },
+      ...dropFailedQuestion(previous, trimmed),
+      { id: questionId, role: "user", content: trimmed, createdAt: new Date() },
     ]);
 
     const navigation = resolveNavigationRequest(trimmed, activeMembership, language, pathname);
@@ -639,6 +657,10 @@ export default function AIOperationsFloatingChat() {
       const newThreadId = data.conversation_id && data.conversation_id !== conversationId ? data.conversation_id : null;
       if (data.conversation_id) setConversationId(data.conversation_id);
       
+      // Let the typing run to the end of the answer before the finished message
+      // takes the draft's place, so the text does not jump the last stretch.
+      await smoothDraft.settle(answer);
+      if (!conversationRequests.isCurrent(requestGeneration)) return;
       const assistantMsg: Message = {
         id: data.turn_id ? `${data.turn_id}-assistant` : `ai-${Date.now()}`,
         role: "assistant",
@@ -688,6 +710,7 @@ export default function AIOperationsFloatingChat() {
         return;
       }
       console.error(err);
+      setMessages((previous) => markQuestionFailed(previous, questionId));
       // An outage is reported by the backend as a code, not as English words in
       // the message. This used to sniff the message for "429"/"quota"/"exhausted"
       // and the message arrives in Thai, so a quota outage never matched: the
@@ -708,6 +731,7 @@ export default function AIOperationsFloatingChat() {
         {
           id: `err-${previous.length}`,
           role: "system",
+          failed: true,
           content: errorMessage || copy.thinking.replace("กำลังวิเคราะห์...", "เกิดข้อผิดพลาดในการเชื่อมต่อกรุณาลองใหม่อีกครั้ง"),
           createdAt: new Date(),
         },
@@ -1086,19 +1110,18 @@ export default function AIOperationsFloatingChat() {
             })
             )}
 
-            {loading && draft && (
+            {loading && smoothDraft.text && (
               <div className="flex max-w-full items-start gap-2.5 sm:max-w-[90%]">
                 <SiriOrb size="30px" className="mt-0.5 shrink-0" animationDuration={8} />
                 <div
                   className="min-w-0 break-words rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
                   aria-live="polite"
                 >
-                  <SafeAIResponseContent content={draft} compact language={language} />
-                  <span className="ai-stream-caret" aria-hidden="true" />
+                  <SafeAIResponseContent content={smoothDraft.text} compact language={language} />
                 </div>
               </div>
             )}
-            {loading && !draft && (
+            {loading && !smoothDraft.text && (
               <div className="flex items-center gap-2.5 animate-message-slide">
                 <SiriOrb size="30px" className="shrink-0" animationDuration={8} />
                 <div

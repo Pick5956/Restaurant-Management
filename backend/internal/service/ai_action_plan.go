@@ -113,6 +113,8 @@ type AIAdjustStockCommand struct {
 	Kind         string // in | out | adjust | min | cost | create | menu_on | menu_off
 	Quantity     float64
 	Amount       float64 // baht, only meaningful for kind=in
+	// ExpiresAt dates the lot a stock-in opens ("YYYY-MM-DD"); kind=in only.
+	ExpiresAt string
 	Note         string
 	// Set only when Kind is create.
 	Name string
@@ -151,6 +153,8 @@ type AIActionItemPayload struct {
 	// that reads as "no change requested".
 	MenuItemID uint `json:"menu_item_id,omitempty"`
 	Available  bool `json:"available"`
+	// Used by adjust_ingredient_stock kind=in: the lot's expiry.
+	ExpiresAt string `json:"expires_at,omitempty"`
 	// Used by create_expense.
 	Category string `json:"category,omitempty"`
 	Date     string `json:"date,omitempty"`
@@ -172,6 +176,10 @@ type AIActionItemPayload struct {
 	Missing []string `json:"missing,omitempty"`
 	StorageType  string  `json:"storage_type,omitempty"`
 	MinPercent   float64 `json:"min_percent,omitempty"`
+	// create_ingredient from the card: the case a pack comes in. The section
+	// is CategoryID above, and the opening lot's date ExpiresAt.
+	CaseUnit string  `json:"case_unit,omitempty"`
+	CaseSize float64 `json:"case_size,omitempty"`
 
 	// What the row held when the preview was written, for the action types that
 	// overwrite a value outright. The owner confirms "5000 → 3000" having read
@@ -313,8 +321,20 @@ func validateAdjustStock(port AIActionIngredientPort, restaurantID uint, command
 		Delta:     aiPreviewDelta(ingredient.Stock, next),
 	}
 	if amount > 0 {
-		preview.SideEffects = append(preview.SideEffects,
-			aiExpenseSideEffect(amount))
+		effect := aiExpenseSideEffect(amount)
+		if command.Amount == 0 {
+			// Nobody said a price: the ledger gets the old cost, and the owner
+			// should know that is where the figure came from.
+			effect += fmt.Sprintf(" (คิดจากต้นทุนเดิม %s บาท/%s)", formatStockNumber(ingredient.CostPerUnit), ingredient.Unit)
+		}
+		preview.SideEffects = append(preview.SideEffects, effect)
+	}
+	if kind == "in" && command.ExpiresAt != "" {
+		effect := "ล็อตนี้หมดอายุ " + aiThaiDate(command.ExpiresAt)
+		if command.ExpiresAt < repository.BangkokNow().Format("2006-01-02") {
+			effect += " · วันนี้เลยมาแล้ว ล็อตจะขึ้นว่าหมดอายุทันที"
+		}
+		preview.SideEffects = append(preview.SideEffects, effect)
 	}
 	if next <= 0 && ingredient.Stock > 0 {
 		preview.SideEffects = append(preview.SideEffects, "สต๊อกเหลือ 0 · เมนูที่ใช้วัตถุดิบนี้จะถูกปิดขายอัตโนมัติ")
@@ -326,6 +346,9 @@ func validateAdjustStock(port AIActionIngredientPort, restaurantID uint, command
 		Quantity:     command.Quantity,
 		Amount:       command.Amount,
 		Note:         strings.TrimSpace(command.Note),
+	}
+	if kind == "in" {
+		payload.ExpiresAt = command.ExpiresAt
 	}
 	if kind == "adjust" {
 		stock := ingredient.Stock
@@ -700,7 +723,7 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 			return AIActionItemPayload{}, AIActionItemPreview{}, "", err
 		}
 		if command.Setup {
-			payload, preview, err := buildIngredientSetup(shelf, command.Name, command.Quantity, command.Unit,
+			payload, preview, err := buildIngredientSetup(shelf, aiSetupCategoriesOf(ports.Ingredients, restaurantID), command.Name, command.Quantity, command.Unit,
 				AIIngredientSetupAnswers{Unit: aiSetupFirstUnit(command.Unit)})
 			return payload, preview, entity.AIActionTypeCreateIngredient, err
 		}
@@ -922,10 +945,11 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 			}
 		}
 		_, err := ports.Ingredients.AdjustStock(restaurantID, payload.IngredientID, actorUserID, &AdjustStockRequest{
-			Type:     payload.Kind,
-			Quantity: payload.Quantity,
-			Amount:   payload.Amount,
-			Note:     payload.Note,
+			Type:      payload.Kind,
+			Quantity:  payload.Quantity,
+			Amount:    payload.Amount,
+			Note:      payload.Note,
+			ExpiresAt: payload.ExpiresAt,
 		})
 		return err
 	case entity.AIActionTypeSetIngredientMinStock, entity.AIActionTypeSetIngredientCost:
@@ -1002,6 +1026,15 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 				packUnit, packSize := payload.PackUnit, payload.PackSize
 				request.PackUnit = &packUnit
 				request.PackSize = &packSize
+				if payload.CaseUnit != "" && payload.CaseSize > 0 {
+					caseUnit, caseSize := payload.CaseUnit, payload.CaseSize
+					request.CaseUnit = &caseUnit
+					request.CaseSize = &caseSize
+				}
+			}
+			request.CategoryID = payload.CategoryID
+			if payload.Quantity > 0 {
+				request.ExpiresAt = payload.ExpiresAt
 			}
 		}
 		_, err := ports.Ingredients.Create(restaurantID, actorUserID, request)

@@ -410,19 +410,30 @@ func ComputeMenuEngineering(menus []repository.AIMenuMarginSummary) AIMenuEngine
 	}
 	medQty := Median(quantities)
 	medMargin := Median(margins)
+	eng.MedianQuantity, eng.MedianMargin = medQty, medMargin
 	for _, m := range menus {
 		highPop := float64(m.Quantity) >= medQty
 		highMargin := m.Margin >= medMargin
+		quadrant := "dog"
 		switch {
 		case highPop && highMargin:
 			eng.Stars = append(eng.Stars, m.MenuName)
+			quadrant = "star"
 		case highPop && !highMargin:
 			eng.Plowhorses = append(eng.Plowhorses, m.MenuName)
+			quadrant = "plowhorse"
 		case !highPop && highMargin:
 			eng.Puzzles = append(eng.Puzzles, m.MenuName)
+			quadrant = "puzzle"
 		default:
 			eng.Dogs = append(eng.Dogs, m.MenuName)
 		}
+		row := AIMenuEngineeringRow{Name: m.MenuName, Quadrant: quadrant, Quantity: m.Quantity, Margin: m.Margin}
+		if m.Quantity > 0 {
+			units := float64(m.Quantity)
+			row.PricePerUnit, row.CostPerUnit, row.ProfitPerUnit = m.Revenue/units, m.Cost/units, m.Profit/units
+		}
+		eng.Rows = append(eng.Rows, row)
 	}
 	return eng
 }

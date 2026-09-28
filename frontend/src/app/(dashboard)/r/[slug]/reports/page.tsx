@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
 import PaidReceiptDialog from "@/src/components/orders/PaidReceiptDialog";
 import ReportSummaryCards from "./ReportSummaryCards";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
-import { RestaurantCardSkeleton } from "@/src/components/shared/Skeleton";
+import { RestaurantCardSkeleton, Skeleton } from "@/src/components/shared/Skeleton";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { formatCurrency, formatNumber } from "@/src/lib/format";
@@ -76,12 +76,8 @@ export default function ReportsPage() {
         expenses: "รายจ่ายรวม",
         netProfit: "กำไรสุทธิ",
         beforeDiscount: "ก่อนหักส่วนลด",
-        discountNote: (value: string) => `ส่วนลด −${value}`,
+        discountNote: (discount: string, received: string) => `หักส่วนลดโปร ${discount} แล้ว รับเงินจริง ${received}`,
         marginInfo: "มาร์จินคืออะไร",
-        // Net = revenue − recipe cost − non-ingredient expenses (26 ก.ย. 2569).
-        // Purchases stay in "รายจ่ายรวม" but are not taken off twice.
-        marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
-          `มาร์จินคือส่วนที่เหลือเป็นกำไรสุทธิเมื่อเทียบกับรายได้ · ช่วงนี้ได้รายได้ทุก 100 บาท เหลือ ${per100} บาท · รายได้ ${revenue} − ต้นทุนวัตถุดิบตามสูตรของที่ขายไป ${cost} − รายจ่ายอื่นที่ไม่ใช่วัตถุดิบ ${operating} = กำไรสุทธิ ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ค่าซื้อวัตถุดิบอยู่ในรายจ่ายรวม แต่ไม่หักจากกำไรซ้ำ เพราะต้นทุนวัตถุดิบหักไปแล้ว`,
         period: "ช่วงเวลา",
         from: "ตั้งแต่",
         to: "ถึง",
@@ -118,10 +114,8 @@ export default function ReportsPage() {
         expenses: "Total expenses",
         netProfit: "Net profit",
         beforeDiscount: "Before discounts",
-        discountNote: (value: string) => `Discounts −${value}`,
+        discountNote: (discount: string, received: string) => `After ${discount} in promotion discounts, ${received} received`,
         marginInfo: "What is margin?",
-        marginExplain: (per100: string, revenue: string, cost: string, operating: string, net: string, margin: string) =>
-          `Margin is the share of revenue left as net profit. In this period every 100 baht of revenue left ${per100} baht · revenue ${revenue} − recipe cost of what sold ${cost} − expenses other than ingredients ${operating} = net profit ${net} · ${net} ÷ ${revenue} × 100 = ${margin} · ingredient purchases are in total expenses but not taken off again, as their cost is already counted.`,
         period: "Period",
         from: "From",
         to: "To",
@@ -211,7 +205,6 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView, language, range.from, range.to]);
 
-  const [marginInfoOpen, setMarginInfoOpen] = useState(false);
   const preset = matchPreset(range, today);
   const draftProblem = rangeProblem(draft, today);
   // A typed date applies as soon as the range is one the server accepts; until
@@ -275,28 +268,11 @@ export default function ReportsPage() {
             netProfit={netProfit}
             operatingExpenses={operatingExpenses}
             lang={lang}
-            marginInfoOpen={marginInfoOpen}
-            onToggleMarginInfo={() => setMarginInfoOpen((open) => !open)}
             copy={copy}
           />
-          {marginInfoOpen ? (
-            <div role="note" className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[13px] leading-6 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-100">
-              <p className="font-semibold">{copy.marginInfo}</p>
-              <p>
-                {copy.marginExplain(
-                  formatNumber(report.summary.margin, lang),
-                  formatCurrency(report.summary.revenue, lang),
-                  formatCurrency(report.summary.cost, lang),
-                  formatCurrency(operatingExpenses, lang),
-                  formatCurrency(netProfit, lang),
-                  `${formatNumber(report.summary.margin, lang)}%`,
-                )}
-              </p>
-            </div>
-          ) : null}
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
-            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.salesDays}</h2>
               </div>
@@ -327,7 +303,10 @@ export default function ReportsPage() {
                             className={`cursor-pointer transition-colors ${open ? "bg-gray-100 dark:bg-gray-800" : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/60"}`}
                           >
                             <td className="px-4 py-2.5 font-medium">
-                              <span className="inline-flex items-center gap-1.5">
+                              {/* flex, not inline-flex: an inline box with the
+                                  icon sat on the text baseline and made each row
+                                  2px taller than the menu table's rows. */}
+                              <span className="flex items-center gap-1.5">
                                 <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
                                 {day.order_date}
                               </span>
@@ -348,29 +327,35 @@ export default function ReportsPage() {
               )}
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            {/* overflow-hidden also makes the section a scroll box, so the grid
+                lets it shrink to the phone's width and the table scrolls inside.
+                Without it the 560px table pushed the section past the screen,
+                where the page clips it and nothing scrolls (28 ก.ย. 2569). */}
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.menuMargins}</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm">
+                {/* The same header and row sizes as the daily table beside it, so
+                    their lines run level across the page (28 ก.ย. 2569). */}
+                <table className="w-full min-w-[560px] border-separate border-spacing-0 text-left text-sm [&_tbody_td]:border-b [&_tbody_td]:border-gray-100 dark:[&_tbody_td]:border-gray-800">
                   <thead className="text-xs text-gray-500">
-                    <tr>
-                      <th className="px-4 py-3">{copy.menu}</th>
-                      <th className="px-4 py-3 text-right">{copy.qty}</th>
-                      <th className="px-4 py-3 text-right">{copy.revenue}</th>
-                      <th className="px-4 py-3 text-right">{copy.cost}</th>
-                      <th className="px-4 py-3 text-right">{copy.margin}</th>
+                    <tr className="[&_th]:border-b [&_th]:border-gray-200 dark:[&_th]:border-gray-800">
+                      <th className="px-4 py-2 font-medium">{copy.menu}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.qty}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.revenue}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.cost}</th>
+                      <th className="px-4 py-2 text-right font-medium">{copy.margin}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  <tbody>
                     {report.menu_margins.length ? report.menu_margins.map((item) => (
                       <tr key={`${item.menu_id}-${item.menu_name}`}>
-                        <td className="px-4 py-3 font-medium">{item.menu_name}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatNumber(item.quantity, lang)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(item.revenue, lang)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(item.cost, lang)}</td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatNumber(item.margin, lang)}%</td>
+                        <td className="px-4 py-2.5 font-medium">{item.menu_name}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(item.quantity, lang)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(item.revenue, lang)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(item.cost, lang)}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{formatNumber(item.margin, lang)}%</td>
                       </tr>
                     )) : <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">{copy.noData}</td></tr>}
                   </tbody>
@@ -396,7 +381,35 @@ export default function ReportsPage() {
             <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
               {receiptError ? <p className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">{receiptError}</p> : null}
               {dayDetailLoading ? (
-                <p className="py-8 text-center text-xs text-gray-500">{copy.loadingDay}</p>
+                // Skeleton rows in the order table's own shape (28 ก.ย. 2569),
+                // so the dialog does not jump from one line of text to a table.
+                <div role="status" className="overflow-x-auto overflow-y-hidden">
+                  <span className="sr-only">{copy.loadingDay}</span>
+                  <table aria-hidden="true" className="w-full min-w-[520px] border-separate border-spacing-0 text-left text-xs [&_tbody_td]:border-b [&_tbody_td]:border-gray-200 dark:[&_tbody_td]:border-gray-800">
+                    <thead className="text-gray-500">
+                      <tr>
+                        <th className="py-1 font-medium">{copy.order}</th>
+                        <th className="py-1 font-medium">{copy.table}</th>
+                        <th className="py-1 text-right font-medium">{copy.time}</th>
+                        <th className="py-1 text-right font-medium">{copy.revenue}</th>
+                        <th className="py-1 text-right font-medium">{copy.cost}</th>
+                        <th className="py-1 text-right font-medium">{copy.profit}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: 10 }, (_, row) => (
+                        <tr key={row}>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] h-3 w-24" /></td>
+                          <td className="py-1.5"><Skeleton className={`my-[2.5px] h-3 ${row % 3 === 0 ? "w-16" : "w-10"}`} /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-10" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-14" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-12" /></td>
+                          <td className="py-1.5"><Skeleton className="my-[2.5px] ml-auto h-3 w-12" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : dayDetail?.orders.length ? (
                 <>
                   <div className="overflow-x-auto overflow-y-hidden">

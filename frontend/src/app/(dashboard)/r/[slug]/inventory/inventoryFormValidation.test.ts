@@ -3,7 +3,6 @@ import {
   hasFieldErrors,
   inventoryErrorMessage,
   isBadAmount,
-  validateBulkRows,
   validateIngredientForm,
 } from "./inventoryFormValidation";
 
@@ -63,29 +62,6 @@ describe("validateIngredientForm", () => {
   });
   it("passes a clean form", () => {
     expect(hasFieldErrors(validateIngredientForm({ ...base, name: "กะทิ", stockText: "10", costText: "5" }, "th"))).toBe(false);
-  });
-});
-
-describe("validateBulkRows", () => {
-  it("flags existing names, repeats and bad numbers per row", () => {
-    const result = validateBulkRows(
-      [
-        { name: "หมูสับ", quantity: "1", price: "1" },
-        { name: "กะทิ", quantity: "1", price: "1" },
-        { name: " กะทิ", quantity: "1", price: "1" },
-        { name: "ข้าว", quantity: "-2", price: "1" },
-        { name: "", quantity: "-9", price: "" },
-        { name: "น้ำตาล", quantity: "3", price: "20" },
-      ],
-      ["หมูสับ"],
-      "th",
-    );
-    expect(result[0]).toContain("ในคลังแล้ว");
-    expect(result[1]).toBe("ชื่อซ้ำกับรายการอื่นในชุดนี้");
-    expect(result[2]).toBe("ชื่อซ้ำกับรายการอื่นในชุดนี้");
-    expect(result[3]).toContain("จำนวน");
-    expect(result[4]).toBeNull();
-    expect(result[5]).toBeNull();
   });
 });
 

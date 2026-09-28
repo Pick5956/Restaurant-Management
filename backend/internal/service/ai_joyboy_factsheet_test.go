@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"Project-M/internal/aitools"
 	"Project-M/internal/entity"
 	"Project-M/internal/repository"
 )
@@ -925,5 +926,31 @@ func TestJoyboyProfitForPeriodBodySubtractsBillDiscounts(t *testing.T) {
 	}
 	if strings.Contains(body, "profit_is_a_floor") {
 		t.Fatalf("full cost coverage flagged as partial after the discount: %s", body)
+	}
+}
+
+// The menu grid is named in Thai and carries each menu's figures: on 28 ก.ย.
+// 2569 the fallback model printed "popular_but_low_margin" to the owner, and
+// with only names on the sheet a "ทำไม" question had nothing to explain with.
+func TestJoyboyMenuEngineeringSheetIsThaiAndCarriesTheFigures(t *testing.T) {
+	engineering := aitools.ComputeMenuEngineering([]repository.AIMenuMarginSummary{
+		{MenuName: "ผัดกะเพรา", Quantity: 1191, Revenue: 80210, Cost: 30000, Profit: 50210, Margin: 62.6},
+		{MenuName: "น้ำเปล่า", Quantity: 230, Revenue: 2300, Cost: 1265, Profit: 1035, Margin: 45},
+		{MenuName: "ผัดผักบุ้งไฟแดง", Quantity: 113, Revenue: 5650, Cost: 1102, Profit: 4548, Margin: 80.5},
+		{MenuName: "โค้ก", Quantity: 90, Revenue: 1800, Cost: 1125, Profit: 675, Margin: 37.5},
+	})
+	body, ok := joyboyFactBody(AIToolResult{Tool: AIToolGetMenuEngineering, MenuEngineering: &engineering})
+	if !ok {
+		t.Fatal("menu engineering produced no sheet")
+	}
+	for _, banned := range []string{"popular_", "unpopular_", "plowhorse", "quadrant="} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("sheet still carries %q: %s", banned, body)
+		}
+	}
+	for _, want := range []string{"ขายดีแต่กำไรต่อจานน้อย", "menu=น้ำเปล่า", "avg_price=10.00", "cost_per_unit=5.50", "profit_per_unit=4.50"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sheet lacks %q: %s", want, body)
+		}
 	}
 }

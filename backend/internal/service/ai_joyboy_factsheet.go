@@ -428,30 +428,41 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 		if engineering == nil {
 			return joyboyNoData("menu_classification_needs_sales_and_costs"), true
 		}
-		// The quadrant name is the classification itself, so it stays in English
-		// with its meaning spelled out beside it. Without that the model has to
-		// guess what "plowhorse" means, and it guesses differently each time.
+		// The groups are named in Thai, the way the answer says them. They were
+		// English keys with an English meaning beside them, and on 28 ก.ย. 2569
+		// the fallback model printed "popular_but_low_margin" to the owner as it
+		// was. Each menu's own figures follow, so a "ทำไม" question is answered
+		// with the numbers that put the menu in its group.
 		quadrants := []struct {
-			name    string
-			meaning string
-			menus   []string
+			key, label string
+			menus      []string
 		}{
-			{"star", "popular_and_high_margin", engineering.Stars},
-			{"plowhorse", "popular_but_low_margin", engineering.Plowhorses},
-			{"puzzle", "unpopular_but_high_margin", engineering.Puzzles},
-			{"dog", "unpopular_and_low_margin", engineering.Dogs},
+			{"star", "ขายดีและกำไรต่อจานดี", engineering.Stars},
+			{"plowhorse", "ขายดีแต่กำไรต่อจานน้อย", engineering.Plowhorses},
+			{"puzzle", "ขายไม่ค่อยออกแต่กำไรต่อจานดี", engineering.Puzzles},
+			{"dog", "ขายไม่ค่อยออกและกำไรต่อจานน้อย", engineering.Dogs},
 		}
-		lines := []string{window, "classification=popularity_vs_margin"}
+		labels := map[string]string{}
+		lines := []string{window,
+			fmt.Sprintf("grouped_by=จำนวนที่ขายเทียบค่ากลางของร้าน %s จาน และอัตรากำไรเทียบค่ากลาง %s%%",
+				joyboyNum(engineering.MedianQuantity), joyboyNum(engineering.MedianMargin))}
 		for _, quadrant := range quadrants {
+			labels[quadrant.key] = quadrant.label
 			// An empty value reads as missing data rather than as an empty
 			// quadrant, and the difference changes the answer.
-			menus := "(none)"
+			menus := "(ไม่มี)"
 			if len(quadrant.menus) > 0 {
 				menus = strings.Join(quadrant.menus, ", ")
 			}
-			lines = append(lines, fmt.Sprintf("quadrant=%s meaning=%s menus=%s",
-				quadrant.name, quadrant.meaning, menus))
+			lines = append(lines, fmt.Sprintf("group=%s menus=%s", quadrant.label, menus))
 		}
+		for _, row := range engineering.Rows {
+			lines = append(lines, fmt.Sprintf("menu=%s group=%s sold=%d avg_price=%s cost_per_unit=%s profit_per_unit=%s margin_pct=%s",
+				row.Name, labels[row.Quadrant], row.Quantity, joyboyNum(roundBaht(row.PricePerUnit)),
+				joyboyNum(roundBaht(row.CostPerUnit)), joyboyNum(roundBaht(row.ProfitPerUnit)), joyboyNum(roundBaht(row.Margin))))
+		}
+		lines = append(lines, "note=เรียกกลุ่มด้วยคำไทยตาม group เท่านั้น ห้ามพิมพ์ชื่อภาษาอังกฤษหรือชื่อคีย์ในคำตอบ "+
+			"ถ้าถามว่าทำไมเมนูไหนอยู่กลุ่มนั้น ให้อธิบายด้วยตัวเลขของเมนูนั้น (ขายได้กี่จาน ราคา ต้นทุน กำไรต่อจาน) เทียบค่ากลางใน grouped_by")
 		return joyboyJoin(lines), true
 
 	case AIToolGetIngredientReorderForecast:

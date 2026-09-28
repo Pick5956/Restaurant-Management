@@ -1387,7 +1387,9 @@ textarea {
 .warm-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal);
+  /* Above every sheet and settings panel that can ask a question (they sit at
+     --z-modal, the account menu at +1), still under the toasts. */
+  z-index: calc(var(--z-modal) + 2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1480,11 +1482,78 @@ textarea {
 .warm-dialog-btn-primary:hover {
   background: #a85d2c;
 }
-/* Content a caller puts between the text and the buttons — a text field. */
+/* Content a caller puts between the text and the buttons — a text field,
+   a reason box, preset reason chips. Left-aligned: a centred field label
+   reads as a second body line. */
 .warm-dialog-slot {
   width: 100%;
+  text-align: left;
 }
-.warm-dialog-slot input {
+.warm-dialog-slot-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5b544c;
+}
+.warm-dialog-slot-error {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b3301c;
+}
+.warm-dialog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.warm-dialog-chip {
+  padding: 7px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(32, 30, 29, 0.16);
+  background: #fff;
+  color: #201e1d;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.warm-dialog-chip[aria-pressed="true"] {
+  background: #c67139;
+  border-color: #c67139;
+  color: #f9f4ed;
+}
+.warm-dialog-chip:focus-visible {
+  outline: 2px solid #c67139;
+  outline-offset: 2px;
+}
+.warm-dialog-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dark .warm-dialog-slot-label {
+  color: #b7b0a7;
+}
+.dark .warm-dialog-slot-error {
+  color: #f08a73;
+}
+.dark .warm-dialog-chip {
+  background: #161616;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #ededed;
+}
+.dark .warm-dialog-chip[aria-pressed="true"] {
+  background: #c67139;
+  border-color: #c67139;
+  color: #fdf7f0;
+}
+.warm-dialog-slot textarea {
+  resize: none;
+}
+.warm-dialog-slot input,
+.warm-dialog-slot textarea {
   width: 100%;
   padding: 11px 13px;
   border-radius: 14px;
@@ -1495,11 +1564,13 @@ textarea {
   line-height: 1.3;
   outline: none;
 }
-.warm-dialog-slot input:focus-visible {
+.warm-dialog-slot input:focus-visible,
+.warm-dialog-slot textarea:focus-visible {
   border-color: #c67139;
   box-shadow: 0 0 0 3px rgba(198, 113, 57, 0.18);
 }
-.dark .warm-dialog-slot input {
+.dark .warm-dialog-slot input,
+.dark .warm-dialog-slot textarea {
   background: #161616;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ededed;
@@ -1802,23 +1873,6 @@ textarea {
   --ai-chart-surface: #111827;
 }
 
-/* The caret at the end of an answer still being written. */
-.ai-stream-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -0.15em;
-  background: #f97316;
-  border-radius: 1px;
-  animation: ai-stream-caret 0.9s steps(2, start) infinite;
-}
-@keyframes ai-stream-caret {
-  to { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ai-stream-caret { animation: none; }
-}
 /* Reduce Motion (on many iPads) used to switch the chat list's animations off
    altogether, so it snapped open and shut. It now keeps a short fade — no
    slide, no scale — which is what the setting asks for. */

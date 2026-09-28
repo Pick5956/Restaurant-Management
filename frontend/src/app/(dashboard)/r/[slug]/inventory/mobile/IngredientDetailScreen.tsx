@@ -14,7 +14,8 @@ import {
   expiryState,
   formatExpiryDate,
 } from "../inventoryExpiryUtils";
-import { BottomSheet, PrimaryButton, ScreenNav, SecondaryButton, TAP } from "./primitives";
+import { BottomSheet, PrimaryButton, ScreenNav, SecondaryButton, TAP, useWarmConfirm } from "./primitives";
+import { confirmCopy } from "../inventoryConfirmCopy";
 import { statusTone, thaiShortDate } from "./inventoryMobileUtils";
 import ExpiryPicker from "./ExpiryPicker";
 import { formatPackCount, packSummary, unitCopy } from "../inventoryUnitUtils";
@@ -93,6 +94,7 @@ export default function IngredientDetailScreen({
   const [lotStep, setLotStep] = useState<"edit" | "discard">("edit");
   const [lotDays, setLotDays] = useState<number | null>(null);
   const [lotBusy, setLotBusy] = useState(false);
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
 
   useEffect(() => {
     let active = true;
@@ -123,6 +125,19 @@ export default function IngredientDetailScreen({
 
   async function saveLotExpiry() {
     if (!lotSheet) return;
+    const ccopy = confirmCopy(lang);
+    const confirmed = await ask({
+      title: ccopy.lotTitle,
+      description: ccopy.lotLine(
+        formatNumber(lotSheet.remaining, lang),
+        item.unit,
+        lotSheet.expires_at ? formatExpiryDate(lotSheet.expires_at, lang) : ccopy.noDate,
+        lotDays === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(lotDays), lang),
+      ),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setLotBusy(true);
     try {
       await updateLotExpiry(item.ID, lotSheet.ID, lotDays === null ? "" : expiryDateFromDays(lotDays));
@@ -164,6 +179,7 @@ export default function IngredientDetailScreen({
 
   return (
     <div data-inventory-mobile className="min-h-dvh bg-(--inv-canvas) text-(--inv-body) pb-8">
+      {confirmDialog}
       <ScreenNav
         title={item.name}
         onBack={onBack}

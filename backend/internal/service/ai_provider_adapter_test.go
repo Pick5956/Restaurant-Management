@@ -104,15 +104,17 @@ func validConversationRoute() AIRouterResult {
 	}
 }
 
-func TestDefaultAIProviderAdaptersContainOnlyGroqAndGemini(t *testing.T) {
+// Claude joined last on 28 ก.ย. 2569, so "auto" keeps its Groq -> Gemini order
+// and reaches Claude only after both. Ollama stays opt-in and is not here.
+func TestDefaultAIProviderAdaptersAreGroqGeminiThenClaude(t *testing.T) {
 	service := &AIService{}
 	adapters := defaultAIProviderAdapters(service)
 	ids := make([]string, 0, len(adapters))
 	for _, adapter := range adapters {
 		ids = append(ids, adapter.ID())
 	}
-	if !reflect.DeepEqual(ids, []string{"groq", "gemini"}) {
-		t.Fatalf("default provider order = %v, want [groq gemini]", ids)
+	if !reflect.DeepEqual(ids, []string{"groq", "gemini", "claude"}) {
+		t.Fatalf("default provider order = %v, want [groq gemini claude]", ids)
 	}
 }
 

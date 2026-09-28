@@ -12,8 +12,6 @@ import {
   Check,
   ClipboardCheck,
   Download,
-  ChevronLeft,
-  ChevronRight,
   Filter,
   History,
   MoreHorizontal,
@@ -55,10 +53,12 @@ import type {
 } from "@/src/types/ingredient";
 import { InventoryPageSkeleton } from "./InventorySkeletons";
 import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
+import InventoryPager from "./InventoryPager";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import { confirmCopy, ingredientChanges, newIngredientSummary } from "./inventoryConfirmCopy";
 import IngredientFormFields, {
   createPayloadFor,
   newIngredientDraft,
@@ -438,6 +438,7 @@ export default function InventoryPage() {
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
+  const ccopy = useMemo(() => confirmCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
@@ -768,16 +769,18 @@ export default function InventoryPage() {
   // own, so it rides steady and the underline below can be a plain border.
   // Stickiness, fill and the rounded corners come from `.inv-thead` in
   // globals.css, shared with the history table.
-  const stickyThCls = "px-4 py-2.5";
+  // Tighter below lg: iPad portrait leaves the table ~628px, and 16px either
+  // side of every column was what pushed names onto two lines.
+  const stickyThCls = "px-3 py-2.5 lg:px-4";
 
-  const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false) => {
+  const sortableTh = (key: "name" | "category" | "stock" | "price", label: string, alignRight = false, extra = "") => {
     const active = sortKey === key;
     return (
-      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""}`}>
+      <th className={`${stickyThCls} ${alignRight ? "text-right" : ""} ${extra}`}>
         <button
           type="button"
           onClick={() => toggleSort(key)}
-          className={`inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-200 ${active ? "text-slate-600 dark:text-slate-200" : ""}`}
+          className={`inline-flex items-center gap-1 whitespace-nowrap transition hover:text-slate-700 dark:hover:text-slate-200 ${active ? "text-slate-600 dark:text-slate-200" : ""}`}
         >
           <span>{label}</span>
           <SortGlyph dir={active ? sortDir : "none"} />
@@ -853,6 +856,37 @@ export default function InventoryPage() {
       setFormError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
+    // Say what is about to change before it does — the same check a delete has.
+    // An edit that changed nothing just closes.
+    const createPayload = editingItem ? null : createPayloadFor(formDraft);
+    const changes = editingItem
+      ? ingredientChanges(
+          editingItem,
+          form,
+          (id) => (id ? categoryNameById.get(id) ?? copy.uncategorized : copy.uncategorized),
+          lang,
+        )
+      : [];
+    if (editingItem && changes.length === 0) {
+      closeModal();
+      return;
+    }
+    const confirmed = await ask(
+      createPayload
+        ? {
+            title: ccopy.addTitle(createPayload.name),
+            description: newIngredientSummary(createPayload, lang),
+            confirmLabel: ccopy.add,
+            cancelLabel: ccopy.cancel,
+          }
+        : {
+            title: ccopy.editTitle(editingItem?.name ?? ""),
+            description: changes.join(" · "),
+            confirmLabel: ccopy.save,
+            cancelLabel: ccopy.cancel,
+          },
+    );
+    if (!confirmed) return;
     await saveOnce.current(async () => {
       setSubmitting(true);
       try {
@@ -861,7 +895,7 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const response = await createIngredient(createPayloadFor(formDraft));
+          const response = await createIngredient(createPayload ?? createPayloadFor(formDraft));
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
@@ -881,6 +915,13 @@ export default function InventoryPage() {
       setCategoryError(lang === "th" ? "กรุณาระบุชื่อหมวดหมู่" : "Category name is required");
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.categoryAddTitle(name),
+      description: ccopy.categoryAddBody,
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
 
     setCategoryError("");
     setCategorySubmitting(true);
@@ -904,6 +945,18 @@ export default function InventoryPage() {
       setCategoryError(lang === "th" ? "กรุณาระบุชื่อหมวดหมู่" : "Category name is required");
       return;
     }
+    const before = categoryNameById.get(id) ?? "";
+    if (before === name) {
+      setEditingCategoryId(null);
+      return;
+    }
+    const confirmed = await ask({
+      title: ccopy.categoryRenameTitle,
+      description: ccopy.categoryRenameBody(before, name, ingredients.filter((item) => item.category_id === id).length),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setCategoryError("");
     setCategorySubmitting(true);
     try {
@@ -1095,6 +1148,13 @@ export default function InventoryPage() {
       setBulkError(lang === "th" ? "ยังบันทึกไม่ได้ แก้รายการที่มีเครื่องหมายส้มก่อน" : "Fix the items marked in orange first");
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.bulkTitle(bulkToSave.length),
+      description: bulkToSave.map((item) => item.draft.form.name.trim()).join(" · "),
+      confirmLabel: ccopy.add,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setBulkError("");
     setBulkSaving(true);
     // No bulk endpoint: each goes up as the drawer would send it, in parallel.
@@ -1184,15 +1244,37 @@ export default function InventoryPage() {
       setAdjustError(lang === "th" ? "กรุณาระบุยอดที่จ่ายให้ถูกต้อง" : "Enter a valid amount paid");
       return;
     }
-    if (adjustType !== "in") {
-      const confirmed = await ask({
-        title: copy.confirmAdjustTitle,
-        description: copy.confirmAdjustBody,
-        confirmLabel: copy.confirmAdjust,
-        cancelLabel: copy.cancel,
-      });
-      if (!confirmed) return;
-    }
+    // Every kind asks now, with the shelf before and after — a stock-in used to
+    // go straight through, and it can also book an expense.
+    const stockLine = ccopy.stockLine(
+      formatNumber(adjustTarget.stock, lang),
+      formatNumber(adjustPreview ?? adjustTarget.stock, lang),
+      adjustTarget.unit,
+    );
+    const paidShown =
+      !canManageExpenses ? 0 : adjustPaidAmount.trim() !== "" ? paidAmount : referenceAdjustAmount;
+    const confirmed = await ask(
+      adjustType === "in"
+        ? {
+            title: ccopy.restockTitle(adjustTarget.name, formatNumber(qty, lang), adjustUnit || adjustTarget.unit),
+            description: [
+              stockLine,
+              paidShown > 0 ? ccopy.paidLine(formatCurrency(paidShown, lang, 2)) : null,
+              adjustExpiryDays !== null ? ccopy.expiresLine(formatExpiryDate(expiryDateFromDays(adjustExpiryDays), lang)) : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            confirmLabel: ccopy.restock,
+            cancelLabel: ccopy.cancel,
+          }
+        : {
+            title: copy.confirmAdjustTitle,
+            description: `${stockLine} · ${copy.confirmAdjustBody}`,
+            confirmLabel: copy.confirmAdjust,
+            cancelLabel: ccopy.cancel,
+          },
+    );
+    if (!confirmed) return;
 
     await adjustOnce.current(async () => {
       setAdjusting(true);
@@ -1261,6 +1343,18 @@ export default function InventoryPage() {
 
   async function saveLotExpiry(lot: IngredientLot) {
     if (!txTarget) return;
+    const confirmed = await ask({
+      title: ccopy.lotTitle,
+      description: ccopy.lotLine(
+        formatNumber(lot.remaining, lang),
+        txTarget.unit,
+        lot.expires_at ? formatExpiryDate(lot.expires_at, lang) : ccopy.noDate,
+        lotDraftDays === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(lotDraftDays), lang),
+      ),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setLotSaving(true);
     try {
       await updateLotExpiry(txTarget.ID, lot.ID, lotDraftDays === null ? "" : expiryDateFromDays(lotDraftDays));
@@ -1432,7 +1526,7 @@ export default function InventoryPage() {
           <div ref={stockToolbarRef} hidden={tab !== "stock"}>
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex w-full items-center gap-2 sm:contents">
-          <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+          <div className="relative min-w-0 flex-1 sm:min-w-[120px] lg:w-64 lg:flex-none">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -1463,7 +1557,10 @@ export default function InventoryPage() {
             {filtersOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={closeFilters} />
-                <div className={`${filtersClosing ? "smooth-pop-exit" : "smooth-pop"} absolute right-0 top-full z-50 mt-2 w-80 origin-top-right rounded-xl border border-slate-200 bg-white p-4 text-left shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900`}>
+                {/* Below lg the search box shrinks, which brings this button close to
+                    the icon rail — hung from its right edge, the 320px panel ran under
+                    the rail. There it opens rightwards from the button instead. */}
+                <div className={`${filtersClosing ? "smooth-pop-exit" : "smooth-pop"} absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl lg:left-auto lg:right-0 lg:origin-top-right border border-slate-200 bg-white p-4 text-left shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900`}>
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{copy.filter}</p>
                     <button
@@ -1578,7 +1675,7 @@ export default function InventoryPage() {
               each. The flex-1 spacer only exists to push them right on a wide row,
               so it is hidden where the header is a column. The stock value chip
               that used to lead this group was removed on the owner's call. */}
-          <div className="hidden flex-1 sm:block" />
+          <div className="hidden flex-1 lg:block" />
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <div className="relative shrink-0">
             <button
@@ -1593,7 +1690,8 @@ export default function InventoryPage() {
               }`}
             >
               <MoreHorizontal className="h-4 w-4" />
-              {lang === "th" ? "เพิ่มเติม" : "More"}
+              {/* Icon only on iPad portrait, where the label pushed "เพิ่มวัตถุดิบ" onto a second row. */}
+              <span className="max-lg:sr-only">{lang === "th" ? "เพิ่มเติม" : "More"}</span>
             </button>
             {moreOpen && (
               <>
@@ -1737,7 +1835,7 @@ export default function InventoryPage() {
                     </p>
                   </div>
                 ) : (
-                  <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+                  <table className="w-full min-w-[600px] border-separate border-spacing-0 text-sm lg:min-w-[640px]">
                     <thead className="inv-thead" style={{ "--inv-th-top": `${stickyToolbarHeight}px` } as CSSProperties}>
                       <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         {canManage && (
@@ -1763,7 +1861,9 @@ export default function InventoryPage() {
                             : `${copy.name} (${formatNumber(filtered.length, lang)}/${formatNumber(totalItems, lang)})`,
                         )}
                         {sortableTh("stock", copy.current)}
-                        {sortableTh("category", copy.category)}
+                        {/* Below lg the category rides under the name instead — a column
+                            of its own left the name ~58px on iPad portrait. */}
+                        {sortableTh("category", copy.category, false, "hidden lg:table-cell")}
                         {sortableTh("price", copy.costPerUnit, true)}
                         <th className={stickyThCls} />
                       </tr>
@@ -1788,10 +1888,13 @@ export default function InventoryPage() {
                                 />
                               </td>
                             )}
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <span className="text-[13px] font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                              <span className="mt-0.5 block text-[11px] text-slate-400 lg:hidden">
+                                {item.category?.name || categoryNameById.get(item.category_id ?? 0) || copy.uncategorized}
+                              </span>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <div className="w-44">
                                 <div className="flex items-center gap-2 text-[13px]">
                                   <span className={`font-semibold tabular-nums ${meta.value}`}>
@@ -1850,15 +1953,15 @@ export default function InventoryPage() {
                                 })()}
                               </div>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="hidden px-4 py-3 lg:table-cell">
                               <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 dark:bg-gray-800 dark:text-slate-300">
                                 {item.category?.name || categoryNameById.get(item.category_id ?? 0) || copy.uncategorized}
                               </span>
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                            <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-slate-700 dark:text-slate-200 lg:px-4">
                               {item.cost_per_unit > 0 ? formatCurrency(item.cost_per_unit, lang, 2) : "—"}
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 lg:px-4">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
@@ -1931,30 +2034,7 @@ export default function InventoryPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPage(safePage - 1)}
-                        disabled={safePage <= 1}
-                        aria-label="previous page"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <span className="flex items-center gap-1 font-medium tabular-nums text-slate-600 dark:text-slate-300">
-                        <PageNumberInput page={safePage} totalPages={totalPages} onChange={setPage} />
-                        / {formatNumber(totalPages, lang)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPage(safePage + 1)}
-                        disabled={safePage >= totalPages}
-                        aria-label="next page"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
+                    <InventoryPager page={safePage} totalPages={totalPages} onChange={setPage} lang={lang} />
                   </div>
                 </div>
               )}
@@ -2818,48 +2898,3 @@ export default function InventoryPage() {
 
 // The current page as a typeable box: type a number, Enter (or click away) jumps
 // there. Out-of-range numbers clamp to the first/last page; junk snaps back.
-function PageNumberInput({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
-  // What is being typed, or null when the box just shows the current page —
-  // so an arrow press or a filter change is shown without syncing state.
-  const [draft, setDraft] = useState<string | null>(null);
-  // Esc blurs the box, and the blur would commit what was typed before the
-  // cleared draft reaches it — this says the blur is a cancel.
-  const cancelled = useRef(false);
-
-  function commit() {
-    if (cancelled.current) {
-      cancelled.current = false;
-      setDraft(null);
-      return;
-    }
-    const n = Number.parseInt(draft ?? "", 10);
-    setDraft(null);
-    if (Number.isNaN(n)) return;
-    const next = Math.min(totalPages, Math.max(1, n));
-    if (next !== page) onChange(next);
-  }
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      aria-label="page number"
-      value={draft ?? String(page)}
-      onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
-      onFocus={(e) => {
-        setDraft(String(page));
-        e.target.select();
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          cancelled.current = true;
-          e.currentTarget.blur();
-        }
-      }}
-      style={{ width: `${Math.max(2, String(totalPages).length) + 1.5}ch` }}
-      className="h-8 rounded-md border border-slate-200 bg-white text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-200 dark:focus:ring-orange-900"
-    />
-  );
-}

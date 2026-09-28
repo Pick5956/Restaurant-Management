@@ -108,6 +108,7 @@ func (a *groqProviderAdapter) Classify(question string, history []AIConversation
 	}
 
 	var lastErr error
+	stalls := 0
 	for _, attempt := range attempts {
 		raw, err := a.service.executeClassifierGroq(question, history, attempt.Key)
 		if err == nil {
@@ -131,6 +132,21 @@ func (a *groqProviderAdapter) Classify(question string, history []AIConversation
 			wait := retryAfterOf(err)
 			a.service.keyHealth.park("groq", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Groq classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
+			continue
+		}
+		// A request that gets no headers (or a 502/503/504) is retried once on the
+		// next key and then given up on. Rotating through every key held the owner
+		// 12 s per key - 53 s for one question on 28 ก.ย. 2569 - but stopping at
+		// the first stall was wrong too: Gemini stalls one request at random while
+		// the next answers in 1-2 s, and with Gemini alone every stall became a
+		// failed question and a 45 s pause (same evening).
+		if isProviderOverloaded(err) {
+			stalls++
+			if stalls >= 2 {
+				aiStage("warn", "Groq classifier key %s: %v → second stall in a row, giving up on the provider", attempt.Label(), err)
+				break
+			}
+			aiStage("warn", "Groq classifier key %s: %v → stalled, retrying once on the next key", attempt.Label(), err)
 			continue
 		}
 		aiStage("warn", "Groq classifier key %s failed: %v → rotating", attempt.Label(), err)
@@ -185,6 +201,7 @@ func (a *geminiProviderAdapter) Classify(question string, history []AIConversati
 	}
 
 	var lastErr error
+	stalls := 0
 	for _, attempt := range attempts {
 		raw, err := a.service.executeClassifierGemini(question, history, attempt.Key)
 		if err == nil {
@@ -208,6 +225,21 @@ func (a *geminiProviderAdapter) Classify(question string, history []AIConversati
 			wait := retryAfterOf(err)
 			a.service.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Gemini classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
+			continue
+		}
+		// A request that gets no headers (or a 502/503/504) is retried once on the
+		// next key and then given up on. Rotating through every key held the owner
+		// 12 s per key - 53 s for one question on 28 ก.ย. 2569 - but stopping at
+		// the first stall was wrong too: Gemini stalls one request at random while
+		// the next answers in 1-2 s, and with Gemini alone every stall became a
+		// failed question and a 45 s pause (same evening).
+		if isProviderOverloaded(err) {
+			stalls++
+			if stalls >= 2 {
+				aiStage("warn", "Gemini classifier key %s: %v → second stall in a row, giving up on the provider", attempt.Label(), err)
+				break
+			}
+			aiStage("warn", "Gemini classifier key %s: %v → stalled, retrying once on the next key", attempt.Label(), err)
 			continue
 		}
 		aiStage("warn", "Gemini classifier key %s failed: %v → rotating", attempt.Label(), err)
@@ -243,6 +275,9 @@ func defaultAIProviderAdapters(service *AIService) []aiProviderAdapter {
 	return []aiProviderAdapter{
 		&groqProviderAdapter{service: service},
 		&geminiProviderAdapter{service: service},
+		// Last, so "auto" keeps its Groq -> Gemini order and reaches Claude only
+		// when both are down and CLAUDE_API_KEYS is set (28 ก.ย. 2569).
+		&claudeProviderAdapter{service: service},
 	}
 }
 

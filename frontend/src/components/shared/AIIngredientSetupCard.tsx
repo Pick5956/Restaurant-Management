@@ -18,6 +18,7 @@ import InlineDbConfirmBar, { isTerminal, type InlineDbConfirmState } from "@/src
 import { setupAIPlanIngredient } from "@/src/lib/ai";
 import { planItemHeadline } from "@/src/lib/aiPlanHeadline";
 import type { AIActionPlan, AIIngredientPriceMode, AIIngredientSetup, AIIngredientSetupAnswers } from "@/src/types/ai";
+import { formatShelfLife } from "@/src/app/(dashboard)/r/[slug]/inventory/inventoryExpiryUtils";
 
 type Step = "unit" | "stock" | "pack" | "price" | "extras" | "review";
 const STEP_ORDER: Step[] = ["unit", "stock", "pack", "price", "extras", "review"];
@@ -83,7 +84,19 @@ export function answersFrom(setup: AIIngredientSetup): AIIngredientSetupAnswers 
     price: setup.price ?? 0,
     storage_type: setup.storage_type,
     min_percent: setup.min_percent,
+    category_id: setup.category_id ?? 0,
+    ...(setup.expiry_set ? { expiry_days: setup.expiry_days ?? 0 } : {}),
+    case_unit: setup.case_unit ?? "",
+    case_size: setup.case_size ?? 0,
   };
+}
+
+/** "30 ก.ย. 69" for the expiry line under the chips. */
+export function shortThaiDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map((part) => parseInt(part, 10));
+  if (!y || !m || !d) return iso;
+  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  return `${d} ${months[m - 1]} ${String((y + 543) % 100).padStart(2, "0")}`;
 }
 
 // The questions this item has, in order. Every one the inventory needs is
@@ -306,11 +319,13 @@ export default function AIIngredientSetupCard({
   const [sizeText, setSizeText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [stockText, setStockText] = useState("");
+  const [caseText, setCaseText] = useState("");
   useEffect(() => {
     // A new question starts from what the server holds for it.
     setSizeText(setup?.pack_size && !sizeOptions(setup.unit).includes(setup.pack_size) ? String(setup.pack_size) : "");
     setPriceText(setup?.price ? String(setup.price) : "");
     setStockText(setup?.stock_set ? String(setup.stock) : "");
+    setCaseText(setup?.case_size ? String(setup.case_size) : "");
     setError("");
     // Only when the question or the item changes, not on every server reply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,6 +590,70 @@ export default function AIIngredientSetupCard({
               ))}
             </div>
           </div>
+          {setup.stock > 0 && (setup.expiry_options ?? []).length > 0 && (
+            <div>
+              <p className="mb-1 text-[11.5px] text-gray-500">หมดอายุ (ล็อตแรก)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(new Set([setup.expiry_days ?? 0, ...(setup.expiry_options ?? [])].filter((days) => days > 0)))
+                  .sort((a, b) => a - b)
+                  .map((days) => (
+                    <Chip key={days} active={setup.expiry_days === days} disabled={busy} onClick={() => send({ expiry_days: days }, false)}>
+                      {formatShelfLife(days, "th")}
+                    </Chip>
+                  ))}
+                <Chip active={setup.expiry_days === 0} disabled={busy} onClick={() => send({ expiry_days: 0 }, false)}>
+                  ไม่ระบุ
+                </Chip>
+              </div>
+              {setup.expires_at ? <p className="mt-1 text-[11.5px] text-gray-500">หมดอายุ {shortThaiDate(setup.expires_at)}</p> : null}
+            </div>
+          )}
+          {(setup.categories ?? []).length > 0 && (
+            <div>
+              <p className="mb-1 text-[11.5px] text-gray-500">หมวด</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Chip active={!setup.category_id} disabled={busy} onClick={() => send({ category_id: 0 }, false)}>
+                  ไม่ระบุ
+                </Chip>
+                {(setup.categories ?? []).map((category) => (
+                  <Chip key={category.id} active={setup.category_id === category.id} disabled={busy} onClick={() => send({ category_id: category.id }, false)}>
+                    {category.name}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
+          {setup.can_case && (
+            <div>
+              <p className="mb-1 text-[11.5px] text-gray-500">ซื้อยกลังไหม</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Chip active={!setup.case_unit} disabled={busy} onClick={() => send({ case_unit: "", case_size: 0 }, false)}>
+                  ไม่ซื้อยกลัง
+                </Chip>
+                {(setup.case_units ?? []).map((word) => (
+                  <Chip key={word} active={setup.case_unit === word} disabled={busy} onClick={() => send({ case_unit: word, case_size: setup.case_size ?? 0 }, false)}>
+                    {word}
+                  </Chip>
+                ))}
+              </div>
+              {setup.case_unit ? (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[12px] text-gray-500">1 {setup.case_unit} =</span>
+                  {[6, 12, 24].map((size) => (
+                    <Chip key={size} active={setup.case_size === size} disabled={busy} onClick={() => send({ case_size: size }, false)}>
+                      {size} {setup.pack_unit}
+                    </Chip>
+                  ))}
+                  <NumberField value={caseText} onChange={setCaseText} placeholder="อื่น ๆ" suffix={setup.pack_unit} />
+                  {parseFloat(caseText) > 0 && parseFloat(caseText) !== setup.case_size ? (
+                    <Chip disabled={busy} onClick={() => send({ case_size: parseFloat(caseText) }, false)}>
+                      ใช้
+                    </Chip>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          )}
           <div>
             <p className="mb-1 text-[11.5px] text-gray-500">เตือนเมื่อเหลือต่ำกว่า</p>
             <div className="flex flex-wrap gap-1.5">
