@@ -16,7 +16,7 @@ import {
   type AISettingsView,
 } from "@/src/lib/ai";
 import type { AIConversationSummary } from "@/src/types/ai";
-import { cacheOwnerTitle, useFollowUpsSetting } from "@/src/lib/aiPrefs";
+import { DEFAULT_OWNER_TITLE_EN, DEFAULT_OWNER_TITLE_TH, cacheOwnerTitle, useFollowUpsSetting } from "@/src/lib/aiPrefs";
 import { notifyAllConversationsCleared, notifyConversationsChanged } from "@/src/lib/aiThreads";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
@@ -67,8 +67,7 @@ function copy(language: "th" | "en") {
         saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
         groupAnswers: "การตอบ",
         titleLabel: "ชื่อที่ผู้ช่วยใช้เรียกคุณ",
-        titleHint: "เว้นว่าง = “คุณผู้จัดการ”",
-        titlePlaceholder: "คุณผู้จัดการ",
+        titlePlaceholder: DEFAULT_OWNER_TITLE_TH,
         followUps: "คำถามแนะนำใต้คำตอบ",
         followUpsHint: "2–3 ข้อหลังแต่ละคำตอบ · เฉพาะเครื่องนี้",
         groupPermissions: "สิทธิ์ของผู้ช่วย",
@@ -115,8 +114,7 @@ function copy(language: "th" | "en") {
         saveError: "Could not save, try again",
         groupAnswers: "Answers",
         titleLabel: "What the assistant calls you",
-        titleHint: "Empty = “Manager”",
-        titlePlaceholder: "Manager",
+        titlePlaceholder: DEFAULT_OWNER_TITLE_EN,
         followUps: "Follow-up suggestions under answers",
         followUpsHint: "2–3 after each answer · this device only",
         groupPermissions: "Assistant permissions",
@@ -192,7 +190,7 @@ export default function AIAssistantSettings() {
     getAISettings()
       .then((res) => {
         if (!active) return;
-        const title = res.data.owner_title === t.titlePlaceholder ? "" : res.data.owner_title;
+        const title = res.data.owner_title === DEFAULT_OWNER_TITLE_TH ? "" : res.data.owner_title;
         setView(res.data);
         setTitleDraft(title);
         cacheOwnerTitle(title);
@@ -203,7 +201,6 @@ export default function AIAssistantSettings() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Every switch saves on its own: the screen changes first, the request
@@ -216,7 +213,7 @@ export default function AIAssistantSettings() {
       const res = await updateAISettings(patch);
       setView(res.data);
       if (patch.owner_title !== undefined) {
-        cacheOwnerTitle(res.data.owner_title === t.titlePlaceholder ? "" : res.data.owner_title);
+        cacheOwnerTitle(res.data.owner_title === DEFAULT_OWNER_TITLE_TH ? "" : res.data.owner_title);
       }
     } catch {
       setView(previous);
@@ -227,9 +224,9 @@ export default function AIAssistantSettings() {
   const commitTitle = () => {
     if (!view) return;
     const next = titleDraft.trim();
-    const current = view.owner_title === t.titlePlaceholder ? "" : view.owner_title;
+    const current = view.owner_title === DEFAULT_OWNER_TITLE_TH ? "" : view.owner_title;
     if (next === current) return;
-    void apply({ owner_title: next }, (v) => ({ ...v, owner_title: next || t.titlePlaceholder }));
+    void apply({ owner_title: next }, (v) => ({ ...v, owner_title: next || DEFAULT_OWNER_TITLE_TH }));
   };
 
   const loadTrash = async () => {
@@ -371,7 +368,7 @@ export default function AIAssistantSettings() {
   ) : (
     <>
       <SettingsGroup id="ai_answers" title={t.groupAnswers}>
-        <SettingsItem title={t.titleLabel} description={t.titleHint} htmlFor={titleId}>
+        <SettingsItem title={t.titleLabel} htmlFor={titleId}>
           <input
             id={titleId}
             type="text"
@@ -535,7 +532,6 @@ export default function AIAssistantSettings() {
               onCommit={commitTitle}
               autoComplete="off"
             />
-            <p className="-mt-2 mb-3 ml-0.5 text-[12px] text-(--inv-muted)">{t.titleHint}</p>
 
             {/* The master switch, in the brand's soft orange: off turns every pill below off. */}
             <div className="rounded-2xl border border-orange-200 bg-(--inv-action-soft) px-3.5 py-3 dark:border-orange-900/50">

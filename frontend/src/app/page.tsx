@@ -3,13 +3,12 @@
 import AppLogo from "@/src/components/shared/AppLogo";
 import AppWordmark from "@/src/components/shared/AppWordmark";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
-import { Browser, Phone, Tablet, WebShot } from "@/src/components/landing/LandingDevices";
+import { Browser, Phone, PhoneScreens, Tablet, WebShot } from "@/src/components/landing/LandingDevices";
 import { LANDING_COPY } from "@/src/components/landing/landingCopy";
-import { FadeUp, clamp, ease, lerp, useDocProgress, useStickyProgress } from "@/src/components/landing/landingMotion";
+import { FadeUp, clamp, docProgress, ease, enterProgress, lerp, stickyProgress, useScrollDriven } from "@/src/components/landing/landingMotion";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { safeNextPathFromSearch } from "@/src/lib/safeRedirect";
-import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,8 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //   4  what the phone app shows, the phone held still while the story scrolls
 //   5  twelve features, 6  sign up
 // One glow behind the whole page drifts with the scroll, so no section has an
-// edge. The web and iPad screens are drawn stand-ins until real screenshots
-// are dropped into public/landing/ (see LandingDevices › WebShot).
+// edge. The web window and the iPad show real screenshots from public/landing/
+// (28 ก.ย. 2569); a file missing there falls back to a drawn stand-in (see
+// LandingDevices › WebShot).
 
 // "Get started" opens the sign-up form, "Sign in" the sign-in form.
 function PillButtons({ register, login, onRegister, onLogin }: { register: string; login: string; onRegister: () => void; onLogin: () => void }) {
@@ -80,28 +80,65 @@ export default function LandingPage() {
     return () => window.clearTimeout(timer);
   }, [loading, openLoginModal, readAuthRedirectTo, user]);
 
-  // The wheel glides and coasts here the way it does on every dashboard page
-  // (ShellScroll). The landing page scrolls the window, not a box, so the
-  // root element takes it.
-  useEffect(() => smoothScroll(document.documentElement), []);
-
-  const g = useDocProgress();
-
-  const hero = useRef<HTMLDivElement>(null);
-  const p = useStickyProgress(hero);
-  const rise = ease(clamp(p / 0.75));
-  const titleOut = clamp(p / 0.4);
-
   const [webIndex, setWebIndex] = useState(0);
+  const [activeApp, setActiveApp] = useState(0);
 
+  const glow = useRef<HTMLDivElement>(null);
+  const hero = useRef<HTMLDivElement>(null);
+  const heroTitle = useRef<HTMLDivElement>(null);
+  const heroShot = useRef<HTMLDivElement>(null);
   const devices = useRef<HTMLDivElement>(null);
-  const q = useStickyProgress(devices);
-  const arrive = ease(clamp(q / 0.65));
-  const devicesTitle = clamp(q / 0.2);
-
+  const devicesTitle = useRef<HTMLDivElement>(null);
+  const tablet = useRef<HTMLDivElement>(null);
+  const phone = useRef<HTMLDivElement>(null);
   const appStory = useRef<HTMLDivElement>(null);
-  const appProgress = useStickyProgress(appStory);
-  const activeApp = Math.min(LANDING_COPY.th.appSteps.length - 1, Math.floor(appProgress * LANDING_COPY.th.appSteps.length));
+
+  // Every moving part is drawn here from the scroll position, straight onto
+  // the element — nothing below sets these styles, so a render never undoes
+  // them. All positions are read first, then all styles written, so the
+  // browser lays the page out once per frame and not once per element.
+  useScrollDriven(() => {
+    const g = docProgress();
+    const p = stickyProgress(hero.current);
+    // From the moment the iPad's section shows at the bottom of the window,
+    // not from when it reaches the top: waiting for the top left a whole
+    // screen of black after the web window (28 ก.ย. 2569).
+    const t = enterProgress(devices.current);
+    const appProgress = stickyProgress(appStory.current);
+
+    const rise = ease(clamp(p / 0.75));
+    const titleOut = clamp(p / 0.4);
+    const arrive = ease(clamp((t - 0.1) / 0.65));
+    const shown = clamp((t - 0.1) / 0.25);
+
+    if (glow.current) {
+      glow.current.style.background = [
+        `radial-gradient(60% 50% at 50% ${lerp(105, 15, g)}%, rgba(234,88,12,${0.18 + 0.22 * Math.sin(g * Math.PI)}), transparent 70%)`,
+        `radial-gradient(40% 40% at ${lerp(10, 90, g)}% ${lerp(30, 85, g)}%, rgba(245,158,11,0.12), transparent 70%)`,
+      ].join(",");
+    }
+    if (heroTitle.current) {
+      heroTitle.current.style.opacity = String(1 - titleOut);
+      heroTitle.current.style.transform = `translateY(${-titleOut * 60}px) scale(${1 - titleOut * 0.06})`;
+    }
+    if (heroShot.current) {
+      heroShot.current.style.transform = `translate(-50%, -50%) translateY(${lerp(72, 0, rise)}%) perspective(1800px) rotateX(${lerp(26, 0, rise)}deg) scale(${lerp(0.9, 1, rise)})`;
+    }
+    if (devicesTitle.current) {
+      devicesTitle.current.style.opacity = String(shown);
+      devicesTitle.current.style.transform = `translateY(${(1 - shown) * 30}px)`;
+    }
+    if (tablet.current) {
+      tablet.current.style.transform = `translateX(${lerp(0, -6, arrive)}%) scale(${lerp(1.18, 1, arrive)})`;
+      tablet.current.style.opacity = String(shown);
+    }
+    if (phone.current) {
+      phone.current.style.left = `${lerp(130, 86, arrive)}%`;
+      phone.current.style.transform = `translateX(-50%) rotate(${lerp(12, 3, arrive)}deg)`;
+      phone.current.style.opacity = String(clamp(arrive * 1.5));
+    }
+    setActiveApp(Math.min(LANDING_COPY.th.appSteps.length - 1, Math.floor(appProgress * LANDING_COPY.th.appSteps.length)));
+  });
 
   if (loading || user) {
     return <div className="min-h-[100dvh] bg-black" />;
@@ -129,16 +166,7 @@ export default function LandingPage() {
           painted black too, so a bounce past either end shows no white. */}
       <style>{`html, body { background: #000; } body { overflow-x: clip; }`}</style>
 
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0"
-        style={{
-          background: [
-            `radial-gradient(60% 50% at 50% ${lerp(105, 15, g)}%, rgba(234,88,12,${0.18 + 0.22 * Math.sin(g * Math.PI)}), transparent 70%)`,
-            `radial-gradient(40% 40% at ${lerp(10, 90, g)}% ${lerp(30, 85, g)}%, rgba(245,158,11,0.12), transparent 70%)`,
-          ].join(","),
-        }}
-      />
+      <div ref={glow} aria-hidden="true" className="pointer-events-none fixed inset-0" />
 
       <header className="fixed inset-x-0 top-0 z-50 h-12 border-b border-white/10 bg-black/60 backdrop-blur-xl backdrop-saturate-150">
         <div className="mx-auto flex h-full max-w-5xl items-center justify-between px-4">
@@ -147,11 +175,11 @@ export default function LandingPage() {
             <AppWordmark height={14} className="text-white" />
           </div>
           <div className="flex items-center gap-2">
-            <LanguageToggle className="shrink-0" />
+            <LanguageToggle tone="dark" className="shrink-0" />
             <button
               type="button"
               onClick={() => openLandingLoginModal("login")}
-              className="ui-press rounded-full bg-orange-700 px-3.5 py-1 text-[13px] font-medium text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+              className="ui-press inline-flex h-7 items-center rounded-full bg-orange-700 px-3.5 text-[13px] font-medium text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
             >
               {copy.login}
             </button>
@@ -163,10 +191,7 @@ export default function LandingPage() {
         {/* 1 · the web rises up and lies flat */}
         <div ref={hero} className="relative h-[220vh]">
           <div className="sticky top-0 h-[100dvh] overflow-hidden">
-            <div
-              className="absolute inset-x-0 top-[11dvh] px-4 text-center"
-              style={{ opacity: 1 - titleOut, transform: `translateY(${-titleOut * 60}px) scale(${1 - titleOut * 0.06})` }}
-            >
+            <div ref={heroTitle} className="absolute inset-x-0 top-[11dvh] px-4 text-center will-change-transform">
               <p className="text-[17px] font-semibold text-orange-400">{copy.heroEyebrow}</p>
               <h1 className="mt-3 text-[40px] font-semibold leading-[1.25] sm:text-[60px] lg:text-[72px]">
                 {/* Thai has no spaces to break on, so each half is kept whole;
@@ -179,14 +204,9 @@ export default function LandingPage() {
               {cta}
             </div>
 
-            <div
-              className="absolute left-1/2 top-1/2 w-[min(94vw,1180px,calc((100dvh_-_150px)*1.6))]"
-              style={{
-                transform: `translate(-50%, -50%) translateY(${lerp(72, 0, rise)}%) perspective(1800px) rotateX(${lerp(26, 0, rise)}deg) scale(${lerp(0.9, 1, rise)})`,
-              }}
-            >
+            <div ref={heroShot} className="absolute left-1/2 top-1/2 w-[min(94vw,1180px,calc((100dvh_-_150px)*1.78))] will-change-transform">
               <Browser>
-                <WebShot file="desktop-home.png" alt={copy.heroShotAlt} />
+                <WebShot file="desktop-hero.png" alt={copy.heroShotAlt} />
               </Browser>
             </div>
           </div>
@@ -209,7 +229,7 @@ export default function LandingPage() {
             ))}
           </div>
 
-          <FadeUp className="mt-8 w-[min(96vw,1400px,calc((100dvh_-_130px)*1.6))]">
+          <FadeUp className="mt-8 w-[min(96vw,1400px,calc((100dvh_-_130px)*1.78))]">
             <Browser
               tabs={
                 <div role="tablist" className="flex w-max gap-1">
@@ -246,9 +266,9 @@ export default function LandingPage() {
         {/* 3 · then the iPad and the phone come in. Clipped sideways only, for
             the phone sliding in from the right: a box that clipped all round
             cut the phone off in a straight line on a short window. */}
-        <div ref={devices} className="relative h-[220vh] overflow-x-clip">
+        <div ref={devices} className="relative h-[180vh] overflow-x-clip">
           <div className="sticky top-0 flex h-[100dvh] flex-col items-center px-4 pt-[10dvh]">
-            <div className="text-center" style={{ opacity: devicesTitle, transform: `translateY(${(1 - devicesTitle) * 30}px)` }}>
+            <div ref={devicesTitle} className="text-center will-change-transform">
               <p className="text-[15px] font-semibold text-orange-400">{copy.devicesEyebrow}</p>
               <h2 className="mt-2 text-[34px] font-semibold leading-[1.2] sm:text-[52px]">{copy.devicesTitle}</h2>
               <p className="mx-auto mt-3 max-w-xl text-[17px] leading-relaxed text-white/60 sm:text-[19px]">{copy.devicesDesc}</p>
@@ -256,20 +276,13 @@ export default function LandingPage() {
 
             <div className="relative mt-10 flex w-full flex-1 items-center justify-center pb-[6dvh]">
               <div className="relative w-[min(80vw,860px,calc((100dvh_-_360px)*1.43))]">
-                <div style={{ transform: `translateX(${lerp(0, -6, arrive)}%) scale(${lerp(1.18, 1, arrive)})`, opacity: clamp(q * 5) }}>
+                <div ref={tablet} className="will-change-transform">
                   <Tablet>
                     <WebShot file="tablet-home.png" alt={copy.tabletAlt} />
                   </Tablet>
                 </div>
                 {/* A quarter of the iPad's width, so it can never outgrow it. */}
-                <div
-                  className="absolute top-[16%] w-[24%]"
-                  style={{
-                    left: `${lerp(130, 86, arrive)}%`,
-                    transform: `translateX(-50%) rotate(${lerp(12, 3, arrive)}deg)`,
-                    opacity: clamp(arrive * 1.5),
-                  }}
-                >
+                <div ref={phone} className="absolute top-[16%] w-[24%] will-change-transform">
                   <Phone src={copy.appSteps[0].shot} alt={copy.phoneAlt} />
                 </div>
               </div>
@@ -283,29 +296,38 @@ export default function LandingPage() {
             words for it were still at the bottom of the window. */}
         <div ref={appStory} className="relative h-[200vh]">
           <div className="sticky top-0 mx-auto flex h-[100dvh] max-w-6xl flex-col items-center justify-center gap-8 px-4 pt-12 lg:grid lg:grid-cols-2 lg:gap-16 lg:pt-0">
-            <div className="grid w-full text-center lg:text-left [&>*]:[grid-area:1/1]">
-              {copy.appSteps.map((step, i) => (
-                <div
-                  key={step.shot}
-                  aria-hidden={activeApp !== i}
-                  className={`transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${activeApp === i ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}
-                >
-                  <p className="text-[15px] font-semibold text-orange-400">{step.label}</p>
-                  <h2 className="mt-2 text-[32px] font-semibold leading-[1.2] sm:text-[52px]">{step.title}</h2>
-                  <p className="mx-auto mt-3 max-w-md text-[16px] leading-7 text-white/65 sm:text-[19px] sm:leading-8 lg:mx-0">{step.desc}</p>
-                </div>
-              ))}
+            <div className="w-full">
+              <div className="grid w-full text-center lg:text-left [&>*]:[grid-area:1/1]">
+                {copy.appSteps.map((step, i) => (
+                  <div
+                    key={step.shot}
+                    aria-hidden={activeApp !== i}
+                    // The words leave the way the page goes: a passed step lifts
+                    // away, the next one rises from below, in step with the
+                    // phone's screen pushing in.
+                    className={`transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${
+                      activeApp === i ? "translate-y-0 opacity-100" : `pointer-events-none opacity-0 ${i < activeApp ? "-translate-y-10" : "translate-y-10"}`
+                    }`}
+                  >
+                    <p className="text-[15px] font-semibold text-orange-400">{step.label}</p>
+                    <h2 className="mt-2 text-[32px] font-semibold leading-[1.2] sm:text-[52px]">{step.title}</h2>
+                    <p className="mx-auto mt-3 max-w-md text-[16px] leading-7 text-white/65 sm:text-[19px] sm:leading-8 lg:mx-0">{step.desc}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Which step of how many, so it reads as a switch and not a page
+                  that just changed on its own. */}
+              <div aria-hidden="true" className="mt-6 flex justify-center gap-1.5 lg:justify-start">
+                {copy.appSteps.map((step, i) => (
+                  <span
+                    key={step.shot}
+                    className={`h-1 rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${i === activeApp ? "w-8 bg-orange-500" : "w-3 bg-white/25"}`}
+                  />
+                ))}
+              </div>
             </div>
             <div className="relative w-[min(52vw,34dvh)] lg:mx-auto lg:w-[min(26vw,32dvh)]">
-              {copy.appSteps.map((step, i) => (
-                <div
-                  key={step.shot}
-                  aria-hidden={activeApp !== i}
-                  className={`transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${i === 0 ? "relative" : "absolute inset-0"} ${activeApp === i ? "scale-100 opacity-100" : "scale-[0.96] opacity-0"}`}
-                >
-                  <Phone src={step.shot} alt={step.alt} />
-                </div>
-              ))}
+              <PhoneScreens shots={copy.appSteps.map((step) => ({ src: step.shot, alt: step.alt }))} active={activeApp} />
             </div>
           </div>
         </div>

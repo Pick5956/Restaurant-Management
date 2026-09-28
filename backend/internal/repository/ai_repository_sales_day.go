@@ -35,7 +35,7 @@ func (r *AIRepository) SalesByDayForRange(restaurantID uint, start, end time.Tim
 	err := r.db.Model(&entity.Order{}).
 		Select("TO_CHAR(completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS order_date, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
 		Where(
-			"restaurant_id = ? AND completed_at >= ? AND completed_at < ? AND status = ? AND payment_status = ?",
+			"restaurant_id = ? AND completed_at >= ? AND completed_at <= NOW() AND completed_at < ? AND status = ? AND payment_status = ?",
 			restaurantID, start, end,
 			entity.OrderStatusCompleted,
 			entity.PaymentStatusPaid,
@@ -67,7 +67,7 @@ func (r *AIRepository) RevenueByHourForRange(restaurantID uint, start, end time.
 	err := r.db.Model(&entity.Order{}).
 		Select("EXTRACT(HOUR FROM completed_at AT TIME ZONE 'Asia/Bangkok')::int AS hour, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
 		Where(
-			"restaurant_id = ? AND completed_at >= ? AND completed_at < ? AND status = ? AND payment_status = ?",
+			"restaurant_id = ? AND completed_at >= ? AND completed_at <= NOW() AND completed_at < ? AND status = ? AND payment_status = ?",
 			restaurantID, start, end,
 			entity.OrderStatusCompleted,
 			entity.PaymentStatusPaid,
@@ -93,7 +93,7 @@ func (r *AIRepository) SalesByStaffForRange(restaurantID uint, start, end time.T
 			COALESCE(SUM(orders.customer_count), 0) AS guests`).
 		Joins("LEFT JOIN users ON users.id = orders.staff_id").
 		Where(
-			"orders.restaurant_id = ? AND orders.completed_at >= ? AND orders.completed_at < ? AND orders.status = ? AND orders.payment_status = ?",
+			"orders.restaurant_id = ? AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ? AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID, start, end,
 			entity.OrderStatusCompleted,
 			entity.PaymentStatusPaid,

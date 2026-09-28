@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, History, Undo2, X } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { Check, CheckCircle2, ChevronDown, History, Undo2, X } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { apiFailureText } from "@/src/lib/apiFailure";
@@ -18,6 +18,7 @@ import { Skeleton } from "@/src/components/shared/Skeleton";
 import OperationalPageShell from "@/src/components/shared/OperationalPageShell";
 import RealtimeConnectionNotice from "@/src/components/shared/RealtimeConnectionNotice";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import { useOrderEvents } from "@/src/hooks/useOrderEvents";
 import { useVisiblePolling } from "@/src/hooks/useVisiblePolling";
@@ -120,10 +121,7 @@ export default function KitchenPage() {
   const ticketIdsRef = useRef<Set<string>>(new Set());
   const zoneRippleIdRef = useRef(0);
   const transitioningItemIdsRef = useRef<Set<number>>(new Set());
-  const submittingIdRef = useRef<number | null>(null);
-  const cancelDialogRef = useRef<HTMLFormElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
-  const cancelPreviousFocusRef = useRef<HTMLElement | null>(null);
 
   const copy = language === "th"
     ? {
@@ -464,12 +462,8 @@ export default function KitchenPage() {
       setCancelReason("");
       setCancelReasonError("");
       setCancelDialogClosing(false);
-    }, 180);
+    }, 200);
   }, []);
-
-  const cancelBackdrop = useBackdropClose(() => {
-    if (submittingId === null) closeCancelDialog();
-  });
 
   const historyBackdrop = useBackdropClose(() => setHistoryOpen(false));
 
@@ -482,54 +476,7 @@ export default function KitchenPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [historyOpen]);
 
-  useEffect(() => {
-    submittingIdRef.current = submittingId;
-  }, [submittingId]);
-
-  useEffect(() => {
-    if (!cancelTarget) return;
-
-    cancelPreviousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const focusFrame = window.requestAnimationFrame(() => cancelReasonRef.current?.focus());
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (submittingIdRef.current !== null) return;
-        event.preventDefault();
-        closeCancelDialog();
-        return;
-      }
-      if (event.key !== "Tab") return;
-
-      const focusable = Array.from(cancelDialogRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-      ) ?? []).filter((element) => element.offsetParent !== null || element === document.activeElement);
-      if (!focusable.length) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      cancelPreviousFocusRef.current?.focus();
-      cancelPreviousFocusRef.current = null;
-    };
-  }, [cancelTarget, closeCancelDialog]);
-
-  const cancelItem = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const cancelItem = async () => {
     if (!cancelTarget || !canUpdate || submittingId !== null) return;
     const reason = cancelReason.trim();
     if (!reason) {
@@ -954,118 +901,67 @@ export default function KitchenPage() {
 
       {renderZone("cooking")}
 
-      {cancelTarget ? (
-        <div
-          {...cancelBackdrop}
-          className={`${cancelDialogClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-[var(--z-modal)] flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}
-        >
-          <form
-            ref={cancelDialogRef}
-            onSubmit={cancelItem}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="kitchen-cancel-title"
-            aria-describedby="kitchen-cancel-description"
-            className={`${cancelDialogClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900`}
-          >
-            <div className="flex items-start gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300">
-                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h2 id="kitchen-cancel-title" className="text-[15px] font-semibold text-gray-950 dark:text-white">
-                  {copy.cancelTitle}
-                </h2>
-                <p id="kitchen-cancel-description" className="mt-1 text-[13px] leading-5 text-gray-600 dark:text-gray-400">
-                  {copy.cancelDescription(cancelTarget.item.menu_name)}
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label={copy.keepItem}
-                disabled={submittingId !== null}
-                onClick={closeCancelDialog}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-white"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="min-h-0 overflow-y-auto px-4 py-4">
-              <label htmlFor="kitchen-cancel-reason" className="text-[13px] font-semibold text-gray-800 dark:text-gray-200">
-                {copy.cancelReason}
-              </label>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {copy.cancelPresets.map((reason) => (
-                  <button
-                    key={reason}
-                    type="button"
-                    disabled={submittingId !== null}
-                    onClick={() => {
-                      setCancelReason(reason);
-                      setCancelReasonError("");
-                      cancelReasonRef.current?.focus();
-                    }}
-                    className={`h-9 rounded-xl border px-3 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
-                      cancelReason === reason
-                        ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950"
-                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-800"
-                    }`}
-                  >
-                    {reason}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                ref={cancelReasonRef}
-                id="kitchen-cancel-reason"
-                value={cancelReason}
-                maxLength={500}
-                rows={3}
-                disabled={submittingId !== null}
-                placeholder={copy.cancelPlaceholder}
-                aria-invalid={Boolean(cancelReasonError)}
-                aria-describedby={cancelReasonError ? "kitchen-cancel-error" : undefined}
-                onChange={(event) => {
-                  setCancelReason(event.target.value);
-                  if (cancelReasonError) setCancelReasonError("");
-                }}
-                className={`mt-3 w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-[13px] leading-5 text-gray-900 outline-none transition-colors placeholder:text-gray-500 disabled:opacity-60 dark:bg-gray-900 dark:text-white ${
-                  cancelReasonError
-                    ? "border-red-400 focus:border-red-500 dark:border-red-700"
-                    : "border-gray-300 focus:border-gray-500 dark:border-gray-700 dark:focus:border-gray-500"
-                }`}
-              />
-              <div className="mt-1 flex min-h-5 items-start justify-between gap-3">
-                {cancelReasonError ? (
-                  <p id="kitchen-cancel-error" role="alert" className="text-[12px] font-medium text-red-600 dark:text-red-300">
-                    {cancelReasonError}
-                  </p>
-                ) : <span />}
-                <span className="shrink-0 text-[11px] tabular-nums text-gray-500">{cancelReason.length}/500</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-              <button
-                type="button"
-                disabled={submittingId !== null}
-                onClick={closeCancelDialog}
-                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                {copy.keepItem}
-              </button>
-              <button
-                type="submit"
-                disabled={submittingId !== null || !cancelReason.trim()}
-                className="h-10 rounded-xl bg-red-600 px-3 text-[13px] font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-400"
-              >
-                {copy.confirmCancel}
-              </button>
-            </div>
-          </form>
+      {/* The inventory's question dialog; the reason chips and box sit in
+          its slot. It handles focus, Tab, Escape and the scroll lock. */}
+      <WarmConfirmDialog
+        open={cancelTarget !== null && !cancelDialogClosing}
+        title={copy.cancelTitle}
+        description={cancelTarget ? copy.cancelDescription(cancelTarget.item.menu_name) : ""}
+        confirmLabel={copy.confirmCancel}
+        cancelLabel={copy.keepItem}
+        onConfirm={() => void cancelItem()}
+        onCancel={() => {
+          if (submittingId === null) closeCancelDialog();
+        }}
+        busy={submittingId !== null}
+        confirmDisabled={!cancelReason.trim()}
+        initialFocus="content"
+      >
+        <label htmlFor="kitchen-cancel-reason" className="warm-dialog-slot-label">
+          {copy.cancelReason}
+        </label>
+        <div className="warm-dialog-chips">
+          {copy.cancelPresets.map((reason) => (
+            <button
+              key={reason}
+              type="button"
+              aria-pressed={cancelReason === reason}
+              disabled={submittingId !== null}
+              onClick={() => {
+                setCancelReason(reason);
+                setCancelReasonError("");
+                cancelReasonRef.current?.focus();
+              }}
+              className="warm-dialog-chip"
+            >
+              {reason}
+            </button>
+          ))}
         </div>
-      ) : null}
+        <textarea
+          ref={cancelReasonRef}
+          id="kitchen-cancel-reason"
+          value={cancelReason}
+          maxLength={500}
+          rows={3}
+          disabled={submittingId !== null}
+          placeholder={copy.cancelPlaceholder}
+          aria-invalid={Boolean(cancelReasonError)}
+          aria-describedby={cancelReasonError ? "kitchen-cancel-error" : undefined}
+          onChange={(event) => {
+            setCancelReason(event.target.value);
+            if (cancelReasonError) setCancelReasonError("");
+          }}
+        />
+        <div className="flex items-start justify-between gap-3">
+          {cancelReasonError ? (
+            <p id="kitchen-cancel-error" role="alert" className="warm-dialog-slot-error">
+              {cancelReasonError}
+            </p>
+          ) : <span />}
+          <span className="mt-1.5 shrink-0 text-[11px] tabular-nums text-gray-500">{cancelReason.length}/500</span>
+        </div>
+      </WarmConfirmDialog>
 
       {historyOpen ? (
         <div

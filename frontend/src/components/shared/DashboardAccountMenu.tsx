@@ -122,7 +122,7 @@ export default function DashboardAccountMenu({
         themeValue: isDark ? "มืด" : "สว่าง",
         language: "แสดงภาษา",
         languageValue: "ไทย",
-        aiAssistant: "Dishy AI",
+        aiAssistant: "ปุ่มลอย Dishy AI",
         aiAssistantValue: showAIAssistant ? "เปิด" : "ปิด",
         aiAssistantOn: "เปิด",
         aiAssistantOff: "ปิด",
@@ -139,7 +139,7 @@ export default function DashboardAccountMenu({
         themeValue: isDark ? "Dark" : "Light",
         language: "Display language",
         languageValue: "English",
-        aiAssistant: "Dishy AI",
+        aiAssistant: "Dishy AI floating button",
         aiAssistantValue: showAIAssistant ? "On" : "Off",
         aiAssistantOn: "On",
         aiAssistantOff: "Off",
@@ -291,7 +291,7 @@ export default function DashboardAccountMenu({
               {/* Settings last, under the quick switches (the owner, 27 ก.ย. 2569). */}
               <MenuButton icon={<Settings className="h-4 w-4" />} label={copy.settings} onClick={() => showSettings()} />
               <div className="border-t border-[color:var(--dashboard-shell-border)]" />
-              <MenuButton icon={<LogOut className="h-4 w-4" />} label={copy.logout} danger onClick={logout} />
+              <MenuButton icon={<LogOut className="h-4 w-4" />} label={copy.logout} danger onClick={() => { commitChoice(); logout(); }} />
             </>
           ) : null}
 

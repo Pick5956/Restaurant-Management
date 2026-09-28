@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { confirmCopy } from "../inventoryConfirmCopy";
 import {
   ArrowDownUp,
   Check,
@@ -224,6 +225,7 @@ export default function InventoryMobile({
   const { ingredients, categories, loading, reload, actions } = useInventoryData(canView);
   const { toast, show } = useToastStack();
   const { ask, dialog: confirmDialog } = useWarmConfirm();
+  const ccopy = useMemo(() => confirmCopy(lang), [lang]);
   useIOSActiveStates();
 
   const [screen, setScreen] = useState<Screen>("list");
@@ -328,6 +330,20 @@ export default function InventoryMobile({
   async function submitRestock() {
     if (!active || amount <= 0) return;
     const item = active;
+    // Asked over the open sheet, so "กลับไปแก้" leaves the typed amount as it was.
+    const factor = stockPerEntryUnit(item, entryUnit || item.unit) ?? 1;
+    const confirmed = await ask({
+      title: ccopy.restockTitle(item.name, formatNumber(amount, lang), entryUnit || item.unit),
+      description: [
+        ccopy.stockLine(formatNumber(item.stock, lang), formatNumber(item.stock + amount * factor, lang), item.unit),
+        expiryDays === null ? null : ccopy.expiresLine(formatExpiryDate(expiryDateFromDays(expiryDays), lang)),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      confirmLabel: ccopy.restock,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     await guard(async () => {
       await actions.restock(item.ID, {
         type: "in",
@@ -343,6 +359,14 @@ export default function InventoryMobile({
   async function submitCount() {
     if (!active) return;
     const item = active;
+    const factor = stockPerEntryUnit(item, entryUnit || item.unit) ?? 1;
+    const confirmed = await ask({
+      title: ccopy.countTitle(item.name),
+      description: ccopy.stockLine(formatNumber(item.stock, lang), formatNumber(amount * factor, lang), item.unit),
+      confirmLabel: ccopy.count,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     await guard(async () => {
       // The API rejects an absolute set of 0 three layers deep, so an empty
       // shelf is recorded as removing exactly what is left — the same end state.
@@ -418,6 +442,24 @@ export default function InventoryMobile({
   }
 
   async function submitBatch() {
+    // The rows that will actually be written, named with their numbers.
+    const writes = selectedItems.filter((item) => {
+      const quantity = Number(batchDraft[item.ID]) || 0;
+      return quantity > 0 && !(batchMode === "adjust" && quantity === item.stock);
+    });
+    if (writes.length > 0) {
+      const listed = writes
+        .slice(0, 6)
+        .map((item) => `${item.name} ${formatNumber(Number(batchDraft[item.ID]) || 0, lang)} ${item.unit}`)
+        .join(" · ");
+      const confirmed = await ask({
+        title: ccopy.batchTitle(batchMode, writes.length),
+        description: writes.length > 6 ? `${listed} …` : listed,
+        confirmLabel: batchMode === "in" ? ccopy.restock : ccopy.count,
+        cancelLabel: ccopy.cancel,
+      });
+      if (!confirmed) return;
+    }
     await guard(async () => {
       // No bulk endpoint exists, so these are separate requests with no
       // transaction spanning them: report what actually landed, and keep the
@@ -718,15 +760,16 @@ export default function InventoryMobile({
                         every lot anyway. */}
                     {(expiry === "soon" || expiry === "expired") && item.expiring_lot ? (
                       <p
-                        className={`mt-1.5 text-[11px] font-semibold ${
+                        className={`mt-1.5 flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold ${
                           expiry === "expired" ? "text-(--inv-out)" : "text-(--inv-low)"
                         }`}
                       >
                         {expiry === "expired"
                           ? xcopy.expiredOn(formatExpiryDate(item.expiring_lot.expires_at, lang))
                           : xcopy.expiresOn(formatExpiryDate(item.expiring_lot.expires_at, lang))}
-                        {" · "}
-                        {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-current/10 px-2 py-0.5 tabular-nums leading-none ring-1 ring-current/25">
+                          {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                        </span>
                       </p>
                     ) : null}
 

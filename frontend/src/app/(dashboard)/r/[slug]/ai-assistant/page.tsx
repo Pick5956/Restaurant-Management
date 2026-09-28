@@ -5,6 +5,7 @@ import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2 } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
+import { useSmoothReveal } from "@/src/lib/smoothReveal";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
 import {
@@ -26,8 +27,12 @@ import {
   subscribeToChatWrites,
 } from "@/src/lib/aiChatStorage";
 import {
+  answeredTurns,
+  clearThreadCache,
+  dropFailedQuestion,
   hydrateThreadMessages,
   isConversationGone,
+  markQuestionFailed,
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
@@ -55,7 +60,7 @@ import AIInsightsPanel from "@/src/components/shared/AIInsightsPanel";
 import HoverTip from "@/src/components/shared/HoverTip";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
 import AIFollowUpList from "@/src/components/shared/AIFollowUpList";
-import { cacheOwnerTitle, useFollowUpsEnabled, useWelcome } from "@/src/lib/aiPrefs";
+import { DEFAULT_OWNER_TITLE_TH, cacheOwnerTitle, useFollowUpsEnabled, useWelcome } from "@/src/lib/aiPrefs";
 import SiriOrb from "@/src/components/ui/siri-orb";
 
 type Message = {
@@ -71,6 +76,8 @@ type Message = {
   // ข้อความที่สร้างมัน กล่องจะได้อยู่ใต้คำตอบนั้นแทนที่จะไหลไปท้ายสายเสมอ
   planId?: string;
   previewId?: string;
+  /** A question that got no answer: kept on screen, left out of the history. */
+  failed?: boolean;
 };
 
 type StoredMessage = Omit<Message, "createdAt"> & { createdAt?: string };
@@ -90,7 +97,7 @@ function buildCopy(language: "th" | "en") {
         permissionDenied: "หน้านี้สำหรับเจ้าของร้านเท่านั้น",
         chats: "รายการแชท",
         chatGone: "แชทนี้ถูกลบไปแล้ว เปิดแชทใหม่ให้แล้วครับ",
-        welcome: "สวัสดีคุณผู้จัดการ",
+        welcome: "สวัสดีเจ้าของร้าน",
         error: "เรียก AI ไม่สำเร็จ",
         quickQuestions: [
           "สรุปร้าน",
@@ -112,7 +119,7 @@ function buildCopy(language: "th" | "en") {
         permissionDenied: "This page is for the restaurant owner only",
         chats: "Chats",
         chatGone: "That chat was deleted. Starting a new one.",
-        welcome: "Hello, manager.",
+        welcome: "Hello, owner.",
         error: "AI request failed",
         quickQuestions: [
           "Summarize today's restaurant situation.",
@@ -141,6 +148,8 @@ export default function AIAssistantPage() {
   // The answer so far while it is being written — shown in place of the
   // "thinking" line, replaced by the finished message when it arrives.
   const [draft, setDraft] = useState<string | null>(null);
+  // The draft as it is revealed on screen: steady, not in the bursts it arrives in.
+  const smoothDraft = useSmoothReveal(draft);
   const [error, setError] = useState("");
   const [outage, setOutage] = useState<AIOutage | null>(null);
   const [lastQuestion, setLastQuestion] = useState("");
@@ -198,7 +207,7 @@ export default function AIAssistantPage() {
       .then((res) => {
         if (cancelled) return;
         const title = res.data.owner_title;
-        cacheOwnerTitle(title === "คุณผู้จัดการ" ? "" : title);
+        cacheOwnerTitle(title === DEFAULT_OWNER_TITLE_TH ? "" : title);
       })
       .catch(() => {});
     return () => {
@@ -237,6 +246,13 @@ export default function AIAssistantPage() {
       setPlanCardState("cancelled");
     }
     setListOpen(false);
+    // "แชทใหม่" from a chat that is itself still new changes no active id, so
+    // nothing reloaded and the unanswered questions stayed on screen.
+    if (conversationId === null && activeThread === null) {
+      clearThreadCache(storageKey, null);
+      resetConversation();
+      return true;
+    }
     setActiveThread(storageKey, conversationId);
     return true;
   };
@@ -324,7 +340,7 @@ export default function AIAssistantPage() {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [messages, loading, draft]);
+  }, [messages, loading, draft, smoothDraft.text]);
 
   // Lock the page (body/html) from scrolling while the AI view is mounted. This
   // view sizes itself to the dynamic viewport and does its own inner scrolling,
@@ -346,7 +362,7 @@ export default function AIAssistantPage() {
   }, []);
 
   const conversationHistory = (): AIConversationMessage[] =>
-    messages
+    answeredTurns(messages)
       // The on-screen greeting is not a turn: sent along, the model read
       // "สวัสดีพู่กัน" as something it had already said.
       .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system" && m.id !== "welcome")
@@ -356,6 +372,7 @@ export default function AIAssistantPage() {
   const resetConversation = useCallback(() => {
     conversationRequests.invalidate();
     setError("");
+    setOutage(null);
     setLoading(false);
     setPendingAction(null);
     // Also reached when the floating chat clears: that surface's history is
@@ -405,7 +422,8 @@ export default function AIAssistantPage() {
     setActionPreviewError("");
 
     const history = conversationHistory();
-    setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: "user", content: trimmed, createdAt: new Date() }]);
+    const questionId = `user-${Date.now()}`;
+    setMessages((prev) => [...dropFailedQuestion(prev, trimmed), { id: questionId, role: "user", content: trimmed, createdAt: new Date() }]);
 
     const navigation = resolveNavigationRequest(trimmed, activeMembership, language, pathname);
     if (navigation) {
@@ -469,6 +487,10 @@ export default function AIAssistantPage() {
           : data.intent === "unclear"
             ? getUnclearRequestActions(activeMembership, language)
             : [];
+      // Let the typing run to the end of the answer before the finished message
+      // takes the draft's place, so the text does not jump the last stretch.
+      await smoothDraft.settle(answer);
+      if (!conversationRequests.isCurrent(requestGeneration)) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -510,6 +532,7 @@ export default function AIAssistantPage() {
         setError(copy.chatGone);
         return;
       }
+      setMessages((prev) => markQuestionFailed(prev, questionId));
       // An outage gets its own card with the wait and a retry button, instead of
       // the generic red strip that reads as though the question was at fault.
       const reportedOutage = readAIOutage(err);
@@ -805,7 +828,10 @@ export default function AIAssistantPage() {
     : null;
 
   return (
-    <main className="ai-aura-bg relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
+    // Height minus the phone top bar's spacer (0 from tablet up): a plain
+    // h-dvh sat under that 56px spacer and pushed the composer off the bottom
+    // of the phone (28 ก.ย. 2569).
+    <main className="ai-aura-bg relative flex h-[calc(100dvh-var(--phone-bar-h))] min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
       {/* Sunset Boulevard aura — full-bleed behind the whole page (light theme only) */}
       <div className="ai-aura-layer ai-aura-layer-1 dark:hidden" aria-hidden="true" />
       <div className="ai-aura-layer ai-aura-layer-2 dark:hidden" aria-hidden="true" />
@@ -972,19 +998,18 @@ export default function AIAssistantPage() {
                 })
               )}
 
-              {loading && draft && (
+              {loading && smoothDraft.text && (
                 <div className="flex max-w-full items-start gap-2 sm:max-w-[90%] sm:gap-2.5">
                   <SiriOrb size="30px" className="mt-0.5 shrink-0" />
                   <div
                     className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
                     aria-live="polite"
                   >
-                    <SafeAIResponseContent content={draft} compact language={language} />
-                    <span className="ai-stream-caret" aria-hidden="true" />
+                    <SafeAIResponseContent content={smoothDraft.text} compact language={language} />
                   </div>
                 </div>
               )}
-              {loading && !draft && (
+              {loading && !smoothDraft.text && (
                 <div className="flex items-center gap-2.5">
                   <SiriOrb size="30px" className="shrink-0" />
                   <div
@@ -1159,9 +1184,11 @@ export default function AIAssistantPage() {
             The right/top offsets match the bell's own (main's padding + its
             right-3/top-3) so the card's edge lines up with the control. */}
         <aside
-          /* Phone: a full-height sheet. The app bar it used to stop under was
-             taken out on 19 ก.ย. 2569; the side handle opens the menu now. */
-          className={`fixed inset-x-0 bottom-0 top-0 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
+          /* Phone: a sheet from under the phone top bar to the bottom. It has
+             to stop under the bar, not cover it: .ai-aura-bg isolates this
+             z-[60], so the bar (z-30, outside) paints on top and hid the title
+             row with the close button (28 ก.ย. 2569). */
+          className={`fixed inset-x-0 bottom-0 top-(--phone-bar-h) z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
             drawerOpen
               ? "translate-y-0 opacity-100 sm:scale-100"
               : "pointer-events-none translate-y-full opacity-0 sm:translate-y-0 sm:scale-95"

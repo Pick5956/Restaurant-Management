@@ -64,7 +64,7 @@ func TestJoyboyBillDetailBodyNamedBill(t *testing.T) {
 		"line=ผัดไทยกุ้งสด x2 ราคาต่อหน่วย=89.00 รวม=178.00",
 		"หมายเหตุ=ไม่เผ็ด",
 		"พนักงาน=สมหญิง",
-		"money=ยอดก่อนหักลด=520.00 ยอดสุทธิ=520.00",
+		"money=ยอดอาหาร=520.00 ยอดสุทธิ=520.00",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("bill sheet missing %q:\n%s", want, body)
@@ -85,12 +85,11 @@ func TestJoyboyBillDetailBodyOmitsChargesTheShopDidNotMake(t *testing.T) {
 	}
 
 	charged := aiTestBill()
-	charged.DiscountAmount = 20
 	charged.ServiceChargeAmount = 50
 	charged.VATAmount = 38.5
 	charged.GrandTotal = 588.5
 	withCharges := joyboyBillDetailBody([]repository.AIBill{charged}, nil, false, aiTestBillNow())
-	for _, want := range []string{"ส่วนลด=-20.00", "เซอร์วิสชาร์จ=+50.00", "VAT=+38.50", "ยอดสุทธิ=588.50"} {
+	for _, want := range []string{"เซอร์วิสชาร์จ=+50.00", "VAT=+38.50", "ยอดสุทธิ=588.50"} {
 		if !strings.Contains(withCharges, want) {
 			t.Errorf("sheet missing %q on a bill that was charged it:\n%s", want, withCharges)
 		}

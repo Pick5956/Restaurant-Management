@@ -28,6 +28,17 @@ func (s *AIService) askAcrossProviders(call func(adapter aiProviderAdapter) (aiP
 	var lastErr error
 	provider := s.getAIProvider()
 	adapters := s.orderedProviderAdapters()
+	// Setting a provider aside only helps when there is another one to ask
+	// instead. With a single provider (AI_PROVIDER=gemini, 28 ก.ย. 2569) it
+	// turned every retry within the next 45 seconds into an instant failure that
+	// never reached the provider, so the owner's "ลองอีกครั้ง" did nothing.
+	fallbacks := 0
+	for _, adapter := range adapters {
+		if adapter.Configured() {
+			fallbacks++
+		}
+	}
+	canPark := fallbacks > 1
 	for _, adapter := range adapters {
 		if !adapter.Configured() {
 			if len(adapters) == 1 && provider != "auto" {
@@ -39,7 +50,7 @@ func (s *AIService) askAcrossProviders(call func(adapter aiProviderAdapter) (aiP
 		// rather than asked again. One question runs several model calls, and
 		// without this each of them rediscovered the same outage key by key —
 		// two minutes of waiting to tell the owner nothing.
-		if usable, until := s.keyHealth.providerAvailable(adapter.ID()); !usable {
+		if usable, until := s.keyHealth.providerAvailable(adapter.ID()); canPark && !usable {
 			aiStage("warn", "second-round %s is set aside for %s (it reported an overload) → skipping",
 				adapter.DisplayName(), time.Until(until).Round(time.Second))
 			if lastErr == nil {
@@ -53,6 +64,11 @@ func (s *AIService) askAcrossProviders(call func(adapter aiProviderAdapter) (aiP
 			return answer.Text, answer.Model, nil
 		}
 		lastErr = err
+		if isProviderOverloaded(err) && !canPark {
+			aiStage("warn", "second-round %s overloaded and there is no other provider → not set aside, the next question asks again",
+				adapter.DisplayName())
+			continue
+		}
 		if isProviderOverloaded(err) {
 			s.keyHealth.parkProvider(adapter.ID(), time.Now().Add(aiProviderOverloadPark))
 			aiStage("warn", "second-round %s overloaded on every key → set aside for %s",

@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -62,6 +64,25 @@ func TestIsProviderOverloadedTellsOutagesFromOtherFailures(t *testing.T) {
 	}
 }
 
+// A key whose request never got headers back is a provider that is not
+// answering, also after the classifier wraps it in "exhausted keys: %w" - the
+// rotation stops on it instead of trying every key (28 ก.ย. 2569: 53 s).
+func TestIsProviderOverloadedSeesAWrappedHeaderTimeout(t *testing.T) {
+	timeout := &url.Error{Op: "Post", URL: "https://example.test", Err: headerTimeout{}}
+	if !isProviderOverloaded(timeout) {
+		t.Fatal("a header timeout should read as an overload")
+	}
+	if !isProviderOverloaded(fmt.Errorf("Gemini classifier exhausted configured keys: %w", timeout)) {
+		t.Fatal("a wrapped header timeout should still read as an overload")
+	}
+}
+
+type headerTimeout struct{}
+
+func (headerTimeout) Error() string   { return "http2: timeout awaiting response headers" }
+func (headerTimeout) Timeout() bool   { return true }
+func (headerTimeout) Temporary() bool { return true }
+
 // Parking a provider sets every one of its keys aside at once, and it frees
 // itself when the window passes — the assistant must not stay down longer than
 // the provider does.
@@ -88,5 +109,40 @@ func TestParkProviderSetsTheWholeProviderAsideThenReleasesIt(t *testing.T) {
 	now = now.Add(aiProviderOverloadPark + time.Second)
 	if usable, _ := health.providerAvailable("gemini"); !usable {
 		t.Fatal("the park must release itself once the window passes")
+	}
+}
+
+// With one provider there is nothing to fall back to, so an overload must not
+// set it aside: the owner's retry a few seconds later has to reach it again
+// (28 ก.ย. 2569, AI_PROVIDER=gemini — every retry for 45 seconds failed in 3 ms
+// without asking Gemini). With two, the overloaded one still sits out.
+func TestOverloadDoesNotSetTheOnlyProviderAside(t *testing.T) {
+	overloaded := func(string) (aiProviderAnswer, error) {
+		return aiProviderAnswer{}, newAIProviderHTTPError("gemini", "second-round", http.StatusServiceUnavailable)
+	}
+	t.Setenv("AI_PROVIDER", "gemini")
+	gemini := &stubAIProviderAdapter{id: "gemini", displayName: "Gemini", configured: true, complete: overloaded}
+	service := &AIService{providerAdapters: []aiProviderAdapter{gemini}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, _, err := service.askSecondRoundWithRotation("prompt"); err == nil {
+			t.Fatal("an overloaded provider cannot answer")
+		}
+	}
+	if gemini.completeCalls != 2 {
+		t.Fatalf("the retry must reach the only provider again: %d calls, want 2", gemini.completeCalls)
+	}
+
+	t.Setenv("AI_PROVIDER", "gemini,groq")
+	gemini = &stubAIProviderAdapter{id: "gemini", displayName: "Gemini", configured: true, complete: overloaded}
+	groq := &stubAIProviderAdapter{id: "groq", displayName: "Groq", configured: true,
+		complete: func(string) (aiProviderAnswer, error) { return aiProviderAnswer{Text: "ok", Model: "groq-test"}, nil }}
+	service = &AIService{providerAdapters: []aiProviderAdapter{gemini, groq}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if answer, _, err := service.askSecondRoundWithRotation("prompt"); err != nil || answer != "ok" {
+			t.Fatalf("fallback answer = %q, err %v", answer, err)
+		}
+	}
+	if gemini.completeCalls != 1 || groq.completeCalls != 2 {
+		t.Fatalf("with a fallback the overloaded provider sits out: Gemini %d, Groq %d", gemini.completeCalls, groq.completeCalls)
 	}
 }

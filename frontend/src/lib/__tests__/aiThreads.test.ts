@@ -130,6 +130,35 @@ describe("aiThreads — the active chat and its caches", () => {
     expect(threads.loadThreadCache(BASE, null)).toBeNull();
   });
 
+  // Gemini down, 28 ก.ย. 2569: seven "ลองอีกครั้ง" left seven copies of one
+  // question, all sent back to the model as history, and "แชทใหม่" reopened on
+  // them. A retry replaces the unanswered bubble, the history leaves it out, and
+  // an unsent chat holding nothing but unanswered questions is not reopened.
+  it("keeps one bubble per unanswered question and never reopens a new chat on them", () => {
+    const question = "น้ำเปล่าขายดีแต่ทำไมกำไรน้อย";
+    let messages = [
+      { id: "welcome", role: "assistant", content: "สวัสดี" },
+      { id: "q1", role: "user", content: question },
+    ];
+    messages = threads.markQuestionFailed(messages, "q1");
+    for (let attempt = 2; attempt <= 7; attempt += 1) {
+      messages = [...threads.dropFailedQuestion(messages, question), { id: `q${attempt}`, role: "user", content: question }];
+      messages = threads.markQuestionFailed(messages, `q${attempt}`);
+    }
+    expect(messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(threads.answeredTurns(messages).map((message) => message.id)).toEqual(["welcome"]);
+
+    threads.saveThreadCache(BASE, null, messages);
+    expect(threads.loadThreadCache(BASE, null)).toBeNull();
+
+    // An answered exchange in the same slot survives; only the failed bubble goes.
+    threads.saveThreadCache(BASE, null, [
+      ...messages,
+      { id: "q8", role: "user", content: "สรุปร้าน" },
+    ]);
+    expect(threads.loadThreadCache<{ id: string }>(BASE, null)?.map((message) => message.id)).toEqual(["welcome", "q8"]);
+  });
+
   // Every browser that hit the bug above is still carrying the leftover, and a
   // fix that only stops new ones would leave those owners staring at the same
   // stale page. The unsent slot ages out on its own in half an hour, so they

@@ -56,7 +56,7 @@ func TestSearchSystemDocsCoversRequiredThaiAndEnglishQuestions(t *testing.T) {
 			question:    "AI แก้ข้อมูลอะไรได้บ้าง",
 			wantSlug:    "ai-assistant",
 			wantSection: "ai-actions",
-			wantText:    "สถานะพร้อมขายของเมนู",
+			wantText:    "หัวข้อ “สิทธิ์ของผู้ช่วย”",
 		},
 		{
 			name:        "english promptpay question",
@@ -286,7 +286,7 @@ func TestSystemDocsSandboxAnswerEvalMatrix(t *testing.T) {
 		{
 			name:        "AI write boundary",
 			question:    "AI แก้ข้อมูลอะไรได้บ้าง",
-			wantText:    "มีเพียงสถานะพร้อมขายของเมนู",
+			wantText:    "เปลี่ยนราคาเมนู",
 			wantURL:     "/docs/ai-assistant#ai-actions",
 			wantSources: 1,
 		},

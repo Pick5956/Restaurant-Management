@@ -36,7 +36,7 @@ function copy(lang: "th" | "en") {
         caseSize: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย (มากกว่า 0)`,
         stock: "จำนวนต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป",
         cost: "ราคาต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป",
-        dupInBatch: "ชื่อซ้ำกับแถวอื่นในชุดนี้",
+        dupInBatch: "ชื่อซ้ำกับรายการอื่นในชุดนี้",
       }
     : {
         nameRequired: "Enter a name",
@@ -46,7 +46,7 @@ function copy(lang: "th" | "en") {
         caseSize: (kase: string) => `Enter how many packs 1 ${kase} holds (above 0)`,
         stock: "Quantity must be a number, 0 or more",
         cost: "Price must be a number, 0 or more",
-        dupInBatch: "Same name as another row in this batch",
+        dupInBatch: "Same name as another item in this batch",
       };
 }
 
@@ -57,6 +57,8 @@ export function validateIngredientForm(
     existingNames: string[];
     /** The name being edited, which may of course stay as it is. */
     ownName?: string;
+    /** The other rows' names when this is one row of a bulk add. */
+    batchNames?: string[];
     packUnit: string;
     packSize: string | number;
     caseUnit: string;
@@ -77,6 +79,8 @@ export function validateIngredientForm(
     const wanted = normalName(name);
     if (wanted !== mine && input.existingNames.some((existing) => normalName(existing) === wanted)) {
       errors.name = text.nameTaken(name);
+    } else if (input.batchNames?.some((other) => normalName(other) === wanted)) {
+      errors.name = text.dupInBatch;
     }
   }
   if (input.packUnit) {
@@ -94,36 +98,6 @@ export function validateIngredientForm(
 
 export function hasFieldErrors(errors: IngredientFieldErrors): boolean {
   return Object.values(errors).some(Boolean);
-}
-
-/**
- * Per-row problems in a bulk add, null for a row that is fine or blank. A name
- * already in the inventory, a name repeated inside the batch, and a negative
- * or non-numeric quantity or price all stop the save.
- */
-export function validateBulkRows(
-  rows: { name: string; quantity: string | number; price: string | number }[],
-  existingNames: string[],
-  lang: "th" | "en",
-): (string | null)[] {
-  const text = copy(lang);
-  const existing = new Set(existingNames.map(normalName));
-  const seen = new Map<string, number>();
-  rows.forEach((row) => {
-    const key = normalName(row.name);
-    if (key) seen.set(key, (seen.get(key) ?? 0) + 1);
-  });
-  return rows.map((row) => {
-    const name = row.name.trim();
-    if (!name) return null;
-    const key = normalName(name);
-    if ([...name].length > MAX_NAME_LENGTH) return text.nameTooLong;
-    if (existing.has(key)) return text.nameTaken(name);
-    if ((seen.get(key) ?? 0) > 1) return text.dupInBatch;
-    if (isBadAmount(row.quantity)) return text.stock;
-    if (isBadAmount(row.price)) return text.cost;
-    return null;
-  });
 }
 
 /**

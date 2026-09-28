@@ -27,7 +27,7 @@ import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import OperationalPageShell from "@/src/components/shared/OperationalPageShell";
 import { Skeleton } from "@/src/components/shared/Skeleton";
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
-import { useToast } from "@/src/components/shared/FeedbackProvider";
+import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 
 type SortKey = "spent_at" | "category" | "note" | "amount" | "created_by";
 
@@ -78,6 +78,7 @@ export default function ExpensesPage() {
   const { activeMembership } = useAuth();
   const { language } = useLanguage();
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const restaurantId = activeMembership?.restaurant_id ?? null;
   const canEdit = can(activeMembership, "manage_expenses");
   const canView = canEdit || can(activeMembership, "view_reports");
@@ -362,7 +363,16 @@ export default function ExpensesPage() {
   };
 
   const remove = async (expense: Expense) => {
-    if (!window.confirm(copy.confirmDelete)) return;
+    // The app's own dialog, not the browser's: the native one ignores the
+    // theme and names nothing — this one says which entry and how much.
+    const confirmed = await confirm({
+      title: copy.confirmDelete,
+      message: `${copy.categories[expense.category]}, ${formatCurrency(expense.amount, language)}${expense.note.trim() ? `, ${expense.note.trim()}` : ""}`,
+      confirmLabel: copy.deleteAction,
+      cancelLabel: copy.cancel,
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setError("");
     try {
       await deleteExpense(expense.ID);

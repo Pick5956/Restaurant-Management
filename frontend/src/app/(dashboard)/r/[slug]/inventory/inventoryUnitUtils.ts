@@ -163,6 +163,13 @@ export function convertEntryAmount(amount: number, fromFactor: number, toFactor:
   return Math.round(((amount * fromFactor) / toFactor) * 10000) / 10000;
 }
 
+/** "1,500 กระป๋อง" — an amount of stock read in the pack, not in มิลลิลิตร. */
+export function formatInPacks(item: PackShape, amount: number, lang: "th" | "en"): string {
+  if (!hasPack(item)) return `${formatNumber(amount, lang)} ${item.unit}`;
+  const packs = Math.round((amount / (item.pack_size as number)) * 10) / 10;
+  return `${formatNumber(packs, lang)} ${item.pack_unit}`;
+}
+
 /** "≈ 5.5 ขวด" — the stock read in the unit people count shelves in. */
 export function formatPackCount(item: Ingredient, lang: "th" | "en"): string | null {
   if (!hasPack(item) || item.stock <= 0) return null;

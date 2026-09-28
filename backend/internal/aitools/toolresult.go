@@ -113,6 +113,22 @@ type AIMenuEngineering struct {
 	Plowhorses []string // high popularity, low margin
 	Puzzles    []string // low popularity, high margin
 	Dogs       []string // low popularity, low margin
+	// The cut-offs and each menu's own figures, so "ทำไมน้ำเปล่าขายดีแต่กำไรน้อย"
+	// is answered with the numbers that put it there, not with the group name.
+	MedianQuantity float64
+	MedianMargin   float64
+	Rows           []AIMenuEngineeringRow
+}
+
+// AIMenuEngineeringRow is one menu's place in the grid and why.
+type AIMenuEngineeringRow struct {
+	Name          string
+	Quadrant      string // star | plowhorse | puzzle | dog
+	Quantity      int64
+	Margin        float64
+	PricePerUnit  float64
+	CostPerUnit   float64
+	ProfitPerUnit float64
 }
 
 type AIAverageOrderValue struct {

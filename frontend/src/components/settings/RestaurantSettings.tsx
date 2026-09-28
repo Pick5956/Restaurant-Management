@@ -2,21 +2,20 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, Camera, ChevronDown, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet, X } from "lucide-react";
+import { Camera, ChevronDown, Clock, ImagePlus, MapPin, QrCode, Receipt, Wallet } from "lucide-react";
 import RestaurantLocationMap from "./RestaurantLocationMap";
 import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import PermissionDenied from "@/src/components/shared/PermissionDenied";
 import { createSingleFlight } from "@/src/lib/singleFlight";
 import { can } from "@/src/lib/rbac";
 import { getRestaurant, updateRestaurant, uploadRestaurantLogo, uploadRestaurantCover, uploadRestaurantPromptPayQR, deleteRestaurant } from "@/src/lib/restaurant";
 import type { Restaurant } from "@/src/types/restaurant";
 import { RESTAURANT_TYPES, getRestaurantTypeLabel } from "@/src/app/restaurants/restaurantWorkspaceUi";
-import { useBackdropClose } from "@/src/hooks/useBackdropClose";
-import { useDialogFocus } from "@/src/hooks/useDialogFocus";
 import { restaurantRepository } from "@/src/app/repositories/restaurantRepository";
 import { createSerialQueue } from "@/src/lib/serialQueue";
 import { FOCUS_RING, SettingsActionRow, SettingsButton, SettingsField, SettingsInput, SettingsItem, SettingsMediaRow, SettingsSelect, SettingsSkeleton, SettingsSwitch, SettingsTextArea, settingsButtonClass, SettingsGroup } from "./SettingsPrimitives";
@@ -37,8 +36,8 @@ import { MobileDangerZone, MobileInput, MobileLabel, MobilePills, MobileSection,
 /** Restaurant image fields that are uploaded one file at a time. */
 type ImageField = "logo" | "cover_image" | "promptpay_qr_image";
 
-/** Matches the motion-overlay-exit / motion-bottom-sheet-exit keyframes. */
-const DIALOG_EXIT_MS = 180;
+/** Matches WarmConfirmDialog's exit, so the typed name stays while it fades. */
+const DIALOG_EXIT_MS = 200;
 
 /** Long enough to read the steps for allowing location in the browser. */
 const GEO_TOAST_MS = 9000;
@@ -80,8 +79,6 @@ export default function RestaurantSettings() {
   const [deleteModalClosing, setDeleteModalClosing] = useState(false);
   const [confirmRestaurantName, setConfirmRestaurantName] = useState("");
   const [deleting, setDeleting] = useState(false);
-  const deletePanelRef = useRef<HTMLFormElement>(null);
-  const confirmInputRef = useRef<HTMLInputElement>(null);
   // Phone look (SettingsMobileKit): its own file inputs, and whether a rate is
   // being typed rather than picked from the pills.
   const phone = useSettingsPhone();
@@ -90,10 +87,7 @@ export default function RestaurantSettings() {
   const qrInputRef = useRef<HTMLInputElement>(null);
   const typeSelectId = useId();
   const [customRate, setCustomRate] = useState<Record<"service_charge_rate" | "vat_rate", boolean>>({ service_charge_rate: false, vat_rate: false });
-  const deleteTitleId = useId();
-  const deleteBodyId = useId();
   const confirmInputId = useId();
-  const confirmErrorId = useId();
 
   const copy = language === "th"
     ? {
@@ -313,20 +307,15 @@ export default function RestaurantSettings() {
       setConfirmRestaurantName("");
     }, DIALOG_EXIT_MS);
   }, [deleteModalClosing, deleting]);
-  const deleteBackdrop = useBackdropClose(closeDeleteModal);
-  // Modal until the sheet has finished leaving, not just until it starts to:
-  // releasing on close would hand focus back to the delete button while the
-  // closing timer is still pending, and pressing it again then would have that
-  // timer shut the dialog it had just reopened.
-  useDialogFocus({
-    open: deleteModalOpen,
-    containerRef: deletePanelRef,
-    onEscape: closeDeleteModal,
-    initialFocusRef: confirmInputRef,
-  });
+  // Ignored while the last one is still leaving: focus is already back on
+  // the delete button then, and pressing it would reopen a dialog that the
+  // pending close timer shuts a moment later.
+  const openDeleteModal = () => {
+    if (deleteModalClosing) return;
+    setDeleteModalOpen(true);
+  };
 
-  const handleDeleteRestaurant = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleDeleteRestaurant = async () => {
     if (!restaurantId || !isOwner || deleting || deleteModalClosing) return;
     if (confirmRestaurantName !== restaurant?.name) return;
 
@@ -542,67 +531,40 @@ export default function RestaurantSettings() {
 
   const deleteNameMatches = Boolean(restaurant?.name) && confirmRestaurantName === restaurant?.name;
 
-  // Portalled to <body> and stacked over the settings window: the window's
-  // card keeps a transform from its entrance, and a fixed box inside it would
-  // be pinned to the card and clipped by it instead of covering the screen.
-  const deleteModal = deleteModalOpen && typeof document !== "undefined" && createPortal(
-        <div
-          {...deleteBackdrop}
-          className={`${deleteModalClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-[calc(var(--z-modal)+2)] flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}
-        >
-          <form
-            ref={deletePanelRef}
-            onSubmit={handleDeleteRestaurant}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={deleteTitleId}
-            aria-describedby={deleteBodyId}
-            className={`${deleteModalClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-900`}
-          >
-            <div className="flex items-start gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                <AlertTriangle aria-hidden="true" className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h2 id={deleteTitleId} className="text-[15px] font-semibold text-gray-950 dark:text-white">{copy.confirmDeleteTitle}</h2>
-                <p id={deleteBodyId} className="mt-1 text-[13px] leading-5 text-gray-600 dark:text-gray-400">{copy.deleteWarning}</p>
-              </div>
-              <button
-                type="button"
-                onClick={closeDeleteModal}
-                disabled={deleting}
-                aria-label={copy.close}
-                className={`-mr-2 -mt-2 grid h-11 w-11 shrink-0 place-items-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white sm:h-10 sm:w-10 ${FOCUS_RING}`}
-              >
-                <X aria-hidden="true" className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="min-h-0 overflow-y-auto px-4 py-4">
-              <label htmlFor={confirmInputId} className="mb-2 block text-[14px] text-gray-950 dark:text-white">
-                {copy.confirmDeleteLabel(restaurant?.name ?? "")}
-              </label>
-              <SettingsInput
-                id={confirmInputId}
-                errorId={confirmErrorId}
-                inputRef={confirmInputRef}
-                value={confirmRestaurantName}
-                onChange={setConfirmRestaurantName}
-                autoComplete="off"
-                fullWidth
-              />
-            </div>
-
-            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800 sm:flex-row sm:justify-end">
-              <SettingsButton onClick={closeDeleteModal} disabled={deleting}>{copy.cancel}</SettingsButton>
-              <SettingsButton type="submit" variant="danger" loading={deleting} disabled={!deleteNameMatches}>
-                {copy.confirmDeleteBtn}
-              </SettingsButton>
-            </div>
-          </form>
-        </div>,
-        document.body,
-      );
+  // The inventory's question dialog, with the name to type in its slot.
+  // WarmConfirmDialog portals to <body> above the settings window, whose card
+  // keeps a transform that would otherwise pin and clip a fixed box inside it.
+  const deleteModal = (
+    <WarmConfirmDialog
+      open={deleteModalOpen && !deleteModalClosing}
+      title={copy.confirmDeleteTitle}
+      description={copy.deleteWarning}
+      confirmLabel={copy.confirmDeleteBtn}
+      cancelLabel={copy.cancel}
+      onConfirm={() => void handleDeleteRestaurant()}
+      onCancel={closeDeleteModal}
+      busy={deleting}
+      confirmDisabled={!deleteNameMatches}
+      initialFocus="content"
+    >
+      <label htmlFor={confirmInputId} className="warm-dialog-slot-label">
+        {copy.confirmDeleteLabel(restaurant?.name ?? "")}
+      </label>
+      <input
+        id={confirmInputId}
+        type="text"
+        value={confirmRestaurantName}
+        onChange={(event) => setConfirmRestaurantName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          if (deleteNameMatches) void handleDeleteRestaurant();
+        }}
+        autoComplete="off"
+        disabled={deleting}
+      />
+    </WarmConfirmDialog>
+  );
   if (phone) {
     const shopName = restaurant?.name?.trim() || copy.unnamed;
     const phoneDanger = isOwner ? (
@@ -612,10 +574,7 @@ export default function RestaurantSettings() {
         warning={copy.deleteWarningShort}
         action={copy.deleteNamed(shopName)}
         actionLabel={`${copy.deleteAction} ${shopName}`}
-        onAction={() => {
-          setDeleteModalClosing(false);
-          setDeleteModalOpen(true);
-        }}
+        onAction={openDeleteModal}
       />
     ) : null;
     const th = language === "th";
@@ -975,10 +934,7 @@ export default function RestaurantSettings() {
           description={copy.deleteWarning}
           variant="danger-secondary"
           aria-label={`${copy.deleteAction} ${restaurant?.name?.trim() || copy.unnamed}`}
-          onClick={() => {
-            setDeleteModalClosing(false);
-            setDeleteModalOpen(true);
-          }}
+          onClick={openDeleteModal}
         >
           {copy.deleteAction}
         </SettingsActionRow>

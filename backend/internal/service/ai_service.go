@@ -20,6 +20,7 @@ type AIService struct {
 	httpClient                 *http.Client
 	groqKeyIndex               uint32
 	geminiKeyIndex             uint32
+	claudeKeyIndex             uint32
 	conversationStore          AIConversationStore
 	conversationCleanupCounter uint64
 	actionStore                AIActionStore
@@ -90,7 +91,7 @@ func (s *AIService) getAIProvider() string {
 		return "auto"
 	}
 	for _, name := range aiProviderChain(v) {
-		if name != "groq" && name != "gemini" {
+		if name != "groq" && name != "gemini" && name != "claude" {
 			return "auto"
 		}
 	}

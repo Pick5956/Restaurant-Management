@@ -441,10 +441,15 @@ func (r *OrderRepository) CreateIngredientTransaction(tx *entity.IngredientTrans
 	return r.db.Create(tx).Error
 }
 
-func (r *OrderRepository) HasInventoryDeduction(orderItemID, ingredientID uint) (bool, error) {
+// HasInventoryDeduction filters on order_id too, although the item already
+// identifies the order: idx_order_deduction_once leads with order_id, and
+// without it this check - run for every ingredient of every dish the kitchen
+// finishes - was a sequential scan of the whole deduction table (27 ก.ย. 2569:
+// 187,670 rows, and each ready tap got slower as the shop's history grew).
+func (r *OrderRepository) HasInventoryDeduction(orderID, orderItemID, ingredientID uint) (bool, error) {
 	var count int64
 	err := r.db.Model(&entity.OrderInventoryDeduction{}).
-		Where("order_item_id = ? AND ingredient_id = ?", orderItemID, ingredientID).
+		Where("order_id = ? AND order_item_id = ? AND ingredient_id = ?", orderID, orderItemID, ingredientID).
 		Count(&count).Error
 	return count > 0, err
 }

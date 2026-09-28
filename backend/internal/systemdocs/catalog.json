@@ -1255,9 +1255,7 @@
           "พร้อมเพย์",
           "ใบเสร็จ",
           "VAT",
-          "ค่าบริการ",
-          "โปรโมชัน",
-          "ส่วนลด"
+          "ค่าบริการ"
         ],
         "en": [
           "bill",
@@ -1266,9 +1264,7 @@
           "PromptPay",
           "receipt",
           "VAT",
-          "service charge",
-          "promotion",
-          "discount"
+          "service charge"
         ]
       },
       "routes": [
@@ -1277,13 +1273,6 @@
           "label": {
             "th": "คลังออเดอร์และพิมพ์ซ้ำ",
             "en": "Order archive and reprints"
-          }
-        },
-        {
-          "href": "/promotions",
-          "label": {
-            "th": "ตั้งโปรโมชัน",
-            "en": "Set up promotions"
           }
         },
         {
@@ -1305,62 +1294,6 @@
             {
               "th": "เมื่อออเดอร์มีรายการอย่างน้อยหนึ่งรายการและไม่มีรายการรอส่งครัว ปุ่มออกบิล / รับเงินจะเปิดให้ตรวจรายการและยอดต่าง ๆ หากยังมีรายการกำลังทำ สามารถเปิดดูบิลได้ แต่ต้องทำรายการนั้นให้เสร็จหรือยกเลิกก่อนยืนยันรับเงิน",
               "en": "When an order has at least one active item and none is waiting to be sent to the kitchen, Bill / Pay opens the item and total review. If any item is still cooking, you can inspect the bill but must complete or cancel that item before confirming payment."
-            }
-          ]
-        },
-        {
-          "id": "promotions",
-          "keywords": {
-            "th": [
-              "โปรโมชัน",
-              "ส่วนลด",
-              "1 แถม 1",
-              "ซื้อแถม",
-              "ราคาเซ็ต",
-              "ลดท้ายบิล"
-            ],
-            "en": [
-              "promotion",
-              "discount",
-              "buy one get one",
-              "set price",
-              "bill discount"
-            ]
-          },
-          "title": {
-            "th": "โปรโมชันที่ระบบคิดให้เอง",
-            "en": "Promotions the till applies by itself"
-          },
-          "paragraphs": [
-            {
-              "th": "ผู้มีสิทธิ์จัดการโปรโมชันตั้งโปรไว้ที่หน้าโปรโมชัน ระบบคิดส่วนลดให้เองทุกครั้งที่มีการเพิ่มหรือแก้รายการในออเดอร์ ทั้งจากหน้ารับออเดอร์ แอปมือถือ และลูกค้าสั่งผ่าน QR พนักงานไม่ต้องกรอกส่วนลดเอง บิลแสดงยอดอาหาร โปรที่ใช้ แล้วจึงเป็นยอดรวม",
-              "en": "Anyone with the manage-promotions permission sets promotions up on the Promotions page. Dishy applies them by itself every time an order's items change, from the POS, the mobile app, or customer QR ordering, so staff never type a discount. The bill shows the food subtotal, each promotion applied, then the total."
-            }
-          ],
-          "bullets": [
-            {
-              "th": "ซื้อแถม: ซื้อครบตามจำนวนแล้ว ระบบแถมจานที่ถูกที่สุดในกลุ่มให้",
-              "en": "Buy & get: once the set number of dishes is ordered, the cheapest dishes in the group are free."
-            },
-            {
-              "th": "ลดราคาเมนู: ลดเป็นเปอร์เซ็นต์หรือเป็นบาทต่อจาน เลือกได้ทั้งเมนูเดี่ยวและทั้งหมวด",
-              "en": "Dish discount: a percentage or a baht amount off each dish, for single dishes or whole categories."
-            },
-            {
-              "th": "ราคาเซ็ต: สั่งครบทุกจานในเซ็ต จ่ายราคาเซ็ตแทนราคารวมของจานเหล่านั้น",
-              "en": "Set price: order a dish for every slot of the set and pay the set price instead of their total."
-            },
-            {
-              "th": "ลดท้ายบิล: ยอดถึงขั้นต่ำแล้วลดทั้งบิล คิดหลังส่วนลดรายจาน และใช้ได้บิลละหนึ่งโปร",
-              "en": "Bill discount: once the bill reaches its minimum the whole bill is discounted, after dish promotions, one per bill."
-            },
-            {
-              "th": "จานหนึ่งรับได้หนึ่งโปร ถ้าเข้าได้หลายโปร ระบบเลือกโปรที่ลูกค้าได้ส่วนลดมากที่สุด ตัวเลือกเสริมที่มีราคายังคิดเงินตามปกติ",
-              "en": "A dish takes one promotion at most; when several fit, Dishy picks the one that saves the customer most. Paid options are still charged."
-            },
-            {
-              "th": "วันและช่วงเวลาของโปรดูจากเวลาที่สั่งแต่ละจาน เปิด ปิด หรือแก้โปรแล้ว บิลที่ยังไม่จ่ายคิดใหม่ทันที บิลที่จ่ายแล้วไม่เปลี่ยน",
-              "en": "A promotion's days and hours are checked against when each dish was ordered. Switching or editing a promotion reprices unpaid bills at once; paid bills never change."
             }
           ]
         },
@@ -1835,6 +1768,13 @@
             "th": "เปิดผู้ช่วย AI",
             "en": "Open AI assistant"
           }
+        },
+        {
+          "href": "/settings/ai",
+          "label": {
+            "th": "ตั้งค่า Dishy AI",
+            "en": "Dishy AI settings"
+          }
         }
       ],
       "sections": [
@@ -1879,35 +1819,51 @@
           "keywords": {
             "th": [
               "AI แก้ข้อมูลอะไรได้บ้าง",
-              "AI เปลี่ยนข้อมูล"
+              "AI เปลี่ยนข้อมูล",
+              "ตั้งค่าให้ AI ลงมือทำ",
+              "ให้ AI ทำแทน",
+              "สิทธิ์ของผู้ช่วย",
+              "เปิดสิทธิ์ AI",
+              "ตั้งค่า Dishy AI"
             ],
             "en": [
               "what can AI edit",
-              "AI write actions"
+              "AI write actions",
+              "let the AI act",
+              "assistant permissions",
+              "Dishy AI settings"
             ]
           },
           "title": {
-            "th": "การเปลี่ยนข้อมูลผ่าน AI",
-            "en": "AI-assisted changes"
+            "th": "การเปลี่ยนข้อมูลผ่าน AI และที่ตั้งสิทธิ์",
+            "en": "AI-assisted changes and where to allow them"
           },
           "paragraphs": [
             {
-              "th": "ความสามารถเปลี่ยนข้อมูลอาจถูกปิดไว้ตามการตั้งค่าระบบ หากเปิดใช้ การเปลี่ยนแปลงที่รองรับตอนนี้มีเพียงสถานะพร้อมขายของเมนู ผู้ช่วยจะแสดงตัวอย่างการเปลี่ยนแปลงและรอเจ้าของยืนยันก่อนบันทึก",
-              "en": "Data-changing capability may be disabled by system configuration. When enabled, the only current write action is menu availability. The assistant presents a preview and waits for the owner to confirm before saving."
+              "th": "เจ้าของร้านเปิดให้ Dishy AI แก้ข้อมูลร้านได้ที่หน้าตั้งค่า หมวด Dishy AI หัวข้อ “สิทธิ์ของผู้ช่วย” (กดรูปโปรไฟล์ล่างซ้าย → ตั้งค่า → Dishy AI) เปิดสวิตช์หลัก “ให้ผู้ช่วยแก้ข้อมูลร้านได้” แล้วเลือกเปิดทีละเรื่อง ปิดสวิตช์หลัก = ผู้ช่วยดูข้อมูลได้อย่างเดียว",
+              "en": "The owner lets Dishy AI change restaurant data in Settings, Dishy AI section, under “Assistant permissions” (tap the profile picture at the bottom left → Settings → Dishy AI). Turn on the main switch “Let the assistant edit restaurant data”, then choose each kind of change. With the main switch off the assistant can only read."
+            },
+            {
+              "th": "ทุกคำสั่งที่เปลี่ยนข้อมูล ผู้ช่วยจะแสดงตัวอย่างก่อน และรอเจ้าของร้านกดยืนยันภายใน 1 นาทีจึงจะบันทึก ถ้าระบบกลางปิดความสามารถนี้ไว้ สวิตช์จะใช้ไม่ได้",
+              "en": "Every change is shown as a preview first and saved only after the owner confirms within one minute. If the server has this capability turned off, the switches cannot be used."
             }
           ],
           "bullets": [
             {
-              "th": "ไม่สั่งซื้อวัตถุดิบหรือแก้สต็อก",
-              "en": "It does not place purchase orders or modify inventory."
+              "th": "เมนู: เปิด–ปิดขายเมนู · เปลี่ยนราคาเมนู · เพิ่มเมนูใหม่",
+              "en": "Menu: open or close an item · change a price · add a new item."
             },
             {
-              "th": "ไม่รับเงินหรือทำธุรกรรมแทนพนักงาน",
-              "en": "It does not take payments or perform transactions for staff."
+              "th": "วัตถุดิบ: ปรับจำนวนสต๊อก · ตั้งสต๊อกขั้นต่ำ · ตั้งต้นทุนต่อหน่วย · เพิ่มวัตถุดิบใหม่",
+              "en": "Ingredients: adjust stock · set a minimum · set a unit cost · add a new ingredient."
             },
             {
-              "th": "ไม่มีสิทธิ์เขียนฐานข้อมูลทั่วไป",
-              "en": "It has no generic database write access."
+              "th": "เงิน: บันทึกรายจ่าย (พิมพ์บอกหรือถ่ายรูปใบเสร็จ)",
+              "en": "Money: record an expense (typed or from a receipt photo)."
+            },
+            {
+              "th": "ไม่รับเงินหรือปิดบิลแทนพนักงาน และไม่มีสิทธิ์เขียนฐานข้อมูลทั่วไป",
+              "en": "It does not take payments or close bills for staff, and has no generic database write access."
             }
           ]
         },
@@ -2113,8 +2069,8 @@
               "en": "No split bills, refunds, or full tax-invoice numbering."
             },
             {
-              "th": "ส่วนลดมาจากโปรโมชันที่ตั้งไว้เท่านั้น ยังไม่มีการกรอกส่วนลดเองทีละบิลหรือคูปอง",
-              "en": "Discounts come only from configured promotions; there is no manual per-bill discount or coupon."
+              "th": "ยังไม่มีโปรโมชัน ส่วนลด หรือคูปอง",
+              "en": "No promotions, discounts or coupons."
             },
             {
               "th": "ยังไม่มี silent printing หรือระบบเชื่อมเครื่องพิมพ์เฉพาะ; ใช้หน้าต่างพิมพ์ของเบราว์เซอร์",

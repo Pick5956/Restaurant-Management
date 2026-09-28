@@ -2,6 +2,7 @@
 
 import { useLanguage, type Language } from "@/src/providers/LanguageProvider";
 import { useTheme } from "@/src/providers/ThemeProvider";
+import { useAuth } from "@/src/providers/AuthProvider";
 import { Check, Globe } from "lucide-react";
 import { SettingsGroup, SettingsSelect, SettingsSwitch } from "./SettingsPrimitives";
 import { MobileLabel, MobilePills, MobileSection, MobileSwitchTile, useSettingsPhone } from "./SettingsMobileKit";
@@ -13,6 +14,10 @@ export default function DisplaySettings() {
   // account menu reads it the same way rather than flashing the wrong value.
   const isDark = mounted && theme === "dark";
   const phone = useSettingsPhone();
+  // Dishy AI is the owner's alone, and so is its floating button: staff never
+  // see it, so a switch for it would switch nothing (28 ก.ย. 2569).
+  const { activeMembership } = useAuth();
+  const isOwner = activeMembership?.role?.name === "owner";
 
   const copy = language === "th"
     ? {
@@ -26,8 +31,8 @@ export default function DisplaySettings() {
         themeHint: "ธีมของเว็บ มีผลเฉพาะเครื่องนี้",
         light: "สว่าง",
         dark: "มืด",
-        aiAssistant: "ปุ่มผู้ช่วย AI",
-        aiAssistantHint: "แสดงปุ่มลอยสำหรับเรียกผู้ช่วย AI มุมล่างของหน้าจอ มีผลเฉพาะเครื่องนี้",
+        aiAssistant: "ปุ่มลอย Dishy AI",
+        aiAssistantHint: "แสดงปุ่มลอยมุมล่างของหน้าจอสำหรับเปิด Dishy AI มีผลเฉพาะเครื่องนี้",
       }
     : {
         groupLanguage: "Language",
@@ -40,8 +45,8 @@ export default function DisplaySettings() {
         themeHint: "The theme of the site. Applies to this device only.",
         light: "Light",
         dark: "Dark",
-        aiAssistant: "AI assistant button",
-        aiAssistantHint: "Shows the floating button that opens the AI assistant at the bottom of the screen. Applies to this device only.",
+        aiAssistant: "Dishy AI floating button",
+        aiAssistantHint: "Shows the floating button that opens Dishy AI at the bottom of the screen. Applies to this device only.",
       };
 
   if (phone) {
@@ -73,10 +78,14 @@ export default function DisplaySettings() {
       <MobileSection
         id="display"
         title={language === "th" ? "การแสดงผล" : "Display"}
-        summary={language === "th" ? "ธีมกับปุ่ม AI มีผลเฉพาะเครื่องนี้" : "Theme and AI button apply to this device only"}
+        summary={
+          isOwner
+            ? language === "th" ? "ธีมกับปุ่มลอย Dishy AI มีผลเฉพาะเครื่องนี้" : "Theme and the Dishy AI button apply to this device only"
+            : language === "th" ? "ธีมมีผลเฉพาะเครื่องนี้" : "The theme applies to this device only"
+        }
         icon={Globe}
         tone="bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-        keywords={[copy.language, copy.theme, copy.aiAssistant, copy.light, copy.dark].join(" ")}
+        keywords={[copy.language, copy.theme, isOwner ? copy.aiAssistant : "", copy.light, copy.dark].join(" ")}
       >
         <MobileLabel>{copy.theme}</MobileLabel>
         <div role="radiogroup" aria-label={copy.theme} className="mb-3.5 grid grid-cols-2 gap-2.5">
@@ -92,7 +101,9 @@ export default function DisplaySettings() {
             options={[{ value: "th", label: copy.thai }, { value: "en", label: copy.english }]}
           />
         </div>
-        <MobileSwitchTile title={copy.aiAssistant} hint={copy.aiAssistantHint} checked={showAIAssistant} onChange={setShowAIAssistant} />
+        {isOwner ? (
+          <MobileSwitchTile title={copy.aiAssistant} hint={copy.aiAssistantHint} checked={showAIAssistant} onChange={setShowAIAssistant} />
+        ) : null}
       </MobileSection>
     );
   }
@@ -124,7 +135,9 @@ export default function DisplaySettings() {
             { value: "dark", label: copy.dark },
           ]}
         />
-        <SettingsSwitch label={copy.aiAssistant} description={copy.aiAssistantHint} checked={showAIAssistant} onChange={setShowAIAssistant} />
+        {isOwner ? (
+          <SettingsSwitch label={copy.aiAssistant} description={copy.aiAssistantHint} checked={showAIAssistant} onChange={setShowAIAssistant} />
+        ) : null}
       </SettingsGroup>
     </>
   );

@@ -63,7 +63,6 @@ export const LANDING_COPY: Record<Language, LandingCopy> = {
     webSteps: [
       { tab: "ภาพรวม", file: "desktop-home.png", title: "เห็นทั้งร้านในหน้าเดียว", desc: "ยอดขายวันนี้ โต๊ะที่มีลูกค้า คิวในครัว และวัตถุดิบที่ใกล้หมด" },
       { tab: "ครัว", file: "desktop-kitchen.png", title: "ครัวรู้ว่าต้องทำอะไรก่อน", desc: "ออเดอร์เข้าคิวครัวทันทีที่หน้าร้านกดส่ง จานไหนรอนานเกินไปจะขึ้นเป็นสีแดง" },
-      { tab: "ปิดบิล", file: "desktop-pos.png", title: "ปิดบิลโดยไม่ต้องคีย์ซ้ำ", desc: "รายการอาหารมาจากออเดอร์ครบแล้ว รับเงินสดหรือ PromptPay แล้วโต๊ะพร้อมรับลูกค้าคนต่อไป" },
       { tab: "รายงาน", file: "desktop-reports.png", title: "รู้ว่าร้านได้กำไรเท่าไร", desc: "ดูยอดขายย้อนหลัง เมนูขายดี และกำไรหลังหักค่าใช้จ่าย" },
       { tab: "Dishy AI", file: "desktop-ai.png", title: "ถามเรื่องร้านเป็นภาษาไทย", desc: "อยากรู้ว่าเมนูไหนขายดี หรือของอะไรใกล้หมด พิมพ์ถามได้เลย คำตอบมาจากข้อมูลจริงของร้าน" },
     ],
@@ -105,7 +104,6 @@ export const LANDING_COPY: Record<Language, LandingCopy> = {
     webSteps: [
       { tab: "Overview", file: "desktop-home.png", title: "The whole restaurant on one page", desc: "Today's sales, occupied tables, the kitchen queue and ingredients running low." },
       { tab: "Kitchen", file: "desktop-kitchen.png", title: "The kitchen knows what to cook first", desc: "Orders reach the kitchen the moment the floor sends them. Tickets that wait too long turn red." },
-      { tab: "Checkout", file: "desktop-pos.png", title: "Close bills without re-entering items", desc: "Items come straight from the order. Take cash or PromptPay, and the table is ready for the next guests." },
       { tab: "Reports", file: "desktop-reports.png", title: "Know how much you actually made", desc: "Past sales, best-selling dishes and profit after expenses." },
       { tab: "Dishy AI", file: "desktop-ai.png", title: "Ask about your restaurant in plain words", desc: "Which dish sells best? What is running low? Just type the question. Answers come from your restaurant's own data." },
     ],

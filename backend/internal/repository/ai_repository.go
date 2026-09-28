@@ -156,7 +156,7 @@ func (r *AIRepository) RecentSalesSummary(restaurantID uint, since time.Time) ([
 	err := r.db.Model(&entity.Order{}).
 		Select("TO_CHAR(completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS order_date, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
 		Where(
-			"restaurant_id = ? AND completed_at >= ? AND status = ? AND payment_status = ?",
+			"restaurant_id = ? AND completed_at >= ? AND completed_at <= NOW() AND status = ? AND payment_status = ?",
 			restaurantID,
 			since,
 			entity.OrderStatusCompleted,
@@ -320,7 +320,7 @@ func (r *AIRepository) GuestsByPartySize(restaurantID uint, start, end time.Time
 	err := r.db.Table("orders").
 		Select("orders.customer_count AS party_size, COUNT(*) AS bills").
 		Where(
-			"orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at < ?",
+			"orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ?",
 			restaurantID, entity.OrderStatusCompleted, entity.PaymentStatusPaid, start, end,
 		).
 		Group("orders.customer_count").
@@ -381,7 +381,7 @@ func (r *AIRepository) SalesForHourRange(restaurantID uint, start, end time.Time
 			COALESCE(SUM(grand_total), 0) AS revenue,
 			COUNT(DISTINCT TO_CHAR(completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')) AS days`).
 		Where(
-			`restaurant_id = ? AND completed_at >= ? AND completed_at < ?
+			`restaurant_id = ? AND completed_at >= ? AND completed_at <= NOW() AND completed_at < ?
 			 AND EXTRACT(HOUR FROM completed_at AT TIME ZONE 'Asia/Bangkok') >= ?
 			 AND EXTRACT(HOUR FROM completed_at AT TIME ZONE 'Asia/Bangkok') < ?
 			 AND status = ? AND payment_status = ?`,
@@ -437,7 +437,7 @@ func (r *AIRepository) SalesForRange(restaurantID uint, start, end time.Time) (A
 	err := r.db.Model(&entity.Order{}).
 		Select("COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue, COUNT(DISTINCT TO_CHAR(completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')) AS days").
 		Where(
-			"restaurant_id = ? AND completed_at >= ? AND completed_at < ? AND status = ? AND payment_status = ?",
+			"restaurant_id = ? AND completed_at >= ? AND completed_at <= NOW() AND completed_at < ? AND status = ? AND payment_status = ?",
 			restaurantID,
 			start,
 			end,
@@ -451,10 +451,10 @@ func (r *AIRepository) SalesForRange(restaurantID uint, start, end time.Time) (A
 func (r *AIRepository) TopMenuItems(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+aiItemRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
-			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -511,10 +511,10 @@ func (r *AIRepository) MenuCatalogue(restaurantID uint) ([]AIMenuCatalogueItem, 
 func (r *AIRepository) MenusByRevenue(restaurantID uint, since time.Time) ([]AIMenuSummary, error) {
 	var rows []AIMenuSummary
 	err := r.db.Table("order_items").
-		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+orderItemNetRevenue+"), 0) AS revenue").
+		Select("order_items.menu_name, COALESCE(SUM(order_items.quantity), 0) AS quantity, COALESCE(SUM("+aiItemRevenue+"), 0) AS revenue").
 		Joins("JOIN orders ON orders.id = order_items.order_id").
 		Where(
-			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ? AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -540,7 +540,7 @@ func (r *AIRepository) OrderTypeBreakdown(restaurantID uint, since time.Time) ([
 	var rows []AIOrderTypeSummary
 	err := r.db.Model(&entity.Order{}).
 		Select("order_type, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
-		Where("restaurant_id = ? AND deleted_at IS NULL AND completed_at >= ? AND status = ? AND payment_status = ?",
+		Where("restaurant_id = ? AND deleted_at IS NULL AND completed_at >= ? AND completed_at <= NOW() AND status = ? AND payment_status = ?",
 			restaurantID, since, entity.OrderStatusCompleted, entity.PaymentStatusPaid).
 		Group("order_type").
 		Order("revenue desc").
@@ -566,7 +566,7 @@ func (r *AIRepository) MenuMetricsForRange(restaurantID uint, start, end time.Ti
 			restaurantID,
 		).
 		Where(
-			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at < ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ? AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -587,6 +587,13 @@ func (r *AIRepository) MenuMetricsForRange(restaurantID uint, start, end time.Ti
 func (r *AIRepository) AllMenuMargins(restaurantID uint, since time.Time) ([]AIMenuMarginSummary, error) {
 	return r.menuMargins(restaurantID, since, "quantity desc, revenue desc", 100)
 }
+
+// aiItemRevenue is what one order line sold for: its own subtotal. Until 28
+// ก.ย. 2569 it was the subtotal less the line's promotion discount, and a
+// separate query took whole-bill promotions off the totals. Promotions are
+// being taken out of Dishy, and the assistant reads neither any more: nothing
+// here touches order_items.discount_amount or order_promotions.
+const aiItemRevenue = "order_items.subtotal"
 
 // MenuMarginsByCategory returns every menu sold in the window with its category
 // attached, so profit can be totalled per section of the menu board. Nothing else
@@ -616,7 +623,7 @@ func (r *AIRepository) MenuMarginsByCategory(restaurantID uint, since time.Time)
 		Joins("LEFT JOIN menu_items ON menu_items.id = order_items.menu_id").
 		Joins("LEFT JOIN categories ON categories.id = menu_items.category_id AND categories.deleted_at IS NULL").
 		Where(
-			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -640,7 +647,7 @@ func (r *AIRepository) PaymentMix(restaurantID uint, start, end time.Time) ([]AI
 	err := r.db.Table("order_payments").
 		Select("order_payments.method, COUNT(*) AS bills, COALESCE(SUM(order_payments.amount), 0) AS amount").
 		Joins("JOIN orders ON orders.id = order_payments.order_id").
-		Where("order_payments.restaurant_id = ? AND order_payments.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at < ?",
+		Where("order_payments.restaurant_id = ? AND order_payments.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ?",
 			restaurantID, restaurantID, entity.OrderStatusCompleted, entity.PaymentStatusPaid, start, end).
 		Group("order_payments.method").
 		Order("bills desc").
@@ -655,7 +662,7 @@ func (r *AIRepository) PaymentCoverage(restaurantID uint, start, end time.Time) 
 	err := r.db.Table("orders").
 		Select("COUNT(*) AS paid_bills, COUNT(order_payments.id) AS with_method").
 		Joins("LEFT JOIN order_payments ON order_payments.order_id = orders.id AND order_payments.deleted_at IS NULL").
-		Where("orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at < ?",
+		Where("orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.status = ? AND orders.payment_status = ? AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ?",
 			restaurantID, entity.OrderStatusCompleted, entity.PaymentStatusPaid, start, end).
 		Scan(&cov).Error
 	if err != nil {
@@ -694,7 +701,7 @@ func (r *AIRepository) TableUsage(restaurantID uint, start, end time.Time) ([]AI
 		Joins("LEFT JOIN table_zones ON table_zones.id = restaurant_tables.zone_id AND table_zones.deleted_at IS NULL").
 		Joins(`LEFT JOIN orders ON orders.table_id = restaurant_tables.id AND orders.deleted_at IS NULL
 			AND orders.status = ? AND orders.payment_status = ?
-			AND orders.completed_at >= ? AND orders.completed_at < ?`,
+			AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.completed_at < ?`,
 			entity.OrderStatusCompleted, entity.PaymentStatusPaid, start, end).
 		Where("restaurant_tables.restaurant_id = ? AND restaurant_tables.deleted_at IS NULL", restaurantID).
 		Group("restaurant_tables.id, table_zones.name, restaurant_tables.zone, restaurant_tables.table_number, restaurant_tables.capacity").
@@ -760,7 +767,7 @@ func (r *AIRepository) OrderTypeBreakdownForRange(restaurantID uint, start, end 
 	var rows []AIOrderTypeSummary
 	err := r.db.Model(&entity.Order{}).
 		Select("order_type, COUNT(*) AS orders, COALESCE(SUM(grand_total), 0) AS revenue").
-		Where("restaurant_id = ? AND deleted_at IS NULL AND completed_at >= ? AND completed_at < ? AND status = ? AND payment_status = ?",
+		Where("restaurant_id = ? AND deleted_at IS NULL AND completed_at >= ? AND completed_at <= NOW() AND completed_at < ? AND status = ? AND payment_status = ?",
 			restaurantID, start, end, entity.OrderStatusCompleted, entity.PaymentStatusPaid).
 		Group("order_type").
 		Order("orders desc").
@@ -791,11 +798,11 @@ func (r *AIRepository) SlowMovingMenus(restaurantID uint, since time.Time) ([]AI
 	err := r.db.Table("menu_items").
 		Select("menu_items.name AS menu_name, COALESCE(sales.qty, 0) AS quantity, COALESCE(sales.revenue, 0) AS revenue").
 		Joins(`LEFT JOIN (
-			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(`+orderItemNetRevenue+`) AS revenue
+			SELECT order_items.menu_id, SUM(order_items.quantity) AS qty, SUM(`+aiItemRevenue+`) AS revenue
 			FROM order_items
 			JOIN orders ON orders.id = order_items.order_id
 			WHERE order_items.restaurant_id = ? AND order_items.deleted_at IS NULL AND order_items.status = ?
-			  AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?
+			  AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?
 			GROUP BY order_items.menu_id
 		) sales ON sales.menu_id = menu_items.id`,
 			restaurantID, entity.OrderItemStatusServed, since, entity.OrderStatusCompleted, entity.PaymentStatusPaid).
@@ -838,7 +845,7 @@ func (r *AIRepository) AnalysisCoverage(restaurantID uint, since time.Time) (AIA
 			restaurantID,
 		).
 		Where(
-			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -860,11 +867,11 @@ const (
 	aiMenuMarginSelect = `
 			order_items.menu_name,
 			COALESCE(SUM(order_items.quantity), 0) AS quantity,
-			COALESCE(SUM(` + orderItemNetRevenue + `), 0) AS revenue,
+			COALESCE(SUM(` + aiItemRevenue + `), 0) AS revenue,
 			COALESCE(SUM(deductions.cost), 0) AS cost,
-			COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
-			CASE WHEN COALESCE(SUM(` + orderItemNetRevenue + `), 0) > 0
-				THEN ((COALESCE(SUM(` + orderItemNetRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(` + orderItemNetRevenue + `), 0)) * 100
+			COALESCE(SUM(` + aiItemRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0) AS profit,
+			CASE WHEN COALESCE(SUM(` + aiItemRevenue + `), 0) > 0
+				THEN ((COALESCE(SUM(` + aiItemRevenue + `), 0) - COALESCE(SUM(deductions.cost), 0)) / COALESCE(SUM(` + aiItemRevenue + `), 0)) * 100
 				ELSE 0
 			END AS margin`
 
@@ -881,7 +888,7 @@ func (r *AIRepository) menuMargins(restaurantID uint, since time.Time, orderBy s
 			restaurantID,
 		).
 		Where(
-			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.status = ? AND orders.payment_status = ?",
+			"order_items.restaurant_id = ? AND order_items.status = ? AND order_items.deleted_at IS NULL AND orders.restaurant_id = ? AND orders.deleted_at IS NULL AND orders.completed_at >= ? AND orders.completed_at <= NOW() AND orders.status = ? AND orders.payment_status = ?",
 			restaurantID,
 			entity.OrderItemStatusServed,
 			restaurantID,
@@ -930,7 +937,6 @@ type AIBill struct {
 	StaffName           string     `json:"staff_name"`
 	CustomerCount       int        `json:"customer_count"`
 	Subtotal            float64    `json:"subtotal"`
-	DiscountAmount      float64    `json:"discount_amount"`
 	ServiceChargeAmount float64    `json:"service_charge_amount"`
 	VATAmount           float64    `json:"vat_amount"`
 	GrandTotal          float64    `json:"grand_total"`
@@ -949,7 +955,7 @@ type AIBill struct {
 const aiBillSelect = `orders.id, orders.order_number, orders.order_type, orders.status,
 	orders.payment_status, COALESCE(restaurant_tables.table_number, '') AS table_number,
 	COALESCE(users.first_name, '') AS staff_name, orders.customer_count,
-	orders.subtotal, orders.discount_amount, orders.service_charge_amount, orders.vat_amount,
+	orders.subtotal, orders.service_charge_amount, orders.vat_amount,
 	orders.grand_total, orders.opened_at, orders.completed_at,
 	COALESCE(orders.cancelled_reason, '') AS cancelled_reason,
 	COALESCE((SELECT op.method FROM order_payments op

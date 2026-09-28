@@ -415,7 +415,7 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 			window,
 			fmt.Sprintf("busiest_weekday=%s weekday_orders=%d",
 				thaiWeekdayName(peak.TopWeekday), peak.TopWeekdayOrders),
-			fmt.Sprintf("busiest_hour_across_all_days=%02d:00 hour_orders=%d", peak.TopHour, peak.TopHourOrders),
+			fmt.Sprintf("busiest_hour_across_all_days=%02d:00 bills_opened_in_hour=%d counted_by=ชั่วโมงที่เปิดบิล (ลูกค้าเข้าร้าน)", peak.TopHour, peak.TopHourOrders),
 			"note=สองบรรทัดนี้นับคนละแกน วันที่คับคั่งที่สุดกับชั่วโมงที่คับคั่งที่สุดนับรวมทุกวันในช่วงนี้ " +
 				"ห้ามบอกว่าชั่วโมงนั้นเป็นชั่วโมงที่คับคั่งที่สุดของวันนั้น",
 		}), true
@@ -425,30 +425,41 @@ func joyboyFactBody(result AIToolResult) (string, bool) {
 		if engineering == nil {
 			return joyboyNoData("menu_classification_needs_sales_and_costs"), true
 		}
-		// The quadrant name is the classification itself, so it stays in English
-		// with its meaning spelled out beside it. Without that the model has to
-		// guess what "plowhorse" means, and it guesses differently each time.
+		// The groups are named in Thai, the way the answer says them. They were
+		// English keys with an English meaning beside them, and on 28 ก.ย. 2569
+		// the fallback model printed "popular_but_low_margin" to the owner as it
+		// was. Each menu's own figures follow, so a "ทำไม" question is answered
+		// with the numbers that put the menu in its group.
 		quadrants := []struct {
-			name    string
-			meaning string
-			menus   []string
+			key, label string
+			menus      []string
 		}{
-			{"star", "popular_and_high_margin", engineering.Stars},
-			{"plowhorse", "popular_but_low_margin", engineering.Plowhorses},
-			{"puzzle", "unpopular_but_high_margin", engineering.Puzzles},
-			{"dog", "unpopular_and_low_margin", engineering.Dogs},
+			{"star", "ขายดีและกำไรต่อจานดี", engineering.Stars},
+			{"plowhorse", "ขายดีแต่กำไรต่อจานน้อย", engineering.Plowhorses},
+			{"puzzle", "ขายไม่ค่อยออกแต่กำไรต่อจานดี", engineering.Puzzles},
+			{"dog", "ขายไม่ค่อยออกและกำไรต่อจานน้อย", engineering.Dogs},
 		}
-		lines := []string{window, "classification=popularity_vs_margin"}
+		labels := map[string]string{}
+		lines := []string{window,
+			fmt.Sprintf("grouped_by=จำนวนที่ขายเทียบค่ากลางของร้าน %s จาน และอัตรากำไรเทียบค่ากลาง %s%%",
+				joyboyNum(engineering.MedianQuantity), joyboyNum(engineering.MedianMargin))}
 		for _, quadrant := range quadrants {
+			labels[quadrant.key] = quadrant.label
 			// An empty value reads as missing data rather than as an empty
 			// quadrant, and the difference changes the answer.
-			menus := "(none)"
+			menus := "(ไม่มี)"
 			if len(quadrant.menus) > 0 {
 				menus = strings.Join(quadrant.menus, ", ")
 			}
-			lines = append(lines, fmt.Sprintf("quadrant=%s meaning=%s menus=%s",
-				quadrant.name, quadrant.meaning, menus))
+			lines = append(lines, fmt.Sprintf("group=%s menus=%s", quadrant.label, menus))
 		}
+		for _, row := range engineering.Rows {
+			lines = append(lines, fmt.Sprintf("menu=%s group=%s sold=%d avg_price=%s cost_per_unit=%s profit_per_unit=%s margin_pct=%s",
+				row.Name, labels[row.Quadrant], row.Quantity, joyboyNum(roundBaht(row.PricePerUnit)),
+				joyboyNum(roundBaht(row.CostPerUnit)), joyboyNum(roundBaht(row.ProfitPerUnit)), joyboyNum(roundBaht(row.Margin))))
+		}
+		lines = append(lines, "note=เรียกกลุ่มด้วยคำไทยตาม group เท่านั้น ห้ามพิมพ์ชื่อภาษาอังกฤษหรือชื่อคีย์ในคำตอบ "+
+			"ถ้าถามว่าทำไมเมนูไหนอยู่กลุ่มนั้น ให้อธิบายด้วยตัวเลขของเมนูนั้น (ขายได้กี่จาน ราคา ต้นทุน กำไรต่อจาน) เทียบค่ากลางใน grouped_by")
 		return joyboyJoin(lines), true
 
 	case AIToolGetIngredientReorderForecast:
@@ -679,7 +690,7 @@ func joyboyPeakForPeriodBody(label string, weekdays, hours []repository.AIPeriod
 			thaiWeekdayName(weekdays[0].Period), weekdays[0].Orders))
 	}
 	if len(hours) > 0 {
-		lines = append(lines, fmt.Sprintf("busiest_hour_across_all_days=%02d:00 hour_orders=%d",
+		lines = append(lines, fmt.Sprintf("busiest_hour_across_all_days=%02d:00 bills_opened_in_hour=%d counted_by=ชั่วโมงที่เปิดบิล (ลูกค้าเข้าร้าน)",
 			hours[0].Period, hours[0].Orders))
 	}
 	lines = append(lines, "note=สองบรรทัดนี้นับคนละแกน วันที่คับคั่งที่สุดกับชั่วโมงที่คับคั่งที่สุดนับรวมทุกวันในช่วงนี้ "+
@@ -1832,6 +1843,12 @@ func joyboySalesByStaffBody(label string, rows []repository.AIStaffSales) string
 // weekdays, so the totals would say the working week wins by having more days.
 func joyboySalesByTimeBody(label string, hours []repository.AIHourSales, weekdays aitools.AISalesByWeekday, edges aitools.AIPartialEdges) string {
 	lines := []string{"period=" + label, "scope=paid_revenue_in_baht_by_hour_the_bill_closed_and_by_weekday", "unit=บาท"}
+	// 28 ก.ย. 2569: "ควรจัดพนักงานเพิ่มช่วงกี่โมง" loaded this and the peak read
+	// together and answered 13:00 from the paid hour, while guests arrive at
+	// 12:00 - a dine-in bill is paid half an hour after it opens.
+	lines = append(lines, "note=paid_hour คือชั่วโมงที่ลูกค้าจ่ายเงิน (ปิดบิล) ไม่ใช่ชั่วโมงที่เปิดบิล ใช้ตอบเรื่องเงินเข้าช่วงไหนเท่านั้น "+
+		"ถ้าถามว่าร้านคนแน่นช่วงไหน ลูกค้าเข้าช่วงไหน หรือควรจัดพนักงานช่วงไหน ให้ใช้ชั่วโมงเปิดบิล (busiest_hour จากข้อมูลช่วงคนแน่น) "+
+		"ถ้าพูดถึงทั้งสองแบบ ให้บอกว่านับคนละแบบ")
 	if edges.TodayDropped {
 		lines = append(lines, fmt.Sprintf("today_so_far=%s revenue=%s orders=%d excluded_from_weekday_averages=true note=วันนี้ยังไม่จบวัน จึงไม่นับในค่าเฉลี่ยรายวันในสัปดาห์",
 			edges.Today.OrderDate, joyboyNum(roundBaht(edges.Today.Revenue)), edges.Today.Orders))
@@ -1846,11 +1863,11 @@ func joyboySalesByTimeBody(label string, hours []repository.AIHourSales, weekday
 	}
 	peak := aitools.PeakHourByRevenue(hours)
 	if peak.HasData {
-		lines = append(lines, fmt.Sprintf("peak_hour=%02d:00-%02d:59 revenue=%s orders=%d share_of_revenue_pct=%s",
+		lines = append(lines, fmt.Sprintf("peak_paid_hour=%02d:00-%02d:59 revenue=%s paid_orders=%d share_of_revenue_pct=%s",
 			peak.Hour, peak.Hour, joyboyNum(roundBaht(peak.Revenue)), peak.Orders, joyboyNum(peak.SharePct)))
 	}
 	for _, hour := range hours {
-		lines = append(lines, fmt.Sprintf("hour=%02d:00 revenue=%s orders=%d",
+		lines = append(lines, fmt.Sprintf("paid_hour=%02d:00 revenue=%s paid_orders=%d",
 			hour.Hour, joyboyNum(roundBaht(hour.Revenue)), hour.Orders))
 	}
 	lines = append(lines,
@@ -1988,10 +2005,16 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 	previousDays := joyboyDaysCovered(previous)
 	lines := []string{
 		"scope=one_menu_compared_across_two_periods",
-		fmt.Sprintf("current_period=%s from=%s to=%s days=%d%s", current.Label,
+		fmt.Sprintf("asked_period=%s from=%s to=%s days=%d%s", current.Label,
 			current.Start.Format("2006-01-02"), joyboyLastDateCovered(current), currentDays, joyboyStillRunningNote(current)),
-		fmt.Sprintf("previous_period=%s from=%s to=%s days=%d%s", previous.Label,
+		fmt.Sprintf("before_asked_period=%s from=%s to=%s days=%d%s", previous.Label,
 			previous.Start.Format("2006-01-02"), joyboyLastDateCovered(previous), previousDays, joyboyStillRunningNote(previous)),
+		// 27 ก.ย. 2569: the sides were "current" and "previous", and "สัปดาห์ก่อนชาไทยเย็น
+		// ขายได้กี่แก้ว" was answered with the previous side - the week before the one
+		// asked about (51 instead of 56). "ก่อน" in the question read as "previous".
+		"note=ยอดที่เจ้าของถามคือฝั่ง asked_* เสมอ แม้คำถามจะมีคำว่า ก่อน / ที่แล้ว เช่น สัปดาห์ก่อน เดือนที่แล้ว "+
+			"เพราะช่วงนั้นคือ asked_period แล้ว · ฝั่ง before_asked_* คือช่วงก่อนหน้าช่วงที่ถามอีกที ใช้เทียบเท่านั้น "+
+			"ถ้าพูดถึงให้บอกวันที่ของมันกำกับ",
 	}
 	if partial {
 		lines = append(lines, "note=รายการด้านล่างคือตัวที่ชื่อใกล้เคียงกับที่ถาม ให้เลือกตัวที่ตรงแล้วตอบเฉพาะตัวนั้น ถ้าไม่แน่ใจให้ถามกลับ")
@@ -2003,8 +2026,8 @@ func joyboyMenuPeriodComparisonBody(menus []entity.MenuItem, current AIPeriod, c
 		now, soldNow := currentByName[aiNormalizeName(name)]
 		then, soldThen := previousByName[aiNormalizeName(name)]
 		lines = append(lines, "menu="+name)
-		lines = append(lines, joyboyComparisonSide("current", now, soldNow, currentDays))
-		lines = append(lines, joyboyComparisonSide("previous", then, soldThen, previousDays))
+		lines = append(lines, joyboyComparisonSide("asked", now, soldNow, currentDays))
+		lines = append(lines, joyboyComparisonSide("before_asked", then, soldThen, previousDays))
 		if soldNow && soldThen && then.Quantity > 0 {
 			lines = append(lines, fmt.Sprintf("change_qty_pct=%s change_revenue_pct=%s change_profit_pct=%s",
 				joyboyNum(joyboyPctChange(float64(then.Quantity), float64(now.Quantity))),

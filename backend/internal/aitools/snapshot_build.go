@@ -15,7 +15,7 @@ func BuildSnapshot(repo *repository.AIRepository, restaurantID uint) (AISnapshot
 	}
 	// Derived from AnalysisWindowDays so the data, the forecast maths, and the
 	// wording in every answer always describe the same period.
-	since := repository.BangkokNow().AddDate(0, 0, -int(AnalysisWindowDays))
+	since := RollingWindowStart(repository.BangkokNow())
 	ingredients, err := repo.ListIngredients(restaurantID)
 	if err != nil {
 		return AISnapshot{}, err
