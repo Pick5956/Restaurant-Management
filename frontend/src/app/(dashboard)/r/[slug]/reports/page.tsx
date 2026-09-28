@@ -76,7 +76,7 @@ export default function ReportsPage() {
         expenses: "รายจ่ายรวม",
         netProfit: "กำไรสุทธิ",
         beforeDiscount: "ก่อนหักส่วนลด",
-        discountNote: (value: string) => `ส่วนลด −${value}`,
+        discountNote: (discount: string, received: string) => `หักส่วนลดโปร ${discount} แล้ว รับเงินจริง ${received}`,
         marginInfo: "มาร์จินคืออะไร",
         period: "ช่วงเวลา",
         from: "ตั้งแต่",
@@ -114,7 +114,7 @@ export default function ReportsPage() {
         expenses: "Total expenses",
         netProfit: "Net profit",
         beforeDiscount: "Before discounts",
-        discountNote: (value: string) => `Discounts −${value}`,
+        discountNote: (discount: string, received: string) => `After ${discount} in promotion discounts, ${received} received`,
         marginInfo: "What is margin?",
         period: "Period",
         from: "From",
@@ -272,7 +272,7 @@ export default function ReportsPage() {
           />
 
           <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
-            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.salesDays}</h2>
               </div>
@@ -324,14 +324,18 @@ export default function ReportsPage() {
               )}
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            {/* overflow-hidden also makes the section a scroll box, so the grid
+                lets it shrink to the phone's width and the table scrolls inside.
+                Without it the 560px table pushed the section past the screen,
+                where the page clips it and nothing scrolls (28 ก.ย. 2569). */}
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <h2 className="text-sm font-semibold">{copy.menuMargins}</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
                   <thead className="text-xs text-gray-500">
-                    <tr>
+                    <tr className="border-b border-gray-200 dark:border-gray-800">
                       <th className="px-4 py-3">{copy.menu}</th>
                       <th className="px-4 py-3 text-right">{copy.qty}</th>
                       <th className="px-4 py-3 text-right">{copy.revenue}</th>

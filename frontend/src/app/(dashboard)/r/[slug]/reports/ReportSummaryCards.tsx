@@ -120,7 +120,7 @@ export default function ReportSummaryCards({
     netProfit: string;
     margin: string;
     marginInfo: string;
-    discountNote: (value: string) => string;
+    discountNote: (discount: string, received: string) => string;
   };
 }) {
   const money = (value: number) => formatCurrency(value, lang);
@@ -159,7 +159,7 @@ export default function ReportSummaryCards({
         </div>
         <p className="text-[24px] font-bold leading-tight tracking-tight tabular-nums">{money(summary.gross_revenue ?? summary.revenue)}</p>
         {discount > 0 ? (
-          <p className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">{copy.discountNote(money(discount))} · {money(summary.revenue)}</p>
+          <p className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">{copy.discountNote(money(discount), money(summary.revenue))}</p>
         ) : null}
         <div className="mt-auto pt-2.5">
         <div role="img" aria-label={text.split} className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
