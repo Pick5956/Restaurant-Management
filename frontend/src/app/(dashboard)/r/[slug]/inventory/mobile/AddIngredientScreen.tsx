@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { formatCurrency, formatAdaptiveNumber as formatNumber } from "@/src/lib/format";
-import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
+import type { Ingredient, IngredientCategory, IngredientInput } from "@/src/types/ingredient";
 import { STORAGE_TYPES, UNITS, reorderQuantityFor, stockUnitOptions } from "../inventoryPageUtils";
 import { defaultShelfLifeDays, expiryDateFromDays, storageLabel } from "../inventoryExpiryUtils";
 import ExpiryPicker from "./ExpiryPicker";
@@ -40,6 +40,77 @@ import {
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
+/**
+ * Everything typed into this screen for a new ingredient, held outside it — the
+ * bulk screen keeps one per row and reopens the form on it. Numbers stay as
+ * typed, with the unit each was typed in, so reopening shows them unchanged.
+ */
+export type MobileIngredientDraft = {
+  name: string;
+  categoryId: number;
+  unit: string;
+  storageType: string;
+  expiryDays: number | null;
+  minPercent: number;
+  packUnit: string;
+  packSize: string;
+  caseUnit: string;
+  caseSize: string;
+  typed: TypedAmounts;
+};
+
+export function emptyMobileDraft(categoryId = 0): MobileIngredientDraft {
+  return {
+    name: "",
+    categoryId,
+    unit: UNITS[1],
+    storageType: "room_temp",
+    expiryDays: defaultShelfLifeDays("room_temp"),
+    minPercent: 0,
+    packUnit: "",
+    packSize: "",
+    caseUnit: "",
+    caseSize: "",
+    typed: emptyTypedAmounts,
+  };
+}
+
+function draftShape(draft: MobileIngredientDraft) {
+  return {
+    unit: draft.unit,
+    pack_unit: draft.packUnit,
+    pack_size: Number(draft.packSize) || 0,
+    case_unit: draft.caseUnit,
+    case_size: Number(draft.caseSize) || 0,
+  };
+}
+
+/** The create request for a draft — what this screen sends when adding one. */
+export function createInputFor(draft: MobileIngredientDraft): IngredientInput {
+  const resolved = resolveTypedAmounts(draftShape(draft), draft.typed);
+  const { typed, packUnit, caseUnit } = draft;
+  const stockTypedIn = typed.stockIn && typed.stockIn !== draft.unit ? typed.stockIn : "";
+  return {
+    name: draft.name.trim(),
+    category_id: draft.categoryId || undefined,
+    unit: draft.unit,
+    // Opening stock typed in a pack goes up as typed so the history row reads
+    // "ยอดเริ่มต้น · กรอก 2 ลัง"; the server converts it.
+    stock: stockTypedIn && resolved.stock > 0 ? parseFloat(typed.stock) || 0 : resolved.stock,
+    ...(stockTypedIn && resolved.stock > 0 ? { stock_unit: stockTypedIn } : {}),
+    min_stock: resolved.min_stock,
+    min_percent: draft.minPercent,
+    cost_per_unit: resolved.cost_per_unit,
+    storage_type: draft.storageType,
+    pack_unit: packUnit,
+    pack_size: packUnit ? Number(draft.packSize) || 0 : 0,
+    case_unit: packUnit ? caseUnit : "",
+    case_size: packUnit && caseUnit ? Number(draft.caseSize) || 0 : 0,
+    // Only a create with stock opens a lot, so only that case carries a date.
+    ...(resolved.stock > 0 && draft.expiryDays !== null ? { expires_at: expiryDateFromDays(draft.expiryDays) } : {}),
+  };
+}
+
 export default function AddIngredientScreen({
   lang,
   categories,
@@ -48,6 +119,11 @@ export default function AddIngredientScreen({
   onSaved,
   actions,
   existingNames,
+  draft,
+  onDone,
+  onRemove,
+  batchNames,
+  title,
 }: {
   lang: "th" | "en";
   categories: IngredientCategory[];
@@ -57,12 +133,26 @@ export default function AddIngredientScreen({
   onCancel: () => void;
   onSaved: (name: string) => void;
   actions: Actions;
+  /**
+   * Draft mode, for one row of a bulk add: the form opens on `draft`, and
+   * instead of saving it hands what was typed back through `onDone` — the
+   * bulk screen saves them all together.
+   */
+  draft?: MobileIngredientDraft;
+  onDone?: (draft: MobileIngredientDraft) => void;
+  onRemove?: () => void;
+  /** The other rows' names in draft mode, so a name cannot be used twice. */
+  batchNames?: string[];
+  title?: string;
 }) {
+  const draftMode = Boolean(onDone);
   const copy = useMemo(
     () =>
       lang === "th"
         ? {
             title: editing ? "แก้ไขวัตถุดิบ" : "เพิ่มวัตถุดิบ",
+            done: "เสร็จ",
+            remove: "ลบรายการนี้",
             cancel: "ยกเลิก",
             save: editing ? "บันทึกการแก้ไข" : "บันทึกวัตถุดิบ",
             groupInfo: "ข้อมูลวัตถุดิบ",
@@ -91,6 +181,8 @@ export default function AddIngredientScreen({
           }
         : {
             title: editing ? "Edit ingredient" : "Add ingredient",
+            done: "Done",
+            remove: "Remove",
             cancel: "Cancel",
             save: editing ? "Save changes" : "Save ingredient",
             groupInfo: "Ingredient",
@@ -120,25 +212,25 @@ export default function AddIngredientScreen({
     [lang, editing],
   );
 
-  const [name, setName] = useState(editing?.name ?? "");
-  const [categoryId, setCategoryId] = useState(editing?.category_id ?? 0);
-  const [unit, setUnit] = useState(editing?.unit ?? UNITS[1]);
+  const [name, setName] = useState(draft?.name ?? editing?.name ?? "");
+  const [categoryId, setCategoryId] = useState(draft?.categoryId ?? editing?.category_id ?? 0);
+  const [unit, setUnit] = useState(draft?.unit ?? editing?.unit ?? UNITS[1]);
   // The web form has always sent this; the phone did not, so the server filled
   // in room_temp behind its back. Now it is on the form because the expiry
   // default hangs off it.
-  const [storageType, setStorageType] = useState(editing?.storage_type ?? "room_temp");
+  const [storageType, setStorageType] = useState(draft?.storageType ?? editing?.storage_type ?? "room_temp");
   const [expiryDays, setExpiryDays] = useState<number | null>(
-    defaultShelfLifeDays(editing?.storage_type ?? "room_temp"),
+    draft ? draft.expiryDays : defaultShelfLifeDays(editing?.storage_type ?? "room_temp"),
   );
   // A percentage is only on offer once this shelf has a maximum to be a
   // percentage of; a brand new ingredient has none, so it types a quantity.
   const shelfMax = editing?.max_stock ?? 0;
-  const [minPercent, setMinPercent] = useState(editing?.min_percent ?? 0);
+  const [minPercent, setMinPercent] = useState(draft?.minPercent ?? editing?.min_percent ?? 0);
   const ucopy = unitCopy(lang);
-  const [packUnit, setPackUnit] = useState(editing?.pack_unit ?? "");
-  const [packSize, setPackSize] = useState(editing?.pack_size ? String(editing.pack_size) : "");
-  const [caseUnit, setCaseUnit] = useState(editing?.case_unit ?? "");
-  const [caseSize, setCaseSize] = useState(editing?.case_size ? String(editing.case_size) : "");
+  const [packUnit, setPackUnit] = useState(draft?.packUnit ?? editing?.pack_unit ?? "");
+  const [packSize, setPackSize] = useState(draft?.packSize ?? (editing?.pack_size ? String(editing.pack_size) : ""));
+  const [caseUnit, setCaseUnit] = useState(draft?.caseUnit ?? editing?.case_unit ?? "");
+  const [caseSize, setCaseSize] = useState(draft?.caseSize ?? (editing?.case_size ? String(editing.case_size) : ""));
   const shape = {
     unit,
     pack_unit: packUnit,
@@ -151,6 +243,7 @@ export default function AddIngredientScreen({
   // and "จ่าย 5,000" into the same stock-unit numbers. An ingredient with a pack
   // opens with its reorder level and price in that pack.
   const [typed, setTyped] = useState<TypedAmounts>(() => {
+    if (draft) return draft.typed;
     if (!editing) return emptyTypedAmounts;
     const pack = editing.pack_unit && (editing.pack_size ?? 0) > 0 ? editing.pack_unit : "";
     const size = pack ? (editing.pack_size as number) : 1;
@@ -246,6 +339,7 @@ export default function AddIngredientScreen({
       name,
       existingNames,
       ownName: editing?.name,
+      batchNames,
       packUnit,
       packSize,
       caseUnit,
@@ -271,44 +365,41 @@ export default function AddIngredientScreen({
     ];
   }
 
+  function snapshot(): MobileIngredientDraft {
+    return { name, categoryId, unit, storageType, expiryDays, minPercent, packUnit, packSize, caseUnit, caseSize, typed };
+  }
+
   async function save() {
     if (hasFieldErrors(fieldErrors)) {
       setShowErrors(true);
       setError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
+    if (onDone) {
+      onDone(snapshot());
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const stockTypedIn = typed.stockIn && typed.stockIn !== unit ? typed.stockIn : "";
-      const payload = {
-        name: name.trim(),
-        category_id: categoryId || undefined,
-        unit,
-        // The API validates stock on PUT but the repository never writes the
-        // column, so an edit would silently discard it. Send the existing value
-        // on edit and the typed one only on create.
-        // Opening stock typed in a pack goes up as typed so the history row reads
-        // "ยอดเริ่มต้น · กรอก 2 ลัง"; the server converts it.
-        stock: editing
-          ? editing.stock
-          : stockTypedIn && resolved.stock > 0
-            ? parseFloat(typed.stock) || 0
-            : resolved.stock,
-        ...(!editing && stockTypedIn && resolved.stock > 0 ? { stock_unit: stockTypedIn } : {}),
-        min_stock: resolved.min_stock,
-        min_percent: minPercent,
-        cost_per_unit: resolved.cost_per_unit,
-        storage_type: storageType,
-        pack_unit: packUnit,
-        pack_size: packUnit ? Number(packSize) || 0 : 0,
-        case_unit: packUnit ? caseUnit : "",
-        case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
-        // Only a create with stock opens a lot, so only that case carries a date.
-        ...(!editing && resolved.stock > 0 && expiryDays !== null
-          ? { expires_at: expiryDateFromDays(expiryDays) }
-          : {}),
-      };
+      const payload: IngredientInput = editing
+        ? {
+            name: name.trim(),
+            category_id: categoryId || undefined,
+            unit,
+            // The API validates stock on PUT but the repository never writes the
+            // column, so an edit would silently discard it — send what is there.
+            stock: editing.stock,
+            min_stock: resolved.min_stock,
+            min_percent: minPercent,
+            cost_per_unit: resolved.cost_per_unit,
+            storage_type: storageType,
+            pack_unit: packUnit,
+            pack_size: packUnit ? Number(packSize) || 0 : 0,
+            case_unit: packUnit ? caseUnit : "",
+            case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
+          }
+        : createInputFor(snapshot());
       if (editing) await actions.update(editing.ID, payload);
       else await actions.create(payload);
       onSaved(payload.name);
@@ -330,7 +421,9 @@ export default function AddIngredientScreen({
       {/* Chevron, not a "ยกเลิก" word: the bottom bar already carries a
           cancel button, and two of them on one screen read as two different
           outcomes. */}
-      <ScreenNav title={copy.title} onBack={onCancel} />
+      {/* In draft mode going back keeps what was typed — the bulk list flags
+          anything still wrong when it saves — so nothing is lost to a stray tap. */}
+      <ScreenNav title={title ?? copy.title} onBack={onDone ? () => onDone(snapshot()) : onCancel} />
 
       <div className="px-4 pt-4">
         <FormGroup label={copy.groupInfo}>
@@ -558,9 +651,13 @@ export default function AddIngredientScreen({
         className="fixed inset-x-0 bottom-0 z-30 flex gap-2 bg-(--inv-canvas) px-4 pt-3 tablet:left-[68px]"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
-        <SecondaryButton onClick={onCancel}>{copy.cancel}</SecondaryButton>
+        {draftMode ? (
+          <SecondaryButton onClick={onRemove}>{copy.remove}</SecondaryButton>
+        ) : (
+          <SecondaryButton onClick={onCancel}>{copy.cancel}</SecondaryButton>
+        )}
         <PrimaryButton onClick={save} disabled={busy || !name.trim()}>
-          {copy.save}
+          {draftMode ? copy.done : copy.save}
         </PrimaryButton>
       </div>
 
