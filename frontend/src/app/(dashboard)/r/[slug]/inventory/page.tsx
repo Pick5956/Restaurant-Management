@@ -1958,8 +1958,9 @@ export default function InventoryPage() {
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
-                      <span className="min-w-[3.5rem] text-center font-medium tabular-nums text-slate-600 dark:text-slate-300">
-                        {formatNumber(safePage, lang)} / {formatNumber(totalPages, lang)}
+                      <span className="flex items-center gap-1 font-medium tabular-nums text-slate-600 dark:text-slate-300">
+                        <PageNumberInput page={safePage} totalPages={totalPages} onChange={setPage} />
+                        / {formatNumber(totalPages, lang)}
                       </span>
                       <button
                         type="button"
@@ -3096,5 +3097,41 @@ export default function InventoryPage() {
       )}
     </div>
     </>
+  );
+}
+
+// The current page as a typeable box: type a number, Enter (or click away) jumps
+// there. Out-of-range numbers clamp to the first/last page; junk snaps back.
+function PageNumberInput({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
+  const [draft, setDraft] = useState(String(page));
+  useEffect(() => setDraft(String(page)), [page]);
+
+  function commit() {
+    const n = Number.parseInt(draft, 10);
+    if (Number.isNaN(n)) return setDraft(String(page));
+    const next = Math.min(totalPages, Math.max(1, n));
+    setDraft(String(next));
+    if (next !== page) onChange(next);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label="page number"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+      onFocus={(e) => e.target.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(String(page));
+          e.currentTarget.blur();
+        }
+      }}
+      style={{ width: `${Math.max(2, String(totalPages).length) + 1.5}ch` }}
+      className="h-8 rounded-md border border-slate-200 bg-white text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-200 dark:focus:ring-orange-900"
+    />
   );
 }
