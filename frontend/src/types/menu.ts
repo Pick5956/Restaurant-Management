@@ -15,6 +15,11 @@ export interface MenuItem {
   name: string;
   price: number;
   image_url: string;
+  /** The photo image_url was cut from, and its framing (see MenuImageCropper). Empty: only the square exists. */
+  image_original_url?: string;
+  image_crop_zoom?: number;
+  image_crop_x?: number;
+  image_crop_y?: number;
   description: string;
   is_available: boolean;
   /**
@@ -126,6 +131,10 @@ export interface MenuItemInput {
   name: string;
   price: number;
   image_url?: string;
+  image_original_url?: string;
+  image_crop_zoom?: number;
+  image_crop_x?: number;
+  image_crop_y?: number;
   description?: string;
   is_available: boolean;
   display_order: number;

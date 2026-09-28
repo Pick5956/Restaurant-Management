@@ -60,9 +60,13 @@ func CORSMiddleware() gin.HandlerFunc {
 	allowedOrigins := configuredAllowedOrigins()
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
+		// Every response varies by Origin, including the ones asked for without
+		// one: an uploaded image first fetched as a plain <img> (no Origin, no
+		// Allow-Origin) was otherwise served from cache to a later crossOrigin
+		// load of the same URL, which then failed CORS.
+		c.Writer.Header().Set("Vary", "Origin")
 		if origin != "" && (allowedOrigins[origin] || isAllowedDevOrigin(origin)) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Vary", "Origin")
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Restaurant-ID, Idempotency-Key, accept, origin, Cache-Control, X-Requested-With")

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 35
+	CurrentSchemaVersion int64 = 36
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -773,6 +773,20 @@ func schemaMigrationPlan() []SchemaMigration {
 					Update("permissions", `["take_order","take_payment","view_orders","view_dashboard","view_kitchen","view_inventory"]`)
 				if result.Error != nil {
 					return fmt.Errorf("update cashier/waiter default permissions: %w", result.Error)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 36,
+			Name:    "menu_item_image_original",
+			Up: func(ctx *MigrationContext) error {
+				// A menu photo keeps the original it was cut from and its framing,
+				// so the web editor can reopen the whole photo rather than the saved
+				// square. Existing rows get an empty original and centred framing -
+				// they only ever had the square.
+				if err := ctx.DB.AutoMigrate(&entity.MenuItem{}); err != nil {
+					return fmt.Errorf("add menu item image framing columns: %w", err)
 				}
 				return nil
 			},

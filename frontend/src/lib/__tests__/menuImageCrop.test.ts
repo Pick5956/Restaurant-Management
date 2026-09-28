@@ -1,36 +1,22 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  MENU_BACKGROUND_DEFAULT_STRENGTH,
-  MENU_BACKGROUND_PROCESSING_MIME_TYPE,
-  MENU_BACKGROUND_REMOVAL_DEFAULT,
   MENU_IMAGE_OUTPUT_MIME_TYPE,
   MENU_IMAGE_OUTPUT_QUALITY,
   calculateCropFrame,
-  clampMenuBackgroundStrength,
   menuImageOutputName,
   moveCropPosition,
 } from "../menuImageCrop";
 
 describe("menu image crop", () => {
-  it("keeps compact WebP by default and uses PNG only for background processing", () => {
+  it("always saves compact WebP", () => {
     expect(MENU_IMAGE_OUTPUT_MIME_TYPE).toBe("image/webp");
     expect(MENU_IMAGE_OUTPUT_QUALITY).toBe(0.9);
-    expect(MENU_BACKGROUND_PROCESSING_MIME_TYPE).toBe("image/png");
     expect(menuImageOutputName("pizza.photo.jpg")).toBe("pizza.photo-cropped.webp");
-    expect(menuImageOutputName("pizza.photo.jpg", true)).toBe("pizza.photo-cropped.png");
-    expect(menuImageOutputName("", true)).toBe("menu-image-cropped.png");
+    expect(menuImageOutputName("")).toBe("menu-image-cropped.webp");
   });
 
-  it("keeps background removal opt-in and clamps the preview strength contract", () => {
-    expect(MENU_BACKGROUND_REMOVAL_DEFAULT).toBe(false);
-    expect(MENU_BACKGROUND_DEFAULT_STRENGTH).toBe(50);
-    expect(clampMenuBackgroundStrength(-20)).toBe(0);
-    expect(clampMenuBackgroundStrength(45.4)).toBe(45);
-    expect(clampMenuBackgroundStrength(140)).toBe(100);
-  });
-
-  it("renders background removal live in the crop viewport and keeps final upload deterministic", () => {
+  it("has no background removal left on the web (owner, 28 ก.ย. 2569)", () => {
     const cropperSource = readFileSync(
       new URL("../../components/menu/MenuImageCropper.tsx", import.meta.url),
       "utf8",
@@ -41,40 +27,39 @@ describe("menu image crop", () => {
       "utf8",
     );
 
-    expect(cropperSource).toMatch(/onPreview/);
-    expect(cropperSource).toMatch(/role="switch"/);
-    expect(cropperSource).toMatch(/aria-checked=\{removeBackground\}/);
-    expect(cropperSource).toMatch(/backgroundPreview/);
-    expect(cropperSource).toMatch(/setBackgroundPreview\(null\)/);
-    const invalidationSource = cropperSource.slice(
-      cropperSource.indexOf("const invalidateBackgroundPreview ="),
-      cropperSource.indexOf("const resetBackgroundRemoval ="),
+    for (const source of [cropperSource, menuApiSource, menuPageSource]) {
+      expect(source).not.toMatch(/removeBackground|remove_background|background_strength|preview-background|ตัดพื้นหลัง/);
+    }
+  });
+
+  it("has a zoom slider and no zoom ± buttons", () => {
+    const cropperSource = readFileSync(
+      new URL("../../components/menu/MenuImageCropper.tsx", import.meta.url),
+      "utf8",
     );
-    expect(invalidationSource).toMatch(/setPreviewingBackground\(false\)/);
-    expect(invalidationSource).toMatch(/previewAbortRef\.current\?\.abort\(\)/);
-    expect(cropperSource).toMatch(/AbortController/);
-    expect(cropperSource).toMatch(/BACKGROUND_PREVIEW_TIMEOUT_MS/);
-    expect(cropperSource).toMatch(/BACKGROUND_PREVIEW_DEBOUNCE_MS/);
-    expect(cropperSource).toMatch(/if \(!removeBackground \|\| !previewReady \|\| !naturalSize \|\| dragging\) return/);
-    expect(cropperSource).toMatch(/previewDebounceRef\.current = setTimeout\(\(\) => \{[\s\S]*?void previewBackground\(requestGeneration\)/);
-    expect(cropperSource).toMatch(/\[backgroundStrength, dragging, naturalSize, positionX, positionY, previewReady, removeBackground, sourceName, sourceUrl, zoom\]/);
-    expect(cropperSource).toMatch(/preview_data_url/);
-    expect(cropperSource).toMatch(/backgroundImage: `url\(\$\{currentBackgroundPreview\.preview_data_url\}\), conic-gradient/);
-    expect(cropperSource).toMatch(/aria-busy=\{removeBackground && previewingBackground\}/);
-    expect(cropperSource).toMatch(/currentBackgroundPreview!\.file/);
-    expect(cropperSource).toMatch(/previewStatus/);
-    expect(cropperSource).toMatch(/copy\.cutLess/);
-    expect(cropperSource).toMatch(/copy\.cutMore/);
-    expect(cropperSource).not.toMatch(/copy\.previewBackground/);
-    expect(cropperSource).not.toMatch(/onClick=\{\(\) => \{ void previewBackground\(\); \}\}/);
-    expect(menuApiSource).toContain("/api/v1/menu-items/preview-background");
-    expect(menuApiSource).toContain('formData.append("background_strength"');
-    expect(menuApiSource).toContain('formData.append("remove_background"');
-    expect(menuPageSource).toMatch(/background_removed/);
-    expect(menuPageSource).toContain("ตัดน้อยลง");
-    expect(menuPageSource).toContain("ตัดมากขึ้น");
-    expect(menuPageSource).toContain("Cut less");
-    expect(menuPageSource).toContain("Cut more");
+
+    expect(cropperSource).toMatch(/type="range"/);
+    expect(cropperSource).not.toMatch(/\bMinus\b|\bPlus\b|copy\.zoomIn|copy\.zoomOut/);
+  });
+
+  it("frames the photo in place: change and remove on top, no cancel or use-this-image", () => {
+    const cropperSource = readFileSync(
+      new URL("../../components/menu/MenuImageCropper.tsx", import.meta.url),
+      "utf8",
+    );
+    const menuPageSource = readFileSync(
+      new URL("../../app/(dashboard)/r/[slug]/menu/page.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(cropperSource).toMatch(/copy\.changeImage/);
+    expect(cropperSource).toMatch(/copy\.removeImage/);
+    expect(cropperSource).not.toMatch(/copy\.apply\b|copy\.cancel\b/);
+    expect(cropperSource).toMatch(/exportChanges/);
+    // The save crops and uploads the framed photo, then saves the dish.
+    expect(menuPageSource).toContain("imageEditorRef.current?.exportChanges()");
+    // The basic tab stays mounted, so a photo being framed survives a tab switch.
+    expect(menuPageSource).toContain('hidden={itemEditorTab !== "basic"}');
   });
 
   it("centers a wide image while covering a landscape crop without gaps", () => {
@@ -171,6 +156,40 @@ describe("menu image crop", () => {
     expect(output.height / preview.height).toBeCloseTo(3);
     expect(output.x / preview.x).toBeCloseTo(3);
     expect(output.y / preview.y).toBeCloseTo(3);
+  });
+
+  it("stops the photo's edge at the frame's edge, however far it is dragged", () => {
+    // Zoomed in: the photo is bigger than the frame and may not uncover it.
+    const zoomedIn = { naturalWidth: 700, naturalHeight: 700, cropWidth: 300, cropHeight: 300, zoomPercent: 50 };
+    const big = calculateCropFrame({ ...zoomedIn, positionX: 0.5, positionY: 0.5 });
+    const farRight = moveCropPosition({
+      positionX: 0.5, positionY: 0.5, deltaX: 5000, deltaY: -5000,
+      offsetRangeX: 300 - big.width, offsetRangeY: 300 - big.height,
+    });
+    const pushed = calculateCropFrame({ ...zoomedIn, positionX: farRight.positionX, positionY: farRight.positionY });
+    expect(pushed.x).toBeCloseTo(0);
+    expect(pushed.y).toBeCloseTo(300 - big.height);
+
+    // Zoomed out: the photo is smaller than the frame and may not leave it.
+    const zoomedOut = { ...zoomedIn, zoomPercent: -60 };
+    const small = calculateCropFrame({ ...zoomedOut, positionX: 0.5, positionY: 0.5 });
+    const farLeft = moveCropPosition({
+      positionX: 0.5, positionY: 0.5, deltaX: -5000, deltaY: 5000,
+      offsetRangeX: 300 - small.width, offsetRangeY: 300 - small.height,
+    });
+    const tucked = calculateCropFrame({ ...zoomedOut, positionX: farLeft.positionX, positionY: farLeft.positionY });
+    expect(tucked.x).toBeCloseTo(0);
+    expect(tucked.x + tucked.width).toBeLessThanOrEqual(300);
+    expect(tucked.y + tucked.height).toBeCloseTo(300);
+  });
+
+  it("does not move a photo that is exactly the frame's size", () => {
+    const frame = calculateCropFrame({
+      naturalWidth: 700, naturalHeight: 700, cropWidth: 300, cropHeight: 300,
+      zoomPercent: 0, positionX: 0.9, positionY: 0.1,
+    });
+    expect(frame.x).toBeCloseTo(0);
+    expect(frame.y).toBeCloseTo(0);
   });
 
   it("maps drag distance while the image is larger than the frame", () => {

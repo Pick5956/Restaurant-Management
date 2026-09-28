@@ -26,37 +26,26 @@ export interface CropPositionInput {
 
 export const MENU_IMAGE_OUTPUT_MIME_TYPE = "image/webp";
 export const MENU_IMAGE_OUTPUT_QUALITY = 0.9;
-export const MENU_BACKGROUND_PROCESSING_MIME_TYPE = "image/png";
-export const MENU_BACKGROUND_REMOVAL_DEFAULT = false;
-export const MENU_BACKGROUND_DEFAULT_STRENGTH = 50;
 
-export interface MenuBackgroundPreviewResult {
-  can_remove: boolean;
-  preview_data_url: string;
-  removed_ratio: number;
-  strength: number;
-}
-
-export interface MenuImageUploadOptions {
-  removeBackground: boolean;
-  backgroundStrength: number;
-}
-
-export function clampMenuBackgroundStrength(value: number) {
-  if (!Number.isFinite(value)) return MENU_BACKGROUND_DEFAULT_STRENGTH;
-  return Math.min(100, Math.max(0, Math.round(value)));
-}
-
-export function menuImageOutputName(sourceName?: string | null, removeBackground = false) {
+// Background removal was taken out of the menu editor on 28 ก.ย. 2569 (owner),
+// on web and in the app. The backend endpoints still accept the old options;
+// the clients simply no longer send them, which the server reads as "keep".
+export function menuImageOutputName(sourceName?: string | null) {
   const baseName = String(sourceName || "")
     .trim()
     .split(/[\\/]/)
     .pop()
     ?.replace(/\.[^.]+$/, "")
     .trim();
-  return `${baseName || "menu-image"}-cropped.${removeBackground ? "png" : "webp"}`;
+  return `${baseName || "menu-image"}-cropped.webp`;
 }
 
+// The photo's edge stops at the frame's edge, at every zoom (owner, 28 ก.ย.
+// 2569): bigger than the frame it slides until its edge meets the frame's,
+// smaller it slides until it meets the frame's edge from inside. A photo that
+// is exactly the frame's size has nowhere to go, and so does not move. A brief
+// "travel floor" that let square photos slide past their edge was tried the
+// same day and removed.
 const clampUnit = (value: number) => Math.min(1, Math.max(0, value));
 const clampZoomPercent = (value: number) => Math.min(100, Math.max(-100, value));
 

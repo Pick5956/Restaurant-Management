@@ -662,7 +662,7 @@ function CollapsibleCard({
         type="button"
         onClick={onToggle}
         style={{ order: collapsedRank }}
-        className={`ui-press group relative flex w-full flex-col items-stretch justify-between gap-3 rounded-2xl border border-gray-200 bg-slate-50 p-6 text-left hover:border-2 hover:border-orange-700/60 dark:border-gray-800 sm:aspect-[3/4] !transition-all !duration-300 !ease-out motion-reduce:!transition-none hover:z-10 hover:-rotate-1 hover:scale-[1.05] motion-reduce:hover:rotate-0 motion-reduce:hover:scale-100 hover:shadow-lg dark:bg-gray-900 ${faceClass ?? ""}`}
+        className={`ui-press group relative flex w-full flex-col items-stretch justify-between gap-3 rounded-2xl border border-gray-200 bg-slate-50 p-6 text-left hover:border-2 hover:border-orange-700/60 dark:border-gray-800 sm:aspect-[3/4] xl:aspect-auto !transition-all !duration-300 !ease-out motion-reduce:!transition-none hover:z-10 hover:-rotate-1 hover:scale-[1.05] motion-reduce:hover:rotate-0 motion-reduce:hover:scale-100 hover:shadow-lg dark:bg-gray-900 ${faceClass ?? ""}`}
       >
         {/* The card's own name is the loudest thing on it: bigger than
             anything below and on a tinted band of its own, so the tile reads
@@ -942,7 +942,6 @@ export default function Home() {
   const [tables, setTables] = useState<DashboardFloorTable[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [loadedDate, setLoadedDate] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -1218,8 +1217,7 @@ export default function Home() {
   const loadOperations = useCallback(async (background = false) => {
     if (!activeMembership?.restaurant_id || !canViewDashboard) return;
     const requestId = ++requestIdRef.current;
-    if (background) setRefreshing(true);
-    else setLoading(true);
+    if (!background) setLoading(true);
     setError("");
 
     try {
@@ -1258,7 +1256,6 @@ export default function Home() {
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
-        setRefreshing(false);
       }
     }
   }, [activeMembership?.restaurant_id, canViewDashboard, canViewKitchen, canViewOrders, canViewTables, copy.loadError, isToday, selectedDate]);
@@ -1713,18 +1710,17 @@ export default function Home() {
     <div
       // Tall enough to carry the page background to the bottom. Phones have no
       // top bar since 19 ก.ย. 2569, so a full dvh; lg keeps its old height.
-      className="min-h-dvh lg:min-h-[calc(100dvh-3.5rem)] bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
+      className="flex min-h-dvh flex-col lg:min-h-[calc(100dvh-3.5rem)] bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
     >
-      <header className="sticky top-0 z-20 border-b border-gray-200 bg-slate-100/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:px-6 lg:top-0 lg:px-8">
-        <div className="mx-auto flex w-full max-w-6xl min-w-0 items-center gap-2">
-          <h1 className="text-[28px] font-bold tracking-tight text-gray-950 dark:text-white sm:text-[34px]">{copy.title}</h1>
-          {refreshing ? <Loader2 className="h-5 w-5 animate-spin text-gray-500" aria-label={copy.loading} /> : null}
-        </div>
-      </header>
+      {/* No title bar: the owner removed it on 27 ก.ย. 2569. The name stays
+          for screen readers only. */}
+      <h1 className="sr-only">{copy.title}</h1>
 
       {/* The date control and the cards it filters: changing the day slides
           them in as one. */}
-      <div ref={contentRef} className="mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:px-6 lg:px-8">
+      {/* Full width, and a column that fills the screen's height, so the cards
+          can take the whole page (owner, 27 ก.ย. 2569). */}
+      <div ref={contentRef} className="flex w-full flex-1 flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
         {/* The date sits in the same stack as the cards it filters. Hidden for
             front-of-house roles without report access: they only ever see
             today's live cards, so there is no past date to browse. */}
@@ -1785,7 +1781,16 @@ export default function Home() {
                 has to count the sidebar too: it turns permanent at `lg` and
                 takes 264px, so a tablet in landscape leaves about 744px for
                 the cards — two columns' worth. Three from `xl`. */}
-            <div className={openCard !== null ? "flex flex-wrap items-end gap-x-1.5 max-sm:gap-x-0" : "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"}>
+            {/* From `xl` the closed grid takes the height left on the screen:
+                the card row stretches into it and the month banner keeps its
+                own short row under it. */}
+            <div
+              className={
+                openCard !== null
+                  ? "flex flex-wrap items-end gap-x-1.5 max-sm:gap-x-0"
+                  : `grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-h-[34rem] xl:flex-1 xl:grid-cols-3 ${isToday ? "xl:grid-rows-[minmax(0,1fr)_auto]" : "xl:grid-rows-[minmax(0,1fr)]"}`
+              }
+            >
             {canViewReports ? (
             <CollapsibleCard
               title={copy.salesOverview}

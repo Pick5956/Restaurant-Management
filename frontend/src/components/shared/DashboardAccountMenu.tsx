@@ -65,11 +65,12 @@ function OptionButton({ label, active, onClick }: { label: string; active: boole
 
 // variant picks the trigger, not the menu. `icon` is the 40px avatar button
 // the top bars use; `rail` is the full-width row in the sidebar foot, which
-// has room to name the person and their role.
+// has room to name the person and their role; `bar` is the phone top bar's
+// right corner - the avatar with the name beside it (owner, 28 ก.ย. 2569).
 export default function DashboardAccountMenu({
   variant = "icon",
 }: {
-  variant?: "icon" | "rail";
+  variant?: "icon" | "rail" | "bar";
 } = {}) {
   const { user, logout, activeMembership } = useAuth();
   const { language, setLanguage } = useLanguage();
@@ -234,6 +235,19 @@ export default function DashboardAccountMenu({
             {/* Hidden on short viewports, where the nav needs the rows back. */}
             <span className="truncate text-[11px] leading-[1.6] text-[var(--rail-fg-muted)] [@media(max-height:760px)]:hidden">{roleText}</span>
           </span>
+        </button>
+      ) : variant === "bar" ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => { setOpen((current) => !current); setPanel("main"); }}
+          aria-label={copy.account}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          className="ui-press flex h-10 max-w-[11rem] min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-3 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          <UserAvatar src={user?.profile_image} name={displayName} size={32} className="h-8 w-8 shrink-0 text-[12px] text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" />
+          <span className="truncate text-[14px] font-semibold text-gray-900 dark:text-white">{displayName}</span>
         </button>
       ) : (
         <button

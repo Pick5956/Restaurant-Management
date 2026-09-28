@@ -51,12 +51,12 @@ export default function PromotionList({ promotions, names, copy, language, now, 
         const dishes = promotionTargetsSummary(promotion, names, language);
         return (
           <li key={promotion.ID} className="flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60">
-            <span
+            {/* A bare icon, centred on the row like the switch on the other
+                side (owner, 28 ก.ย. 2569: no tile behind icons). */}
+            <Icon
               aria-hidden="true"
-              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 ${promotion.is_active ? "" : "opacity-50"}`}
-            >
-              <Icon className="h-4 w-4" />
-            </span>
+              className={`h-5 w-5 shrink-0 self-center text-gray-500 dark:text-gray-400 ${promotion.is_active ? "" : "opacity-50"}`}
+            />
             <button
               type="button"
               onClick={() => onEdit(promotion)}

@@ -69,6 +69,23 @@ func TestRemoveUnreferencedMenuImageFreesOnlyThisRestaurantsOrphanedFile(t *test
 	mustExist(t, relative)
 }
 
+// The photo a dish's picture was cut from is in use as long as some dish keeps
+// it as its original, even though no dish shows it as its picture.
+func TestRemoveUnreferencedMenuImageKeepsAnOriginalInUse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	original := writeMenuImageFixture(t, 7, "original.jpg")
+	items := []entity.MenuItem{{
+		ImageURL:         "/uploads/menu/7/crop.webp",
+		ImageOriginalURL: "/uploads/menu/7/original.jpg",
+	}}
+
+	removeUnreferencedMenuImage(7, "/uploads/menu/7/original.jpg", items)
+	mustExist(t, original)
+
+	removeUnreferencedMenuImage(7, "/uploads/menu/7/original.jpg", []entity.MenuItem{{ImageURL: "/uploads/menu/7/crop.webp"}})
+	mustBeGone(t, original)
+}
+
 // A form opened before another device replaced the photo sends back a URL
 // whose file is already gone. Only that case is stale: an external picture,
 // an empty field or a file still on disk is saved as sent.

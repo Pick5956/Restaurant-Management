@@ -225,13 +225,17 @@ func updateMenuItem(db *gorm.DB, item *entity.MenuItem) error {
 	return db.Model(&entity.MenuItem{}).
 		Where("restaurant_id = ? AND id = ?", item.RestaurantID, item.ID).
 		Updates(map[string]any{
-			"category_id":   item.CategoryID,
-			"name":          item.Name,
-			"price":         item.Price,
-			"image_url":     item.ImageURL,
-			"description":   item.Description,
-			"is_available":  item.IsAvailable,
-			"display_order": item.DisplayOrder,
+			"category_id":        item.CategoryID,
+			"name":               item.Name,
+			"price":              item.Price,
+			"image_url":          item.ImageURL,
+			"image_original_url": item.ImageOriginalURL,
+			"image_crop_zoom":    item.ImageCropZoom,
+			"image_crop_x":       item.ImageCropX,
+			"image_crop_y":       item.ImageCropY,
+			"description":        item.Description,
+			"is_available":       item.IsAvailable,
+			"display_order":      item.DisplayOrder,
 		}).Error
 }
 

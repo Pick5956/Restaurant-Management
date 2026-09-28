@@ -157,7 +157,10 @@ export const Field = forwardRef<NativeTextInput, {
   width?: number;
   /** Named for screen readers when there is no visible label. */
   accessibilityLabel?: string;
-}>(function Field({ label, value, onChangeText, placeholder, icon, unit, keyboardType, multiline, maxLength, autoCapitalize, editable = true, onSubmitEditing, returnKeyType, grow, error, width, accessibilityLabel }, ref) {
+  /** Makes the unit a tap target that opens a unit picker (กรัม / กก.). */
+  onUnitPress?: () => void;
+  unitPressLabel?: string;
+}>(function Field({ label, value, onChangeText, placeholder, icon, unit, keyboardType, multiline, maxLength, autoCapitalize, editable = true, onSubmitEditing, returnKeyType, grow, error, width, accessibilityLabel, onUnitPress, unitPressLabel }, ref) {
   const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 4, ...(grow ? { flex: 1, minWidth: 0 } : {}), ...(width ? { width } : {}) }}>
@@ -185,7 +188,20 @@ export const Field = forwardRef<NativeTextInput, {
           style={{ flex: 1, minWidth: 0, fontSize: 15, color: editable ? palette.textStrong : palette.muted, paddingVertical: 0, textAlignVertical: multiline ? 'top' : 'center', minHeight: multiline ? 64 : undefined }}
           value={value}
         />
-        {unit ? <Text style={{ fontSize: 12.5, color: palette.placeholder }}>{unit}</Text> : null}
+        {unit && onUnitPress ? (
+          // A unit that can change reads as one: orange ink and a small
+          // chevron, in the field's own right edge.
+          <Pressable
+            accessibilityLabel={unitPressLabel ?? unit}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onUnitPress}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.primaryInk }}>{unit}</Text>
+            <AppIcon name="chevron-down" size={13} color={palette.primaryInk} />
+          </Pressable>
+        ) : unit ? <Text style={{ fontSize: 12.5, color: palette.placeholder }}>{unit}</Text> : null}
       </View>
       {error ? <Text accessibilityRole="alert" style={{ fontSize: 12, lineHeight: 17, fontWeight: '600', color: palette.danger }}>{error}</Text> : null}
     </View>

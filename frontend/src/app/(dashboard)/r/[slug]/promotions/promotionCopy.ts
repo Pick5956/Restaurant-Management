@@ -34,14 +34,12 @@ export type PromotionCopy = {
   slotQuantity: string;
   addSlot: string;
   removeSlot: (index: number) => string;
-  choose: string;
-  done: string;
   search: string;
   categories: string;
   menus: string;
   nothingChosen: string;
   noMatches: string;
-  removeTarget: (label: string) => string;
+  chosenSummary: (categories: number, menus: number) => string;
   days: string;
   everyDay: string;
   weekdays: string;
@@ -113,14 +111,13 @@ const th: PromotionCopy = {
   slotQuantity: "จำนวน",
   addSlot: "เพิ่มจาน",
   removeSlot: (index) => `เอาจานที่ ${index} ออก`,
-  choose: "เลือกเมนู",
-  done: "เสร็จ",
   search: "ค้นหาเมนูหรือหมวด",
   categories: "หมวด",
   menus: "เมนู",
   nothingChosen: "ยังไม่ได้เลือก",
   noMatches: "ไม่พบเมนู",
-  removeTarget: (label) => `เอา ${label} ออก`,
+  chosenSummary: (categories, menus) =>
+    [categories ? `${categories} หมวด` : "", menus ? `${menus} เมนู` : ""].filter(Boolean).join(", "),
   days: "วันในสัปดาห์",
   everyDay: "ทุกวัน",
   weekdays: "จันทร์–ศุกร์",
@@ -204,14 +201,16 @@ const en: PromotionCopy = {
   slotQuantity: "Quantity",
   addSlot: "Add dish",
   removeSlot: (index) => `Remove dish ${index}`,
-  choose: "Choose dishes",
-  done: "Done",
   search: "Search dishes or categories",
   categories: "Categories",
   menus: "Dishes",
   nothingChosen: "None chosen",
   noMatches: "No dishes found",
-  removeTarget: (label) => `Remove ${label}`,
+  chosenSummary: (categories, menus) =>
+    [
+      categories ? `${categories} ${categories === 1 ? "category" : "categories"}` : "",
+      menus ? `${menus} ${menus === 1 ? "dish" : "dishes"}` : "",
+    ].filter(Boolean).join(", "),
   days: "Days of the week",
   everyDay: "Every day",
   weekdays: "Mon–Fri",

@@ -226,7 +226,7 @@ export default function SettingsModal() {
         }}
         placeholder={t.search}
         aria-label={t.search}
-        className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-8 pr-2.5 text-[16px] text-gray-800 outline-none placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-500/15 sm:text-[13px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 w-full rounded-md border border-gray-200 bg-white pl-8 pr-2.5 text-[16px] text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 sm:text-[13px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 [&::-webkit-search-cancel-button]:hidden"
       />
     </div>
   );
@@ -301,7 +301,7 @@ export default function SettingsModal() {
         aria-modal="true"
         aria-label={t.settings}
         ref={cardRef}
-        className="ai-settings-card relative flex h-[560px] max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-gray-950"
+        className="ai-settings-card relative flex h-[680px] max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-gray-950"
         onClick={(e) => e.stopPropagation()}
       >
         <aside className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-gray-200 bg-gray-50 p-3 pt-4 dark:border-gray-800 dark:bg-gray-900/50">

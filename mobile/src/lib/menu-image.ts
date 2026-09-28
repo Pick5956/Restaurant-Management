@@ -7,16 +7,10 @@ export const MENU_IMAGE_OUTPUT_WIDTH = 1200;
 export const MENU_IMAGE_OUTPUT_HEIGHT = 1200;
 export const MENU_IMAGE_OUTPUT_MIME_TYPE = 'image/webp';
 export const MENU_IMAGE_OUTPUT_QUALITY = 0.9;
-export const MENU_IMAGE_BACKGROUND_PROCESSING_MIME_TYPE = 'image/png';
-export const MENU_IMAGE_BACKGROUND_PROCESSING_QUALITY = 1;
 export const MENU_IMAGE_MIN_ZOOM = -100;
 export const MENU_IMAGE_MAX_ZOOM = 100;
 export const MENU_IMAGE_ZOOM_STEP = 5;
 export const MENU_IMAGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
-export const MENU_IMAGE_BACKGROUND_STRENGTH_MIN = 0;
-export const MENU_IMAGE_BACKGROUND_STRENGTH_MAX = 100;
-export const MENU_IMAGE_BACKGROUND_STRENGTH_DEFAULT = 50;
-export const MENU_IMAGE_BACKGROUND_STRENGTH_STEP = 5;
 
 export const MENU_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -68,14 +62,17 @@ export function validateMenuImageAsset(
   return null;
 }
 
-export function menuImageOutputName(sourceName?: string | null, removeBackground = false) {
+// Background removal was taken out of the menu editor on 28 ก.ย. 2569 (owner),
+// in the app and on the web. The backend still accepts the old form fields;
+// leaving them out is what it reads as "keep the photo as it is".
+export function menuImageOutputName(sourceName?: string | null) {
   const baseName = String(sourceName || '')
     .trim()
     .split(/[\\/]/)
     .pop()
     ?.replace(/\.[^.]+$/, '')
     .trim();
-  return `${baseName || 'menu-image'}-cropped.${removeBackground ? 'png' : 'webp'}`;
+  return `${baseName || 'menu-image'}-cropped.webp`;
 }
 
 export function resolveCommittedMenuImageUrl(
@@ -109,31 +106,10 @@ export interface MenuImageUploadPart {
 }
 
 export const MENU_IMAGE_UPLOAD_PATH = '/api/v1/menu-items/upload-image';
-export const MENU_IMAGE_BACKGROUND_PREVIEW_PATH = '/api/v1/menu-items/preview-background';
 export const MENU_IMAGE_UPLOAD_FIELD = 'image';
-
-export interface MenuImageBackgroundOptions {
-  removeBackground: boolean;
-  backgroundStrength: number;
-}
-
-export interface MenuImageBackgroundPreview {
-  can_remove: boolean;
-  preview_data_url: string;
-  removed_ratio: number;
-  strength: number;
-}
 
 export interface MenuImageUploadResult {
   uploaded: boolean;
-  backgroundRemoved: boolean;
-}
-
-export function menuImageUploadCanCommit(
-  options: MenuImageBackgroundOptions,
-  backgroundRemoved: boolean,
-) {
-  return !options.removeBackground || backgroundRemoved;
 }
 
 export function menuImageCaptureLogicalSize(pixelRatio: number) {
@@ -161,56 +137,11 @@ export function menuImageZoomFromTrackPosition(
   );
 }
 
-export function normalizeMenuImageBackgroundStrength(value: number) {
-  if (!Number.isFinite(value)) return MENU_IMAGE_BACKGROUND_STRENGTH_DEFAULT;
-  return Math.min(
-    MENU_IMAGE_BACKGROUND_STRENGTH_MAX,
-    Math.max(MENU_IMAGE_BACKGROUND_STRENGTH_MIN, Math.round(value)),
-  );
-}
-
-export function menuImageBackgroundStrengthFromTrackPosition(
-  locationX: number,
-  trackWidth: number,
-) {
-  if (!Number.isFinite(locationX) || !Number.isFinite(trackWidth) || trackWidth <= 0) {
-    return null;
-  }
-  const ratio = Math.min(1, Math.max(0, locationX / trackWidth));
-  const rawValue = MENU_IMAGE_BACKGROUND_STRENGTH_MIN
-    + ratio * (MENU_IMAGE_BACKGROUND_STRENGTH_MAX - MENU_IMAGE_BACKGROUND_STRENGTH_MIN);
-  return normalizeMenuImageBackgroundStrength(
-    Math.round(rawValue / MENU_IMAGE_BACKGROUND_STRENGTH_STEP)
-      * MENU_IMAGE_BACKGROUND_STRENGTH_STEP,
-  );
-}
-
-export function appendMenuImageBackgroundPreview(
-  formData: Pick<FormData, 'append'>,
-  file: MenuImageUploadFile | MenuImageUploadPart,
-  backgroundStrength: number,
-) {
-  formData.append(MENU_IMAGE_UPLOAD_FIELD, file as unknown as Blob);
-  formData.append(
-    'background_strength',
-    String(normalizeMenuImageBackgroundStrength(backgroundStrength)),
-  );
-}
-
 export function appendMenuImageUpload(
   formData: Pick<FormData, 'append'>,
   file: MenuImageUploadFile | MenuImageUploadPart,
-  options: MenuImageBackgroundOptions = {
-    removeBackground: false,
-    backgroundStrength: MENU_IMAGE_BACKGROUND_STRENGTH_DEFAULT,
-  },
 ) {
   formData.append(MENU_IMAGE_UPLOAD_FIELD, file as unknown as Blob);
-  formData.append('remove_background', String(options.removeBackground));
-  formData.append(
-    'background_strength',
-    String(normalizeMenuImageBackgroundStrength(options.backgroundStrength)),
-  );
 }
 
 export interface MenuImageFrameInput {
@@ -244,6 +175,10 @@ const clampZoomPercent = (value: number) => Math.min(
   MENU_IMAGE_MAX_ZOOM,
   Math.max(MENU_IMAGE_MIN_ZOOM, value),
 );
+
+// The photo's edge stops at the frame's edge at every zoom, the same rule as
+// the web (frontend/src/lib/menuImageCrop.ts). A "travel floor" that let a
+// square photo slide past its edge was tried on 28 ก.ย. 2569 and removed.
 
 export function calculateMenuImageFrame(
   input: MenuImageFrameInput,

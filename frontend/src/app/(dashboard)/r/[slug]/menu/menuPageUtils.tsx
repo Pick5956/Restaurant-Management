@@ -1,3 +1,4 @@
+import { Minus, Plus } from "lucide-react";
 import type { Ingredient } from "@/src/types/ingredient";
 import type { MenuIngredientInput, MenuItem, MenuItemInput, MenuOptionGroupInput, MenuOptionIngredientInput } from "@/src/types/menu";
 
@@ -80,6 +81,10 @@ export function menuItemToInput(item: MenuItem, isAvailable = item.is_available)
     name: item.name,
     price: item.price,
     image_url: item.image_url,
+    image_original_url: item.image_original_url ?? "",
+    image_crop_zoom: item.image_crop_zoom ?? 0,
+    image_crop_x: item.image_crop_x ?? 0.5,
+    image_crop_y: item.image_crop_y ?? 0.5,
     description: item.description,
     is_available: isAvailable,
     display_order: item.display_order,
@@ -113,6 +118,68 @@ export function menuItemToInput(item: MenuItem, isAvailable = item.is_available)
       note: component.note || "",
     })),
   };
+}
+
+/**
+ * A small whole number picked with − and +, for the option set's rules
+ * (1-50 picks). Steppers replaced two dropdowns there on 28 ก.ย. 2569: a count
+ * of 1, 2 or 3 is one tap away instead of a list to scroll.
+ */
+export function CountStepper({
+  value,
+  min,
+  max,
+  label,
+  decreaseLabel,
+  increaseLabel,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  label: string;
+  decreaseLabel: string;
+  increaseLabel: string;
+  onChange: (value: number) => void;
+}) {
+  const step = "ui-press grid h-full w-9 place-items-center text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white";
+  return (
+    <div role="group" aria-label={label} className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+      <button type="button" aria-label={decreaseLabel} disabled={value <= min} onClick={() => onChange(value - 1)} className={step}>
+        <Minus className="h-4 w-4" aria-hidden />
+      </button>
+      <output aria-live="polite" className="w-8 text-center text-[14px] font-semibold tabular-nums text-gray-900 dark:text-white">{value}</output>
+      <button type="button" aria-label={increaseLabel} disabled={value >= max} onClick={() => onChange(value + 1)} className={step}>
+        <Plus className="h-4 w-4" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+/** An on/off setting in the brand orange; the green switch is for "on sale". */
+export function SettingSwitch({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 ${
+        checked ? "bg-orange-700 dark:bg-orange-600" : "bg-gray-300 dark:bg-gray-700"
+      }`}
+    >
+      <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
+    </button>
+  );
 }
 
 export function AvailabilitySwitch({

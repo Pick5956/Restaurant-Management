@@ -176,6 +176,9 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// and touch no model, so the registry fingerprint is unchanged from 33.
 		34: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
 		35: "e35ea0c24ac24b22521ef2939921e2f5488591df1f2467afcec91482502adc8b",
+		// Version 36 adds MenuItem's image framing columns (original URL, zoom,
+		// x, y), so the fingerprint advances.
+		36: "08b28dfb66396bee23a9f01af35bad1dc2e76971a27e72258f2d0311c7a70288",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
