@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -61,6 +63,25 @@ func TestIsProviderOverloadedTellsOutagesFromOtherFailures(t *testing.T) {
 		}
 	}
 }
+
+// A key whose request never got headers back is a provider that is not
+// answering, also after the classifier wraps it in "exhausted keys: %w" - the
+// rotation stops on it instead of trying every key (28 ก.ย. 2569: 53 s).
+func TestIsProviderOverloadedSeesAWrappedHeaderTimeout(t *testing.T) {
+	timeout := &url.Error{Op: "Post", URL: "https://example.test", Err: headerTimeout{}}
+	if !isProviderOverloaded(timeout) {
+		t.Fatal("a header timeout should read as an overload")
+	}
+	if !isProviderOverloaded(fmt.Errorf("Gemini classifier exhausted configured keys: %w", timeout)) {
+		t.Fatal("a wrapped header timeout should still read as an overload")
+	}
+}
+
+type headerTimeout struct{}
+
+func (headerTimeout) Error() string   { return "http2: timeout awaiting response headers" }
+func (headerTimeout) Timeout() bool   { return true }
+func (headerTimeout) Temporary() bool { return true }
 
 // Parking a provider sets every one of its keys aside at once, and it frees
 // itself when the window passes — the assistant must not stay down longer than

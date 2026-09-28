@@ -87,6 +87,14 @@ func (s *AIService) askGeminiWithRotation(question string, history []AIConversat
 			aiStage("warn", "Gemini key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Gemini key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
+		}
 		aiStage("warn", "Gemini key %s failed: %v → rotating", attempt.Label(), err)
 	}
 
@@ -501,6 +509,14 @@ func (s *AIService) askSecondRoundGeminiWithRotation(prompt string, override str
 			s.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Gemini second-round key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
+		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Gemini second-round key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
 		}
 		aiStage("warn", "Gemini second-round key %s failed: %v → rotating", attempt.Label(), err)
 	}

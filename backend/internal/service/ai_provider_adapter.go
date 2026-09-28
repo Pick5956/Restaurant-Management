@@ -133,6 +133,14 @@ func (a *groqProviderAdapter) Classify(question string, history []AIConversation
 			aiStage("warn", "Groq classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Groq classifier key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
+		}
 		aiStage("warn", "Groq classifier key %s failed: %v → rotating", attempt.Label(), err)
 	}
 	return AIRouterResult{}, fmt.Errorf("Groq classifier exhausted configured keys: %w", lastErr)
@@ -209,6 +217,14 @@ func (a *geminiProviderAdapter) Classify(question string, history []AIConversati
 			a.service.keyHealth.park("gemini", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Gemini classifier key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
+		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Gemini classifier key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
 		}
 		aiStage("warn", "Gemini classifier key %s failed: %v → rotating", attempt.Label(), err)
 	}

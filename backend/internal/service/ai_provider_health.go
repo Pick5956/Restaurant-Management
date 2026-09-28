@@ -197,7 +197,13 @@ func isProviderOverloaded(err error) bool {
 	}
 	// A request that never got headers back is the same story from the caller's
 	// side: the provider is not answering.
-	return errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err)
+	if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
+		return true
+	}
+	// os.IsTimeout does not look through fmt.Errorf("...: %w") wrapping, which is
+	// how the classifier reports an exhausted rotation.
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 // clear releases a key after a successful call.

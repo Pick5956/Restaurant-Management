@@ -76,6 +76,14 @@ func (s *AIService) askSecondRoundGeminiStreamWithRotation(prompt string, overri
 			aiStage("warn", "Gemini second-round (stream) key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Gemini second-round (stream) key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
+		}
 		aiStage("warn", "Gemini second-round (stream) key %s failed: %v → rotating", attempt.Label(), err)
 	}
 	return "", "", lastErr
@@ -196,6 +204,14 @@ func (s *AIService) askSecondRoundGroqStreamWithRotation(prompt string, opts aiP
 			s.keyHealth.park("groq", attempt.Index, time.Now().Add(wait))
 			aiStage("warn", "Groq second-round (stream) key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
+		}
+		// Every key reaches the same server: one that is not answering (no headers
+		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
+		// either. Rotating anyway held the owner 12 s per key - 53 s for one
+		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		if isProviderOverloaded(err) {
+			aiStage("warn", "Groq second-round (stream) key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
+			break
 		}
 		aiStage("warn", "Groq second-round (stream) key %s failed: %v → rotating", attempt.Label(), err)
 	}
