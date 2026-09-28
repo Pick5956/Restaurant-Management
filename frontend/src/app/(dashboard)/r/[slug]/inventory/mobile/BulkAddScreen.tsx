@@ -9,7 +9,8 @@ import { TOTAL_PRICE } from "../inventoryUnitUtils";
 import { inventoryErrorMessage, validateIngredientForm } from "../inventoryFormValidation";
 import type { useInventoryData } from "./useInventoryData";
 import AddIngredientScreen, { createInputFor, emptyMobileDraft, type MobileIngredientDraft } from "./AddIngredientScreen";
-import { FormGroup, PrimaryButton, ScreenNav, SecondaryButton } from "./primitives";
+import { FormGroup, PrimaryButton, ScreenNav, SecondaryButton, useWarmConfirm } from "./primitives";
+import { confirmCopy } from "../inventoryConfirmCopy";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
@@ -88,6 +89,7 @@ export default function BulkAddScreen({
   const [openKey, setOpenKey] = useState<number | null>(0);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
   const [error, setError] = useState("");
 
   const namesExcept = (key: number) => items.filter((item) => item.key !== key).map((item) => item.draft.name);
@@ -143,6 +145,14 @@ export default function BulkAddScreen({
       setError(copy.fixFirst);
       return;
     }
+    const ccopy = confirmCopy(lang);
+    const confirmed = await ask({
+      title: ccopy.bulkTitle(items.length),
+      description: items.map((item) => item.draft.name.trim()).join(" · "),
+      confirmLabel: ccopy.add,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setBusy(true);
     setError("");
     try {
@@ -209,6 +219,7 @@ export default function BulkAddScreen({
   return (
     <div data-inventory-mobile className="min-h-dvh bg-(--inv-canvas) text-(--inv-body) pb-32">
       <ScreenNav title={copy.title} onBack={onCancel} />
+      {confirmDialog}
 
       <div className="px-4 pt-4">
         <FormGroup

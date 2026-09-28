@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/format";
 import { inventoryErrorMessage } from "../inventoryFormValidation";
+import { confirmCopy } from "../inventoryConfirmCopy";
 import type { Ingredient, IngredientCategory } from "@/src/types/ingredient";
 import { categoryUsage, type useInventoryData } from "./useInventoryData";
 import {
@@ -31,6 +32,7 @@ export default function CategoriesScreen({
   actions: Actions;
 }) {
   const { ask, dialog: confirmDialog } = useWarmConfirm();
+  const ccopy = confirmCopy(lang);
   const copy = useMemo(
     () =>
       lang === "th"
@@ -85,6 +87,13 @@ export default function CategoriesScreen({
       setError(copy.duplicate);
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.categoryRenameTitle,
+      description: ccopy.categoryRenameBody(renaming.name, draft.trim(), usage.get(renaming.ID)?.count ?? 0),
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await actions.renameCategory(renaming.ID, draft.trim());
@@ -103,6 +112,13 @@ export default function CategoriesScreen({
       setError(copy.duplicate);
       return;
     }
+    const confirmed = await ask({
+      title: ccopy.categoryAddTitle(newName.trim()),
+      description: ccopy.categoryAddBody,
+      confirmLabel: ccopy.save,
+      cancelLabel: ccopy.cancel,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await actions.createCategory(newName.trim());

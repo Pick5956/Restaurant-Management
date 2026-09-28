@@ -36,7 +36,9 @@ import {
   ScreenNav,
   SecondaryButton,
   TAP,
+  useWarmConfirm,
 } from "./primitives";
+import { confirmCopy, ingredientChanges, newIngredientSummary } from "../inventoryConfirmCopy";
 
 type Actions = ReturnType<typeof useInventoryData>["actions"];
 
@@ -315,6 +317,7 @@ export default function AddIngredientScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const { ask, dialog: confirmDialog } = useWarmConfirm();
 
   const openingValue = resolved.stock * resolved.cost_per_unit;
   // One quiet line under a row whenever the number was typed in a unit other
@@ -400,6 +403,32 @@ export default function AddIngredientScreen({
             case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
           }
         : createInputFor(snapshot());
+      // Say what is about to change before it does — the same check a delete
+      // has. An edit that changed nothing just closes.
+      const ccopy = confirmCopy(lang);
+      const changes = editing
+        ? ingredientChanges(
+            editing,
+            payload,
+            (id) => categories.find((c) => c.ID === id)?.name ?? copy.noCategory,
+            lang,
+          )
+        : [];
+      if (editing && changes.length === 0) {
+        onCancel();
+        return;
+      }
+      const confirmed = await ask(
+        editing
+          ? { title: ccopy.editTitle(editing.name), description: changes.join(" · "), confirmLabel: ccopy.save, cancelLabel: ccopy.cancel }
+          : {
+              title: ccopy.addTitle(payload.name),
+              description: newIngredientSummary(payload, lang),
+              confirmLabel: ccopy.add,
+              cancelLabel: ccopy.cancel,
+            },
+      );
+      if (!confirmed) return;
       if (editing) await actions.update(editing.ID, payload);
       else await actions.create(payload);
       onSaved(payload.name);
@@ -424,6 +453,7 @@ export default function AddIngredientScreen({
       {/* In draft mode going back keeps what was typed — the bulk list flags
           anything still wrong when it saves — so nothing is lost to a stray tap. */}
       <ScreenNav title={title ?? copy.title} onBack={onDone ? () => onDone(snapshot()) : onCancel} />
+      {confirmDialog}
 
       <div className="px-4 pt-4">
         <FormGroup label={copy.groupInfo}>
