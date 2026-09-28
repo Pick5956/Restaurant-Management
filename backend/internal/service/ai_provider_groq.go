@@ -45,6 +45,7 @@ func (s *AIService) askGroqWithRotation(question string, history []AIConversatio
 
 	var lastErr error
 
+	stalls := 0
 	for _, attempt := range attempts {
 		currentKey := attempt.Key
 
@@ -77,13 +78,20 @@ func (s *AIService) askGroqWithRotation(question string, history []AIConversatio
 			aiStage("warn", "Groq key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
-		// Every key reaches the same server: one that is not answering (no headers
-		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
-		// either. Rotating anyway held the owner 12 s per key - 53 s for one
-		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		// A request that gets no headers (or a 502/503/504) is retried once on the
+		// next key and then given up on. Rotating through every key held the owner
+		// 12 s per key - 53 s for one question on 28 ก.ย. 2569 - but stopping at
+		// the first stall was wrong too: Gemini stalls one request at random while
+		// the next answers in 1-2 s, and with Gemini alone every stall became a
+		// failed question and a 45 s pause (same evening).
 		if isProviderOverloaded(err) {
-			aiStage("warn", "Groq key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
-			break
+			stalls++
+			if stalls >= 2 {
+				aiStage("warn", "Groq key %s: %v → second stall in a row, giving up on the provider", attempt.Label(), err)
+				break
+			}
+			aiStage("warn", "Groq key %s: %v → stalled, retrying once on the next key", attempt.Label(), err)
+			continue
 		}
 		aiStage("warn", "Groq key %s failed: %v → rotating", attempt.Label(), err)
 	}
@@ -570,6 +578,7 @@ func (s *AIService) askSecondRoundGroqWithRotation(prompt string, opts aiProvide
 		return "", "", allKeysRateLimitedError("Groq second-round", len(keys), releaseAt)
 	}
 	var lastErr error
+	stalls := 0
 	for _, attempt := range attempts {
 		answer, model, err := s.executeSecondRoundGroq(prompt, attempt.Key, opts)
 		if err == nil {
@@ -587,13 +596,20 @@ func (s *AIService) askSecondRoundGroqWithRotation(prompt string, opts aiProvide
 			aiStage("warn", "Groq second-round key %s parked for %s: %v", attempt.Label(), wait.Round(time.Second), err)
 			continue
 		}
-		// Every key reaches the same server: one that is not answering (no headers
-		// in aiProviderHeaderWait, or a 502/503/504) will not answer the next key
-		// either. Rotating anyway held the owner 12 s per key - 53 s for one
-		// question on 28 ก.ย. 2569 - before the next provider was tried.
+		// A request that gets no headers (or a 502/503/504) is retried once on the
+		// next key and then given up on. Rotating through every key held the owner
+		// 12 s per key - 53 s for one question on 28 ก.ย. 2569 - but stopping at
+		// the first stall was wrong too: Gemini stalls one request at random while
+		// the next answers in 1-2 s, and with Gemini alone every stall became a
+		// failed question and a 45 s pause (same evening).
 		if isProviderOverloaded(err) {
-			aiStage("warn", "Groq second-round key %s: %v → provider not answering, other keys skipped", attempt.Label(), err)
-			break
+			stalls++
+			if stalls >= 2 {
+				aiStage("warn", "Groq second-round key %s: %v → second stall in a row, giving up on the provider", attempt.Label(), err)
+				break
+			}
+			aiStage("warn", "Groq second-round key %s: %v → stalled, retrying once on the next key", attempt.Label(), err)
+			continue
 		}
 		aiStage("warn", "Groq second-round key %s failed: %v → rotating", attempt.Label(), err)
 	}
