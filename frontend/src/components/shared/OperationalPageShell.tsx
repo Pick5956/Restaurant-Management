@@ -50,9 +50,9 @@ export default function OperationalPageShell({
       // same sideways overflow without making a scroller.
       className={`w-full max-w-full overflow-x-clip bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 ${
         edgeToEdge
-          ? "flex h-dvh min-h-0 overflow-y-hidden lg:h-[calc(100dvh-var(--shell-pad)*2)]"
-          // Phones have had no top bar since 19 ก.ย. 2569, so the full height.
-          // On lg the shell sheet already inset itself by --shell-pad.
+          ? "flex h-[calc(100dvh-var(--phone-bar-h))] min-h-0 overflow-y-hidden lg:h-[calc(100dvh-var(--shell-pad)*2)]"
+          // edgeToEdge takes off the phone top bar's spacer (--phone-bar-h, back
+          // 28 ก.ย. 2569). On lg the shell sheet already inset itself by --shell-pad.
           : "min-h-dvh px-4 py-4 sm:px-6 lg:min-h-[calc(100dvh-3.5rem)] lg:px-8 lg:py-6"
       }`}
     >

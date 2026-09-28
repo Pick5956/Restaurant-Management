@@ -805,7 +805,10 @@ export default function AIAssistantPage() {
     : null;
 
   return (
-    <main className="ai-aura-bg relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
+    // Height minus the phone top bar's spacer (0 from tablet up): a plain
+    // h-dvh sat under that 56px spacer and pushed the composer off the bottom
+    // of the phone (28 ก.ย. 2569).
+    <main className="ai-aura-bg relative flex h-[calc(100dvh-var(--phone-bar-h))] min-h-0 w-full flex-col overflow-hidden bg-[#faf8f2] px-2 pt-2 pb-3 sm:px-6 lg:h-[calc(100dvh_-_var(--shell-pad)_*_2)] lg:px-8 lg:pt-3 lg:pb-4 dark:bg-gray-900">
       {/* Sunset Boulevard aura — full-bleed behind the whole page (light theme only) */}
       <div className="ai-aura-layer ai-aura-layer-1 dark:hidden" aria-hidden="true" />
       <div className="ai-aura-layer ai-aura-layer-2 dark:hidden" aria-hidden="true" />
