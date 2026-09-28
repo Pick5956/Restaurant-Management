@@ -176,6 +176,10 @@ type AIActionItemPayload struct {
 	Missing []string `json:"missing,omitempty"`
 	StorageType  string  `json:"storage_type,omitempty"`
 	MinPercent   float64 `json:"min_percent,omitempty"`
+	// create_ingredient from the card: the case a pack comes in. The section
+	// is CategoryID above, and the opening lot's date ExpiresAt.
+	CaseUnit string  `json:"case_unit,omitempty"`
+	CaseSize float64 `json:"case_size,omitempty"`
 
 	// What the row held when the preview was written, for the action types that
 	// overwrite a value outright. The owner confirms "5000 → 3000" having read
@@ -719,7 +723,7 @@ func aiValidateCommand(ports AIActionPorts, restaurantID uint, command AIAdjustS
 			return AIActionItemPayload{}, AIActionItemPreview{}, "", err
 		}
 		if command.Setup {
-			payload, preview, err := buildIngredientSetup(shelf, command.Name, command.Quantity, command.Unit,
+			payload, preview, err := buildIngredientSetup(shelf, aiSetupCategoriesOf(ports.Ingredients, restaurantID), command.Name, command.Quantity, command.Unit,
 				AIIngredientSetupAnswers{Unit: aiSetupFirstUnit(command.Unit)})
 			return payload, preview, entity.AIActionTypeCreateIngredient, err
 		}
@@ -1022,6 +1026,15 @@ func executeAIActionItem(ports AIActionPorts, restaurantID, actorUserID uint, it
 				packUnit, packSize := payload.PackUnit, payload.PackSize
 				request.PackUnit = &packUnit
 				request.PackSize = &packSize
+				if payload.CaseUnit != "" && payload.CaseSize > 0 {
+					caseUnit, caseSize := payload.CaseUnit, payload.CaseSize
+					request.CaseUnit = &caseUnit
+					request.CaseSize = &caseSize
+				}
+			}
+			request.CategoryID = payload.CategoryID
+			if payload.Quantity > 0 {
+				request.ExpiresAt = payload.ExpiresAt
 			}
 		}
 		_, err := ports.Ingredients.Create(restaurantID, actorUserID, request)

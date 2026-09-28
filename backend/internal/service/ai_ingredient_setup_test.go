@@ -16,7 +16,7 @@ import (
 func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 	shelf := []entity.Ingredient{{Name: "หมูสับ", Unit: "กรัม"}}
 
-	payload, preview, err := buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: aiSetupFirstUnit("ขวด")})
+	payload, preview, err := buildIngredientSetup(shelf, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: aiSetupFirstUnit("ขวด")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 	}
 
 	answers := AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackSize: 700, Price: 70}
-	payload, preview, err = buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", answers)
+	payload, preview, err = buildIngredientSetup(shelf, nil, "น้ำปลา", 2, "ขวด", answers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 
 	answers.PriceMode = aiSetupPricePerPack
 	answers.Price = 35
-	payload, _, err = buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", answers)
+	payload, _, err = buildIngredientSetup(shelf, nil, "น้ำปลา", 2, "ขวด", answers)
 	if err != nil || math.Abs(payload.CostPerUnit-0.05) > 1e-9 {
 		t.Fatalf("35 บาท a bottle is the same 70 บาท: %v / %v", payload.CostPerUnit, err)
 	}
@@ -56,21 +56,21 @@ func TestIngredientSetupComputesStockAndPriceFromTheAnswers(t *testing.T) {
 
 func TestIngredientSetupRefusesWhatTheSaveWouldRefuse(t *testing.T) {
 	shelf := []entity.Ingredient{{Name: "น้ำปลา", Unit: "มิลลิลิตร"}}
-	if _, _, err := buildIngredientSetup(shelf, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{}); err == nil {
+	if _, _, err := buildIngredientSetup(shelf, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{}); err == nil {
 		t.Fatal("an ingredient already on the shelf must be refused")
 	}
-	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ลัง"}); err == nil {
+	if _, _, err := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ลัง"}); err == nil {
 		t.Fatal("ลัง is not a stock unit")
 	}
 	// No bottle size yet: the stock is 0, so only a price per ml can be taken.
-	_, preview, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร"})
+	_, preview, err := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร"})
 	if err != nil || strings.Join(preview.Setup.PriceModes, ",") != "per_unit" {
 		t.Fatalf("with no stock only per_unit is offered: %v / %v", preview.Setup.PriceModes, err)
 	}
-	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackUnit: "ลิตร", PackSize: 1}); err == nil {
+	if _, _, err := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackUnit: "ลิตร", PackSize: 1}); err == nil {
 		t.Fatal("ลิตร already converts to มิลลิลิตร, it cannot be the pack")
 	}
-	if _, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด", StorageType: "oven"}); err == nil {
+	if _, _, err := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด", StorageType: "oven"}); err == nil {
 		t.Fatal("an unknown storage type must be refused")
 	}
 }
@@ -81,7 +81,7 @@ func TestIngredientSetupConvertsAMeasuredAmount(t *testing.T) {
 	if unit := aiSetupFirstUnit("กก."); unit != "กิโลกรัม" {
 		t.Fatalf("กก. starts the card on กิโลกรัม, got %q", unit)
 	}
-	payload, preview, err := buildIngredientSetup(nil, "หมูสามชั้น", 3, "กก.", AIIngredientSetupAnswers{Unit: "กรัม"})
+	payload, preview, err := buildIngredientSetup(nil, nil, "หมูสามชั้น", 3, "กก.", AIIngredientSetupAnswers{Unit: "กรัม"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestCardCreateResolutionTakesOnlyNewIngredients(t *testing.T) {
 // the pack, the storage and the reorder percentage all arrive.
 func TestExecuteCardCreateCarriesTheAnswers(t *testing.T) {
 	port := &fakeAIActionIngredientPort{items: map[uint]*entity.Ingredient{}}
-	payload, _, err := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด",
+	payload, _, err := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด",
 		AIIngredientSetupAnswers{Unit: "มิลลิลิตร", PackSize: 700, Price: 70, StorageType: "dry", MinPercent: 20})
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestExecuteCardCreateCarriesTheAnswers(t *testing.T) {
 		t.Fatalf("the card's answers did not reach Create: %+v", got)
 	}
 
-	unanswered, _, _ := buildIngredientSetup(nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{})
+	unanswered, _, _ := buildIngredientSetup(nil, nil, "น้ำปลา", 2, "ขวด", AIIngredientSetupAnswers{})
 	raw, _ = json.Marshal(unanswered)
 	item.PayloadJSON = string(raw)
 	if err := executeAIActionItem(AIActionPorts{Ingredients: port}, 1, 1, item); err == nil {
@@ -173,7 +173,7 @@ func TestAddIngredientChatFromTheOwnersLog(t *testing.T) {
 // was added while the card waited. A longer name is flagged, not refused.
 func TestNewIngredientIsCheckedAgainstTheShelf(t *testing.T) {
 	shelf := []entity.Ingredient{{Name: "ซอสหอยนางรมแม่ครัว", Unit: "ขวด"}}
-	_, preview, err := buildIngredientSetup(shelf, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
+	_, preview, err := buildIngredientSetup(shelf, nil, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestNewIngredientIsCheckedAgainstTheShelf(t *testing.T) {
 		t.Fatalf("the similar row must be named on the card: %q", effects)
 	}
 
-	payload, _, _ := buildIngredientSetup(nil, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
+	payload, _, _ := buildIngredientSetup(nil, nil, "ซอสหอยนางรม", 2, "ขวด", AIIngredientSetupAnswers{Unit: "ขวด"})
 	raw, _ := json.Marshal(payload)
 	port := &fakeAIActionIngredientPort{items: map[uint]*entity.Ingredient{7: {Name: "ซอสหอยนางรม", Unit: "ขวด"}}}
 	item := entity.AIActionPlanItem{ActionType: entity.AIActionTypeCreateIngredient, PayloadJSON: string(raw)}
@@ -193,7 +193,7 @@ func TestNewIngredientIsCheckedAgainstTheShelf(t *testing.T) {
 // "เพิ่มวัตถุดิบใหม่หน่อย ขิง" — no amount. The card asks what is on hand
 // and a price, and cannot be confirmed without them (เจ้าของสั่ง 25 ก.ย. 2569).
 func TestIngredientSetupAsksEverythingTheInventoryNeeds(t *testing.T) {
-	payload, preview, err := buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม"})
+	payload, preview, err := buildIngredientSetup(nil, nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestIngredientSetupAsksEverythingTheInventoryNeeds(t *testing.T) {
 	}
 
 	onHand := 3.0
-	payload, preview, err = buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &onHand, PriceMode: "per_unit", Price: 60})
+	payload, preview, err = buildIngredientSetup(nil, nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &onHand, PriceMode: "per_unit", Price: 60})
 	if err != nil || len(payload.Missing) != 0 {
 		t.Fatalf("answered in full: %v / %v", payload.Missing, err)
 	}
@@ -217,7 +217,7 @@ func TestIngredientSetupAsksEverythingTheInventoryNeeds(t *testing.T) {
 	}
 	// Zero on hand is refused, like a zero price: nothing to add yet.
 	zero := 0.0
-	if _, _, err := buildIngredientSetup(nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &zero}); err == nil {
+	if _, _, err := buildIngredientSetup(nil, nil, "ขิง", 0, "", AIIngredientSetupAnswers{Unit: "กิโลกรัม", Stock: &zero}); err == nil {
 		t.Fatal("an opening stock of 0 must be refused")
 	}
 }

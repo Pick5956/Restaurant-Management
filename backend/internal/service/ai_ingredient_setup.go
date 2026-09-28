@@ -38,6 +38,15 @@ type AIIngredientSetupAnswers struct {
 	Price       float64  `json:"price"`
 	StorageType string   `json:"storage_type"`
 	MinPercent  float64  `json:"min_percent"`
+	// What the inventory form also asks (28 ก.ย. 2569), so an ingredient added
+	// by chat is no thinner than one added on the stock page: the section of the
+	// stock list it goes in (0 = none), the opening lot's shelf life in days
+	// (nil = the storage type's default, 0 = "ไม่ระบุ"), and the case a pack is
+	// bought in ("ลัง" of 12 ขวด), which needs a pack.
+	CategoryID uint    `json:"category_id"`
+	ExpiryDays *int    `json:"expiry_days,omitempty"`
+	CaseUnit   string  `json:"case_unit"`
+	CaseSize   float64 `json:"case_size"`
 	// Finish marks the card's last answer: the window drops to the usual
 	// minute and the confirm bar counts it down.
 	Finish bool `json:"finish"`
@@ -78,6 +87,21 @@ type AIIngredientSetupView struct {
 	StorageType  string   `json:"storage_type"`
 	StorageTypes []string `json:"storage_types"`
 	MinPercent   float64  `json:"min_percent"`
+	// The stock list's sections, and the one chosen (0 = none).
+	Categories []AISetupCategory `json:"categories"`
+	CategoryID uint              `json:"category_id"`
+	// The opening lot's shelf life: ExpiryDays in force (0 = no date),
+	// ExpirySet once the owner chose it (until then it follows the storage
+	// type), the choices offered, and the date it comes to.
+	ExpiryDays    int    `json:"expiry_days"`
+	ExpirySet     bool   `json:"expiry_set"`
+	ExpiryOptions []int  `json:"expiry_options"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
+	// CanCase: there is a pack, so a case of packs can be set.
+	CanCase   bool     `json:"can_case"`
+	CaseUnit  string   `json:"case_unit,omitempty"`
+	CaseUnits []string `json:"case_units"`
+	CaseSize  float64  `json:"case_size,omitempty"`
 	// Missing names what the inventory needs and the card has not got yet.
 	// Confirming is refused until it is empty.
 	Missing []string `json:"missing,omitempty"`
@@ -92,6 +116,33 @@ const (
 	// on the last answer, at the confirm bar.
 	aiSetupWindow = 10 * time.Minute
 )
+
+// AISetupCategory is one section of the stock list the card offers.
+type AISetupCategory struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+}
+
+// aiSetupShelfLifeDays is the inventory form's DEFAULT_SHELF_LIFE_DAYS
+// (inventoryExpiryUtils.ts): the opening lot's expiry until the owner picks one.
+var aiSetupShelfLifeDays = map[string]int{"room_temp": 2, "chilled": 3, "frozen": 30, "dry": 180}
+
+// aiSetupShelfLifeOptions is the form's restockShelfLifePresets, default first.
+func aiSetupShelfLifeOptions(storage string) []int {
+	switch storage {
+	case "dry":
+		return []int{180, 365, 730}
+	case "frozen":
+		return []int{30, 60, 90}
+	case "chilled":
+		return []int{3, 5, 7}
+	default:
+		return []int{2, 3, 7}
+	}
+}
+
+// aiSetupCaseUnits are the outer containers a pack comes in.
+var aiSetupCaseUnits = []string{"ลัง", "แพ็ก", "กล่อง", "โหล"}
 
 // aiSetupStorageTypes are the inventory form's (inventoryPageUtils STORAGE_TYPES).
 var aiSetupStorageTypes = []string{"room_temp", "chilled", "frozen", "dry"}
@@ -119,7 +170,7 @@ func aiSetupFirstUnit(saidUnit string) string {
 // the unit, the opening stock, what one pack holds when it was said in packs,
 // and a price. Storage and the reorder level have the form's own defaults and
 // are shown to be accepted as they are.
-func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity float64, saidUnit string, answers AIIngredientSetupAnswers) (AIActionItemPayload, AIActionItemPreview, error) {
+func buildIngredientSetup(shelf []entity.Ingredient, categories []entity.IngredientCategory, name string, saidQuantity float64, saidUnit string, answers AIIngredientSetupAnswers) (AIActionItemPayload, AIActionItemPreview, error) {
 	cleanName := strings.TrimSpace(name)
 	if cleanName == "" {
 		return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ต้องมีชื่อวัตถุดิบ")
@@ -263,6 +314,64 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 	}
 	view.MinPercent = answers.MinPercent
 
+	// Section of the stock list.
+	view.Categories = []AISetupCategory{}
+	for _, category := range categories {
+		if category.IsActive {
+			view.Categories = append(view.Categories, AISetupCategory{ID: category.ID, Name: category.Name})
+		}
+	}
+	if answers.CategoryID != 0 {
+		found := false
+		for _, category := range view.Categories {
+			found = found || category.ID == answers.CategoryID
+		}
+		if !found {
+			return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("ไม่มีหมวดวัตถุดิบนี้ในร้าน")
+		}
+		view.CategoryID = answers.CategoryID
+	}
+
+	// The opening lot's expiry, from the storage type until the owner picks.
+	view.ExpiryOptions = aiSetupShelfLifeOptions(storage)
+	view.ExpiryDays = aiSetupShelfLifeDays[storage]
+	if answers.ExpiryDays != nil {
+		if *answers.ExpiryDays < 0 || *answers.ExpiryDays > 3650 {
+			return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("อายุของต้องอยู่ระหว่าง 0 ถึง 3650 วัน")
+		}
+		view.ExpiryDays = *answers.ExpiryDays
+		view.ExpirySet = true
+	}
+	if view.ExpiryDays > 0 && stock > 0 {
+		view.ExpiresAt = repository.BangkokNow().AddDate(0, 0, view.ExpiryDays).Format("2006-01-02")
+	}
+
+	// A case of packs, once there is a pack to count it in.
+	view.CanCase = view.PackUnit != "" && packSize > 0
+	view.CaseUnits = []string{}
+	caseSize := 0.0
+	if view.CanCase {
+		for _, word := range aiSetupCaseUnits {
+			if word != view.PackUnit {
+				view.CaseUnits = append(view.CaseUnits, word)
+			}
+		}
+		if word := standardUnitSpelling(answers.CaseUnit); word != "" {
+			if sameUnit(word, view.PackUnit) {
+				return AIActionItemPayload{}, AIActionItemPreview{}, errors.New("หน่วยลังต้องต่างจากหน่วยบรรจุภัณฑ์")
+			}
+			if err := purchaseUnitClashes(word, unit); err != nil {
+				return AIActionItemPayload{}, AIActionItemPreview{}, fmt.Errorf("“%s” ใช้เป็นหน่วยลังไม่ได้", word)
+			}
+			view.CaseUnit = word
+			if answers.CaseSize < 0 || answers.CaseSize > aiActionMaxQuantity {
+				return AIActionItemPayload{}, AIActionItemPreview{}, ErrAIActionBadQuantity
+			}
+			caseSize = answers.CaseSize
+			view.CaseSize = caseSize
+		}
+	}
+
 	switch {
 	case unit == "":
 		view.Missing = append(view.Missing, "หน่วยนับ")
@@ -273,6 +382,9 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 	}
 	if cost <= 0 {
 		view.Missing = append(view.Missing, "ราคา")
+	}
+	if view.CaseUnit != "" && caseSize <= 0 {
+		view.Missing = append(view.Missing, fmt.Sprintf("1 %sกี่%s", view.CaseUnit, view.PackUnit))
 	}
 
 	payload := AIActionItemPayload{
@@ -291,6 +403,10 @@ func buildIngredientSetup(shelf []entity.Ingredient, name string, saidQuantity f
 		StorageType:  storage,
 		MinPercent:   view.MinPercent,
 		Missing:      view.Missing,
+		CategoryID:   view.CategoryID,
+		ExpiresAt:    view.ExpiresAt,
+		CaseUnit:     view.CaseUnit,
+		CaseSize:     caseSize,
 	}
 	preview := aiIngredientSetupPreview(view)
 	if note := aiSimilarShelfNote(match); note != "" {
@@ -355,7 +471,20 @@ func aiIngredientSetupPreview(view AIIngredientSetupView) AIActionItemPreview {
 	if view.CostPerUnit > 0 {
 		preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "ราคาต่อ" + unit, Value: aiSetupCostText(view.CostPerUnit) + " บาท"})
 	}
+	if view.CaseUnit != "" && view.CaseSize > 0 {
+		preview.Facts = append(preview.Facts, AIActionPreviewFact{
+			Label: "ยกลัง", Value: fmt.Sprintf("%sละ %s %s", view.CaseUnit, formatStockNumber(view.CaseSize), view.PackUnit)})
+	}
+	for _, category := range view.Categories {
+		if category.ID == view.CategoryID {
+			preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "หมวด", Value: category.Name})
+		}
+	}
 	preview.Facts = append(preview.Facts, AIActionPreviewFact{Label: "การเก็บ", Value: aiSetupStorageLabel(view.StorageType)})
+	if view.ExpiresAt != "" {
+		preview.Facts = append(preview.Facts, AIActionPreviewFact{
+			Label: "หมดอายุ", Value: fmt.Sprintf("%s (%d วัน)", aiThaiDate(view.ExpiresAt), view.ExpiryDays)})
+	}
 	if view.MinPercent > 0 {
 		preview.Facts = append(preview.Facts, AIActionPreviewFact{
 			Label: "เตือนเมื่อเหลือ",
@@ -484,6 +613,7 @@ func (s *AIService) SetupAIPlanIngredientForOwner(actor AIActorContext, planID s
 	if err != nil {
 		return nil, err
 	}
+	categories := aiSetupCategoriesOf(s.actionIngredients, actor.RestaurantID)
 	// Open for the whole card while it is asking; the usual minute from the
 	// last answer, which the confirm bar counts down.
 	window := aiSetupWindow
@@ -496,7 +626,7 @@ func (s *AIService) SetupAIPlanIngredientForOwner(actor AIActorContext, planID s
 			if err := json.Unmarshal([]byte(item.PayloadJSON), &current); err != nil || !current.Setup {
 				return "", "", repository.ErrAIActionPlanItemNotEditable
 			}
-			payload, preview, err := buildIngredientSetup(shelf, current.Name, current.SaidQuantity, current.SaidUnit, request.AIIngredientSetupAnswers)
+			payload, preview, err := buildIngredientSetup(shelf, categories, current.Name, current.SaidQuantity, current.SaidUnit, request.AIIngredientSetupAnswers)
 			if err != nil {
 				return "", "", err
 			}
@@ -586,4 +716,24 @@ func aiBahtText(amount float64) string {
 		return fmt.Sprintf("%s.%02d", whole, rest)
 	}
 	return whole
+}
+
+// aiSetupCategoriesOf reads the stock list's sections when the port can - the
+// inventory service can; a test fake without them offers none.
+func aiSetupCategoriesOf(port AIActionIngredientPort, restaurantID uint) []entity.IngredientCategory {
+	// A plan is validated against a shelf wrapper; its sections are the real port's.
+	if shelf, ok := port.(*aiPlanShelf); ok {
+		port = shelf.AIActionIngredientPort
+	}
+	lister, ok := port.(interface {
+		ListCategories(restaurantID uint, includeInactive bool) ([]entity.IngredientCategory, error)
+	})
+	if !ok {
+		return nil
+	}
+	categories, err := lister.ListCategories(restaurantID, false)
+	if err != nil {
+		return nil
+	}
+	return categories
 }
