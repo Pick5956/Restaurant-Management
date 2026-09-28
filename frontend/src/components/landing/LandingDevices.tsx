@@ -91,7 +91,9 @@ export function Browser({ tabs, children }: { tabs?: ReactNode; children: ReactN
           </>
         )}
       </div>
-      <div className="relative aspect-[16/10] bg-[#161618]">{children}</div>
+      {/* 16:9, the shape of the 1920×1080 screenshots in public/landing, so
+          none of a screenshot is cut off at the sides. */}
+      <div className="relative aspect-video bg-[#161618]">{children}</div>
     </div>
   );
 }

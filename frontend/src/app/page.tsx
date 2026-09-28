@@ -21,8 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //   4  what the phone app shows, the phone held still while the story scrolls
 //   5  twelve features, 6  sign up
 // One glow behind the whole page drifts with the scroll, so no section has an
-// edge. The web and iPad screens are drawn stand-ins until real screenshots
-// are dropped into public/landing/ (see LandingDevices › WebShot).
+// edge. The web window shows real 1920×1080 screenshots from public/landing/
+// (28 ก.ย. 2569); the iPad is still a drawn stand-in until tablet-home.png is
+// dropped in there too (see LandingDevices › WebShot).
 
 // "Get started" opens the sign-up form, "Sign in" the sign-in form.
 function PillButtons({ register, login, onRegister, onLogin }: { register: string; login: string; onRegister: () => void; onLogin: () => void }) {
@@ -203,7 +204,7 @@ export default function LandingPage() {
               {cta}
             </div>
 
-            <div ref={heroShot} className="absolute left-1/2 top-1/2 w-[min(94vw,1180px,calc((100dvh_-_150px)*1.6))] will-change-transform">
+            <div ref={heroShot} className="absolute left-1/2 top-1/2 w-[min(94vw,1180px,calc((100dvh_-_150px)*1.78))] will-change-transform">
               <Browser>
                 <WebShot file="desktop-home.png" alt={copy.heroShotAlt} />
               </Browser>
@@ -228,7 +229,7 @@ export default function LandingPage() {
             ))}
           </div>
 
-          <FadeUp className="mt-8 w-[min(96vw,1400px,calc((100dvh_-_130px)*1.6))]">
+          <FadeUp className="mt-8 w-[min(96vw,1400px,calc((100dvh_-_130px)*1.78))]">
             <Browser
               tabs={
                 <div role="tablist" className="flex w-max gap-1">

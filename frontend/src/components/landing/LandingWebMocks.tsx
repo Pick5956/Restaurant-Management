@@ -2,8 +2,8 @@
 // screenshots are dropped into public/landing/ (LandingDevices › WebShot picks
 // the file when it exists). Each is laid out at 1280×800 and scaled to its
 // frame. The figures on the overview and kitchen match the phone screenshots
-// (฿7,332 · +฿6,282 · 2 tickets late); the ones on reports and the bill are
-// made up for the picture. The shop is Thai, so the screens stay in Thai in
+// (฿7,332 · +฿6,282 · 2 tickets late); the ones on reports are made up for
+// the picture. The shop is Thai, so the screens stay in Thai in
 // either language, the way a real screenshot would.
 
 import {
@@ -13,14 +13,12 @@ import {
   ClipboardList,
   LayoutGrid,
   Package,
-  QrCode,
   Receipt,
   Send,
   Settings,
   ShoppingCart,
   Sparkles,
   Table2,
-  Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -163,44 +161,6 @@ function MockKitchen() {
   );
 }
 
-function MockPos() {
-  const menu = [["ผัดกะเพราหมูสับ", 60], ["ผัดไทยกุ้งสด", 80], ["ต้มยำกุ้ง", 150], ["ข้าวผัดปู", 90], ["ไข่ดาว", 10], ["ข้าวสวย", 15], ["ชาไทยเย็น", 35], ["น้ำเปล่า", 10]] as const;
-  const bill = [["ข้าวผัดปู", 1, 90], ["ผัดกะเพราหมูสับ", 2, 120], ["ไข่ดาว", 2, 20], ["น้ำเปล่า", 2, 20]] as const;
-  return (
-    <MockShell active="pos" title="ขายหน้าร้าน">
-      <div className="mt-4 grid grid-cols-[1fr_380px] gap-5">
-        <div className="grid grid-cols-4 content-start gap-3">
-          {menu.map(([name, price]) => (
-            <div key={name} className={`${MOCK_CARD} p-3`}>
-              <div className="h-20 rounded-xl bg-gradient-to-br from-[#f7dcc0] to-[#f1c79c]" />
-              <p className="mt-2 text-[14px] font-semibold">{name}</p>
-              <p className="text-[13px] text-orange-700">฿{price}</p>
-            </div>
-          ))}
-        </div>
-        <div className={`${MOCK_CARD} p-5`}>
-          <div className="flex items-center justify-between"><p className="text-[20px] font-bold">โต๊ะ T11</p><span className="rounded-full bg-sky-100 px-3 py-1 text-[12px] font-semibold text-sky-700">รอเช็คบิล</span></div>
-          <div className="mt-4 space-y-2.5 border-b border-[#f0e4d6] pb-4">
-            {bill.map(([n, q, t]) => (
-              <div key={n} className="flex justify-between text-[15px]"><span>{n} ×{q}</span><span>฿{t}</span></div>
-            ))}
-          </div>
-          <div className="mt-4 flex items-end justify-between"><span className="text-[#9a7b63]">รวม</span><span className="text-[34px] font-bold">฿250</span></div>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-[#f0e4d6] py-3 font-semibold"><Wallet className="h-5 w-5" />เงินสด</div>
-            <div className="flex items-center justify-center gap-2 rounded-xl bg-orange-700 py-3 font-semibold text-white"><QrCode className="h-5 w-5" />PromptPay</div>
-          </div>
-          <div className="mx-auto mt-5 grid h-40 w-40 grid-cols-8 gap-0.5 rounded-xl border border-[#f0e4d6] p-3">
-            {Array.from({ length: 64 }, (_, i) => (
-              <span key={i} className={(i * 7 + (i >> 3) * 3) % 5 < 2 ? "bg-[#2b1a10]" : ""} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </MockShell>
-  );
-}
-
 function MockReports() {
   const days = [["ส", 6480], ["อา", 8120], ["จ", 5310], ["อ", 5890], ["พ", 6240], ["พฤ", 6960], ["ศ", 7332]] as const;
   const top = [["ผัดกะเพราหมูสับ", 148], ["ผัดไทยกุ้งสด", 121], ["ข้าวผัดปู", 96], ["ต้มยำกุ้ง", 74]] as const;
@@ -277,7 +237,6 @@ export const WEB_MOCKS: Record<string, () => ReactNode> = {
   "desktop-home.png": MockHome,
   "tablet-home.png": MockHome,
   "desktop-kitchen.png": MockKitchen,
-  "desktop-pos.png": MockPos,
   "desktop-reports.png": MockReports,
   "desktop-ai.png": MockAi,
 };
