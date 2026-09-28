@@ -106,7 +106,9 @@ export function confirmCopy(lang: Lang) {
           : `Set ${count} new counts?`,
     lotTitle: th ? "เปลี่ยนวันหมดอายุ?" : "Change the expiry date?",
     lotLine: (amount: string, unit: string, from: string, to: string) =>
-      th ? `ล็อต ${amount} ${unit}: ${from} → ${to}` : `Lot of ${amount} ${unit}: ${from} → ${to}`,
+      th
+        ? `ล็อต ${amount}${unit ? ` ${unit}` : ""}: ${from} → ${to}`
+        : `Lot of ${amount}${unit ? ` ${unit}` : ""}: ${from} → ${to}`,
     noDate: th ? "ไม่ระบุ" : "none",
     categoryAddTitle: (name: string) => (th ? `เพิ่มหมวด “${name}”?` : `Add the category “${name}”?`),
     categoryAddBody: th ? "หมวดใหม่จะเลือกได้ทันทีตอนเพิ่มหรือแก้วัตถุดิบ" : "It can be picked straight away for any ingredient.",

@@ -76,6 +76,7 @@ import {
   defaultEntryUnit,
   emptyTypedAmounts,
   entryChain,
+  formatInPacks,
   formatPackCount,
   hasPack,
   largestPurchaseUnit,
@@ -1356,8 +1357,8 @@ export default function InventoryPage() {
     const confirmed = await ask({
       title: ccopy.lotTitle,
       description: ccopy.lotLine(
-        formatNumber(lot.remaining, lang),
-        item.unit,
+        formatInPacks(item, lot.remaining, lang),
+        "",
         lot.expires_at ? formatExpiryDate(lot.expires_at, lang) : ccopy.noDate,
         days === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(days), lang),
       ),
@@ -2131,13 +2132,11 @@ export default function InventoryPage() {
                     own — saved on the spot, apart from the form's บันทึก. */}
                 {editingItem && editLots.length > 0 ? (
                   <div>
-                    <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {xcopy.label} ({xcopy.lots} {editLots.length})
-                    </p>
+                    <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.label}</p>
                     <LotExpiryList
+                      compact
                       lots={editLots}
-                      unit={editingItem.unit}
-                      storageType={editingItem.storage_type}
+                      item={editingItem}
                       lang={lang}
                       canManage={canManage}
                       saving={lotSaving}
@@ -2753,8 +2752,7 @@ export default function InventoryPage() {
                   </p>
                   <LotExpiryList
                     lots={lots}
-                    unit={txTarget.unit}
-                    storageType={txTarget.storage_type}
+                    item={txTarget}
                     lang={lang}
                     canManage={canManage}
                     saving={lotSaving}
