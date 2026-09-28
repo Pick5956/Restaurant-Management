@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  AlertCircle,
   ArrowDown,
   ArrowDownLeft,
   ArrowRight,
@@ -54,18 +55,21 @@ import type {
 } from "@/src/types/ingredient";
 import { InventoryPageSkeleton } from "./InventorySkeletons";
 import InventoryViewTabs, { type InventoryView } from "./InventoryViewTabs";
-import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
 import ExpiryChips from "./ExpiryChips";
+import IngredientFormFields, {
+  createPayloadFor,
+  newIngredientDraft,
+  type IngredientDraft,
+  type IngredientFormLabels,
+} from "./IngredientFormFields";
 import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { SEALED_UNITS } from "./inventoryPageUtils";
-import NumberInput from "@/src/components/shared/NumberInput";
 import {
   hasFieldErrors,
   inventoryErrorMessage,
-  validateBulkRows,
   validateIngredientForm,
 } from "./inventoryFormValidation";
 import {
@@ -75,14 +79,7 @@ import {
   formatPackCount,
   hasPack,
   largestPurchaseUnit,
-  packExample,
-  packUnitChoices,
-  purchaseFactor,
-  purchaseUnitChoices,
-  resolveTypedAmounts,
-  retargetTypedUnits,
   typedText,
-  unitCopy,
   TOTAL_PRICE,
   type TypedAmounts,
 } from "./inventoryUnitUtils";
@@ -107,27 +104,21 @@ import {
   getStatus,
   getReorderPercent,
   getStockPercent,
-  reorderQuantityFor,
   inputCls,
   STORAGE_TYPES,
-  stockUnitRows,
   type ItemStatus,
   type StockStatus,
 } from "./inventoryPageUtils";
 
 type Copy = ReturnType<typeof buildCopy>;
 
-// One editable row in the "add multiple ingredients" table.
-type BulkRow = {
-  name: string;
-  category_id: number;
-  unit: string;
-  stock: number;
-  min_stock: number;
-  cost_per_unit: number;
-  costText?: string;
-};
-const bulkEmptyRow: BulkRow = { name: "", category_id: 0, unit: "กิโลกรัม", stock: 0, min_stock: 0, cost_per_unit: 0 };
+// One ingredient in the bulk-add list. `key` stays with it while others are
+// added or removed, so the list and the open form keep pointing at the same one.
+type BulkItem = { key: number; draft: IngredientDraft };
+let bulkKeySeq = 0;
+const newBulkItem = (): BulkItem => ({ key: ++bulkKeySeq, draft: newIngredientDraft() });
+// Nothing typed in it yet: skipped on save rather than refused for a missing name.
+const isBlankDraft = ({ form, typed }: IngredientDraft) => !form.name.trim() && !typed.stock && !typed.cost;
 
 // Column-header sort glyph: an up- and a down-triangle stacked. The active sort
 // direction's triangle is solid; the other stays faint.
@@ -446,15 +437,25 @@ export default function InventoryPage() {
   const canManageExpenses = can(activeMembership, "manage_expenses");
   const canView = canManage || can(activeMembership, "view_inventory");
   const copy = useMemo(() => buildCopy(lang), [lang]);
-  const unitOptions = useMemo(() => stockUnitRows(lang), [lang]);
   const xcopy = useMemo(() => expiryCopy(lang), [lang]);
-  const ucopy = useMemo(() => unitCopy(lang), [lang]);
   const storageOptions = useMemo(
     () =>
       STORAGE_TYPES.map((type) => ({
         value: type,
         label: copy.storageTypes[type as keyof typeof copy.storageTypes],
       })),
+    [copy],
+  );
+  const formLabels = useMemo<IngredientFormLabels>(
+    () => ({
+      name: copy.name,
+      category: copy.category,
+      manageCategories: copy.manageCategories,
+      storageType: copy.storageType,
+      initialStock: copy.initialStock,
+      costPerUnit: copy.costPerUnit,
+      minStock: copy.minStock,
+    }),
     [copy],
   );
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -516,10 +517,12 @@ export default function InventoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkClosing, setBulkClosing] = useState(false);
-  const [bulkRows, setBulkRows] = useState<BulkRow[]>([{ ...bulkEmptyRow }]);
-  // Category every NEW row starts with, plus a one-tap "apply to all" — the same
-  // shape the mobile screen has, so the two do not drift.
-  const [bulkDefaultCategory, setBulkDefaultCategory] = useState(0);
+  // A list on the left, and the full single-add form on the right for the one
+  // picked — every field the drawer has, for each ingredient in the batch.
+  const [bulkItems, setBulkItems] = useState<BulkItem[]>(() => [newBulkItem()]);
+  const [bulkSelected, setBulkSelected] = useState(0);
+  // Like the drawer: problems show only once a save has been tried.
+  const [bulkShowErrors, setBulkShowErrors] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState("");
 
@@ -531,19 +534,6 @@ export default function InventoryPage() {
   // been tried, so an empty new form does not open covered in red.
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [editingItem, setEditingItem] = useState<Ingredient | null>(null);
-  // Where the reorder slider's handle sits. A percent set by dragging is kept as
-  // it is; a quantity typed by hand is shown at the place it falls on this
-  // shelf, so the handle is never somewhere the number is not.
-  // An existing item is measured against the shelf maximum its restocks have
-  // established; a new one against the opening stock being typed, which is what
-  // the server records as its first maximum.
-  const editingMaxStock = editingItem ? editingItem.max_stock ?? 0 : form.stock;
-  const warnPercent =
-    (form.min_percent ?? 0) > 0
-      ? (form.min_percent ?? 0)
-      : editingMaxStock > 0
-        ? Math.max(0, Math.min(100, Math.round((form.min_stock / editingMaxStock) * 100)))
-        : 0;
   const [modalOpen, setModalOpen] = useState(false);
   const [modalClosing, setModalClosing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -863,8 +853,6 @@ export default function InventoryPage() {
       setFormError(lang === "th" ? "ยังบันทึกไม่ได้ แก้ช่องที่ขึ้นสีแดงก่อน" : "Fix the fields marked in red first");
       return;
     }
-    const stockTypedIn = typed.stockIn && typed.stockIn !== form.unit ? typed.stockIn : "";
-
     await saveOnce.current(async () => {
       setSubmitting(true);
       try {
@@ -873,15 +861,7 @@ export default function InventoryPage() {
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
-          const payload: IngredientInput = { ...form };
-          // Opening stock typed in a pack goes up as typed, so the history row
-          // reads "ยอดเริ่มต้น · กรอก 2 ลัง" — the server does the conversion.
-          if (stockTypedIn && form.stock > 0) {
-            payload.stock = parseFloat(typed.stock) || 0;
-            payload.stock_unit = stockTypedIn;
-          }
-          if (form.stock > 0 && formExpiryDays !== null) payload.expires_at = expiryDateFromDays(formExpiryDays);
-          const response = await createIngredient(payload);
+          const response = await createIngredient(createPayloadFor(formDraft));
           setIngredients((prev) => [...prev, response.data]);
           showToast({ title: copy.ingredientCreated });
         }
@@ -1003,7 +983,10 @@ export default function InventoryPage() {
   }
 
   function openBulk() {
-    setBulkRows([{ ...bulkEmptyRow }, { ...bulkEmptyRow }, { ...bulkEmptyRow }]);
+    const first = newBulkItem();
+    setBulkItems([first]);
+    setBulkSelected(first.key);
+    setBulkShowErrors(false);
     setBulkError("");
     setBulkClosing(false);
     setBulkOpen(true);
@@ -1018,10 +1001,6 @@ export default function InventoryPage() {
     }, 260);
   }
 
-  // A price is typed per a unit of the ingredient only when there is no stock
-  // to divide a total by — an edit, or a new ingredient with no opening stock.
-  const priceUnitOptions = purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }));
-  const pricingTotal = typed.costIn === TOTAL_PRICE;
   const fieldErrors = validateIngredientForm(
     {
       name: form.name,
@@ -1039,116 +1018,111 @@ export default function InventoryPage() {
   );
   const shownErrors = showFieldErrors ? fieldErrors : {};
 
-  // The dropdown lists the containers that usually hold this kind of stock
-  // first, then a disabled divider, then the rest — the web select has no
-  // group headings, so the divider row stands in for one. Nothing is refused.
-  function containerOptions(level: "pack" | "case", exclude: string[]) {
-    const { likely, other } = packUnitChoices(form.unit, level, exclude);
-    const rows: { value: string; label: string; disabled?: boolean }[] = [
-      { value: "", label: level === "pack" ? ucopy.none : `${ucopy.caseAs}: ${ucopy.none}` },
-      ...likely.map((unit) => ({ value: unit, label: unit })),
-    ];
-    if (likely.length && other.length) rows.push({ value: "__divider__", label: `── ${ucopy.otherUnits} ──`, disabled: true });
-    return [...rows, ...other.map((unit) => ({ value: unit, label: unit }))];
+  // The drawer's one ingredient, in the shape the shared fields edit.
+  const formDraft: IngredientDraft = { form, typed, expiryDays: formExpiryDays };
+  function setFormDraft(next: IngredientDraft) {
+    setForm(next.form);
+    setTyped(next.typed);
+    setFormExpiryDays(next.expiryDays);
   }
 
-  // Everything that changes what a typed number means goes through here: the
-  // typed text, the unit beside it, and the pack fields that size those units.
-  function applyTyped(nextForm: IngredientInput, nextTyped: TypedAmounts, minFromTyped = true) {
-    const resolved = resolveTypedAmounts(nextForm, nextTyped);
-    setTyped(nextTyped);
-    setForm({
-      ...nextForm,
-      stock: resolved.stock,
-      cost_per_unit: resolved.cost_per_unit,
-      min_stock: minFromTyped ? resolved.min_stock : nextForm.min_stock,
-    });
+  // Each row is checked as the drawer checks one ingredient, and also against
+  // the names the other rows in the batch already use.
+  const bulkErrors = useMemo(() => {
+    const existingNames = ingredients.map((item) => item.name);
+    return new Map(
+      bulkItems.map(({ key, draft }) => {
+        if (isBlankDraft(draft)) return [key, {}];
+        const { form, typed } = draft;
+        const errors = validateIngredientForm(
+          {
+            name: form.name,
+            existingNames,
+            batchNames: bulkItems.filter((other) => other.key !== key).map((other) => other.draft.form.name),
+            packUnit: form.pack_unit ?? "",
+            packSize: form.pack_size ? String(form.pack_size) : "",
+            caseUnit: form.case_unit ?? "",
+            caseSize: form.case_size ? String(form.case_size) : "",
+            stockText: typed.stock,
+            costText: typed.cost,
+            creating: true,
+          },
+          lang,
+        );
+        return [key, errors];
+      }),
+    );
+  }, [bulkItems, ingredients, lang]);
+  const bulkToSave = bulkItems.filter((item) => !isBlankDraft(item.draft));
+  const bulkBadCount = bulkToSave.filter((item) => hasFieldErrors(bulkErrors.get(item.key) ?? {})).length;
+
+  function updateBulkDraft(key: number, draft: IngredientDraft) {
+    setBulkItems((prev) => prev.map((item) => (item.key === key ? { ...item, draft } : item)));
   }
 
-  function changePackFields(patch: Partial<IngredientInput>) {
-    const nextForm = { ...form, ...patch };
-    applyTyped(nextForm, retargetTypedUnits(form, nextForm, typed));
+  function addBulkItem() {
+    // A new one starts in the category of the one before it — a batch is
+    // usually one delivery of one kind of thing.
+    const last = bulkItems[bulkItems.length - 1];
+    const item = newBulkItem();
+    item.draft = newIngredientDraft(last?.draft.form.category_id ?? 0);
+    setBulkItems((prev) => [...prev, item]);
+    setBulkSelected(item.key);
   }
 
-  function changeTypedStock(patch: Partial<TypedAmounts>) {
-    const nextTyped = { ...typed, ...patch };
-    // With opening stock on the form, the only price anyone knows is what that
-    // stock cost, so the price box always means "total paid" and the price per
-    // unit is worked out from it — there is no mode to pick. With no stock
-    // there is nothing to divide by, and it goes back to a price per unit.
-    if (!editingItem) {
-      const hasStock = (parseFloat(nextTyped.stock) || 0) > 0;
-      if (hasStock) nextTyped.costIn = TOTAL_PRICE;
-      else if (nextTyped.costIn === TOTAL_PRICE) {
-        nextTyped.costIn = form.pack_unit && (form.pack_size ?? 0) > 0 ? form.pack_unit : "";
-      }
-    }
-    const stock = resolveTypedAmounts(form, nextTyped).stock;
-    // The shelf just changed size, so a reorder level held as a share of it is
-    // recomputed rather than left as a quantity from the old shelf.
-    if ((form.min_percent ?? 0) > 0) {
-      const min = reorderQuantityFor(stock, form.min_percent ?? 0);
-      const factor = purchaseFactor(form, nextTyped.minIn) ?? 1;
-      applyTyped({ ...form, min_stock: min }, { ...nextTyped, min: typedText(min / factor) }, false);
+  function removeBulkItem(key: number) {
+    const index = bulkItems.findIndex((item) => item.key === key);
+    const rest = bulkItems.filter((item) => item.key !== key);
+    if (rest.length === 0) {
+      const fresh = newBulkItem();
+      setBulkItems([fresh]);
+      setBulkSelected(fresh.key);
       return;
     }
-    applyTyped(form, nextTyped);
-  }
-
-  function updateBulkRow(index: number, patch: Partial<BulkRow>) {
-    setBulkRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+    setBulkItems(rest);
+    setBulkSelected(rest[Math.min(index, rest.length - 1)].key);
   }
 
   async function handleBulkSave() {
-    const rows = bulkRows.filter((row) => row.name.trim() !== "");
-    if (rows.length === 0) {
+    if (bulkToSave.length === 0) {
       setBulkError(lang === "th" ? "กรอกชื่อวัตถุดิบอย่างน้อย 1 รายการ" : "Enter at least one ingredient name");
       return;
     }
-    const rowProblems = validateBulkRows(
-      rows.map((row) => ({ name: row.name, quantity: row.stock, price: row.cost_per_unit })),
-      ingredients.map((item) => item.name),
-      lang,
-    );
-    const firstBad = rowProblems.findIndex(Boolean);
-    if (firstBad >= 0) {
-      setBulkError(`${rows[firstBad].name.trim()}: ${rowProblems[firstBad]}`);
+    const firstBad = bulkToSave.find((item) => hasFieldErrors(bulkErrors.get(item.key) ?? {}));
+    if (firstBad) {
+      setBulkShowErrors(true);
+      setBulkSelected(firstBad.key);
+      setBulkError(lang === "th" ? "ยังบันทึกไม่ได้ แก้รายการที่มีเครื่องหมายส้มก่อน" : "Fix the items marked in orange first");
       return;
     }
     setBulkError("");
     setBulkSaving(true);
-    // Create all rows in parallel; keep whatever succeeded and report the rest.
-    const results = await Promise.allSettled(
-      rows.map((row) =>
-        createIngredient({
-          name: row.name.trim(),
-          category_id: row.category_id || undefined,
-          unit: row.unit,
-          stock: row.stock,
-          min_stock: row.min_stock,
-          cost_per_unit: row.cost_per_unit,
-          storage_type: "room_temp",
-        }),
-      ),
-    );
+    // No bulk endpoint: each goes up as the drawer would send it, in parallel.
+    const results = await Promise.allSettled(bulkToSave.map((item) => createIngredient(createPayloadFor(item.draft))));
     const created: Ingredient[] = [];
-    let failed = 0;
-    results.forEach((res) => {
+    const failedKeys = new Set<number>();
+    results.forEach((res, index) => {
       if (res.status === "fulfilled") created.push(res.value.data);
-      else failed += 1;
+      else failedKeys.add(bulkToSave[index].key);
     });
     if (created.length > 0) setIngredients((prev) => [...prev, ...created]);
     setBulkSaving(false);
-    if (failed === 0) {
+    if (failedKeys.size === 0) {
       showToast({ title: lang === "th" ? `เพิ่ม ${created.length} รายการแล้ว` : `Added ${created.length} items` });
       closeBulk();
-    } else {
-      setBulkError(
-        lang === "th"
-          ? `เพิ่มสำเร็จ ${created.length} รายการ • ล้มเหลว ${failed} (เช็คชื่อซ้ำ/ข้อมูล)`
-          : `Added ${created.length} • ${failed} failed (check for duplicate names)`,
-      );
+      return;
     }
+    // Keep only what did not go through, so a retry cannot add the rest twice.
+    const left = bulkItems.filter((item) => failedKeys.has(item.key));
+    setBulkItems(left);
+    setBulkSelected(left[0].key);
+    const firstFailure = results.find((res): res is PromiseRejectedResult => res.status === "rejected");
+    const reason = (firstFailure?.reason as { response?: { data?: { error?: string } } } | undefined)?.response?.data?.error;
+    setBulkError(
+      lang === "th"
+        ? `เพิ่มสำเร็จ ${created.length} รายการ · ไม่สำเร็จ ${failedKeys.size} (${inventoryErrorMessage(reason, lang)})`
+        : `Added ${created.length} · ${failedKeys.size} failed (${inventoryErrorMessage(reason, lang)})`,
+    );
   }
 
   function openAdjust(item: Ingredient) {
@@ -2037,294 +2011,26 @@ export default function InventoryPage() {
             </div>
             <div ref={smoothScroll} className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.name}</label>
-                    <input
-                      type="text"
-                      value={form.name}
-                      onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                      className={inputCls}
-                      autoFocus
-                    />
-                    {shownErrors.name ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.name}</p> : null}
-                  </div>
-                  <div>
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.category}</label>
-                      {canManage && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCategoryError("");
-                            setCategoryName("");
-                            setCategoryModalClosing(false);
-                            setCategoryModalOpen(true);
-                          }}
-                          className="text-xs font-semibold text-orange-600 transition hover:text-orange-500 dark:text-orange-300"
-                        >
-                          {copy.manageCategories}
-                        </button>
-                      )}
-                    </div>
-                    <ThemedSelect
-                      aria-label={copy.category}
-                      value={String(form.category_id ?? 0)}
-                      onChange={(value) => setForm((current) => ({ ...current, category_id: parseInt(value, 10) || 0 }))}
-                      options={categoryOptions}
-                    />
-                  </div>
-                </div>
-                {/* Order follows what each field depends on: the stock unit, then
-                    the packs sized in it, then the price, stock and reorder level
-                    that may be typed in those packs. */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.stockUnitLabel}</label>
-                    <ThemedSelect
-                      aria-label={ucopy.stockUnitLabel}
-                      value={form.unit}
-                      onChange={(value) => changePackFields({ unit: value })}
-                      options={stockUnitRows(lang, form.unit)}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.storageType}</label>
-                    <ThemedSelect
-                      aria-label={copy.storageType}
-                      value={form.storage_type ?? "room_temp"}
-                      onChange={(value) => {
-                        setForm((current) => ({ ...current, storage_type: value }));
-                        // A new storage type means a new shelf life for the opening lot.
-                        setFormExpiryDays(defaultShelfLifeDays(value));
-                      }}
-                      options={storageOptions}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.groupBuy}</label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="w-36">
-                      <ThemedSelect
-                        aria-label={ucopy.buyAs}
-                        value={form.pack_unit ?? ""}
-                        onChange={(value) =>
-                          changePackFields({
-                            pack_unit: value,
-                            pack_size: value ? form.pack_size : 0,
-                            case_unit: value ? form.case_unit : "",
-                            case_size: value ? form.case_size : 0,
-                          })
+                <IngredientFormFields
+                  draft={formDraft}
+                  onChange={setFormDraft}
+                  editingItem={editingItem}
+                  errors={shownErrors}
+                  labels={formLabels}
+                  categoryOptions={categoryOptions}
+                  storageOptions={storageOptions}
+                  lang={lang}
+                  onManageCategories={
+                    canManage
+                      ? () => {
+                          setCategoryError("");
+                          setCategoryName("");
+                          setCategoryModalClosing(false);
+                          setCategoryModalOpen(true);
                         }
-                        options={containerOptions("pack", [])}
-                      />
-                    </div>
-                    {form.pack_unit ? (
-                      <>
-                        <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perPack(form.pack_unit)}</span>
-                        <div className="w-28">
-                          <NumberInput
-                            min={0}
-                            blankWhenZero
-                            aria-label={ucopy.perPack(form.pack_unit)}
-                            value={form.pack_size ?? 0}
-                            onValue={(value) => changePackFields({ pack_size: value })}
-                            className={inputCls}
-                          />
-                        </div>
-                        <span className="text-sm text-slate-500 dark:text-slate-400">{form.unit}</span>
-                      </>
-                    ) : null}
-                  </div>
-                  {form.pack_unit ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <div className="w-36">
-                        <ThemedSelect
-                          aria-label={ucopy.caseAs}
-                          value={form.case_unit ?? ""}
-                          onChange={(value) => changePackFields({ case_unit: value, case_size: value ? form.case_size : 0 })}
-                          options={containerOptions("case", [form.pack_unit ?? ""])}
-                        />
-                      </div>
-                      {form.case_unit ? (
-                        <>
-                          <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perCase(form.case_unit)}</span>
-                          <div className="w-28">
-                            <NumberInput
-                              min={0}
-                              blankWhenZero
-                              aria-label={ucopy.perCase(form.case_unit)}
-                              value={form.case_size ?? 0}
-                              onValue={(value) => changePackFields({ case_size: value })}
-                              className={inputCls}
-                            />
-                          </div>
-                          <span className="text-sm text-slate-500 dark:text-slate-400">{form.pack_unit}</span>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {shownErrors.packSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.packSize}</p> : null}
-                  {shownErrors.caseSize ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.caseSize}</p> : null}
-                  {packExample(form, lang) ? (
-                    <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">{packExample(form, lang)}</p>
-                  ) : null}
-                </div>
-                {/* Opening stock comes first because the price can be read off
-                    it: type what was paid for that stock and the price per unit
-                    follows. On an existing item the price takes the whole row. */}
-                <div className={!editingItem ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
-                  {!editingItem ? (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.initialStock}</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="decimal"
-                          aria-label={copy.initialStock}
-                          placeholder="0"
-                          value={typed.stock}
-                          onChange={(event) => changeTypedStock({ stock: event.target.value })}
-                          className={inputCls}
-                        />
-                        {purchaseUnitChoices(form).length > 1 ? (
-                          <div className="w-28 shrink-0">
-                            <ThemedSelect
-                              aria-label={copy.initialStock}
-                              value={typed.stockIn || form.unit}
-                              onChange={(value) => changeTypedStock({ stockIn: value === form.unit ? "" : value })}
-                              options={purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }))}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                      {typed.stockIn && form.stock > 0 ? (
-                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                          {entryChain(form, parseFloat(typed.stock) || 0, typed.stockIn, lang) ??
-                            ucopy.inStockUnit(formatNumber(form.stock, lang), form.unit)}
-                        </p>
-                      ) : null}
-                      {shownErrors.stock ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.stock}</p> : null}
-                    </div>
-                  ) : null}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {pricingTotal
-                        ? ucopy.totalPaidFor(
-                            formatNumber(parseFloat(typed.stock) || 0, lang),
-                            typed.stockIn || form.unit,
-                          )
-                        : priceUnitOptions.length > 1
-                          ? ucopy.price
-                          : `${copy.costPerUnit} (THB)`}
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        inputMode="decimal"
-                        aria-label={ucopy.price}
-                        value={typed.cost}
-                        onChange={(event) => applyTyped(form, { ...typed, cost: event.target.value })}
-                        className={inputCls}
-                      />
-                      {!pricingTotal && priceUnitOptions.length > 1 ? (
-                        <>
-                          <span className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{ucopy.perWord}</span>
-                          <div className="w-28 shrink-0">
-                            <ThemedSelect
-                              aria-label={ucopy.price}
-                              value={typed.costIn || form.unit}
-                              onChange={(value) => applyTyped(form, { ...typed, costIn: value === form.unit ? "" : value })}
-                              options={priceUnitOptions}
-                            />
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                    {typed.costIn && form.cost_per_unit > 0 ? (
-                      <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-                        {/* Every price the typed one implies, so the owner can check
-                            it against the shelf tag: แพ็กละ ฿60 · ขวดละ ฿5. */}
-                        {"= "}
-                        {purchaseUnitChoices(form)
-                          .slice()
-                          .reverse()
-                          .filter((unit) => unit !== typed.costIn)
-                          .map((unit) =>
-                            ucopy.pricePerUnit(
-                              unit,
-                              formatCurrency(form.cost_per_unit * (purchaseFactor(form, unit) ?? 1), lang, 2),
-                            ),
-                          )
-                          .join(" · ")}
-                      </p>
-                    ) : null}
-                    {shownErrors.cost ? <p className="mt-1 text-[11px] text-red-500">{shownErrors.cost}</p> : null}
-                  </div>
-                </div>
-                {!editingItem && form.stock > 0 ? (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.label}</label>
-                    <ExpiryChips
-                      key={form.storage_type ?? "room_temp"}
-                      value={formExpiryDays}
-                      onChange={setFormExpiryDays}
-                      storageType={form.storage_type}
-                      lang={lang}
-                    />
-                  </div>
-                ) : null}
-                {/* The reorder level is set by the slider alone, in whole tens of
-                    the shelf's full level — 10%, 20% … 100% — so it is always a
-                    share people can say out loud, and it keeps tracking the shelf
-                    as the full level grows. The line under it says what that
-                    comes to in the pack and in the stock unit. */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{copy.minStock}</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={10}
-                      aria-label={copy.minStock}
-                      disabled={!(editingMaxStock > 0)}
-                      value={Math.round(warnPercent / 10) * 10}
-                      onChange={(event) => {
-                        const percent = Number(event.target.value);
-                        const min = reorderQuantityFor(editingMaxStock, percent);
-                        const factor = purchaseFactor(form, typed.minIn) ?? 1;
-                        applyTyped(
-                          { ...form, min_percent: percent, min_stock: min },
-                          { ...typed, min: typedText(min / factor) },
-                          false,
-                        );
-                      }}
-                      className="h-9 min-w-0 flex-1 accent-orange-500 disabled:opacity-40"
-                    />
-                    <span className="w-11 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
-                      {Math.round(warnPercent)}%
-                    </span>
-                  </div>
-                  {editingMaxStock > 0 ? (
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    {(() => {
-                          const unit = typed.minIn || form.unit;
-                          const factor = purchaseFactor(form, unit) ?? 1;
-                          return ucopy.warnLine(
-                            formatNumber(form.min_stock / factor, lang),
-                            unit,
-                            factor === 1 ? null : `${formatNumber(form.min_stock, lang)} ${form.unit}`,
-                            formatNumber(editingMaxStock / factor, lang),
-                          );
-                        })()}
-                  </p>
-                  ) : null}
-                </div>
+                      : undefined
+                  }
+                />
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>
             </div>
@@ -2357,7 +2063,7 @@ export default function InventoryPage() {
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className={`${bulkClosing ? "smooth-pop-exit" : "smooth-pop"} flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}
+            className={`${bulkClosing ? "smooth-pop-exit" : "smooth-pop"} flex h-[min(720px,88vh)] w-full max-w-5xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-gray-800">
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -2373,150 +2079,154 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div ref={smoothScroll} className="min-h-0 flex-1 overflow-auto p-4">
-              <div className="mb-3 flex flex-wrap items-end gap-2">
-                <div className="w-56">
-                  <p className="mb-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    {lang === "th" ? "หมวดของวัตถุดิบที่เพิ่มใหม่" : "Category for new ingredients"}
-                  </p>
-                  <ThemedSelect
-                    compact
-                    value={String(bulkDefaultCategory)}
-                    onChange={(value) => setBulkDefaultCategory(Number(value) || 0)}
-                    options={categoryOptions}
-                  />
+            <div className="flex min-h-0 flex-1">
+              <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 dark:border-gray-800 dark:bg-gray-950/40 lg:w-72">
+                <div ref={smoothScroll} className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+                  {bulkItems.map((item) => {
+                    const { form, typed } = item.draft;
+                    const blank = isBlankDraft(item.draft);
+                    const errors = bulkErrors.get(item.key) ?? {};
+                    const flagged = bulkShowErrors && hasFieldErrors(errors);
+                    const active = item.key === bulkSelected;
+                    // What was typed, said back in one line: 5 แพ็ก · จ่าย ฿750 · แช่เย็น · หมดอายุ 1 ต.ค. 69
+                    const summary = [
+                      (parseFloat(typed.stock) || 0) > 0
+                        ? `${formatNumber(parseFloat(typed.stock), lang)} ${typed.stockIn || form.unit}`
+                        : null,
+                      typed.cost
+                        ? typed.costIn === TOTAL_PRICE
+                          ? `${lang === "th" ? "จ่าย" : "paid"} ${formatCurrency(parseFloat(typed.cost) || 0, lang, 2)}`
+                          : `${formatCurrency(parseFloat(typed.cost) || 0, lang, 2)}/${typed.costIn || form.unit}`
+                        : null,
+                      copy.storageTypes[(form.storage_type ?? "room_temp") as keyof typeof copy.storageTypes],
+                      form.stock > 0 && item.draft.expiryDays !== null
+                        ? xcopy.expiresOn(formatExpiryDate(expiryDateFromDays(item.draft.expiryDays), lang))
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setBulkSelected(item.key)}
+                        aria-current={active}
+                        className={`flex w-full items-start gap-2.5 rounded-md px-3 py-2.5 text-left transition ${
+                          active
+                            ? "bg-white shadow-sm ring-1 ring-orange-300 dark:bg-gray-900 dark:ring-orange-700"
+                            : "hover:bg-white/80 dark:hover:bg-gray-900/60"
+                        }`}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
+                            flagged
+                              ? "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300"
+                              : blank
+                                ? "border border-slate-300 dark:border-gray-600"
+                                : "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300"
+                          }`}
+                        >
+                          {flagged ? <AlertCircle className="h-3 w-3" /> : blank ? null : <Check className="h-3 w-3" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span
+                            className={`block truncate text-sm font-semibold ${
+                              form.name.trim() ? "text-slate-900 dark:text-white" : "text-slate-400"
+                            }`}
+                          >
+                            {form.name.trim() || (lang === "th" ? "ยังไม่ตั้งชื่อ" : "Unnamed")}
+                          </span>
+                          <span
+                            className={`block truncate text-[11px] ${
+                              flagged ? "font-medium text-amber-600 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"
+                            }`}
+                          >
+                            {flagged ? Object.values(errors).find(Boolean) : summary}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <button
                   type="button"
-                  onClick={() => setBulkRows((prev) => prev.map((row) => ({ ...row, category_id: bulkDefaultCategory })))}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+                  onClick={addBulkItem}
+                  className="m-2 inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 py-2 text-sm font-semibold text-slate-600 transition hover:border-orange-400 hover:bg-white hover:text-orange-600 dark:border-gray-700 dark:text-slate-300 dark:hover:border-orange-500 dark:hover:bg-gray-900"
                 >
-                  <Tags className="h-4 w-4" />
-                  {lang === "th" ? "ใช้หมวดหมู่กับทุกวัตถุดิบ" : "Apply this category to every ingredient"}
+                  <Plus className="h-4 w-4" />
+                  {lang === "th" ? "เพิ่มวัตถุดิบ" : "Add ingredient"}
                 </button>
-              </div>
+              </aside>
 
-              <table className="w-full min-w-[760px] border-separate border-spacing-x-1 border-spacing-y-1 text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    <th className="px-1 pb-1 font-semibold">{copy.name} *</th>
-                    <th className="px-1 pb-1 font-semibold">{copy.category}</th>
-                    <th className="px-1 pb-1 font-semibold">{copy.stockUnit}</th>
-                    <th className="px-1 pb-1 text-right font-semibold">{copy.initialStock}</th>
-                    <th className="px-1 pb-1 text-right font-semibold">{copy.minStock}</th>
-                    <th className="px-1 pb-1 text-right font-semibold">{copy.costPerUnit}</th>
-                    <th className="w-9" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkRows.map((row, index) => (
-                    <tr key={index}>
-                      <td className="min-w-[160px]">
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(event) => updateBulkRow(index, { name: event.target.value })}
-                          placeholder={lang === "th" ? "ชื่อวัตถุดิบ..." : "Name..."}
-                          className={`${inputCls} h-9`}
-                        />
-                      </td>
-                      <td className="min-w-[150px]">
-                        <ThemedSelect
-                          aria-label={copy.category}
-                          value={String(row.category_id)}
-                          onChange={(value) => updateBulkRow(index, { category_id: Number(value) || 0 })}
-                          options={categoryOptions}
-                        />
-                      </td>
-                      <td className="min-w-[110px]">
-                        <ThemedSelect
-                          aria-label={copy.stockUnit}
-                          value={row.unit}
-                          onChange={(value) => updateBulkRow(index, { unit: value })}
-                          options={unitOptions}
-                        />
-                      </td>
-                      <td className="w-24">
-                        <NumberInput
-                          min={0}
-                          blankWhenZero
-                          placeholder="0"
-                          value={row.stock}
-                          onValue={(value) => updateBulkRow(index, { stock: value })}
-                          className={`${inputCls} h-9 text-right`}
-                        />
-                      </td>
-                      <td className="w-24">
-                        <NumberInput
-                          min={0}
-                          blankWhenZero
-                          placeholder="0"
-                          value={row.min_stock}
-                          onValue={(value) => updateBulkRow(index, { min_stock: value })}
-                          className={`${inputCls} h-9 text-right`}
-                        />
-                      </td>
-                      <td className="w-24">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          inputMode="decimal"
-                          value={row.costText ?? (row.cost_per_unit ? String(row.cost_per_unit) : "")}
-                          onChange={(event) => {
-                            const raw = event.target.value;
-                            updateBulkRow(index, { costText: raw, cost_per_unit: parseFloat(raw) || 0 });
-                          }}
-                          className={`${inputCls} h-9 text-right`}
-                        />
-                      </td>
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => setBulkRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))}
-                          disabled={bulkRows.length <= 1}
-                          aria-label="remove row"
-                          className="rounded-md p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:opacity-30 dark:hover:bg-red-950/30"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <button
-                type="button"
-                onClick={() => setBulkRows((prev) => [...prev, { ...bulkEmptyRow, category_id: bulkDefaultCategory }])}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-orange-400 hover:text-orange-600 dark:border-gray-700 dark:text-slate-300 dark:hover:border-orange-500"
-              >
-                <Plus className="h-4 w-4" />
-                {lang === "th" ? "เพิ่มวัตถุดิบ" : "Add ingredient"}
-              </button>
-              {bulkError && <p className="mt-2 text-xs text-red-500">{bulkError}</p>}
+              {(() => {
+                const index = bulkItems.findIndex((item) => item.key === bulkSelected);
+                const current = bulkItems[index];
+                if (!current) return null;
+                return (
+                  <section ref={smoothScroll} className="min-w-0 flex-1 overflow-y-auto p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-slate-400">
+                        {lang === "th"
+                          ? `รายการที่ ${index + 1} จาก ${bulkItems.length}`
+                          : `Item ${index + 1} of ${bulkItems.length}`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => removeBulkItem(current.key)}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {lang === "th" ? "ลบรายการนี้" : "Remove"}
+                      </button>
+                    </div>
+                    {/* Keyed by item so switching rows starts the form fresh —
+                        the expiry chips and focus belong to the one shown. */}
+                    <IngredientFormFields
+                      key={current.key}
+                      draft={current.draft}
+                      onChange={(draft) => updateBulkDraft(current.key, draft)}
+                      editingItem={null}
+                      errors={bulkShowErrors ? bulkErrors.get(current.key) ?? {} : {}}
+                      labels={formLabels}
+                      categoryOptions={categoryOptions}
+                      storageOptions={storageOptions}
+                      lang={lang}
+                    />
+                  </section>
+                );
+              })()}
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={closeBulk}
-                className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-gray-800"
-              >
-                {copy.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleBulkSave}
-                disabled={bulkSaving}
-                className="inline-flex items-center gap-1.5 rounded-md bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
-              >
-                {bulkSaving
-                  ? "..."
-                  : lang === "th"
-                    ? `บันทึกทั้งหมด (${bulkRows.filter((row) => row.name.trim()).length})`
-                    : `Save all (${bulkRows.filter((row) => row.name.trim()).length})`}
-              </button>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 dark:border-gray-800">
+              <p className={`min-w-0 text-xs ${bulkError ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}>
+                {bulkError || (lang === "th" ? `${bulkToSave.length} รายการ` : `${bulkToSave.length} items`)}
+                {!bulkError && bulkShowErrors && bulkBadCount > 0 ? (
+                  <span className="ml-1 font-semibold text-amber-600 dark:text-amber-300">
+                    {lang === "th" ? `· ต้องแก้ ${bulkBadCount}` : `· ${bulkBadCount} to fix`}
+                  </span>
+                ) : null}
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={closeBulk}
+                  className="rounded-md px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-gray-800"
+                >
+                  {copy.cancel}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkSave}
+                  disabled={bulkSaving || bulkToSave.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-orange-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50 dark:bg-orange-700 dark:text-white"
+                >
+                  {bulkSaving
+                    ? "..."
+                    : lang === "th"
+                      ? `บันทึกทั้งหมด (${bulkToSave.length})`
+                      : `Save all (${bulkToSave.length})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3109,14 +2819,23 @@ export default function InventoryPage() {
 // The current page as a typeable box: type a number, Enter (or click away) jumps
 // there. Out-of-range numbers clamp to the first/last page; junk snaps back.
 function PageNumberInput({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
-  const [draft, setDraft] = useState(String(page));
-  useEffect(() => setDraft(String(page)), [page]);
+  // What is being typed, or null when the box just shows the current page —
+  // so an arrow press or a filter change is shown without syncing state.
+  const [draft, setDraft] = useState<string | null>(null);
+  // Esc blurs the box, and the blur would commit what was typed before the
+  // cleared draft reaches it — this says the blur is a cancel.
+  const cancelled = useRef(false);
 
   function commit() {
-    const n = Number.parseInt(draft, 10);
-    if (Number.isNaN(n)) return setDraft(String(page));
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(null);
+      return;
+    }
+    const n = Number.parseInt(draft ?? "", 10);
+    setDraft(null);
+    if (Number.isNaN(n)) return;
     const next = Math.min(totalPages, Math.max(1, n));
-    setDraft(String(next));
     if (next !== page) onChange(next);
   }
 
@@ -3125,14 +2844,17 @@ function PageNumberInput({ page, totalPages, onChange }: { page: number; totalPa
       type="text"
       inputMode="numeric"
       aria-label="page number"
-      value={draft}
+      value={draft ?? String(page)}
       onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
-      onFocus={(e) => e.target.select()}
+      onFocus={(e) => {
+        setDraft(String(page));
+        e.target.select();
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
-          setDraft(String(page));
+          cancelled.current = true;
           e.currentTarget.blur();
         }
       }}

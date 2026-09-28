@@ -37,6 +37,11 @@ describe("validateIngredientForm", () => {
     expect(validateIngredientForm(base, "th").name).toContain("มี \"น้ำปลา\" ในคลังแล้ว");
     expect(validateIngredientForm({ ...base, name: "  หมูสับ" }, "th").name).toBeTruthy();
   });
+  it("refuses a name another row of the same bulk add already has", () => {
+    const errors = validateIngredientForm({ ...base, name: "กะทิ ", batchNames: ["ใบกะเพรา", "กะทิ"] }, "th");
+    expect(errors.name).toBe("ชื่อซ้ำกับรายการอื่นในชุดนี้");
+    expect(validateIngredientForm({ ...base, name: "กะทิ", batchNames: ["ใบกะเพรา"] }, "th").name).toBeUndefined();
+  });
   it("lets an edit keep its own name", () => {
     expect(validateIngredientForm({ ...base, ownName: "น้ำปลา", creating: false }, "th").name).toBeUndefined();
   });
@@ -76,8 +81,8 @@ describe("validateBulkRows", () => {
       "th",
     );
     expect(result[0]).toContain("ในคลังแล้ว");
-    expect(result[1]).toBe("ชื่อซ้ำกับแถวอื่นในชุดนี้");
-    expect(result[2]).toBe("ชื่อซ้ำกับแถวอื่นในชุดนี้");
+    expect(result[1]).toBe("ชื่อซ้ำกับรายการอื่นในชุดนี้");
+    expect(result[2]).toBe("ชื่อซ้ำกับรายการอื่นในชุดนี้");
     expect(result[3]).toContain("จำนวน");
     expect(result[4]).toBeNull();
     expect(result[5]).toBeNull();
