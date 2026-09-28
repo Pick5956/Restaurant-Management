@@ -21,9 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //   4  what the phone app shows, the phone held still while the story scrolls
 //   5  twelve features, 6  sign up
 // One glow behind the whole page drifts with the scroll, so no section has an
-// edge. The web window shows real 1920×1080 screenshots from public/landing/
-// (28 ก.ย. 2569); the iPad is still a drawn stand-in until tablet-home.png is
-// dropped in there too (see LandingDevices › WebShot).
+// edge. The web window and the iPad show real screenshots from public/landing/
+// (28 ก.ย. 2569); a file missing there falls back to a drawn stand-in (see
+// LandingDevices › WebShot).
 
 // "Get started" opens the sign-up form, "Sign in" the sign-in form.
 function PillButtons({ register, login, onRegister, onLogin }: { register: string; login: string; onRegister: () => void; onLogin: () => void }) {
