@@ -241,8 +241,7 @@ func (t *joyboyTools) offerChart(chart *AIChartData) {
 // breakeven that divided by 30 (found 23 ก.ย. 2569). The expense summary tool
 // already counted from day −29; now all three agree.
 func joyboyRollingStart(now time.Time) time.Time {
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return today.AddDate(0, 0, -(int(analysisWindowDays) - 1))
+	return aitools.RollingWindowStart(now)
 }
 
 func (t *joyboyTools) readPeriod(question string, history []AIConversationMessage, now time.Time) (datedSalesRequest, bool) {
@@ -301,7 +300,7 @@ func (t *joyboyTools) comparisonWindows(question string) (current, previous AIPe
 		current = AIPeriod{Label: label, Start: start, End: end}
 		return current, joyboyPeriodBefore(current)
 	}
-	current = AIPeriod{Label: analysisWindowLabel(), Start: now.AddDate(0, 0, -int(analysisWindowDays)), End: now}
+	current = AIPeriod{Label: analysisWindowLabel(), Start: joyboyRollingStart(now), End: now}
 	return current, joyboyPeriodBefore(current)
 }
 
@@ -375,7 +374,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		// stock and no rate, and the model estimates the days itself.
 		var usage []repository.AIIngredientUsage
 		if t.service.repo != nil {
-			since := repository.BangkokNow().AddDate(0, 0, -int(analysisWindowDays))
+			since := joyboyRollingStart(repository.BangkokNow())
 			if rows, err := t.service.repo.IngredientUsage(t.restaurantID, since); err == nil {
 				usage = rows
 			} else {
@@ -393,7 +392,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
 			return "", false, true
 		}
-		since := repository.BangkokNow().AddDate(0, 0, -int(analysisWindowDays))
+		since := joyboyRollingStart(repository.BangkokNow())
 		margins, err := t.service.repo.AllMenuMargins(t.restaurantID, since)
 		if err != nil {
 			// Sales are one part of the answer; price, availability and the recipe
@@ -410,7 +409,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		reasons, err := t.service.repo.CancelledOrders(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -425,7 +424,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		parties, err := t.service.repo.GuestsByPartySize(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -619,7 +618,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		if t.service.repo == nil {
 			return "", false, true
 		}
-		since := repository.BangkokNow().AddDate(0, 0, -int(analysisWindowDays))
+		since := joyboyRollingStart(repository.BangkokNow())
 		sold, err := t.service.repo.MenuMarginsByCategory(t.restaurantID, since)
 		if err != nil {
 			aiStage("warn", "joyboy: %s failed (%v) → leaving it out", tool, err)
@@ -641,7 +640,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		days, err := t.service.repo.SalesByDayForRange(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -659,7 +658,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		staff, err := t.service.repo.SalesByStaffForRange(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -676,7 +675,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		hours, err := t.service.repo.RevenueByHourForRange(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -769,7 +768,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		mix, err := t.service.repo.PaymentMix(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
@@ -791,7 +790,7 @@ func (t *joyboyTools) runJoyboyExtraTool(tool AIToolName, question string) (body
 		now := repository.BangkokNow()
 		start, end, label, explicit := t.periodNamedIn(question)
 		if !explicit {
-			start, end, label = now.AddDate(0, 0, -int(analysisWindowDays)), now, analysisWindowLabel()
+			start, end, label = joyboyRollingStart(now), now, analysisWindowLabel()
 		}
 		usage, err := t.service.repo.TableUsage(t.restaurantID, start, joyboyQueryEnd(end))
 		if err != nil {
