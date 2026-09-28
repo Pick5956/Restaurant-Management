@@ -57,7 +57,7 @@ import InventoryPager from "./InventoryPager";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import InventoryHistoryTab from "./InventoryHistoryTab";
-import ExpiryChips from "./ExpiryChips";
+import LotExpiryList from "./LotExpiryList";
 import { confirmCopy, ingredientChanges, newIngredientSummary } from "./inventoryConfirmCopy";
 import IngredientFormFields, {
   createPayloadFor,
@@ -76,6 +76,7 @@ import {
   defaultEntryUnit,
   emptyTypedAmounts,
   entryChain,
+  formatInPacks,
   formatPackCount,
   hasPack,
   largestPurchaseUnit,
@@ -84,11 +85,9 @@ import {
   type TypedAmounts,
 } from "./inventoryUnitUtils";
 import {
-  daysUntil,
   defaultShelfLifeDays,
   expiryCopy,
   expiryDateFromDays,
-  expiryState,
   formatExpiryDate,
   ingredientExpiryState,
   matchesExpiryFilter,
@@ -600,8 +599,9 @@ export default function InventoryPage() {
   const [txClosing, setTxClosing] = useState(false);
   const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
   const [lots, setLots] = useState<IngredientLot[]>([]);
-  const [editingLotId, setEditingLotId] = useState<number | null>(null);
-  const [lotDraftDays, setLotDraftDays] = useState<number | null>(null);
+  // The edit drawer's own copy of the open lots, so the history drawer's
+  // list is never swapped under it.
+  const [editLots, setEditLots] = useState<IngredientLot[]>([]);
   const [lotSaving, setLotSaving] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
 
@@ -846,6 +846,8 @@ export default function InventoryPage() {
       costIn: pack,
     });
     setFormError("");
+    setEditLots([]);
+    void loadEditLots(item.ID);
     setModalOpen(true);
   }
 
@@ -1313,12 +1315,20 @@ export default function InventoryPage() {
     }
   }
 
+  async function loadEditLots(id: number) {
+    try {
+      const response = await listLots(id);
+      setEditLots(response.data.lots ?? []);
+    } catch {
+      setEditLots([]);
+    }
+  }
+
   async function openTransactions(item: Ingredient) {
     setTxClosing(false);
     setTxTarget(item);
     setTransactions([]);
     setLots([]);
-    setEditingLotId(null);
     setTxLoading(true);
     void loadLots(item.ID);
     try {
@@ -1341,29 +1351,35 @@ export default function InventoryPage() {
     }
   }
 
-  async function saveLotExpiry(lot: IngredientLot) {
-    if (!txTarget) return;
+  // Saves one lot's date on its own, straight away — from the history drawer
+  // or the edit drawer, whichever is open, and reloads that drawer's lots.
+  async function saveLotExpiry(item: Ingredient, lot: IngredientLot, days: number | null): Promise<boolean> {
     const confirmed = await ask({
       title: ccopy.lotTitle,
       description: ccopy.lotLine(
-        formatNumber(lot.remaining, lang),
-        txTarget.unit,
+        formatInPacks(item, lot.remaining, lang),
+        "",
         lot.expires_at ? formatExpiryDate(lot.expires_at, lang) : ccopy.noDate,
-        lotDraftDays === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(lotDraftDays), lang),
+        days === null ? ccopy.noDate : formatExpiryDate(expiryDateFromDays(days), lang),
       ),
       confirmLabel: ccopy.save,
       cancelLabel: ccopy.cancel,
     });
-    if (!confirmed) return;
+    if (!confirmed) return false;
     setLotSaving(true);
     try {
-      await updateLotExpiry(txTarget.ID, lot.ID, lotDraftDays === null ? "" : expiryDateFromDays(lotDraftDays));
-      setEditingLotId(null);
+      await updateLotExpiry(item.ID, lot.ID, days === null ? "" : expiryDateFromDays(days));
       showToast({ title: xcopy.expirySaved });
-      await Promise.all([loadLots(txTarget.ID), refreshIngredientRow(txTarget.ID)]);
+      await Promise.all([
+        txTarget?.ID === item.ID ? loadLots(item.ID) : null,
+        editingItem?.ID === item.ID ? loadEditLots(item.ID) : null,
+        refreshIngredientRow(item.ID),
+      ]);
+      return true;
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
       showToast({ title: inventoryErrorMessage(err?.response?.data?.error, lang, xcopy.failed), tone: "error" });
+      return false;
     } finally {
       setLotSaving(false);
     }
@@ -2111,6 +2127,24 @@ export default function InventoryPage() {
                       : undefined
                   }
                 />
+                {/* Expiry belongs to each receipt, not to the ingredient, so the
+                    edit drawer lists the open lots and each is re-dated on its
+                    own — saved on the spot, apart from the form's บันทึก. */}
+                {editingItem && editLots.length > 0 ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{xcopy.label}</p>
+                    <LotExpiryList
+                      compact
+                      lots={editLots}
+                      item={editingItem}
+                      lang={lang}
+                      canManage={canManage}
+                      saving={lotSaving}
+                      cancelLabel={copy.cancel}
+                      onSave={(lot, days) => saveLotExpiry(editingItem, lot, days)}
+                    />
+                  </div>
+                ) : null}
                 {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>
             </div>
@@ -2716,101 +2750,16 @@ export default function InventoryPage() {
                   <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     {xcopy.lots} · {lots.length}
                   </p>
-                  <div className="space-y-2">
-                    {lots.map((lot) => {
-                      const state = expiryState(lot.expires_at);
-                      const editing = editingLotId === lot.ID;
-                      return (
-                        <div
-                          key={lot.ID}
-                          className="rounded-md border border-slate-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p
-                                className={`text-sm font-semibold ${
-                                  state === "expired"
-                                    ? "text-red-500 dark:text-red-400"
-                                    : state === "soon"
-                                      ? "text-amber-600 dark:text-amber-400"
-                                      : "text-slate-900 dark:text-white"
-                                }`}
-                              >
-                                {lot.expires_at
-                                  ? state === "expired"
-                                    ? xcopy.expiredOn(formatExpiryDate(lot.expires_at, lang))
-                                    : xcopy.expiresOn(formatExpiryDate(lot.expires_at, lang))
-                                  : xcopy.noExpiry}
-                                {lot.expires_at && state !== "expired" ? (
-                                  <span className="ml-1.5 text-xs font-normal text-slate-400">
-                                    {xcopy.inDays(daysUntil(lot.expires_at))}
-                                  </span>
-                                ) : null}
-                              </p>
-                              <p className="text-xs text-slate-400">{xcopy.lotReceived(formatExpiryDate(lot.received_at, lang))}</p>
-                            </div>
-                            <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
-                              {formatNumber(lot.remaining, lang)}{" "}
-                              <span className="text-[10px] font-normal text-slate-400">{txTarget.unit}</span>
-                            </p>
-                          </div>
-                          {canManage && (
-                            <div className="mt-2">
-                              {editing ? (
-                                <>
-                                  <ExpiryChips
-                                    key={lot.ID}
-                                    value={lotDraftDays}
-                                    onChange={setLotDraftDays}
-                                    storageType={txTarget.storage_type}
-                                    lang={lang}
-                                  />
-                                  <div className="mt-2 flex justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingLotId(null)}
-                                      className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-gray-800"
-                                    >
-                                      {copy.cancel}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={lotSaving}
-                                      onClick={() => saveLotExpiry(lot)}
-                                      className="rounded-md bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-800 disabled:opacity-50"
-                                    >
-                                      {xcopy.saveExpiry}
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingLotId(lot.ID);
-                                      setLotDraftDays(lot.expires_at ? daysUntil(lot.expires_at) : null);
-                                    }}
-                                    className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800"
-                                  >
-                                    {xcopy.setExpiry}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={lotSaving}
-                                    onClick={() => handleDiscardLot(lot)}
-                                    className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
-                                  >
-                                    {xcopy.discard}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <LotExpiryList
+                    lots={lots}
+                    item={txTarget}
+                    lang={lang}
+                    canManage={canManage}
+                    saving={lotSaving}
+                    cancelLabel={copy.cancel}
+                    onSave={(lot, days) => saveLotExpiry(txTarget, lot, days)}
+                    onDiscard={handleDiscardLot}
+                  />
                 </div>
               )}
               {txLoading ? (
