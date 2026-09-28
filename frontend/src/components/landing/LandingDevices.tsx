@@ -7,17 +7,58 @@ import { WEB_MOCKS } from "./LandingWebMocks";
 // status bar, since the screenshot carries its own.
 export function Phone({ src, alt, className = "", style }: { src: string; alt: string; className?: string; style?: CSSProperties }) {
   return (
+    <PhoneFrame className={className} style={style}>
+      <PhoneShot src={src} alt={alt} />
+    </PhoneFrame>
+  );
+}
+
+/**
+ * One phone, several screens. Moving to a later screen pushes it in from the
+ * right over the one before, which slides a little left and darkens — the way
+ * a page opens in the app itself; going back runs it in reverse (28 ก.ย. 2569).
+ */
+export function PhoneScreens({ shots, active }: { shots: { src: string; alt: string }[]; active: number }) {
+  return (
+    <PhoneFrame>
+      {shots.map((shot, i) => (
+        <div
+          key={shot.src}
+          aria-hidden={i !== active}
+          className={`absolute inset-0 transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform motion-reduce:transition-none ${
+            i < active ? "-translate-x-1/4" : i > active ? "translate-x-full" : "translate-x-0"
+          } ${i > 0 ? "shadow-[-12px_0_24px_rgba(0,0,0,0.25)]" : ""}`}
+          style={{ zIndex: i }}
+        >
+          <PhoneShot src={shot.src} alt={shot.alt} />
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 bg-black transition-opacity duration-700 ${i < active ? "opacity-30" : "opacity-0"}`}
+          />
+        </div>
+      ))}
+    </PhoneFrame>
+  );
+}
+
+function PhoneFrame({ children, className = "", style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+  return (
     <div
       style={style}
       className={`relative aspect-[923/2000] rounded-[15%/7%] bg-[#1c1c1e] p-[2.4%] shadow-[0_50px_100px_-30px_rgba(0,0,0,0.45)] ring-1 ring-black/20 ${className}`}
     >
       <div className="relative h-full overflow-hidden rounded-[13%/6%] bg-white">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={alt} className="h-full w-full object-cover object-top" draggable={false} />
-        <div aria-hidden="true" className="absolute left-1/2 top-[1.3%] h-[3.1%] w-[30%] -translate-x-1/2 rounded-full bg-black" />
+        {children}
+        {/* The camera stays put above every screen, even one sliding past. */}
+        <div aria-hidden="true" className="absolute left-1/2 top-[1.3%] z-50 h-[3.1%] w-[30%] -translate-x-1/2 rounded-full bg-black" />
       </div>
     </div>
   );
+}
+
+function PhoneShot({ src, alt }: { src: string; alt: string }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} className="h-full w-full object-cover object-top" draggable={false} />;
 }
 
 // An iPad held landscape. It runs the web, not an app, so it shows a web page.

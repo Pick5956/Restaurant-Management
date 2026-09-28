@@ -3,7 +3,7 @@
 import AppLogo from "@/src/components/shared/AppLogo";
 import AppWordmark from "@/src/components/shared/AppWordmark";
 import LanguageToggle from "@/src/components/shared/LanguageToggle";
-import { Browser, Phone, Tablet, WebShot } from "@/src/components/landing/LandingDevices";
+import { Browser, Phone, PhoneScreens, Tablet, WebShot } from "@/src/components/landing/LandingDevices";
 import { LANDING_COPY } from "@/src/components/landing/landingCopy";
 import { FadeUp, clamp, docProgress, ease, enterProgress, lerp, stickyProgress, useScrollDriven } from "@/src/components/landing/landingMotion";
 import { useAuth } from "@/src/providers/AuthProvider";
@@ -174,11 +174,11 @@ export default function LandingPage() {
             <AppWordmark height={14} className="text-white" />
           </div>
           <div className="flex items-center gap-2">
-            <LanguageToggle className="shrink-0" />
+            <LanguageToggle tone="dark" className="shrink-0" />
             <button
               type="button"
               onClick={() => openLandingLoginModal("login")}
-              className="ui-press rounded-full bg-orange-700 px-3.5 py-1 text-[13px] font-medium text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+              className="ui-press inline-flex h-7 items-center rounded-full bg-orange-700 px-3.5 text-[13px] font-medium text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
             >
               {copy.login}
             </button>
@@ -295,29 +295,38 @@ export default function LandingPage() {
             words for it were still at the bottom of the window. */}
         <div ref={appStory} className="relative h-[200vh]">
           <div className="sticky top-0 mx-auto flex h-[100dvh] max-w-6xl flex-col items-center justify-center gap-8 px-4 pt-12 lg:grid lg:grid-cols-2 lg:gap-16 lg:pt-0">
-            <div className="grid w-full text-center lg:text-left [&>*]:[grid-area:1/1]">
-              {copy.appSteps.map((step, i) => (
-                <div
-                  key={step.shot}
-                  aria-hidden={activeApp !== i}
-                  className={`transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${activeApp === i ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}
-                >
-                  <p className="text-[15px] font-semibold text-orange-400">{step.label}</p>
-                  <h2 className="mt-2 text-[32px] font-semibold leading-[1.2] sm:text-[52px]">{step.title}</h2>
-                  <p className="mx-auto mt-3 max-w-md text-[16px] leading-7 text-white/65 sm:text-[19px] sm:leading-8 lg:mx-0">{step.desc}</p>
-                </div>
-              ))}
+            <div className="w-full">
+              <div className="grid w-full text-center lg:text-left [&>*]:[grid-area:1/1]">
+                {copy.appSteps.map((step, i) => (
+                  <div
+                    key={step.shot}
+                    aria-hidden={activeApp !== i}
+                    // The words leave the way the page goes: a passed step lifts
+                    // away, the next one rises from below, in step with the
+                    // phone's screen pushing in.
+                    className={`transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${
+                      activeApp === i ? "translate-y-0 opacity-100" : `pointer-events-none opacity-0 ${i < activeApp ? "-translate-y-10" : "translate-y-10"}`
+                    }`}
+                  >
+                    <p className="text-[15px] font-semibold text-orange-400">{step.label}</p>
+                    <h2 className="mt-2 text-[32px] font-semibold leading-[1.2] sm:text-[52px]">{step.title}</h2>
+                    <p className="mx-auto mt-3 max-w-md text-[16px] leading-7 text-white/65 sm:text-[19px] sm:leading-8 lg:mx-0">{step.desc}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Which step of how many, so it reads as a switch and not a page
+                  that just changed on its own. */}
+              <div aria-hidden="true" className="mt-6 flex justify-center gap-1.5 lg:justify-start">
+                {copy.appSteps.map((step, i) => (
+                  <span
+                    key={step.shot}
+                    className={`h-1 rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${i === activeApp ? "w-8 bg-orange-500" : "w-3 bg-white/25"}`}
+                  />
+                ))}
+              </div>
             </div>
             <div className="relative w-[min(52vw,34dvh)] lg:mx-auto lg:w-[min(26vw,32dvh)]">
-              {copy.appSteps.map((step, i) => (
-                <div
-                  key={step.shot}
-                  aria-hidden={activeApp !== i}
-                  className={`transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${i === 0 ? "relative" : "absolute inset-0"} ${activeApp === i ? "scale-100 opacity-100" : "scale-[0.96] opacity-0"}`}
-                >
-                  <Phone src={step.shot} alt={step.alt} />
-                </div>
-              ))}
+              <PhoneScreens shots={copy.appSteps.map((step) => ({ src: step.shot, alt: step.alt }))} active={activeApp} />
             </div>
           </div>
         </div>
