@@ -1849,16 +1849,26 @@ export default function InventoryPage() {
                                   const expiry = ingredientExpiryState(item);
                                   if ((expiry !== "soon" && expiry !== "expired") || !item.expiring_lot) return null;
                                   const when = formatExpiryDate(item.expiring_lot.expires_at, lang);
+                                  // The date stays plain text; only the amount that is
+                                  // going off is a chip, so the number is what jumps out.
                                   return (
                                     <p
-                                      className={`mt-1.5 text-[11px] font-semibold ${
+                                      className={`mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold ${
                                         expiry === "expired"
                                           ? "text-red-500 dark:text-red-400"
                                           : "text-amber-600 dark:text-amber-400"
                                       }`}
                                     >
-                                      {expiry === "expired" ? xcopy.expiredOn(when) : xcopy.expiresOn(when)} ·{" "}
-                                      {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                                      {expiry === "expired" ? xcopy.expiredOn(when) : xcopy.expiresOn(when)}
+                                      <span
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 tabular-nums leading-none ${
+                                          expiry === "expired"
+                                            ? "bg-red-50 text-red-600 ring-1 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900"
+                                            : "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900"
+                                        }`}
+                                      >
+                                        {formatNumber(item.expiring_lot.remaining, lang)} {item.unit}
+                                      </span>
                                     </p>
                                   );
                                 })()}
