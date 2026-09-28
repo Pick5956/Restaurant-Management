@@ -2019,12 +2019,9 @@ export default function InventoryPage() {
             }}
             className={`${modalClosing ? "smooth-drawer-exit" : "smooth-drawer"} fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-800">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-800">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {lang === "th" ? "คลังวัตถุดิบ" : "Inventory"}
-                </p>
-                <h2 className="mt-0.5 text-[15px] font-semibold text-slate-900 dark:text-white">
+                <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">
                   {editingItem ? copy.edit : copy.add}
                 </h2>
               </div>
