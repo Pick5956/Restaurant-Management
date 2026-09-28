@@ -122,7 +122,34 @@ const UNSENT_THREAD_TTL_MS = 30 * 60 * 1000;
 /** Cached transcript of one chat, if this device has seen it recently. */
 export function loadThreadCache<T = unknown>(baseKey: string | null, conversationId: string | null): T[] | null {
   const unsent = !conversationId || !validConversationId(conversationId);
-  return loadStoredMessages<T>(threadKey(baseKey, conversationId), unsent ? UNSENT_THREAD_TTL_MS : undefined);
+  const cached = loadStoredMessages<T>(threadKey(baseKey, conversationId), unsent ? UNSENT_THREAD_TTL_MS : undefined);
+  if (!unsent || !cached) return cached;
+  // A question that never got an answer is not worth reopening a new chat on:
+  // it is the leftover every "แชทใหม่" painted instead of a clean page.
+  const kept = answeredTurns(cached as MaybeFailed[]);
+  return kept.some((message) => message.role === "user") ? (kept as T[]) : null;
+}
+
+// A question the assistant never answered - the provider was down, the request
+// failed - keeps its bubble on screen marked `failed` (28 ก.ย. 2569). Before,
+// every "ลองอีกครั้ง" added another copy of the question (seven in a row during
+// a Gemini outage), each copy went to the model as history it had never
+// answered, and a new chat reopened on the pile.
+type MaybeFailed = { role: string; content: string; failed?: boolean };
+
+/** Asking a question again replaces its unanswered bubbles instead of stacking one per attempt. */
+export function dropFailedQuestion<T extends MaybeFailed>(messages: T[], question: string): T[] {
+  return messages.filter((message) => !(message.failed && message.role === "user" && message.content === question));
+}
+
+/** Mark the bubble of a question that got no answer. */
+export function markQuestionFailed<T extends MaybeFailed & { id: string }>(messages: T[], id: string): T[] {
+  return messages.map((message) => (message.id === id ? { ...message, failed: true } : message));
+}
+
+/** The turns that were answered: the only ones the model hears as history. */
+export function answeredTurns<T extends MaybeFailed>(messages: T[]): T[] {
+  return messages.filter((message) => !message.failed);
 }
 
 /** Cache a chat's transcript and drop the oldest caches beyond the limit. */

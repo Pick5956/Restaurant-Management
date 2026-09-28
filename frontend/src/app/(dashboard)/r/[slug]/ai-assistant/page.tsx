@@ -27,8 +27,12 @@ import {
   subscribeToChatWrites,
 } from "@/src/lib/aiChatStorage";
 import {
+  answeredTurns,
+  clearThreadCache,
+  dropFailedQuestion,
   hydrateThreadMessages,
   isConversationGone,
+  markQuestionFailed,
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
@@ -72,6 +76,8 @@ type Message = {
   // ข้อความที่สร้างมัน กล่องจะได้อยู่ใต้คำตอบนั้นแทนที่จะไหลไปท้ายสายเสมอ
   planId?: string;
   previewId?: string;
+  /** A question that got no answer: kept on screen, left out of the history. */
+  failed?: boolean;
 };
 
 type StoredMessage = Omit<Message, "createdAt"> & { createdAt?: string };
@@ -240,6 +246,13 @@ export default function AIAssistantPage() {
       setPlanCardState("cancelled");
     }
     setListOpen(false);
+    // "แชทใหม่" from a chat that is itself still new changes no active id, so
+    // nothing reloaded and the unanswered questions stayed on screen.
+    if (conversationId === null && activeThread === null) {
+      clearThreadCache(storageKey, null);
+      resetConversation();
+      return true;
+    }
     setActiveThread(storageKey, conversationId);
     return true;
   };
@@ -349,7 +362,7 @@ export default function AIAssistantPage() {
   }, []);
 
   const conversationHistory = (): AIConversationMessage[] =>
-    messages
+    answeredTurns(messages)
       // The on-screen greeting is not a turn: sent along, the model read
       // "สวัสดีพู่กัน" as something it had already said.
       .filter((m): m is Message & { role: "user" | "assistant" } => m.role !== "system" && m.id !== "welcome")
@@ -359,6 +372,7 @@ export default function AIAssistantPage() {
   const resetConversation = useCallback(() => {
     conversationRequests.invalidate();
     setError("");
+    setOutage(null);
     setLoading(false);
     setPendingAction(null);
     // Also reached when the floating chat clears: that surface's history is
@@ -408,7 +422,8 @@ export default function AIAssistantPage() {
     setActionPreviewError("");
 
     const history = conversationHistory();
-    setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: "user", content: trimmed, createdAt: new Date() }]);
+    const questionId = `user-${Date.now()}`;
+    setMessages((prev) => [...dropFailedQuestion(prev, trimmed), { id: questionId, role: "user", content: trimmed, createdAt: new Date() }]);
 
     const navigation = resolveNavigationRequest(trimmed, activeMembership, language, pathname);
     if (navigation) {
@@ -517,6 +532,7 @@ export default function AIAssistantPage() {
         setError(copy.chatGone);
         return;
       }
+      setMessages((prev) => markQuestionFailed(prev, questionId));
       // An outage gets its own card with the wait and a retry button, instead of
       // the generic red strip that reads as though the question was at fault.
       const reportedOutage = readAIOutage(err);

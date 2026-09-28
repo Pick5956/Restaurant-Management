@@ -47,8 +47,12 @@ import {
   subscribeToChatWrites,
 } from "@/src/lib/aiChatStorage";
 import {
+  answeredTurns,
+  clearThreadCache,
+  dropFailedQuestion,
   hydrateThreadMessages,
   isConversationGone,
+  markQuestionFailed,
   loadThreadCache,
   migrateLegacyThread,
   notifyConversationsChanged,
@@ -86,6 +90,8 @@ type Message = {
   // ข้อความที่สร้างมัน กล่องจะได้อยู่ใต้คำตอบนั้นแทนที่จะไหลไปท้ายสายเสมอ
   planId?: string;
   previewId?: string;
+  /** A question that got no answer: kept on screen, left out of the history. */
+  failed?: boolean;
 };
 
 type StoredMessage = Omit<Message, "createdAt"> & {
@@ -362,6 +368,13 @@ export default function AIOperationsFloatingChat() {
       setPlanCardState("cancelled");
     }
     setListOpen(false);
+    // "แชทใหม่" from a chat that is itself still new changes no active id, so
+    // nothing reloaded and the unanswered questions stayed on screen.
+    if (conversationId === null && activeThread === null) {
+      clearThreadCache(storageKey, null);
+      resetConversation();
+      return;
+    }
     setActiveThread(storageKey, conversationId);
   };
 
@@ -469,7 +482,7 @@ export default function AIOperationsFloatingChat() {
   }, [isOpen]);
 
   const conversationHistory = (): AIConversationMessage[] =>
-    messages
+    answeredTurns(messages)
       // The on-screen greeting is not a turn: sent along, the model read
       // "สวัสดีพู่กัน" as something it had already said.
       .filter((message): message is Message & { role: "user" | "assistant" } => message.role !== "system" && message.id !== "welcome")
@@ -479,6 +492,7 @@ export default function AIOperationsFloatingChat() {
   const resetConversation = useCallback(() => {
     conversationRequests.invalidate();
     setLoading(false);
+    setOutage(null);
     // Also reached when the other chat surface clears: that surface's history is
     // gone, so this one must drop the shared server thread and any pending action.
     setConversationId(null);
@@ -565,9 +579,10 @@ export default function AIOperationsFloatingChat() {
     // its own countdown and terminal states, so leaving it up is safe.
     setActionPreviewError("");
     
+    const questionId = `user-${Date.now()}`;
     setMessages((previous) => [
-      ...previous,
-      { id: `user-${previous.length}`, role: "user", content: trimmed, createdAt: new Date() },
+      ...dropFailedQuestion(previous, trimmed),
+      { id: questionId, role: "user", content: trimmed, createdAt: new Date() },
     ]);
 
     const navigation = resolveNavigationRequest(trimmed, activeMembership, language, pathname);
@@ -695,6 +710,7 @@ export default function AIOperationsFloatingChat() {
         return;
       }
       console.error(err);
+      setMessages((previous) => markQuestionFailed(previous, questionId));
       // An outage is reported by the backend as a code, not as English words in
       // the message. This used to sniff the message for "429"/"quota"/"exhausted"
       // and the message arrives in Thai, so a quota outage never matched: the
@@ -715,6 +731,7 @@ export default function AIOperationsFloatingChat() {
         {
           id: `err-${previous.length}`,
           role: "system",
+          failed: true,
           content: errorMessage || copy.thinking.replace("กำลังวิเคราะห์...", "เกิดข้อผิดพลาดในการเชื่อมต่อกรุณาลองใหม่อีกครั้ง"),
           createdAt: new Date(),
         },

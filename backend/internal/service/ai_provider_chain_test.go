@@ -111,3 +111,38 @@ func TestParkProviderSetsTheWholeProviderAsideThenReleasesIt(t *testing.T) {
 		t.Fatal("the park must release itself once the window passes")
 	}
 }
+
+// With one provider there is nothing to fall back to, so an overload must not
+// set it aside: the owner's retry a few seconds later has to reach it again
+// (28 ก.ย. 2569, AI_PROVIDER=gemini — every retry for 45 seconds failed in 3 ms
+// without asking Gemini). With two, the overloaded one still sits out.
+func TestOverloadDoesNotSetTheOnlyProviderAside(t *testing.T) {
+	overloaded := func(string) (aiProviderAnswer, error) {
+		return aiProviderAnswer{}, newAIProviderHTTPError("gemini", "second-round", http.StatusServiceUnavailable)
+	}
+	t.Setenv("AI_PROVIDER", "gemini")
+	gemini := &stubAIProviderAdapter{id: "gemini", displayName: "Gemini", configured: true, complete: overloaded}
+	service := &AIService{providerAdapters: []aiProviderAdapter{gemini}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, _, err := service.askSecondRoundWithRotation("prompt"); err == nil {
+			t.Fatal("an overloaded provider cannot answer")
+		}
+	}
+	if gemini.completeCalls != 2 {
+		t.Fatalf("the retry must reach the only provider again: %d calls, want 2", gemini.completeCalls)
+	}
+
+	t.Setenv("AI_PROVIDER", "gemini,groq")
+	gemini = &stubAIProviderAdapter{id: "gemini", displayName: "Gemini", configured: true, complete: overloaded}
+	groq := &stubAIProviderAdapter{id: "groq", displayName: "Groq", configured: true,
+		complete: func(string) (aiProviderAnswer, error) { return aiProviderAnswer{Text: "ok", Model: "groq-test"}, nil }}
+	service = &AIService{providerAdapters: []aiProviderAdapter{gemini, groq}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if answer, _, err := service.askSecondRoundWithRotation("prompt"); err != nil || answer != "ok" {
+			t.Fatalf("fallback answer = %q, err %v", answer, err)
+		}
+	}
+	if gemini.completeCalls != 1 || groq.completeCalls != 2 {
+		t.Fatalf("with a fallback the overloaded provider sits out: Gemini %d, Groq %d", gemini.completeCalls, groq.completeCalls)
+	}
+}
