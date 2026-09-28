@@ -1162,9 +1162,11 @@ export default function AIAssistantPage() {
             The right/top offsets match the bell's own (main's padding + its
             right-3/top-3) so the card's edge lines up with the control. */}
         <aside
-          /* Phone: a full-height sheet. The app bar it used to stop under was
-             taken out on 19 ก.ย. 2569; the side handle opens the menu now. */
-          className={`fixed inset-x-0 bottom-0 top-0 z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
+          /* Phone: a sheet from under the phone top bar to the bottom. It has
+             to stop under the bar, not cover it: .ai-aura-bg isolates this
+             z-[60], so the bar (z-30, outside) paints on top and hid the title
+             row with the close button (28 ก.ย. 2569). */
+          className={`fixed inset-x-0 bottom-0 top-(--phone-bar-h) z-[60] flex flex-col bg-white shadow-2xl transition-all duration-300 ease-out dark:bg-gray-900 sm:absolute sm:left-auto sm:bottom-auto sm:right-9 sm:top-16 sm:w-[380px] sm:max-h-[min(32rem,calc(100%-6rem))] sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-gray-950/20 sm:dark:border-gray-800 lg:right-11 ${
             drawerOpen
               ? "translate-y-0 opacity-100 sm:scale-100"
               : "pointer-events-none translate-y-full opacity-0 sm:translate-y-0 sm:scale-95"
