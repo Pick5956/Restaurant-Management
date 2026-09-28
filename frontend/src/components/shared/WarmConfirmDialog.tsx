@@ -47,6 +47,8 @@ type Props = {
   icon?: ReactNode;
   /** Where focus lands on open: the cancel button (default) or the content slot. */
   initialFocus?: "cancel" | "content";
+  /** Holds only the confirm button back — e.g. until a typed name matches. */
+  confirmDisabled?: boolean;
 };
 
 export default function WarmConfirmDialog({
@@ -62,6 +64,7 @@ export default function WarmConfirmDialog({
   tone = "danger",
   icon,
   initialFocus = "cancel",
+  confirmDisabled = false,
 }: Props) {
   const titleId = useId();
   const bodyId = useId();
@@ -72,6 +75,14 @@ export default function WarmConfirmDialog({
   // top of the page.
   const openerRef = useRef<HTMLElement | null>(null);
   const slotRef = useRef<HTMLDivElement | null>(null);
+  // Callers pass a fresh onCancel every render. Read through a ref so a parent
+  // re-rendering while the dialog is open (a busy flag, a typed character)
+  // does not re-run the open effect — that re-captured the opener from inside
+  // the dialog and yanked focus back to the cancel button.
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  });
 
   // The dialog used to vanish the frame `open` went false — it popped in and
   // simply disappeared. It now stays mounted for the length of the exit
@@ -91,6 +102,20 @@ export default function WarmConfirmDialog({
     return () => window.clearTimeout(timer);
   }, [closing]);
 
+  // The words of the last open frame, kept for the exit. A caller that clears
+  // its target the moment it closes would otherwise fade out an empty dialog.
+  const [shown, setShown] = useState({ title, description, confirmLabel, cancelLabel });
+  if (
+    open &&
+    (shown.title !== title ||
+      shown.description !== description ||
+      shown.confirmLabel !== confirmLabel ||
+      shown.cancelLabel !== cancelLabel)
+  ) {
+    setShown({ title, description, confirmLabel, cancelLabel });
+  }
+  const words = open ? { title, description, confirmLabel, cancelLabel } : shown;
+
 
   const focusables = useCallback(() => {
     const root = dialogRef.current;
@@ -106,8 +131,10 @@ export default function WarmConfirmDialog({
     // Deferred a frame: the element is being animated in and is not focusable
     // in the same tick it is inserted.
     const timer = window.setTimeout(() => {
+      // A text field first, even when preset chips come before it in the slot.
       const field = initialFocus === "content"
-        ? slotRef.current?.querySelector<HTMLElement>("input, textarea, button")
+        ? slotRef.current?.querySelector<HTMLElement>("input, textarea") ??
+          slotRef.current?.querySelector<HTMLElement>("button")
         : null;
       (field ?? cancelRef.current)?.focus();
       if (field instanceof HTMLInputElement) field.select();
@@ -116,7 +143,7 @@ export default function WarmConfirmDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -147,7 +174,7 @@ export default function WarmConfirmDialog({
       document.body.style.overflow = previousOverflow;
       openerRef.current?.focus?.();
     };
-  }, [open, focusables, onCancel, initialFocus]);
+  }, [open, focusables, initialFocus]);
 
   // No DOM to portal into while the server renders. Nothing is lost by
   // returning null there: the dialog is always closed on first paint, so the
@@ -169,18 +196,20 @@ export default function WarmConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={bodyId}
+        aria-describedby={words.description ? bodyId : undefined}
         className="warm-dialog"
       >
         <span className="warm-dialog-icon" aria-hidden="true">
           {icon ?? <TriangleAlert size={28} strokeWidth={2.75} />}
         </span>
         <h2 id={titleId} className="warm-dialog-title">
-          {title}
+          {words.title}
         </h2>
-        <p id={bodyId} className="warm-dialog-body">
-          {description}
-        </p>
+        {words.description ? (
+          <p id={bodyId} className="warm-dialog-body">
+            {words.description}
+          </p>
+        ) : null}
         {children ? (
           <div ref={slotRef} className="warm-dialog-slot">
             {children}
@@ -191,9 +220,9 @@ export default function WarmConfirmDialog({
             type="button"
             className={`warm-dialog-btn ${tone === "primary" ? "warm-dialog-btn-primary" : "warm-dialog-btn-danger"}`}
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
           >
-            {confirmLabel}
+            {words.confirmLabel}
           </button>
           <button
             ref={cancelRef}
@@ -202,7 +231,7 @@ export default function WarmConfirmDialog({
             onClick={onCancel}
             disabled={busy}
           >
-            {cancelLabel}
+            {words.cancelLabel}
           </button>
         </div>
       </div>

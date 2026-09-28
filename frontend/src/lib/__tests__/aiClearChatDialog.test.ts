@@ -84,7 +84,7 @@ describe("chat deletion confirmation", () => {
     expect(dialog).toContain('role="alertdialog"');
     expect(dialog).toContain('aria-modal="true"');
     expect(dialog).toContain("aria-labelledby={titleId}");
-    expect(dialog).toContain("aria-describedby={bodyId}");
+    expect(dialog).toContain("aria-describedby={words.description ? bodyId : undefined}");
   });
 
   it("keeps the terracotta focus ring instead of the browser default", () => {

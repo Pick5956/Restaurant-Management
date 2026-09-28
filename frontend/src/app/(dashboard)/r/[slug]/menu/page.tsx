@@ -21,6 +21,7 @@ import ThemedMultiSelect from "@/src/components/shared/ThemedMultiSelect";
 import { useDragReorder } from "@/src/hooks/useDragReorder";
 import MenuImageCropper, { type MenuImageCropperHandle } from "@/src/components/menu/MenuImageCropper";
 import { useToast } from "@/src/components/shared/FeedbackProvider";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import NumberInput from "@/src/components/shared/NumberInput";
 import { SEALED_UNITS } from "../inventory/inventoryPageUtils";
@@ -726,7 +727,6 @@ export default function MenuPage() {
   };
   const categoryBackdrop = useBackdropClose(closeCategoryModal);
   const itemDrawerBackdrop = useBackdropClose(closeItemDrawer);
-  const deleteBackdrop = useBackdropClose(closeDeleteModal);
 
   if (!canView) return <PermissionDenied title={copy.permissionDenied} />;
 
@@ -1679,32 +1679,19 @@ export default function MenuPage() {
         </>
       )}
 
-      {deleteTarget && (
-        <div {...deleteBackdrop} className={`${deleteClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-50 flex items-end justify-center bg-gray-950/45 px-3 pb-3 backdrop-blur-sm sm:items-center sm:px-4 sm:pb-0`}>
-          <div className={`${deleteClosing ? "motion-bottom-sheet-exit" : "motion-bottom-sheet"} w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-              <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">{copy.confirmDeleteTitle}</h2>
-              <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{copy.confirmDeleteBody}</p>
-            </div>
-            <div className="px-4 py-3">
-              <p className="truncate text-[13px] font-medium text-gray-900 dark:text-white">{deleteTarget.name}</p>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-              <button type="button" onClick={() => closeDeleteModal()} disabled={submitting} className="ui-press h-9 rounded-md border border-gray-200 px-3 text-[12px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">
-                {copy.cancel}
-              </button>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => void (deleteTarget.type === "category" ? removeCategory(deleteTarget.id) : removeItem(deleteTarget.id))}
-                className="ui-press h-9 rounded-md border border-red-200 bg-white px-3 text-[12px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-900/20"
-              >
-                {copy.confirmDelete}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WarmConfirmDialog
+        open={deleteTarget !== null && !deleteClosing}
+        title={copy.confirmDeleteTitle}
+        description={deleteTarget ? `“${deleteTarget.name}” — ${copy.confirmDeleteBody}` : ""}
+        confirmLabel={copy.confirmDelete}
+        cancelLabel={copy.cancel}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          void (deleteTarget.type === "category" ? removeCategory(deleteTarget.id) : removeItem(deleteTarget.id));
+        }}
+        onCancel={() => closeDeleteModal()}
+        busy={submitting}
+      />
     </div>
     </>
   );

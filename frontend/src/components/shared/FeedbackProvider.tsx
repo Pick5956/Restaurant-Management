@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { useLanguage } from "@/src/providers/LanguageProvider";
-import { useBackdropClose } from "@/src/hooks/useBackdropClose";
+import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 
 type ToastTone = "success" | "error" | "warning" | "info";
 type ConfirmTone = "default" | "danger" | "warning";
@@ -29,6 +29,7 @@ type ConfirmInput = {
 };
 
 type ConfirmState = ConfirmInput & {
+  open: boolean;
   resolve: (confirmed: boolean) => void;
 };
 
@@ -62,12 +63,9 @@ const toneTitleClassName: Record<ToastTone, string> = {
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const { language } = useLanguage();
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // The request stays after it is answered and only `open` goes false, so the
+  // dialog keeps its words while it animates out instead of emptying first.
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
-  const [confirmClosing, setConfirmClosing] = useState(false);
-  const confirmDialogRef = useRef<HTMLDivElement>(null);
-  const confirmStateRef = useRef<ConfirmState | null>(null);
-  const confirmClosingRef = useRef(false);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -85,92 +83,18 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
 
   const confirm = useCallback((input: ConfirmInput) => {
     return new Promise<boolean>((resolve) => {
-      setConfirmClosing(false);
-      confirmClosingRef.current = false;
-      setConfirmState({ ...input, resolve });
+      setConfirmState({ ...input, open: true, resolve });
     });
   }, []);
 
   const toastValue = useMemo(() => ({ showToast, dismissToast }), [dismissToast, showToast]);
   const confirmValue = useMemo(() => ({ confirm }), [confirm]);
 
-  useEffect(() => {
-    confirmStateRef.current = confirmState;
-    confirmClosingRef.current = confirmClosing;
-  }, [confirmClosing, confirmState]);
-
-  const closeConfirm = useCallback((confirmed: boolean) => {
-    const currentConfirm = confirmStateRef.current;
-    if (!currentConfirm || confirmClosingRef.current) return;
-    confirmClosingRef.current = true;
-    setConfirmClosing(true);
-    window.setTimeout(() => {
-      currentConfirm.resolve(confirmed);
-      setConfirmState(null);
-      setConfirmClosing(false);
-      confirmClosingRef.current = false;
-    }, 180);
-  }, []);
-
-  useEffect(() => {
-    if (!confirmState) return;
-
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusFrame = window.requestAnimationFrame(() => {
-      const target = confirmDialogRef.current?.querySelector<HTMLElement>("[data-confirm-autofocus]");
-      target?.focus();
-    });
-
-    const focusableSelector = [
-      "a[href]",
-      "button:not([disabled])",
-      "input:not([disabled])",
-      "select:not([disabled])",
-      "textarea:not([disabled])",
-      "[tabindex]:not([tabindex='-1'])",
-    ].join(",");
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeConfirm(false);
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(confirmDialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])
-        .filter((element) => element.offsetParent !== null || element === document.activeElement);
-      if (!focusable.length) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-        return;
-      }
-      if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("keydown", handleKeyDown);
-      previousFocusRef.current?.focus();
-      previousFocusRef.current = null;
-    };
-  }, [closeConfirm, confirmState]);
-
-  const confirmTone = confirmState?.tone ?? "default";
-  const confirmButtonClass = confirmTone === "danger"
-    ? "bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:text-white dark:hover:bg-red-400"
-    : confirmTone === "warning"
-      ? "bg-amber-500 text-amber-950 hover:bg-amber-400"
-      : "bg-gray-900 text-white hover:bg-gray-800 dark:bg-orange-400 dark:text-orange-950 dark:hover:bg-orange-300";
-  const confirmBackdrop = useBackdropClose(() => closeConfirm(false));
+  const closeConfirm = (confirmed: boolean) => {
+    if (!confirmState?.open) return;
+    confirmState.resolve(confirmed);
+    setConfirmState({ ...confirmState, open: false });
+  };
 
   return (
     <ToastContext.Provider value={toastValue}>
@@ -205,53 +129,20 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        {confirmState && (
-          <div
-            {...confirmBackdrop}
-            className={`${confirmClosing ? "motion-overlay-exit" : "motion-overlay"} fixed left-0 top-0 z-[var(--z-modal)] h-dvh w-dvw max-w-full bg-gray-950/55`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="global-confirm-title"
-            aria-describedby={confirmState.message ? "global-confirm-message" : undefined}
-          >
-            <div className="absolute inset-3 m-auto h-fit w-[calc(100dvw-1.5rem)] max-w-md">
-              <div
-                ref={confirmDialogRef}
-                tabIndex={-1}
-                className={`${confirmClosing ? "motion-dialog-exit" : "motion-dialog"} w-full rounded-md border border-gray-200 bg-white p-4 shadow-2xl shadow-black/20 dark:border-gray-800 dark:bg-gray-950`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${confirmTone === "danger" ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300" : confirmTone === "warning" ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300" : "bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-300"}`}>
-                    <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 id="global-confirm-title" className="text-[15px] font-semibold text-gray-950 dark:text-white">
-                      {confirmState.title}
-                    </h2>
-                    {confirmState.message && <p id="global-confirm-message" className="mt-1 text-[13px] leading-6 text-gray-600 dark:text-gray-400">{confirmState.message}</p>}
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => closeConfirm(false)}
-                    data-confirm-autofocus
-                    className="h-10 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900"
-                  >
-                    {confirmState.cancelLabel ?? (language === "th" ? "ยกเลิก" : "Cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => closeConfirm(true)}
-                    className={`h-10 rounded-md px-3 text-[13px] font-semibold transition-colors ${confirmButtonClass}`}
-                  >
-                    {confirmState.confirmLabel ?? (language === "th" ? "ยืนยัน" : "Confirm")}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Every question in the app is the inventory's dialog: the round
+            warning icon, the confirm button on top and "cancel" under it,
+            focus on cancel. Red only when the caller says it destroys
+            something; anything else gets the terracotta confirm. */}
+        <WarmConfirmDialog
+          open={confirmState?.open ?? false}
+          title={confirmState?.title ?? ""}
+          description={confirmState?.message ?? ""}
+          confirmLabel={confirmState?.confirmLabel ?? (language === "th" ? "ยืนยัน" : "Confirm")}
+          cancelLabel={confirmState?.cancelLabel ?? (language === "th" ? "ยกเลิก" : "Cancel")}
+          tone={confirmState?.tone === "danger" ? "danger" : "primary"}
+          onConfirm={() => closeConfirm(true)}
+          onCancel={() => closeConfirm(false)}
+        />
       </ConfirmContext.Provider>
     </ToastContext.Provider>
   );
