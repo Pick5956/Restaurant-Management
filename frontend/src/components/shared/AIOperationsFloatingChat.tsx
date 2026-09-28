@@ -26,6 +26,7 @@ const ORB_DRAG_THRESHOLD = 6;
 const ORB_SPOT_KEY = "ai_orb_spot";
 type OrbSpot = { side: "left" | "right"; top: number };
 import { askOperationsAIStream } from "@/src/lib/aiStream";
+import { useSmoothReveal } from "@/src/lib/smoothReveal";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage } from "@/src/lib/ai";
 import {
   formatAIActionPreviewAnswer,
@@ -288,6 +289,8 @@ export default function AIOperationsFloatingChat() {
   // The answer so far while it is being written — shown in place of the
   // "thinking" line, replaced by the finished message when it arrives.
   const [draft, setDraft] = useState<string | null>(null);
+  // The draft as it is revealed on screen: steady, not in the bursts it arrives in.
+  const smoothDraft = useSmoothReveal(draft);
   const [outage, setOutage] = useState<AIOutage | null>(null);
   const [lastQuestion, setLastQuestion] = useState("");
   const [pendingActionPreview, setPendingActionPreview] = useState<AIActionPreview | null>(null);
@@ -444,7 +447,7 @@ export default function AIOperationsFloatingChat() {
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       messagesEndRef.current.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
     }
-  }, [messages, loading, draft]);
+  }, [messages, loading, draft, smoothDraft.text]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -639,6 +642,10 @@ export default function AIOperationsFloatingChat() {
       const newThreadId = data.conversation_id && data.conversation_id !== conversationId ? data.conversation_id : null;
       if (data.conversation_id) setConversationId(data.conversation_id);
       
+      // Let the typing run to the end of the answer before the finished message
+      // takes the draft's place, so the text does not jump the last stretch.
+      await smoothDraft.settle(answer);
+      if (!conversationRequests.isCurrent(requestGeneration)) return;
       const assistantMsg: Message = {
         id: data.turn_id ? `${data.turn_id}-assistant` : `ai-${Date.now()}`,
         role: "assistant",
@@ -1086,19 +1093,19 @@ export default function AIOperationsFloatingChat() {
             })
             )}
 
-            {loading && draft && (
+            {loading && smoothDraft.text && (
               <div className="flex max-w-full items-start gap-2.5 sm:max-w-[90%]">
                 <SiriOrb size="30px" className="mt-0.5 shrink-0" animationDuration={8} />
                 <div
                   className="min-w-0 break-words rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
                   aria-live="polite"
                 >
-                  <SafeAIResponseContent content={draft} compact language={language} />
+                  <SafeAIResponseContent content={smoothDraft.text} compact language={language} />
                   <span className="ai-stream-caret" aria-hidden="true" />
                 </div>
               </div>
             )}
-            {loading && !draft && (
+            {loading && !smoothDraft.text && (
               <div className="flex items-center gap-2.5 animate-message-slide">
                 <SiriOrb size="30px" className="shrink-0" animationDuration={8} />
                 <div

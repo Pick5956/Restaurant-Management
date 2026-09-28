@@ -5,6 +5,7 @@ import { smoothScroll } from "@/src/hooks/smoothScroll";
 import { useRestaurantNav, useRestaurantRouter } from "@/src/hooks/useRestaurantNav";
 import { ArrowUp, Bell, Bot, ChevronDown, Loader2, Maximize2, MessageSquareText, Minimize2 } from "lucide-react";
 import { askOperationsAIStream } from "@/src/lib/aiStream";
+import { useSmoothReveal } from "@/src/lib/smoothReveal";
 import { cancelAIAction, cancelAIActionPlan, confirmAIAction, confirmAIActionPlan, getAIConversationTurns, normalizeAIAnswer, readAIOutage, getAISettings } from "@/src/lib/ai";
 import AIOutageNotice, { type AIOutage } from "@/src/components/shared/AIOutageNotice";
 import {
@@ -141,6 +142,8 @@ export default function AIAssistantPage() {
   // The answer so far while it is being written — shown in place of the
   // "thinking" line, replaced by the finished message when it arrives.
   const [draft, setDraft] = useState<string | null>(null);
+  // The draft as it is revealed on screen: steady, not in the bursts it arrives in.
+  const smoothDraft = useSmoothReveal(draft);
   const [error, setError] = useState("");
   const [outage, setOutage] = useState<AIOutage | null>(null);
   const [lastQuestion, setLastQuestion] = useState("");
@@ -324,7 +327,7 @@ export default function AIAssistantPage() {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [messages, loading, draft]);
+  }, [messages, loading, draft, smoothDraft.text]);
 
   // Lock the page (body/html) from scrolling while the AI view is mounted. This
   // view sizes itself to the dynamic viewport and does its own inner scrolling,
@@ -469,6 +472,10 @@ export default function AIAssistantPage() {
           : data.intent === "unclear"
             ? getUnclearRequestActions(activeMembership, language)
             : [];
+      // Let the typing run to the end of the answer before the finished message
+      // takes the draft's place, so the text does not jump the last stretch.
+      await smoothDraft.settle(answer);
+      if (!conversationRequests.isCurrent(requestGeneration)) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -975,19 +982,19 @@ export default function AIAssistantPage() {
                 })
               )}
 
-              {loading && draft && (
+              {loading && smoothDraft.text && (
                 <div className="flex max-w-full items-start gap-2 sm:max-w-[90%] sm:gap-2.5">
                   <SiriOrb size="30px" className="mt-0.5 shrink-0" />
                   <div
                     className="min-w-0 rounded-2xl rounded-tl-md border border-gray-200/70 bg-white px-4 py-2.5 text-xs leading-relaxed text-gray-800 shadow-sm dark:border-gray-700/60 dark:bg-gray-800/80 dark:text-gray-100 sm:text-[13px]"
                     aria-live="polite"
                   >
-                    <SafeAIResponseContent content={draft} compact language={language} />
+                    <SafeAIResponseContent content={smoothDraft.text} compact language={language} />
                     <span className="ai-stream-caret" aria-hidden="true" />
                   </div>
                 </div>
               )}
-              {loading && !draft && (
+              {loading && !smoothDraft.text && (
                 <div className="flex items-center gap-2.5">
                   <SiriOrb size="30px" className="shrink-0" />
                   <div

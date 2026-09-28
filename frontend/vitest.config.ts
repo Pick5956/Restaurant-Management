@@ -45,6 +45,7 @@ export default defineConfig({
       "src/lib/__tests__/reservation.test.ts",
       "src/lib/__tests__/singleFlight.test.ts",
       "src/lib/__tests__/chatComposer.test.ts",
+      "src/lib/__tests__/smoothReveal.test.ts",
       "src/lib/__tests__/aiPendingPlanStorage.test.ts",
       "src/app/(dashboard)/r/[slug]/orders/ordersPageUtils.test.ts",
       "src/app/(dashboard)/r/[slug]/tables/tablesPageUtils.test.ts",
