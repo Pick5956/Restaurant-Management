@@ -1945,9 +1945,6 @@ export default function InventoryPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
-                    <span className="tabular-nums">
-                      {formatNumber(pageStart + 1, lang)}–{formatNumber(Math.min(pageStart + pageSize, filtered.length), lang)} / {formatNumber(filtered.length, lang)}
-                    </span>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
