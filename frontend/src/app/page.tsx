@@ -206,7 +206,7 @@ export default function LandingPage() {
 
             <div ref={heroShot} className="absolute left-1/2 top-1/2 w-[min(94vw,1180px,calc((100dvh_-_150px)*1.78))] will-change-transform">
               <Browser>
-                <WebShot file="desktop-home.png" alt={copy.heroShotAlt} />
+                <WebShot file="desktop-hero.png" alt={copy.heroShotAlt} />
               </Browser>
             </div>
           </div>

@@ -235,6 +235,7 @@ function MockAi() {
 
 export const WEB_MOCKS: Record<string, () => ReactNode> = {
   "desktop-home.png": MockHome,
+  "desktop-hero.png": MockHome,
   "tablet-home.png": MockHome,
   "desktop-kitchen.png": MockKitchen,
   "desktop-reports.png": MockReports,
