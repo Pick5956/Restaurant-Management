@@ -60,7 +60,7 @@ import AIInsightsPanel from "@/src/components/shared/AIInsightsPanel";
 import HoverTip from "@/src/components/shared/HoverTip";
 import SafeAIResponseContent from "@/src/components/shared/SafeAIResponseContent";
 import AIFollowUpList from "@/src/components/shared/AIFollowUpList";
-import { cacheOwnerTitle, useFollowUpsEnabled, useWelcome } from "@/src/lib/aiPrefs";
+import { DEFAULT_OWNER_TITLE_TH, cacheOwnerTitle, useFollowUpsEnabled, useWelcome } from "@/src/lib/aiPrefs";
 import SiriOrb from "@/src/components/ui/siri-orb";
 
 type Message = {
@@ -97,7 +97,7 @@ function buildCopy(language: "th" | "en") {
         permissionDenied: "หน้านี้สำหรับเจ้าของร้านเท่านั้น",
         chats: "รายการแชท",
         chatGone: "แชทนี้ถูกลบไปแล้ว เปิดแชทใหม่ให้แล้วครับ",
-        welcome: "สวัสดีคุณผู้จัดการ",
+        welcome: "สวัสดีเจ้าของร้าน",
         error: "เรียก AI ไม่สำเร็จ",
         quickQuestions: [
           "สรุปร้าน",
@@ -119,7 +119,7 @@ function buildCopy(language: "th" | "en") {
         permissionDenied: "This page is for the restaurant owner only",
         chats: "Chats",
         chatGone: "That chat was deleted. Starting a new one.",
-        welcome: "Hello, manager.",
+        welcome: "Hello, owner.",
         error: "AI request failed",
         quickQuestions: [
           "Summarize today's restaurant situation.",
@@ -207,7 +207,7 @@ export default function AIAssistantPage() {
       .then((res) => {
         if (cancelled) return;
         const title = res.data.owner_title;
-        cacheOwnerTitle(title === "คุณผู้จัดการ" ? "" : title);
+        cacheOwnerTitle(title === DEFAULT_OWNER_TITLE_TH ? "" : title);
       })
       .catch(() => {});
     return () => {

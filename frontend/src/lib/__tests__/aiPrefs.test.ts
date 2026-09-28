@@ -64,13 +64,13 @@ describe("aiPrefs", () => {
     storage.clear();
   });
 
-  // The greeting has always been "สวัสดีคุณผู้จัดการ"; with nothing set it must
-  // stay exactly that, and a chosen name replaces the whole title, not just
-  // part of it.
+  // With nothing set the greeting is "สวัสดีเจ้าของร้าน" (the default was
+  // "คุณผู้จัดการ" until 28 ก.ย. 2569), and a chosen name replaces the whole
+  // title, not just part of it.
   it("greets with the default title and with a chosen one", () => {
-    expect(prefs.welcomeFor("th", "")).toBe("สวัสดีคุณผู้จัดการ");
+    expect(prefs.welcomeFor("th", "")).toBe("สวัสดีเจ้าของร้าน");
     expect(prefs.welcomeFor("th", "  พี่เก่ง ")).toBe("สวัสดีพี่เก่ง");
-    expect(prefs.welcomeFor("en", "")).toBe("Hello, Manager");
+    expect(prefs.welcomeFor("en", "")).toBe("Hello, Owner");
     expect(prefs.welcomeFor("en", "Boss")).toBe("Hello, Boss");
   });
 

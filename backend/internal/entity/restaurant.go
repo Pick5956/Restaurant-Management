@@ -43,7 +43,7 @@ type Restaurant struct {
 	// allowed — so a shop that switched actions on before this column existed
 	// keeps exactly the behaviour it had. AIInsightKinds is the same shape for
 	// the proactive bell (insight kind → shown). AIOwnerTitle is what the
-	// assistant calls the owner; empty falls back to "คุณผู้จัดการ".
+	// assistant calls the owner; empty falls back to "เจ้าของร้าน".
 	AIActionTypes  *string `json:"ai_action_types,omitempty" gorm:"type:jsonb"`
 	AIInsightKinds *string `json:"ai_insight_kinds,omitempty" gorm:"type:jsonb"`
 	AIOwnerTitle   string  `json:"ai_owner_title" gorm:"size:40;not null;default:''"`
