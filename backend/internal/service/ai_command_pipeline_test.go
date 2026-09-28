@@ -274,3 +274,29 @@ func TestNegativeNumbersSayWhyRatherThanJustAsking(t *testing.T) {
 		t.Errorf("a missing price should just ask, got %q", quiet.Question)
 	}
 }
+
+// A delivery carries what it cost and when it goes off (28 ก.ย. 2569): the
+// ledger used to get the old cost whatever was paid, and the lot no expiry.
+func TestResolveStockCommandCarriesPriceAndExpiryOfADelivery(t *testing.T) {
+	egg := entity.Ingredient{Name: "ไข่ไก่", Unit: "ฟอง", Stock: 30, PackUnit: "แผง", PackSize: 30}
+	egg.ID = 7
+	shelf := []entity.Ingredient{egg}
+
+	paid := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "ไข่ไก่", Kind: "in", Quantity: 2, Unit: "แผง", Amount: 250, ExpiresAt: "2026-10-12"})
+	if paid.Kind != AICommandOutcomeReady || paid.Command.Quantity != 60 || paid.Command.Amount != 250 || paid.Command.ExpiresAt != "2026-10-12" {
+		t.Fatalf("paid delivery = %+v", paid)
+	}
+	perPack := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "ไข่ไก่", Kind: "in", Quantity: 2, Unit: "แผง", UnitPrice: 120})
+	if perPack.Command.Amount != 240 {
+		t.Fatalf("2 แผง แผงละ 120 should cost 240, got %+v", perPack.Command)
+	}
+	badDate := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "ไข่ไก่", Kind: "in", Quantity: 1, Unit: "แผง", ExpiresAt: "12 ต.ค."})
+	if badDate.Kind != AICommandOutcomeAsk {
+		t.Fatalf("an unreadable expiry should be asked about, got %+v", badDate)
+	}
+	// Only a delivery takes a price: a count does not book an expense.
+	count := ResolveStockCommand(shelf, AIStockCommandDraft{Name: "ไข่ไก่", Kind: "adjust", Quantity: 500, Unit: "ฟอง", Amount: 99})
+	if count.Command.Amount != 0 || count.Command.ExpiresAt != "" {
+		t.Fatalf("adjust must not carry a price or expiry, got %+v", count.Command)
+	}
+}
