@@ -1465,7 +1465,10 @@ export default function InventoryPage() {
             {filtersOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={closeFilters} />
-                <div className={`${filtersClosing ? "smooth-pop-exit" : "smooth-pop"} absolute right-0 top-full z-50 mt-2 w-80 origin-top-right rounded-xl border border-slate-200 bg-white p-4 text-left shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900`}>
+                {/* Below lg the search box shrinks, which brings this button close to
+                    the icon rail — hung from its right edge, the 320px panel ran under
+                    the rail. There it opens rightwards from the button instead. */}
+                <div className={`${filtersClosing ? "smooth-pop-exit" : "smooth-pop"} absolute left-0 top-full z-50 mt-2 w-80 origin-top-left rounded-xl lg:left-auto lg:right-0 lg:origin-top-right border border-slate-200 bg-white p-4 text-left shadow-(--dashboard-control-shadow) dark:border-gray-800 dark:bg-gray-900`}>
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{copy.filter}</p>
                     <button
