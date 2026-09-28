@@ -15,8 +15,12 @@
  * Touch and trackpad momentum are the browser's own and untouched.
  *
  * Returns a cleanup, which React 19 calls when the element goes away.
+ *
+ * `onMove` runs right after each glide step moves the list. The browser only
+ * fires "scroll" for a move made in an animation frame on the frame after, so
+ * anything drawn from the scroll position would trail the page by a frame.
  */
-export function smoothScroll(node: HTMLElement | null): (() => void) | undefined {
+export function smoothScroll(node: HTMLElement | null, onMove?: () => void): (() => void) | undefined {
   if (!node) return;
 
   // Speed a 100px notch adds, in px per ms. With FRICTION_MS below a single
@@ -58,10 +62,12 @@ export function smoothScroll(node: HTMLElement | null): (() => void) | undefined
     if ((position <= 0 && velocity < 0) || (position >= max && velocity > 0)) {
       position = Math.min(Math.max(position, 0), max);
       node.scrollTop = position;
+      onMove?.();
       stop();
       return;
     }
     node.scrollTop = position;
+    onMove?.();
     if (Math.abs(velocity) < REST) {
       stop();
       return;
