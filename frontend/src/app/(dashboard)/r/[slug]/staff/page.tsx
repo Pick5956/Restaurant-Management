@@ -19,7 +19,7 @@ import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import { useConfirm, useToast } from "@/src/components/shared/FeedbackProvider";
 import UserAvatar from "@/src/components/shared/UserAvatar";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
-import { Check, ChevronRight, History, Pencil, Plus, RotateCcw, X } from "lucide-react";
+import { ChevronRight, History, Pencil, Plus, RotateCcw, X } from "lucide-react";
 import {
   PERMISSION_DEPENDENCIES,
   PERMISSION_SECTIONS,
@@ -82,7 +82,6 @@ export default function StaffPage() {
   const [auditHasMore, setAuditHasMore] = useState(false);
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState<number | "">("");
   const [newRoleName, setNewRoleName] = useState("");
   const [roleActionIds, setRoleActionIds] = useState<number[]>([]);
@@ -96,7 +95,6 @@ export default function StaffPage() {
   const [submitting, setSubmitting] = useState(false);
   const [copiedToken, setCopiedToken] = useState("");
   const [error, setError] = useState("");
-  const [inviteError, setInviteError] = useState("");
   const createOnceRef = useRef(createSingleFlight());
   const revokeLocksRef = useRef<Set<number>>(new Set());
   const memberLocksRef = useRef<Set<number>>(new Set());
@@ -120,7 +118,6 @@ export default function StaffPage() {
         title: "พนักงานและคำเชิญ",
         subtitle: "จัดการสมาชิกในร้าน สร้างคำเชิญ และดูประวัติการเปลี่ยนแปลงของทีม",
         loadError: "โหลดข้อมูลทีมไม่สำเร็จ",
-        emailError: "รูปแบบอีเมลไม่ถูกต้อง",
         createError: "สร้างคำเชิญไม่สำเร็จ",
         copyError: "คัดลอกลิงก์ไม่ได้",
         revokeError: "ยกเลิกคำเชิญไม่สำเร็จ",
@@ -142,8 +139,6 @@ export default function StaffPage() {
         roleNameLabel: "ชื่อบทบาท",
         roleNamePlaceholder: "เช่น หัวหน้ากะ",
         editRoleName: "แก้ชื่อบทบาท",
-        saveRoleName: "บันทึกชื่อบทบาท",
-        cancelRoleName: "ยกเลิกการแก้ชื่อ",
         createRole: "เพิ่มบทบาท",
         creatingRole: "กำลังเพิ่ม...",
         editPermissions: "สิทธิ์",
@@ -182,8 +177,6 @@ export default function StaffPage() {
         revoke: "ยกเลิก",
         auditDenied: "บัญชีนี้ยังไม่มีสิทธิ์ดูประวัติการเปลี่ยนแปลงทีม",
         inviteTitle: "เพิ่มพนักงาน",
-        emailLabel: "อีเมลพนักงาน",
-        emailPlaceholder: "staff@example.com หรือเว้นว่าง",
         expiry: "วันหมดอายุ",
         day: "วัน",
         noExpiry: "ไม่หมดอายุ",
@@ -195,7 +188,6 @@ export default function StaffPage() {
         title: "Staff and invitations",
         subtitle: "Manage restaurant members, create invitations, and review team activity history.",
         loadError: "Could not load team data.",
-        emailError: "Email format is invalid.",
         createError: "Could not create invitation.",
         copyError: "Could not copy invitation link.",
         revokeError: "Could not revoke invitation.",
@@ -217,8 +209,6 @@ export default function StaffPage() {
         roleNameLabel: "Role name",
         roleNamePlaceholder: "e.g. Shift lead",
         editRoleName: "Edit role name",
-        saveRoleName: "Save role name",
-        cancelRoleName: "Cancel role name edit",
         createRole: "Add role",
         creatingRole: "Adding...",
         editPermissions: "Permissions",
@@ -257,8 +247,6 @@ export default function StaffPage() {
         revoke: "Revoke",
         auditDenied: "This account does not have permission to view the team audit log.",
         inviteTitle: "Invite staff",
-        emailLabel: "Staff email",
-        emailPlaceholder: "staff@example.com or leave blank",
         expiry: "Expiry",
         day: "day",
         noExpiry: "No expiry",
@@ -391,26 +379,19 @@ export default function StaffPage() {
     event.preventDefault();
     if (!restaurantId || !canManageInvites || !roleId) return;
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setInviteError(copy.emailError);
-      return;
-    }
-
+    // Invitations are plain links now: the owner took the staff email field out
+    // (29 ก.ย. 2569), so a link is never tied to one account from here.
     await createOnceRef.current(async () => {
       setSubmitting(true);
       setError("");
-      setInviteError("");
       try {
         const days = Number.parseInt(expiresInDays, 10);
         const res = await createInvitation(restaurantId, {
           role_id: Number(roleId),
-          email: trimmedEmail,
           expires_in_days: Number.isFinite(days) ? days : 0,
         });
         const createdInvitation = res.data;
         setInvitations((current) => [createdInvitation, ...current]);
-        setEmail("");
         try {
           await navigator.clipboard.writeText(inviteUrl(createdInvitation.token));
           setCopiedToken(createdInvitation.token);
@@ -423,7 +404,7 @@ export default function StaffPage() {
         closeInviteModal(true);
         await refresh();
       } catch {
-        setInviteError(copy.createError);
+        showToast({ title: copy.createError });
       } finally {
         setSubmitting(false);
       }
@@ -976,27 +957,6 @@ export default function StaffPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1.5 block text-[14px] font-medium text-gray-900 dark:text-white">{copy.emailLabel}</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                      setInviteError("");
-                    }}
-                    placeholder={copy.emailPlaceholder}
-                    disabled={!canManageInvites}
-                    aria-invalid={Boolean(inviteError)}
-                    className={`h-10 w-full rounded-md border bg-white px-3 text-[14px] outline-none transition-colors focus:border-orange-500 disabled:opacity-60 dark:bg-gray-800 ${
-                      inviteError ? "border-red-300 dark:border-red-900/60" : "border-gray-200 dark:border-gray-700"
-                    }`}
-                  />
-                  {inviteError ? (
-                    <p className="mt-1 text-[13px] font-medium text-red-600 dark:text-red-300">{inviteError}</p>
-                  ) : null}
-                </label>
-
-                <label className="block">
                   <span className="mb-1.5 block text-[14px] font-medium text-gray-900 dark:text-white">{copy.role}</span>
                   <ThemedSelect
                     aria-label={copy.role}
@@ -1139,7 +1099,7 @@ export default function StaffPage() {
       {permissionTarget && canManageRoles && (
         <div {...permissionBackdrop} className={`${permissionClosing ? "motion-overlay-exit" : "motion-overlay"} fixed inset-0 z-50 flex items-stretch justify-center bg-gray-950/45 p-2 backdrop-blur-sm sm:p-4 lg:p-6`}>
           <div className={`${permissionClosing ? "motion-dialog-exit" : "motion-dialog"} flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900`}>
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-1.5 dark:border-gray-800 sm:px-6">
               <div className="min-w-0 flex-1">
                 {permissionTarget.type === "role" ? (
                   <>
@@ -1151,46 +1111,42 @@ export default function StaffPage() {
                           void renameRole();
                         }}
                       >
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <label className="sr-only" htmlFor={`role-name-${permissionTarget.role.ID}`}>{copy.roleNameLabel}</label>
-                          <input
-                            autoFocus
-                            id={`role-name-${permissionTarget.role.ID}`}
-                            type="text"
-                            value={roleRenameDraft}
-                            onChange={(event) => {
-                              setRoleRenameDraft(event.target.value);
-                              setRoleRenameError("");
-                            }}
-                            aria-invalid={Boolean(roleRenameError)}
-                            aria-describedby={roleRenameError ? roleRenameErrorId : undefined}
-                            disabled={roleDialogPolicy.busy}
-                            className="h-11 min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2.5 text-[14px] font-semibold text-gray-900 outline-none transition-colors focus:border-orange-500 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                          />
-                          <button
-                            type="submit"
-                            aria-label={copy.saveRoleName}
-                            title={copy.saveRoleName}
-                            disabled={roleDialogPolicy.busy || !roleRenameDraft.trim() || !roleNameDirty}
-                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-orange-700 text-white transition-colors hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-orange-700 dark:text-white"
-                          >
-                            <Check className="h-4 w-4" strokeWidth={2.4} aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={copy.cancelRoleName}
-                            title={copy.cancelRoleName}
-                            disabled={roleDialogPolicy.busy}
-                            onClick={() => {
+                        {/* Enter or leaving the field saves, Escape puts the old
+                            name back. No save/cancel buttons: the owner asked for
+                            them gone (29 ก.ย. 2569). */}
+                        <label className="sr-only" htmlFor={`role-name-${permissionTarget.role.ID}`}>{copy.roleNameLabel}</label>
+                        <input
+                          autoFocus
+                          id={`role-name-${permissionTarget.role.ID}`}
+                          type="text"
+                          value={roleRenameDraft}
+                          onChange={(event) => {
+                            setRoleRenameDraft(event.target.value);
+                            setRoleRenameError("");
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape") return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setRoleRenameDraft(roleLabel(permissionTarget.role, language));
+                            setRoleRenameError("");
+                            setEditingRoleName(false);
+                          }}
+                          onBlur={() => {
+                            if (roleDialogPolicy.busy) return;
+                            if (!roleRenameDraft.trim()) {
                               setRoleRenameDraft(roleLabel(permissionTarget.role, language));
                               setRoleRenameError("");
                               setEditingRoleName(false);
-                            }}
-                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-45 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                          >
-                            <X className="h-4 w-4" strokeWidth={2.2} aria-hidden="true" />
-                          </button>
-                        </div>
+                              return;
+                            }
+                            void renameRole();
+                          }}
+                          aria-invalid={Boolean(roleRenameError)}
+                          aria-describedby={roleRenameError ? roleRenameErrorId : undefined}
+                          disabled={roleDialogPolicy.busy}
+                          className="h-9 w-full max-w-xs rounded-md border border-gray-300 bg-white px-2.5 text-[16px] font-semibold text-gray-900 outline-none transition-colors focus:border-orange-500 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        />
                         {roleRenameError && (
                           <p
                             id={roleRenameErrorId}
@@ -1204,7 +1160,7 @@ export default function StaffPage() {
                       </form>
                     ) : (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <h2 className="truncate text-[14px] font-semibold text-gray-900 dark:text-white">
+                        <h2 className="truncate text-[16px] font-semibold text-gray-900 dark:text-white">
                           {roleLabel(permissionTarget.role, language)}
                         </h2>
                         <button
@@ -1223,13 +1179,10 @@ export default function StaffPage() {
                         </button>
                       </div>
                     )}
-                    <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                      {language === "th" ? "สิทธิ์บทบาท" : "Role permissions"} · {permissionSummary(permissionTarget.role, language)}
-                    </p>
                   </>
                 ) : (
                   <>
-                    <h2 className="truncate text-[14px] font-semibold text-gray-900 dark:text-white">
+                    <h2 className="truncate text-[16px] font-semibold text-gray-900 dark:text-white">
                       {language === "th" ? "สิทธิ์พนักงาน" : "Staff permissions"} · {displayUserName(permissionTarget.member, language)}
                     </h2>
                     <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
@@ -1314,11 +1267,11 @@ export default function StaffPage() {
                         return (
                           <div key={row.id} className="grid gap-4 border-b border-dashed border-gray-200 px-4 py-4 last:border-b-0 dark:border-gray-800 md:grid-cols-[minmax(0,1fr)_minmax(260px,auto)] md:items-center">
                             <div className="grid gap-1 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5">
-                              <p className="text-[13px] font-medium text-gray-900 dark:text-white">{language === "th" ? row.th : row.en}</p>
+                              <p className="text-[15px] font-semibold text-gray-900 dark:text-white">{language === "th" ? row.th : row.en}</p>
                               <div>
-                                <p className="text-[12px] leading-5 text-gray-500 dark:text-gray-400">{language === "th" ? row.descriptionTh : row.descriptionEn}</p>
+                                <p className="text-[14px] leading-6 text-gray-900 dark:text-gray-100">{language === "th" ? row.descriptionTh : row.descriptionEn}</p>
                                 {prerequisiteLabels.length > 0 && (
-                                  <p className="mt-1 text-[10px] font-medium text-gray-500 dark:text-gray-500">
+                                  <p className="mt-1 text-[13px] text-gray-900 dark:text-gray-100">
                                     {language === "th" ? "เปิดพร้อม: " : "Also enables: "}{prerequisiteLabels.join(", ")}
                                   </p>
                                 )}

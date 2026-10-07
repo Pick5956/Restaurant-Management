@@ -6,7 +6,7 @@ import { getRoles } from '@/src/api/auth';
 import { createInvitation } from '@/src/api/restaurant';
 import { AppScreen } from '@/src/components/app-shell';
 import { AppText as Text } from '@/src/components/app-text';
-import { ChoiceChips, Field, FORM_MAX_WIDTH, FormBody, FormCard, Note, PillTabs, SaveDock } from '@/src/components/form/parts';
+import { ChoiceChips, FORM_MAX_WIDTH, FormBody, FormCard, Note, PillTabs, SaveDock } from '@/src/components/form/parts';
 import { Bone, ContentReveal, SkeletonReveal } from '@/src/components/skeleton';
 import { GhostButton } from '@/src/components/staff/parts';
 import { ActionDock, Button, EmptyState, Feedback } from '@/src/components/ui';
@@ -50,7 +50,6 @@ export default function InviteStaffScreen() {
   const tablet = width >= breakpoints.tabletWorkspace;
   const [roles, setRoles] = useState<Role[]>([]);
   const [roleId, setRoleId] = useState(0);
-  const [email, setEmail] = useState('');
   const [days, setDays] = useState(DEFAULT_INVITATION_EXPIRY_DAYS);
   const [link, setLink] = useState('');
   const [linkRole, setLinkRole] = useState('');
@@ -104,7 +103,6 @@ export default function InviteStaffScreen() {
     try {
       const invitation = await createInvitation(restaurantId, {
         role_id: roleId,
-        email: email.trim().toLowerCase() || undefined,
         expires_in_days: days,
       });
       const invitationLink = invitationUrl(invitation.token);
@@ -135,7 +133,7 @@ export default function InviteStaffScreen() {
   }
 
   const share = () => Share.share({ title: shareTitle, message: shareMessage || link });
-  const another = () => { setLink(''); setShareMessage(''); setEmail(''); };
+  const another = () => { setLink(''); setShareMessage(''); };
 
   if (link) {
     return (
@@ -205,7 +203,6 @@ export default function InviteStaffScreen() {
 
         <FormCard title={copy('ลิงก์', 'The link')}>
           <FormBody>
-            <Field label={copy('อีเมลผู้รับ (ไม่บังคับ)', 'Recipient email (optional)')} value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail-outline" placeholder={copy('ผูกลิงก์กับบัญชีนี้เท่านั้น', 'Ties the link to this account only')} />
             <View style={{ gap: 6 }}>
               <Text style={{ fontSize: 12.5, fontWeight: '600', color: palette.muted }}>{copy('อายุลิงก์', 'Link lifetime')}</Text>
               <PillTabs role="radiogroup" tabs={INVITATION_EXPIRY_DAY_OPTIONS.map((value) => ({ key: value, label: value ? invitationExpiryLabel(value, language) : copy('ไม่หมด', 'Never') }))} value={days} onChange={setDays} />

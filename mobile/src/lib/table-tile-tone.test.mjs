@@ -323,3 +323,20 @@ test('the table map hands every compact tile the one shared label size', async (
   for (const tile of tiles) assert.match(tile, /labelFontSize=\{labelFontSize\}/);
   assert.match(source, /sharedTileLabelSize\(widestLabel, tileLabelRoom\)/);
 });
+
+// Owner, 2026-09-29: the glass tiles came up with no status colour until they
+// were touched, because the grid faded in from transparent and iOS does not
+// draw Liquid Glass under a fading ancestor. The call site keeps the fade off
+// wherever the glass is on.
+test('the tables grid does not fade in over Liquid Glass tiles', async () => {
+  const screen = await readFile(path.join(mobileRoot, 'app', 'tables.tsx'), 'utf8');
+  assert.match(screen, /<ContentReveal fade=\{!LIQUID_GLASS\}/);
+  const reveal = await readFile(path.join(mobileRoot, 'src', 'components', 'skeleton.tsx'), 'utf8');
+  assert.match(reveal, /const still = reducedMotion \|\| !fade;/);
+});
+
+test('a menu photo shows a loading cover until it has loaded or failed', async () => {
+  const image = await readFile(path.join(mobileRoot, 'src', 'components', 'menu-image.tsx'), 'utf8');
+  assert.equal((image.match(/onLoadEnd=\{handleLoadEnd\}/g) ?? []).length, 2);
+  assert.equal((image.match(/\{loading \? <LoadingCover \/> : null\}/g) ?? []).length, 2);
+});

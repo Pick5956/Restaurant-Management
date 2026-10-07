@@ -21,6 +21,7 @@ import { tableLocked } from '@/src/lib/table-plan';
 import { sharedTileLabelSize, tableTileStatus, TILE_LABEL_FONT, tileToneFor } from '@/src/lib/table-tile-tone';
 import { activeTakeaways, TAKEAWAY_ZONE } from '@/src/lib/takeaway-orders';
 import { canViewReservationHistory, tableEntryAction } from '@/src/lib/table-workflow';
+import { LIQUID_GLASS } from '@/src/lib/liquid-glass';
 import { useAuth } from '@/src/providers/auth-provider';
 import { useDisplayPreferences } from '@/src/providers/display-preferences-provider';
 import { breakpoints, palette, radius, spacing, statusTone, typeScale } from '@/src/theme';
@@ -436,7 +437,7 @@ export default function TablesScreen() {
             </View>
           ) : null}
           {groups.length ? (
-            <ContentReveal style={{ gap: spacing.xl }}>
+            <ContentReveal fade={!LIQUID_GLASS} style={{ gap: spacing.xl }}>
             {groups.map((group) => {
               // Free out of total, not the total alone. "12 โต๊ะ" is a fact about
               // the restaurant that never changes during service; how many of them

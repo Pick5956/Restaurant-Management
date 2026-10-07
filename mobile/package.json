@@ -42,6 +42,8 @@
   "scripts": {
     "start": "expo start",
     "start:go:lan": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo-go-lan.ps1",
+    "start:go:public": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo-public.ps1",
+    "verify:go:public": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-expo-public.ps1",
     "generate:brand-assets": "node scripts/generate-brand-assets.cjs",
     "start:dev-client": "expo start --dev-client --lan",
     "start:dev-client:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-local-dev-client.ps1",

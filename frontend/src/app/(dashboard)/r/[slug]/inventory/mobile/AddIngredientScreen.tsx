@@ -11,8 +11,6 @@ import {
   TOTAL_PRICE,
   emptyTypedAmounts,
   entryChain,
-  packExample,
-  packUnitChoices,
   priceBreakdown,
   purchaseFactor,
   purchaseUnitChoices,
@@ -90,7 +88,7 @@ function draftShape(draft: MobileIngredientDraft) {
 /** The create request for a draft — what this screen sends when adding one. */
 export function createInputFor(draft: MobileIngredientDraft): IngredientInput {
   const resolved = resolveTypedAmounts(draftShape(draft), draft.typed);
-  const { typed, packUnit, caseUnit } = draft;
+  const { typed, packUnit } = draft;
   const stockTypedIn = typed.stockIn && typed.stockIn !== draft.unit ? typed.stockIn : "";
   return {
     name: draft.name.trim(),
@@ -104,10 +102,10 @@ export function createInputFor(draft: MobileIngredientDraft): IngredientInput {
     min_percent: draft.minPercent,
     cost_per_unit: resolved.cost_per_unit,
     storage_type: draft.storageType,
-    pack_unit: packUnit,
-    pack_size: packUnit ? Number(draft.packSize) || 0 : 0,
-    case_unit: packUnit ? caseUnit : "",
-    case_size: packUnit && caseUnit ? Number(draft.caseSize) || 0 : 0,
+    pack_unit: packUnit.trim(),
+    pack_size: packUnit.trim() ? Number(draft.packSize) || 0 : 0,
+    case_unit: "",
+    case_size: 0,
     // Only a create with stock opens a lot, so only that case carries a date.
     ...(resolved.stock > 0 && draft.expiryDays !== null ? { expires_at: expiryDateFromDays(draft.expiryDays) } : {}),
   };
@@ -231,8 +229,10 @@ export default function AddIngredientScreen({
   const ucopy = unitCopy(lang);
   const [packUnit, setPackUnit] = useState(draft?.packUnit ?? editing?.pack_unit ?? "");
   const [packSize, setPackSize] = useState(draft?.packSize ?? (editing?.pack_size ? String(editing.pack_size) : ""));
-  const [caseUnit, setCaseUnit] = useState(draft?.caseUnit ?? editing?.case_unit ?? "");
-  const [caseSize, setCaseSize] = useState(draft?.caseSize ?? (editing?.case_size ? String(editing.case_size) : ""));
+  // The "รวมเป็น" case level was taken off this page (owner, 29 ก.ย. 2569), so
+  // it always starts empty and a save clears any case the item had.
+  const [caseUnit, setCaseUnit] = useState("");
+  const [caseSize, setCaseSize] = useState("");
   const shape = {
     unit,
     pack_unit: packUnit,
@@ -259,7 +259,6 @@ export default function AddIngredientScreen({
     };
   });
   const resolved = resolveTypedAmounts(shape, typed);
-  const packShape = { ...shape, cost_per_unit: resolved.cost_per_unit };
   const unitChoices = purchaseUnitChoices(shape);
   const pricingTotal = typed.costIn === TOTAL_PRICE;
   const stockUnit = typed.stockIn || unit;
@@ -343,7 +342,7 @@ export default function AddIngredientScreen({
       existingNames,
       ownName: editing?.name,
       batchNames,
-      packUnit,
+      packUnit: packUnit.trim(),
       packSize,
       caseUnit,
       caseSize,
@@ -354,19 +353,6 @@ export default function AddIngredientScreen({
     lang,
   );
   const shown = showErrors ? fieldErrors : {};
-
-  // The system picker groups the containers that usually hold this kind of
-  // stock above the rest, so ลัง is not the first thing offered to a shelf
-  // counted in millilitres — it still can be picked, under "อื่น ๆ".
-  function containerOptions(level: "pack" | "case", exclude: string[]) {
-    const { likely, other } = packUnitChoices(unit, level, exclude);
-    const likelyLabel = level === "pack" ? ucopy.likelyFor(unit) : ucopy.likelyFor(packUnit || unit);
-    return [
-      { value: "", label: ucopy.none },
-      ...likely.map((u) => ({ value: u, label: u, group: likelyLabel })),
-      ...other.map((u) => ({ value: u, label: u, group: likely.length ? ucopy.otherUnits : undefined })),
-    ];
-  }
 
   function snapshot(): MobileIngredientDraft {
     return { name, categoryId, unit, storageType, expiryDays, minPercent, packUnit, packSize, caseUnit, caseSize, typed };
@@ -397,10 +383,10 @@ export default function AddIngredientScreen({
             min_percent: minPercent,
             cost_per_unit: resolved.cost_per_unit,
             storage_type: storageType,
-            pack_unit: packUnit,
-            pack_size: packUnit ? Number(packSize) || 0 : 0,
-            case_unit: packUnit ? caseUnit : "",
-            case_size: packUnit && caseUnit ? Number(caseSize) || 0 : 0,
+            pack_unit: packUnit.trim(),
+            pack_size: packUnit.trim() ? Number(packSize) || 0 : 0,
+            case_unit: "",
+            case_size: 0,
           }
         : createInputFor(snapshot());
       // Say what is about to change before it does — the same check a delete
@@ -511,22 +497,24 @@ export default function AddIngredientScreen({
         </FormGroup>
 
         <FormGroup label={ucopy.groupBuy}>
-          <NativeSelect
-            label={ucopy.buyAs}
-            value={packUnit}
-            onChange={(value) =>
-              reshape(value ? { packUnit: value } : { packUnit: "", packSize: "", caseUnit: "", caseSize: "" })
-            }
-            options={containerOptions("pack", [])}
-          >
-            <FormRow label={ucopy.buyAs} divider={packUnit !== ""}>
-              <span className="truncate text-[15px] text-(--inv-muted)">{packUnit || ucopy.none}</span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-            </FormRow>
-          </NativeSelect>
-          {packUnit ? (
+          {/* Typed, not picked (owner, 29 ก.ย. 2569): a shop calls its own
+              container whatever it calls it. */}
+          <FormRow label={ucopy.buyAs} divider={packUnit.trim() !== ""}>
+            <input
+              type="text"
+              aria-label={ucopy.buyAs}
+              value={packUnit}
+              maxLength={40}
+              onChange={(event) => {
+                const value = event.target.value;
+                reshape(value.trim() ? { packUnit: value } : { packUnit: value, packSize: "" });
+              }}
+              className="w-full bg-transparent text-right text-[16px] text-(--inv-heading) outline-none"
+            />
+          </FormRow>
+          {packUnit.trim() ? (
             <>
-              <FormRow label={ucopy.perPack(packUnit)} suffix={unit}>
+              <FormRow label={ucopy.perPack(packUnit.trim())} suffix={unit} divider={false}>
                 <input
                 type="number"
                 inputMode="decimal"
@@ -536,41 +524,11 @@ export default function AddIngredientScreen({
                 className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
               />
               </FormRow>
-              <NativeSelect
-                label={ucopy.caseAs}
-                value={caseUnit}
-                onChange={(value) => reshape(value ? { caseUnit: value } : { caseUnit: "", caseSize: "" })}
-                options={containerOptions("case", [packUnit])}
-              >
-                <FormRow label={ucopy.caseAs} divider={caseUnit !== ""}>
-                  <span className="truncate text-[15px] text-(--inv-muted)">{caseUnit || ucopy.none}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-(--inv-faint)" strokeWidth={2} />
-                </FormRow>
-              </NativeSelect>
-              {caseUnit ? (
-                <FormRow label={ucopy.perCase(caseUnit)} suffix={packUnit} divider={false}>
-                  <input
-                type="number"
-                inputMode="decimal"
-                value={caseSize}
-                onChange={(event) => reshape({ caseSize: event.target.value })}
-                placeholder="0"
-                className="w-full bg-transparent text-right text-[16px] tabular-nums text-(--inv-heading) outline-none placeholder:text-(--inv-faint)"
-              />
-                </FormRow>
-              ) : null}
             </>
           ) : null}
         </FormGroup>
-        {shown.packSize || shown.caseSize ? (
-          <p className="-mt-4 mb-2 px-1 text-[12px] leading-snug text-(--inv-out)">
-            {[shown.packSize, shown.caseSize].filter(Boolean).join(" · ")}
-          </p>
-        ) : null}
-        {packExample(packShape, lang) ? (
-          <p className="-mt-4 mb-[22px] px-1 text-[11px] leading-snug text-(--inv-faint)">
-            {packExample(packShape, lang)}
-          </p>
+        {shown.packSize ? (
+          <p className="-mt-4 mb-2 px-1 text-[12px] leading-snug text-(--inv-out)">{shown.packSize}</p>
         ) : null}
 
         <FormGroup label={copy.groupStock}>

@@ -2,7 +2,7 @@
 
 import NumberInput from "@/src/components/shared/NumberInput";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Download, KeyRound } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, KeyRound, MapPin, Users } from "lucide-react";
 import { useAuth } from "@/src/providers/AuthProvider";
 import { useLanguage } from "@/src/providers/LanguageProvider";
 import { can } from "@/src/lib/rbac";
@@ -713,13 +713,22 @@ export default function TablesPage() {
                     className={`group relative flex min-h-[118px] overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,translate,box-shadow,border-color] dark:border-gray-800 dark:bg-gray-800 ${canManage ? "ui-press hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:hover:border-gray-700 dark:hover:bg-gray-800" : ""}`}
                   >
                     <span className={`w-1.5 shrink-0 ${tableAccentClass(serviceStatus)}`} />
-                    <div className="flex min-w-0 flex-1 flex-col px-3 py-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h2 className="truncate text-[22px] font-semibold leading-none tracking-tight text-gray-950 dark:text-white">{table.display_label || table.table_number}</h2>
-                          <p className="mt-2 truncate text-[12px] font-medium text-gray-500 dark:text-gray-400">{hasAnyZone ? `${table.table_zone?.name || table.zone || copy.noZone} · ` : ""}{table.capacity} {copy.seats}</p>
-                        </div>
-                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold leading-none ${tableStatusPillClass(serviceStatus)}`}>{STATUS[serviceStatus].label}</span>
+                    {/* The take-order page's card (owner, 29 ก.ย. 2569): name beside
+                        the status, zone and seats on the line under it. */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-2.5 px-3 pb-2.5 pt-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="min-w-0 truncate text-[16px] font-semibold leading-tight tracking-tight text-gray-950 dark:text-white">{table.display_label || table.table_number}</h2>
+                        <span className={`shrink-0 rounded-md px-2 py-1 text-[12px] font-semibold leading-none ${tableStatusPillClass(serviceStatus)}`}>{STATUS[serviceStatus].label}</span>
+                      </div>
+                      <div className="flex min-w-0 items-center justify-between gap-3 text-[13px] font-medium text-gray-600 dark:text-gray-300">
+                        <p className="flex min-w-0 items-center gap-1.5">
+                          <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{table.table_zone?.name || table.zone || copy.noZone}</span>
+                        </p>
+                        <p className="flex shrink-0 items-center gap-1.5">
+                          <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>{table.capacity} {copy.seats}</span>
+                        </p>
                       </div>
                     </div>
                   </button>

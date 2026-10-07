@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useRestaurantNav } from '@/src/hooks/useRestaurantNav';
@@ -315,6 +316,7 @@ function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
   // The branch, not the opening hours: the owner asked for it on 2026-09-21.
   const detail = activeMembership?.restaurant ? branchLabel(activeMembership.restaurant.branch_name, language) : null;
   const initial = name.trim().charAt(0) || '?';
+  const logo = activeMembership?.restaurant?.logo?.trim();
 
   return (
     <Link
@@ -323,13 +325,25 @@ function RestaurantSwitcherCard({ collapsed }: { collapsed: boolean }) {
       aria-label={language === 'th' ? 'เปลี่ยนร้าน' : 'Switch restaurant'}
       className={`flex min-w-0 items-center rounded-md border border-transparent transition-colors hover:border-[var(--rail-border)] hover:bg-[var(--rail-hover-bg)] ${collapsed ? 'justify-center p-1' : 'min-w-0 flex-1 gap-2 p-1.5'}`}
     >
-      <span
-        aria-hidden="true"
-        className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-md text-[15px] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
-        style={{ background: 'linear-gradient(135deg,#f97316,#c2410c)' }}
-      >
-        {initial}
-      </span>
+      {/* The uploaded logo when there is one; the name's first letter otherwise. */}
+      {logo ? (
+        <Image
+          src={logo}
+          alt=""
+          width={34}
+          height={34}
+          unoptimized
+          className="h-[34px] w-[34px] shrink-0 rounded-md bg-white object-cover"
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-md text-[15px] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+          style={{ background: 'linear-gradient(135deg,#f97316,#c2410c)' }}
+        >
+          {initial}
+        </span>
+      )}
       {!collapsed && (
         <>
           <span className="flex min-w-0 flex-1 flex-col">

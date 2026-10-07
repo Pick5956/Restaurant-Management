@@ -186,6 +186,8 @@ func TestSchemaModelRegistryFingerprintMatchesVersion(t *testing.T) {
 		// OrderPromotion leave the registry, Order loses Promotions and OrderItem
 		// loses PromotionFreeID, so the fingerprint advances.
 		38: "04f2a13122a31ad1eeba9cce4dbb3b969e03f033b7cec6ac354e62f205358876",
+		// Version 39 backfills max_stock on seeded ingredients; no model moves.
+		39: "04f2a13122a31ad1eeba9cce4dbb3b969e03f033b7cec6ac354e62f205358876",
 	}
 	want, ok := expectedByVersion[CurrentSchemaVersion]
 	if !ok {
@@ -217,6 +219,7 @@ func TestNumberedMigrationsKeepTheirIdentity(t *testing.T) {
 		34: "cashier_default_match_waiter",
 		35: "cashier_waiter_frontline_dashboard",
 		38: "drop_promotions",
+		39: "seeded_ingredients_full_shelf",
 	}
 	seen := map[int64]string{}
 	for _, migration := range schemaMigrationPlan() {

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import ThemedSelect from "@/src/components/shared/ThemedSelect";
 import NumberInput from "@/src/components/shared/NumberInput";
 import { formatAdaptiveNumber as formatNumber, formatCurrency } from "@/src/lib/format";
@@ -11,9 +13,9 @@ import { emptyForm, inputCls, reorderQuantityFor, stockUnitRows } from "./invent
 import {
   emptyTypedAmounts,
   entryChain,
-  packExample,
-  packUnitChoices,
+  packSizeUnits,
   purchaseFactor,
+  recipeUnitOptions,
   purchaseUnitChoices,
   resolveTypedAmounts,
   retargetTypedUnits,
@@ -46,7 +48,7 @@ export function newIngredientDraft(categoryId = 0): IngredientDraft {
 /** The create request for a new ingredient, exactly as the single-add drawer sends it. */
 export function createPayloadFor(draft: IngredientDraft): IngredientInput {
   const { form, typed, expiryDays } = draft;
-  const payload: IngredientInput = { ...form, name: form.name.trim() };
+  const payload: IngredientInput = { ...form, name: form.name.trim(), pack_unit: (form.pack_unit ?? "").trim() };
   // Opening stock typed in a pack goes up as typed, so the history row
   // reads "ยอดเริ่มต้น · กรอก 2 ลัง" — the server does the conversion.
   const stockTypedIn = typed.stockIn && typed.stockIn !== form.unit ? typed.stockIn : "";
@@ -145,6 +147,11 @@ export default function IngredientFormFields({
   const setForm = (patch: Partial<IngredientInput>) => onChange({ ...draft, form: { ...form, ...patch } });
   const packFields = (patch: Partial<IngredientInput>) => onChange(changePackFields(draft, patch));
   const typedStock = (patch: Partial<TypedAmounts>) => onChange(changeTypedStock(draft, patch, creating));
+  // Which unit the pack size is typed in; only the view changes, the size is
+  // stored in the stock unit. Falls back to the stock unit when that changes.
+  const [packSizeIn, setPackSizeIn] = useState(form.unit);
+  const sizeUnits = packSizeUnits(form.unit);
+  const sizeUnit = sizeUnits.find((row) => row.unit === packSizeIn) ?? sizeUnits.find((row) => row.perUnit === 1) ?? sizeUnits[0];
 
   // Where the reorder slider's handle sits. A percent set by dragging is kept as
   // it is; a quantity typed by hand is shown at the place it falls on this
@@ -164,19 +171,6 @@ export default function IngredientFormFields({
   // to divide a total by — an edit, or a new ingredient with no opening stock.
   const priceUnitOptions = purchaseUnitChoices(form).map((unit) => ({ value: unit, label: unit }));
   const pricingTotal = typed.costIn === TOTAL_PRICE;
-
-  // The dropdown lists the containers that usually hold this kind of stock
-  // first, then a disabled divider, then the rest — the web select has no
-  // group headings, so the divider row stands in for one. Nothing is refused.
-  function containerOptions(level: "pack" | "case", exclude: string[]) {
-    const { likely, other } = packUnitChoices(form.unit, level, exclude);
-    const rows: { value: string; label: string; disabled?: boolean }[] = [
-      { value: "", label: level === "pack" ? ucopy.none : `${ucopy.caseAs}: ${ucopy.none}` },
-      ...likely.map((unit) => ({ value: unit, label: unit })),
-    ];
-    if (likely.length && other.length) rows.push({ value: "__divider__", label: `── ${ucopy.otherUnits} ──`, disabled: true });
-    return [...rows, ...other.map((unit) => ({ value: unit, label: unit }))];
-  }
 
   return (
     <div className="space-y-4">
@@ -240,73 +234,61 @@ export default function IngredientFormFields({
         </div>
       </div>
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{ucopy.groupBuy}</label>
+        <label className="mb-1.5 block text-xs font-semibold text-gray-900 dark:text-white">{ucopy.groupBuy}</label>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Typed, not picked (owner, 29 ก.ย. 2569): a shop calls its own
+              container whatever it calls it. The "รวมเป็น" case level is gone
+              from this page, so any case the ingredient had is cleared here. */}
           <div className="w-36">
-            <ThemedSelect
+            <input
+              type="text"
               aria-label={ucopy.buyAs}
               value={form.pack_unit ?? ""}
-              onChange={(value) =>
+              maxLength={40}
+              onChange={(event) => {
+                const value = event.target.value;
                 packFields({
                   pack_unit: value,
-                  pack_size: value ? form.pack_size : 0,
-                  case_unit: value ? form.case_unit : "",
-                  case_size: value ? form.case_size : 0,
-                })
-              }
-              options={containerOptions("pack", [])}
+                  pack_size: value.trim() ? form.pack_size : 0,
+                  case_unit: "",
+                  case_size: 0,
+                });
+              }}
+              className={inputCls}
             />
           </div>
-          {form.pack_unit ? (
+          {form.pack_unit?.trim() ? (
             <>
-              <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perPack(form.pack_unit)}</span>
+              <span className="text-sm text-gray-900 dark:text-white">{ucopy.perPack(form.pack_unit.trim())}</span>
+              {/* The size may be typed in any weight or volume of the stock
+                  unit's own family (1 ถุง = 500 กรัม or 0.5 กิโล); it is kept
+                  in the stock unit either way. */}
               <div className="w-28">
                 <NumberInput
                   min={0}
                   blankWhenZero
                   aria-label={ucopy.perPack(form.pack_unit)}
-                  value={form.pack_size ?? 0}
-                  onValue={(value) => packFields({ pack_size: value })}
-                  className={inputCls}
+                  value={Math.round(((form.pack_size ?? 0) / sizeUnit.perUnit) * 1e6) / 1e6}
+                  onValue={(value) => packFields({ pack_size: Math.round(value * sizeUnit.perUnit * 1e6) / 1e6 })}
+                  className={`${inputCls} text-center`}
                 />
               </div>
-              <span className="text-sm text-slate-500 dark:text-slate-400">{form.unit}</span>
+              {sizeUnits.length > 1 ? (
+                <div className="w-[5.5rem]">
+                  <ThemedSelect
+                    aria-label={ucopy.perPack(form.pack_unit)}
+                    value={sizeUnit.unit}
+                    onChange={setPackSizeIn}
+                    options={recipeUnitOptions(sizeUnits.map((row) => row.unit), sizeUnit.unit)}
+                  />
+                </div>
+              ) : (
+                <span className="text-sm text-gray-900 dark:text-white">{form.unit}</span>
+              )}
             </>
           ) : null}
         </div>
-        {form.pack_unit ? (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <div className="w-36">
-              <ThemedSelect
-                aria-label={ucopy.caseAs}
-                value={form.case_unit ?? ""}
-                onChange={(value) => packFields({ case_unit: value, case_size: value ? form.case_size : 0 })}
-                options={containerOptions("case", [form.pack_unit ?? ""])}
-              />
-            </div>
-            {form.case_unit ? (
-              <>
-                <span className="text-sm text-slate-500 dark:text-slate-400">{ucopy.perCase(form.case_unit)}</span>
-                <div className="w-28">
-                  <NumberInput
-                    min={0}
-                    blankWhenZero
-                    aria-label={ucopy.perCase(form.case_unit)}
-                    value={form.case_size ?? 0}
-                    onValue={(value) => packFields({ case_size: value })}
-                    className={inputCls}
-                  />
-                </div>
-                <span className="text-sm text-slate-500 dark:text-slate-400">{form.pack_unit}</span>
-              </>
-            ) : null}
-          </div>
-        ) : null}
         {errors.packSize ? <p className="mt-1 text-[11px] text-red-500">{errors.packSize}</p> : null}
-        {errors.caseSize ? <p className="mt-1 text-[11px] text-red-500">{errors.caseSize}</p> : null}
-        {packExample(form, lang) ? (
-          <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">{packExample(form, lang)}</p>
-        ) : null}
       </div>
       {/* Opening stock comes first because the price can be read off
           it: type what was paid for that stock and the price per unit

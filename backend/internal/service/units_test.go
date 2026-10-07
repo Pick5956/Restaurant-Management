@@ -16,29 +16,27 @@ func TestIngredientUnitFamily(t *testing.T) {
 		// table's canonical one, so "กก." does not gain a duplicate "กิโลกรัม".
 		{"กิโลกรัม", []entity.IngredientUnitOption{
 			{Unit: "กรัม", StockPerUnit: 0.001},
-			{Unit: "ออนซ์", StockPerUnit: 0.028349523125},
 			{Unit: "ขีด", StockPerUnit: 0.1},
-			{Unit: "ปอนด์", StockPerUnit: 0.45359237},
 			{Unit: "กิโลกรัม", StockPerUnit: 1},
-			{Unit: "ตัน", StockPerUnit: 1000},
 		}},
 		// The shelf's own spelling stays in the list; it is not replaced by the
 		// table's canonical one, so "กก." does not gain a duplicate "กิโลกรัม".
 		{"กก.", []entity.IngredientUnitOption{
 			{Unit: "กรัม", StockPerUnit: 0.001},
-			{Unit: "ออนซ์", StockPerUnit: 0.028349523125},
 			{Unit: "ขีด", StockPerUnit: 0.1},
-			{Unit: "ปอนด์", StockPerUnit: 0.45359237},
 			{Unit: "กก.", StockPerUnit: 1},
-			{Unit: "ตัน", StockPerUnit: 1000},
 		}},
 		{"กรัม", []entity.IngredientUnitOption{
 			{Unit: "กรัม", StockPerUnit: 1},
-			{Unit: "ออนซ์", StockPerUnit: 28.349523125},
 			{Unit: "ขีด", StockPerUnit: 100},
-			{Unit: "ปอนด์", StockPerUnit: 453.59237},
 			{Unit: "กิโลกรัม", StockPerUnit: 1000},
-			{Unit: "ตัน", StockPerUnit: 1000000},
+		}},
+		// A shelf still kept in a unit the list dropped keeps its own unit first.
+		{"ออนซ์", []entity.IngredientUnitOption{
+			{Unit: "ออนซ์", StockPerUnit: 1},
+			{Unit: "กรัม", StockPerUnit: 0.03527396194958041},
+			{Unit: "ขีด", StockPerUnit: 3.527396194958041},
+			{Unit: "กิโลกรัม", StockPerUnit: 35.27396194958041},
 		}},
 		{"ลิตร", []entity.IngredientUnitOption{
 			{Unit: "มิลลิลิตร", StockPerUnit: 0.001},

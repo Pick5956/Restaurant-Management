@@ -55,8 +55,8 @@ func starterProfileFor(restaurantType string) starterProfile {
 	switch strings.TrimSpace(strings.ToLower(restaurantType)) {
 	case "คาเฟ่", "cafe":
 		return cafeStarterProfile()
-	case "ชาบู/ปิ้งย่าง", "shabu / grill", "shabu", "grill":
-		return shabuGrillStarterProfile()
+	case "ชาบู/ปิ้งย่าง", "หมูกระทะ", "shabu / grill", "shabu", "grill", "moo kata":
+		return mooKataStarterProfile()
 	case "เดลิเวอรี", "delivery":
 		return deliveryStarterProfile()
 	case "ฟู้ดทรัค", "food truck":
@@ -84,16 +84,18 @@ func seedStarterIngredientCatalog(repo repository.RestaurantSetupWriter, restaur
 		for _, itemSeed := range categorySeed.Items {
 			categoryID := category.ID
 			ingredient := &entity.Ingredient{
-				RestaurantID:            restaurantID,
-				Name:                    itemSeed.Name,
-				SKU:                     itemSeed.SKU,
-				CategoryID:              &categoryID,
-				Unit:                    itemSeed.Unit,
-				Stock:                   itemSeed.Stock,
-				MinStock:                itemSeed.MinStock,
-				CostPerUnit:             itemSeed.CostPerUnit,
-				YieldPercent:            itemSeed.YieldPercent,
-				StorageType:             itemSeed.StorageType,
+				RestaurantID: restaurantID,
+				Name:         itemSeed.Name,
+				SKU:          itemSeed.SKU,
+				CategoryID:   &categoryID,
+				Unit:         itemSeed.Unit,
+				Stock:        itemSeed.Stock,
+				// The seeded amount is a full shelf, so the bar starts at 100%.
+				MaxStock:     startingMaxStock(itemSeed.Stock, itemSeed.MinStock),
+				MinStock:     itemSeed.MinStock,
+				CostPerUnit:  itemSeed.CostPerUnit,
+				YieldPercent: itemSeed.YieldPercent,
+				StorageType:  itemSeed.StorageType,
 			}
 			if err := repo.CreateIngredient(ingredient); err != nil {
 				return nil, err
@@ -135,7 +137,7 @@ func seedStarterMenu(repo repository.RestaurantSetupWriter, restaurantID uint, c
 			}); err != nil {
 				return err
 			}
-			if err := seedStarterMenuOptions(repo, restaurantID, item.ID, itemSeed.OptionGroups); err != nil {
+			if err := seedStarterMenuOptions(repo, restaurantID, item.ID, itemSeed.OptionGroups, ingredientIDs); err != nil {
 				return err
 			}
 			if err := seedStarterMenuRecipe(repo, restaurantID, item.ID, itemSeed.Recipe, ingredientIDs); err != nil {
@@ -169,7 +171,7 @@ func seedStarterMenuRecipe(repo repository.RestaurantSetupWriter, restaurantID, 
 	return nil
 }
 
-func seedStarterMenuOptions(repo repository.RestaurantSetupWriter, restaurantID, menuItemID uint, groups []starterOptionGroup) error {
+func seedStarterMenuOptions(repo repository.RestaurantSetupWriter, restaurantID, menuItemID uint, groups []starterOptionGroup, ingredientIDs map[string]uint) error {
 	for groupIndex, groupSeed := range groups {
 		group := &entity.MenuOptionGroup{
 			RestaurantID: restaurantID,
@@ -198,9 +200,49 @@ func seedStarterMenuOptions(repo repository.RestaurantSetupWriter, restaurantID,
 			if err := repo.CreateMenuOption(option); err != nil {
 				return err
 			}
+			if err := seedStarterOptionIngredients(repo, option, optionSeed.Ingredients, ingredientIDs); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// seedStarterOptionIngredients links a starter option to the stock it adds or takes
+// off the dish, so "เพิ่มหมู" or "ไม่เอาตับ" moves the shelf the same way the base
+// recipe does. Unknown ingredient names are skipped like recipe lines are.
+func seedStarterOptionIngredients(repo repository.RestaurantSetupWriter, option *entity.MenuOption, lines []starterOptionIngredient, ingredientIDs map[string]uint) error {
+	for _, line := range lines {
+		ingredientID, ok := ingredientIDs[line.IngredientName]
+		if !ok || line.Quantity <= 0 {
+			continue
+		}
+		direction := line.Direction
+		if direction != entity.MenuOptionIngredientRemove {
+			direction = entity.MenuOptionIngredientAdd
+		}
+		if err := repo.CreateMenuOptionIngredient(&entity.MenuOptionIngredient{
+			RestaurantID:  option.RestaurantID,
+			MenuItemID:    option.MenuItemID,
+			OptionGroupID: option.OptionGroupID,
+			MenuOptionID:  option.ID,
+			IngredientID:  ingredientID,
+			Direction:     direction,
+			Quantity:      line.Quantity,
+			Unit:          line.Unit,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addStock(name string, quantity float64, unit string) starterOptionIngredient {
+	return starterOptionIngredient{IngredientName: name, Direction: entity.MenuOptionIngredientAdd, Quantity: quantity, Unit: unit}
+}
+
+func removeStock(name string, quantity float64, unit string) starterOptionIngredient {
+	return starterOptionIngredient{IngredientName: name, Direction: entity.MenuOptionIngredientRemove, Quantity: quantity, Unit: unit}
 }
 
 func seedStarterTables(repo repository.RestaurantSetupWriter, restaurantID uint, tableCount int, zones []starterTableZone) error {
@@ -585,142 +627,6 @@ func cafeStarterProfile() starterProfile {
 					{
 						Name: "ชีสเค้กหน้าไหม้", Price: 105, Description: "ชีสเค้กเนื้อเนียนหน้าคาราเมล",
 						Recipe: []starterRecipeLine{{IngredientName: "ชีสเค้กหน้าไหม้ (ชิ้นสำเร็จ)", Quantity: 1, Unit: "ชิ้น"}},
-					},
-				},
-			},
-		},
-	}
-}
-
-func shabuGrillStarterProfile() starterProfile {
-	brothGroup := starterOptionGroup{
-		Name:      "น้ำซุป",
-		Required:  true,
-		MinSelect: 1,
-		MaxSelect: 2,
-		Options: []starterOption{
-			{Name: "ซุปใส", IsDefault: true},
-			{Name: "ซุปดำ"},
-			{Name: "ซุปต้มยำ", PriceDelta: 39},
-			{Name: "ซุปหม่าล่า", PriceDelta: 49},
-		},
-	}
-	return starterProfile{
-		TableZones: []starterTableZone{
-			{Name: "โซนชาบู", Prefix: "S", Capacity: 4},
-			{Name: "โซนปิ้งย่าง", Prefix: "G", Capacity: 4},
-			{Name: "โซนกลุ่มใหญ่", Prefix: "V", Capacity: 8},
-		},
-		IngredientCategories: []starterIngredientCategory{
-			{
-				Name: "เนื้อสัตว์และอาหารทะเล",
-				Items: []starterIngredient{
-					{Name: "หมูสไลซ์", Unit: "กรัม", Stock: 8000, MinStock: 2000, CostPerUnit: 0.22, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "เนื้อสไลซ์", Unit: "กรัม", Stock: 6000, MinStock: 1500, CostPerUnit: 0.45, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "ลูกชิ้นรวม", Unit: "กรัม", Stock: 4000, MinStock: 1000, CostPerUnit: 0.18, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "กุ้ง", Unit: "กรัม", Stock: 4000, MinStock: 1000, CostPerUnit: 0.35, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "หมึก", Unit: "กรัม", Stock: 3000, MinStock: 800, CostPerUnit: 0.3, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "ปลา", Unit: "กรัม", Stock: 3000, MinStock: 800, CostPerUnit: 0.28, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "หมูสามชั้นสไลซ์", Unit: "กรัม", Stock: 3000, MinStock: 800, CostPerUnit: 0.2, YieldPercent: 100, StorageType: "frozen"},
-					{Name: "เนื้อริบอายสไลซ์", Unit: "กรัม", Stock: 2000, MinStock: 500, CostPerUnit: 0.55, YieldPercent: 100, StorageType: "frozen"},
-				},
-			},
-			{
-				Name: "ผักและเครื่องจิ้ม",
-				Items: []starterIngredient{
-					{Name: "ผักรวมชาบู", Unit: "กรัม", Stock: 3000, MinStock: 800, CostPerUnit: 0.08, YieldPercent: 100, StorageType: "chilled"},
-					{Name: "น้ำจิ้มสุกี้", Unit: "มล.", Stock: 2100, MinStock: 700, CostPerUnit: 0.06, YieldPercent: 100, StorageType: "room_temp"},
-				},
-			},
-			{
-				Name: "น้ำซุปและเครื่องดื่ม",
-				Items: []starterIngredient{
-					{Name: "ผงซุปใส", Unit: "กรัม", Stock: 1500, MinStock: 300, CostPerUnit: 0.15, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "ซุปดำสำเร็จรูป", Unit: "กรัม", Stock: 1000, MinStock: 300, CostPerUnit: 0.2, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "พริกแกงต้มยำ", Unit: "กรัม", Stock: 600, MinStock: 150, CostPerUnit: 0.35, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "พริกหม่าล่า", Unit: "กรัม", Stock: 600, MinStock: 150, CostPerUnit: 0.45, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "ใบชาอู่หลง", Unit: "กรัม", Stock: 400, MinStock: 100, CostPerUnit: 0.6, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "ดอกเก๊กฮวยแห้ง", Unit: "กรัม", Stock: 300, MinStock: 100, CostPerUnit: 0.5, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "น้ำตาลกรวด", Unit: "กรัม", Stock: 3000, MinStock: 500, CostPerUnit: 0.05, YieldPercent: 100, StorageType: "room_temp"},
-					{Name: "น้ำเปล่าขวด", Unit: "ขวด", Stock: 48, MinStock: 12, CostPerUnit: 6, YieldPercent: 100, StorageType: "room_temp"},
-				},
-			},
-		},
-		Categories: []starterMenuCategory{
-			{
-				Name: "ชุดเริ่มต้น",
-				Items: []starterMenuItem{
-					{
-						Name: "ชุดหมูรวม", Price: 299, Description: "หมูสไลซ์ ลูกชิ้น ผัก และน้ำจิ้ม", OptionGroups: []starterOptionGroup{brothGroup},
-						Recipe: []starterRecipeLine{
-							{IngredientName: "หมูสไลซ์", Quantity: 200, Unit: "กรัม"},
-							{IngredientName: "ลูกชิ้นรวม", Quantity: 100, Unit: "กรัม"},
-							{IngredientName: "ผักรวมชาบู", Quantity: 150, Unit: "กรัม"},
-							{IngredientName: "น้ำจิ้มสุกี้", Quantity: 50, Unit: "มล."},
-							{IngredientName: "ผงซุปใส", Quantity: 10, Unit: "กรัม"},
-						},
-					},
-					{
-						Name: "ชุดเนื้อรวม", Price: 399, Description: "เนื้อสไลซ์รวม ผัก และน้ำจิ้ม", OptionGroups: []starterOptionGroup{brothGroup},
-						Recipe: []starterRecipeLine{
-							{IngredientName: "เนื้อสไลซ์", Quantity: 200, Unit: "กรัม"},
-							{IngredientName: "ลูกชิ้นรวม", Quantity: 100, Unit: "กรัม"},
-							{IngredientName: "ผักรวมชาบู", Quantity: 150, Unit: "กรัม"},
-							{IngredientName: "น้ำจิ้มสุกี้", Quantity: 50, Unit: "มล."},
-							{IngredientName: "ผงซุปใส", Quantity: 10, Unit: "กรัม"},
-						},
-					},
-					{
-						Name: "ชุดทะเลรวม", Price: 459, Description: "กุ้ง หมึก ปลา และผักรวม", OptionGroups: []starterOptionGroup{brothGroup},
-						Recipe: []starterRecipeLine{
-							{IngredientName: "กุ้ง", Quantity: 100, Unit: "กรัม"},
-							{IngredientName: "หมึก", Quantity: 100, Unit: "กรัม"},
-							{IngredientName: "ปลา", Quantity: 100, Unit: "กรัม"},
-							{IngredientName: "ผักรวมชาบู", Quantity: 150, Unit: "กรัม"},
-							{IngredientName: "น้ำจิ้มสุกี้", Quantity: 50, Unit: "มล."},
-							{IngredientName: "ผงซุปใส", Quantity: 10, Unit: "กรัม"},
-						},
-					},
-				},
-			},
-			{
-				Name: "เพิ่มพิเศษ",
-				Items: []starterMenuItem{
-					{
-						Name: "หมูสามชั้นสไลซ์", Price: 89, Description: "หมูสามชั้นสไลซ์สำหรับชาบูหรือปิ้งย่าง",
-						Recipe: []starterRecipeLine{{IngredientName: "หมูสามชั้นสไลซ์", Quantity: 150, Unit: "กรัม"}},
-					},
-					{
-						Name: "เนื้อริบอายสไลซ์", Price: 129, Description: "เนื้อริบอายสไลซ์นุ่ม",
-						Recipe: []starterRecipeLine{{IngredientName: "เนื้อริบอายสไลซ์", Quantity: 150, Unit: "กรัม"}},
-					},
-					{
-						Name: "ผักรวม", Price: 59, Description: "ชุดผักสดรวม",
-						Recipe: []starterRecipeLine{{IngredientName: "ผักรวมชาบู", Quantity: 200, Unit: "กรัม"}},
-					},
-					{
-						Name: "น้ำจิ้มสุกี้", Price: 25, Description: "น้ำจิ้มสุกี้สูตรร้าน",
-						Recipe: []starterRecipeLine{{IngredientName: "น้ำจิ้มสุกี้", Quantity: 100, Unit: "มล."}},
-					},
-				},
-			},
-			{
-				Name: "เครื่องดื่ม",
-				Items: []starterMenuItem{
-					{
-						Name: "ชาอู่หลงเย็น", Price: 39, Description: "ชาอู่หลงเย็น",
-						Recipe: []starterRecipeLine{{IngredientName: "ใบชาอู่หลง", Quantity: 10, Unit: "กรัม"}},
-					},
-					{
-						Name: "น้ำเก๊กฮวย", Price: 35, Description: "เก๊กฮวยหวานหอม",
-						Recipe: []starterRecipeLine{
-							{IngredientName: "ดอกเก๊กฮวยแห้ง", Quantity: 8, Unit: "กรัม"},
-							{IngredientName: "น้ำตาลกรวด", Quantity: 15, Unit: "กรัม"},
-						},
-					},
-					{
-						Name: "น้ำเปล่า", Price: 15, Description: "น้ำดื่มขวด",
-						Recipe: []starterRecipeLine{{IngredientName: "น้ำเปล่าขวด", Quantity: 1, Unit: "ขวด"}},
 					},
 				},
 			},

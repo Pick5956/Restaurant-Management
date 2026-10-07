@@ -829,8 +829,10 @@ export default function InventoryPage() {
       storage_type: item.storage_type ?? "room_temp",
       pack_unit: item.pack_unit ?? "",
       pack_size: item.pack_size ?? 0,
-      case_unit: item.case_unit ?? "",
-      case_size: item.case_size ?? 0,
+      // The "รวมเป็น" case level was taken off this page (owner, 29 ก.ย. 2569):
+      // an edit opens without it, so saving clears any case the item had.
+      case_unit: "",
+      case_size: 0,
     });
     // An ingredient with a pack opens with its reorder level and price in that
     // pack — "3 แผง", "แผงละ ฿100" — which is how they were meant.
@@ -893,7 +895,7 @@ export default function InventoryPage() {
       setSubmitting(true);
       try {
         if (editingItem) {
-          const response = await updateIngredient(editingItem.ID, form);
+          const response = await updateIngredient(editingItem.ID, { ...form, pack_unit: (form.pack_unit ?? "").trim() });
           setIngredients((prev) => prev.map((item) => (item.ID === editingItem.ID ? response.data : item)));
           showToast({ title: copy.ingredientUpdated });
         } else {
@@ -1061,7 +1063,7 @@ export default function InventoryPage() {
       name: form.name,
       existingNames: ingredients.map((item) => item.name),
       ownName: editingItem?.name,
-      packUnit: form.pack_unit ?? "",
+      packUnit: (form.pack_unit ?? "").trim(),
       packSize: form.pack_size ? String(form.pack_size) : "",
       caseUnit: form.case_unit ?? "",
       caseSize: form.case_size ? String(form.case_size) : "",
@@ -1094,7 +1096,7 @@ export default function InventoryPage() {
             name: form.name,
             existingNames,
             batchNames: bulkItems.filter((other) => other.key !== key).map((other) => other.draft.form.name),
-            packUnit: form.pack_unit ?? "",
+            packUnit: (form.pack_unit ?? "").trim(),
             packSize: form.pack_size ? String(form.pack_size) : "",
             caseUnit: form.case_unit ?? "",
             caseSize: form.case_size ? String(form.case_size) : "",

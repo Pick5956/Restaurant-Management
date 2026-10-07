@@ -18,6 +18,7 @@ type RestaurantSetupWriter interface {
 	CreateMenuItemCategory(*entity.MenuItemCategory) error
 	CreateMenuOptionGroup(*entity.MenuOptionGroup) error
 	CreateMenuOption(*entity.MenuOption) error
+	CreateMenuOptionIngredient(*entity.MenuOptionIngredient) error
 	CreateTableZone(*entity.TableZone) error
 	CreateTable(*entity.RestaurantTable) error
 	CreateIngredientCategory(*entity.IngredientCategory) error
@@ -65,6 +66,10 @@ func (r *RestaurantSetupRepository) CreateMenuOptionGroup(group *entity.MenuOpti
 
 func (r *RestaurantSetupRepository) CreateMenuOption(option *entity.MenuOption) error {
 	return r.db.Create(option).Error
+}
+
+func (r *RestaurantSetupRepository) CreateMenuOptionIngredient(link *entity.MenuOptionIngredient) error {
+	return r.db.Create(link).Error
 }
 
 func (r *RestaurantSetupRepository) CreateTableZone(zone *entity.TableZone) error {

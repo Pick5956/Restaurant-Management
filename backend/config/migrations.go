@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	CurrentSchemaVersion int64 = 38
+	CurrentSchemaVersion int64 = 39
 	migrationAdvisoryKey int64 = 0x524855424d494752
 )
 
@@ -810,6 +810,24 @@ func schemaMigrationPlan() []SchemaMigration {
 			Up: func(ctx *MigrationContext) error {
 				// Automatic promotions were retired (owner, 29 ก.ย. 2569).
 				return dropPromotions(ctx.DB)
+			},
+		},
+		{
+			Version: 39,
+			Name:    "seeded_ingredients_full_shelf",
+			Up: func(ctx *MigrationContext) error {
+				// Seeded ingredients were inserted without max_stock, so their bar
+				// read "ยังไม่รู้ว่าเต็มเท่าไหร่". Anything created through the app
+				// already has one; a row still at 0 with stock on it came from a
+				// seeder, and its seeded amount is the full shelf (owner,
+				// 29 ก.ย. 2569). Never below its own reorder level.
+				err := ctx.DB.Exec(`UPDATE ingredients
+					   SET max_stock = GREATEST(stock, min_stock)
+					 WHERE deleted_at IS NULL AND max_stock = 0 AND (stock > 0 OR min_stock > 0)`).Error
+				if err != nil {
+					return fmt.Errorf("backfill seeded ingredient max stock: %w", err)
+				}
+				return nil
 			},
 		},
 	}

@@ -385,7 +385,7 @@ export function typedText(value: number, decimals = 4): string {
 export function unitCopy(lang: "th" | "en") {
   return lang === "th"
     ? {
-        groupBuy: "บรรจุภัณฑ์",
+        groupBuy: "บรรจุภัณฑ์(ไม่บังคับ)",
         buyAs: "บรรจุใน",
         caseAs: "รวมเป็น",
         likelyFor: (unit: string) => `ที่ใช้บ่อยกับ${unit}`,
@@ -418,7 +418,7 @@ export function unitCopy(lang: "th" | "en") {
         caseSizeRequired: (kase: string) => `ใส่ว่า 1 ${kase} มีกี่ชิ้นย่อย`,
       }
     : {
-        groupBuy: "Packaging",
+        groupBuy: "Packaging (optional)",
         buyAs: "Packed in",
         caseAs: "Grouped as",
         likelyFor: (unit: string) => `Usual for ${unit}`,
@@ -450,4 +450,42 @@ export function unitCopy(lang: "th" | "en") {
         packSizeRequired: (pack: string) => `Enter how much 1 ${pack} holds`,
         caseSizeRequired: (kase: string) => `Enter how many packs 1 ${kase} holds`,
       };
+}
+
+/**
+ * How a unit reads in a narrow picker: "กิโลกรัม" as "กิโล", the word the
+ * kitchen says (owner, 29 ก.ย. 2569). The stored unit is unchanged.
+ */
+export function unitShortLabel(unit: string): string {
+  return unit === "กิโลกรัม" ? "กิโล" : unit;
+}
+
+/** Picker rows for a list of units, keeping a unit already chosen that the list no longer offers. */
+export function recipeUnitOptions(units: string[], chosen: string): { value: string; label: string }[] {
+  const all = chosen && !units.includes(chosen) ? [chosen, ...units] : units;
+  return all.map((unit) => ({ value: unit, label: unitShortLabel(unit) }));
+}
+
+// The weights and volumes a pack size may be typed in, with how many base
+// units (grams, millilitres) each is. The same three weights the server
+// offers in a recipe: กรัม, ขีด, กิโล.
+const MEASURE_FAMILIES: { units: Record<string, number>; order: string[] }[] = [
+  { units: { "กรัม": 1, "ขีด": 100, "กิโลกรัม": 1000, "กิโล": 1000, "กก.": 1000, "กก": 1000 }, order: ["กรัม", "ขีด", "กิโลกรัม"] },
+  { units: { "มิลลิลิตร": 1, "มล.": 1, "ซีซี": 1, "ช้อนชา": 5, "ช้อนโต๊ะ": 15, "ลิตร": 1000 }, order: ["มิลลิลิตร", "ช้อนชา", "ช้อนโต๊ะ", "ลิตร"] },
+];
+
+/**
+ * The units a pack size may be typed in for a stock unit, each with how many
+ * stock units one of it is: "1 ถุง = 0.5 กิโล" or "= 500 กรัม" both store 0.5
+ * for a shelf counted in กิโลกรัม. A counting unit (ฟอง, ชิ้น) has only itself.
+ */
+export function packSizeUnits(stockUnit: string): { unit: string; perUnit: number }[] {
+  const family = MEASURE_FAMILIES.find((entry) => entry.units[stockUnit] !== undefined);
+  if (!family) return [{ unit: stockUnit, perUnit: 1 }];
+  const own = family.units[stockUnit];
+  const rows = family.order.map((unit) => ({
+    unit: family.units[unit] === own ? stockUnit : unit,
+    perUnit: family.units[unit] / own,
+  }));
+  return rows;
 }

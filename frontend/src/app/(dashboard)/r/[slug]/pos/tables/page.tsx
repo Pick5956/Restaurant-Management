@@ -808,12 +808,12 @@ export default function PosTablesPage() {
           {showTakeaways ? <TakeawayOrderCards orders={takeaways} language={language} disabled={isNavigating} onOpen={navigateToOrder} /> : null}
           {groupedTables.length || (showTakeaways && takeaways.length) ? groupedTables.map((group) => (
             <section key={group.label}>
-              {hasAnyZone && (
-                <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-[color:var(--dashboard-shell-border)] pb-2">
-                  <h2 className="truncate text-[15px] font-bold leading-tight text-gray-950 dark:text-white">{group.label}</h2>
-                  <span className="shrink-0 text-[12px] tabular-nums text-gray-500 dark:text-gray-400">{zoneCountLabel(freeIn(group.tables), group.tables.length)}</span>
-                </div>
-              )}
+              {/* Said even when the shop never split its floor: a missing zone
+                  reads "ไม่มีโซน", never a blank (owner, 29 ก.ย. 2569). */}
+              <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-[color:var(--dashboard-shell-border)] pb-2">
+                <h2 className="truncate text-[15px] font-bold leading-tight text-gray-950 dark:text-white">{group.label}</h2>
+                <span className="shrink-0 text-[12px] tabular-nums text-gray-500 dark:text-gray-400">{zoneCountLabel(freeIn(group.tables), group.tables.length)}</span>
+              </div>
               <div className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {group.tables.map((table) => {
                   const order = activeOrderByTable.get(table.ID);
@@ -862,12 +862,10 @@ export default function PosTablesPage() {
                           </div>
                         </div>
                         <div className="flex min-w-0 items-center justify-between gap-3 text-[13px] font-medium text-gray-600 dark:text-gray-300">
-                          {hasAnyZone ? (
-                            <p className="flex min-w-0 items-center gap-1.5">
-                              <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
-                              <span className="truncate">{table.table_zone?.name || table.zone || copy.noZone}</span>
-                            </p>
-                          ) : <span />}
+                          <p className="flex min-w-0 items-center gap-1.5">
+                            <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{table.table_zone?.name || table.zone || copy.noZone}</span>
+                          </p>
                           <p className="flex shrink-0 items-center gap-1.5">
                             <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
                             {/* Occupied tables show live guest count; free/reserved tables show seat capacity. */}

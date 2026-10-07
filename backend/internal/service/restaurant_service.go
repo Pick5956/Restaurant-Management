@@ -78,9 +78,21 @@ type starterOptionGroup struct {
 }
 
 type starterOption struct {
-	Name       string
-	PriceDelta float64
-	IsDefault  bool
+	Name        string
+	PriceDelta  float64
+	IsDefault   bool
+	Ingredients []starterOptionIngredient
+}
+
+// starterOptionIngredient is what choosing a starter option does to stock, by
+// ingredient name like starterRecipeLine. Direction is entity.MenuOptionIngredientAdd
+// or entity.MenuOptionIngredientRemove; Quantity stays positive, in the
+// ingredient's own stock unit.
+type starterOptionIngredient struct {
+	IngredientName string
+	Direction      string
+	Quantity       float64
+	Unit           string
 }
 
 type CreateRestaurantRequest struct {

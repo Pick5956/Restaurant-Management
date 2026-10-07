@@ -283,8 +283,8 @@ export const DOC_TUTORIALS: DocTutorial[] = [
       en: "Create and send a staff invitation link",
     },
     description: {
-      th: "เลือกว่าลิงก์ผูกกับอีเมลใดหรือเปิดให้ทุกบัญชี เลือกบทบาทและวันหมดอายุ แล้วส่งให้ผู้รับเข้าร่วมร้าน",
-      en: "Choose whether the link is email-bound or open to any account, set the role and expiry, then send it to the recipient.",
+      th: "เลือกบทบาทและวันหมดอายุ แล้วส่งลิงก์ให้ผู้รับเข้าร่วมร้าน",
+      en: "Set the role and expiry, then send the link to the recipient.",
     },
     result: {
       th: "คำเชิญแสดงในรายการรอรับ ผู้รับที่ตรงเงื่อนไขสามารถเข้าสู่ระบบ กดรับคำเชิญ และเข้าร่วมร้านด้วยบทบาทที่เลือก",
@@ -307,17 +307,6 @@ export const DOC_TUTORIALS: DocTutorial[] = [
           },
           {
             number: 2,
-            kind: "field",
-            label: { th: "อีเมลพนักงาน", en: "Staff email" },
-            value: { th: "ไม่บังคับ", en: "Optional" },
-            detail: {
-              th: "เว้นว่างเพื่อให้บัญชีใดก็ได้ใช้ลิงก์ หรือกรอกอีเมลเพื่อให้เฉพาะบัญชีอีเมลเดียวกันรับคำเชิญได้",
-              en: "Leave it blank so any account can use the link, or enter an email so only an account with that email can accept it.",
-            },
-            tone: "warning",
-          },
-          {
-            number: 3,
             kind: "choice",
             label: { th: "บทบาท · วันหมดอายุ", en: "Role · Expiry" },
             detail: {
@@ -326,7 +315,7 @@ export const DOC_TUTORIALS: DocTutorial[] = [
             },
           },
           {
-            number: 4,
+            number: 3,
             kind: "action",
             label: { th: "สร้างลิงก์เชิญ", en: "Create invitation link" },
             detail: {
@@ -341,7 +330,7 @@ export const DOC_TUTORIALS: DocTutorial[] = [
         title: { th: "คำเชิญที่รอรับ", en: "Pending invitations" },
         items: [
           {
-            number: 5,
+            number: 4,
             kind: "action",
             label: { th: "คัดลอก · ส่งอีเมล · ยกเลิก", en: "Copy · Send email · Revoke" },
             value: { th: "ผู้รับกด “รับคำเชิญและเข้าร่วมร้าน”", en: "Recipient selects “Accept invitation and join”" },

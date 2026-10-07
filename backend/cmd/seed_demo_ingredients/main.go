@@ -354,6 +354,13 @@ func upsertIngredient(tx *gorm.DB, restaurantID, categoryID uint, seed demoIngre
 	ingredient.Unit = strings.TrimSpace(seed.Unit)
 	ingredient.Stock = seed.Stock
 	ingredient.MinStock = seed.MinStock
+	// The seeded amount is a full shelf (owner, 29 ก.ย. 2569), so the stock
+	// bar reads 100% instead of "ยังไม่รู้ว่าเต็มเท่าไหร่". Never below the
+	// reorder level, the same rule a new ingredient follows.
+	ingredient.MaxStock = seed.Stock
+	if seed.MinStock > ingredient.MaxStock {
+		ingredient.MaxStock = seed.MinStock
+	}
 	ingredient.CostPerUnit = seed.CostPerUnit
 	// Always 100: stock is recorded as net weight and CostPerUnit is the cost of
 	// that net unit, so a second yield division would double-count trim waste.

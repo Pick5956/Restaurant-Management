@@ -20,6 +20,7 @@ type recordingRestaurantSetup struct {
 	menuOptionGroups          int
 	menuOptions               int
 	menuIngredients           int
+	optionIngredients         []entity.MenuOptionIngredient
 	ingredients               int
 	tableZones                int
 	tables                    int
@@ -89,6 +90,12 @@ func (f *recordingRestaurantSetup) CreateMenuOptionGroup(value *entity.MenuOptio
 
 func (f *recordingRestaurantSetup) CreateMenuOption(value *entity.MenuOption) error {
 	f.menuOptions++
+	f.assignID(&value.ID)
+	return nil
+}
+
+func (f *recordingRestaurantSetup) CreateMenuOptionIngredient(value *entity.MenuOptionIngredient) error {
+	f.optionIngredients = append(f.optionIngredients, *value)
 	f.assignID(&value.ID)
 	return nil
 }

@@ -71,7 +71,9 @@ var unitToBase = map[string]struct {
 // spelling per unit on purpose: the aliases above exist to understand what
 // somebody typed or said, not to offer six ways to write "kilogram".
 var unitFamilyLabels = map[string][]string{
-	"g":  {"กรัม", "ออนซ์", "ขีด", "ปอนด์", "กิโลกรัม", "ตัน"},
+	// Owner, 29 ก.ย. 2569: a Thai kitchen weighs in กรัม, ขีด and กิโล; ออนซ์,
+	// ปอนด์ and ตัน only lengthened the list. They still convert when typed.
+	"g":  {"กรัม", "ขีด", "กิโลกรัม"},
 	"ml": {"มิลลิลิตร", "ช้อนชา", "ช้อนโต๊ะ", "ลิตร"},
 }
 
@@ -164,7 +166,14 @@ func IngredientUnitFamily(stockUnit string) []entity.IngredientUnitOption {
 		}
 		family = append(family, entity.IngredientUnitOption{Unit: unit, StockPerUnit: perUnit})
 	}
-	return family
+	// A shelf counted in a unit the list no longer offers (an older ingredient
+	// kept in ออนซ์) still offers its own unit first.
+	for _, option := range family {
+		if canonicalUnit(option.Unit) == canonicalOwn {
+			return family
+		}
+	}
+	return append([]entity.IngredientUnitOption{{Unit: own, StockPerUnit: 1}}, family...)
 }
 
 // ConvertToStockUnit expresses a quantity in the ingredient's own stock unit.

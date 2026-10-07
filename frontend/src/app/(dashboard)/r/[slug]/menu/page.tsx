@@ -25,6 +25,8 @@ import WarmConfirmDialog from "@/src/components/shared/WarmConfirmDialog";
 import { useBackdropClose } from "@/src/hooks/useBackdropClose";
 import NumberInput from "@/src/components/shared/NumberInput";
 import { SEALED_UNITS } from "../inventory/inventoryPageUtils";
+import { recipeUnitOptions } from "../inventory/inventoryUnitUtils";
+import RecipeIngredientPicker from "./RecipeIngredientPicker";
 import {
   AvailabilitySwitch,
   CountStepper,
@@ -1580,21 +1582,21 @@ export default function MenuPage() {
                                     onValue={(value) => patchComponent({ quantity: value })}
                                     placeholder="0"
                                     aria-label={`${name} ${copy.quantity}`}
-                                    className="h-full min-w-0 flex-1 bg-transparent px-2 text-right text-[14px] tabular-nums text-gray-900 outline-none placeholder:text-gray-400 dark:text-white"
+                                    className="h-full min-w-0 flex-1 bg-transparent px-2 text-center text-[14px] tabular-nums text-gray-900 outline-none placeholder:text-gray-400 dark:text-white"
                                   />
                                   {unitChoices.length <= 1 ? (
                                     <span className="shrink-0 pr-2 text-[14px] text-gray-500 dark:text-gray-400">{chosenUnit}</span>
                                   ) : null}
                                 </div>
                                 {unitChoices.length > 1 ? (
-                                  <div className="w-20 shrink-0">
+                                  <div className="w-[5.5rem] shrink-0">
                                     <ThemedSelect
                                       triggerClassName="!h-10 !text-[14px]"
                                       aria-label={copy.unit}
                                       compact
                                       value={chosenUnit}
                                       onChange={(next) => patchComponent({ unit: next })}
-                                      options={unitChoices.map((option) => ({ value: option.unit, label: option.unit }))}
+                                      options={recipeUnitOptions(unitChoices.map((option) => option.unit), chosenUnit)}
                                     />
                                   </div>
                                 ) : null}
@@ -1630,12 +1632,11 @@ export default function MenuPage() {
                       // Picking one adds its line at once, in its own stock unit;
                       // the list offers only what the recipe does not have yet.
                       <div className="border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
-                        <ThemedSelect
-                          triggerClassName="!text-[14px]"
-                          aria-label={copy.addRecipeComponent}
+                        <RecipeIngredientPicker
+                          ariaLabel={copy.addRecipeComponent}
                           placeholder={`+ ${copy.addRecipeComponent}`}
-                          value=""
-                          onChange={(next) => {
+                          emptyText={language === "th" ? "ไม่พบวัตถุดิบ" : "No matching ingredient"}
+                          onPick={(next) => {
                             const picked = recipeIngredients.find((entry) => entry.ID === Number(next));
                             if (!picked) return;
                             updateRecipeComponents((components) => [...components, { ...emptyRecipeComponent(), ingredient_id: picked.ID, unit: picked.unit }]);

@@ -120,11 +120,18 @@ export function Bone({ width = '100%', height, radius = 8, onColor = false, styl
  * the app on iOS. Mount it where the loaded content replaces the skeleton; it
  * fades once, when it first mounts, and never again on a refresh.
  */
-export function ContentReveal({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+/**
+ * `fade={false}` shows the content at once. iOS does not draw Liquid Glass in a
+ * view whose ancestor is fading in from transparent: the table tiles mounted
+ * inside this fade came up with no status colour until they were touched
+ * (owner, 29 ก.ย. 2569). A screen of glass tiles passes `fade={!LIQUID_GLASS}`.
+ */
+export function ContentReveal({ children, style, fade = true }: { children: ReactNode; style?: StyleProp<ViewStyle>; fade?: boolean }) {
   const reducedMotion = useReducedMotion();
-  const opacity = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+  const still = reducedMotion || !fade;
+  const opacity = useRef(new Animated.Value(still ? 1 : 0)).current;
   useEffect(() => {
-    if (reducedMotion) { opacity.setValue(1); return undefined; }
+    if (still) { opacity.setValue(1); return undefined; }
     const animation = Animated.timing(opacity, {
       toValue: 1,
       delay: CONTENT_REVEAL_DELAY_MS,
@@ -134,7 +141,7 @@ export function ContentReveal({ children, style }: { children: ReactNode; style?
     });
     animation.start();
     return () => animation.stop();
-  }, [opacity, reducedMotion]);
+  }, [opacity, still]);
   return <Animated.View style={[{ opacity }, style]}>{children}</Animated.View>;
 }
 

@@ -215,8 +215,12 @@ func TestDropPromotionsMigrationRepricesOpenBillsAndKeepsPaidOnes(t *testing.T) 
 	custom := entity.Role{RestaurantID: &s.restaurant.ID, Name: "floor_lead", DisplayName: "Floor lead", Permissions: `["manage_menu","manage_promotions"]`}
 	s.create(t, &custom)
 
-	plan := schemaMigrationPlan()
-	migration := plan[len(plan)-1]
+	var migration SchemaMigration
+	for _, candidate := range schemaMigrationPlan() {
+		if candidate.Version == 38 {
+			migration = candidate
+		}
+	}
 	if migration.Version != 38 || migration.Name != "drop_promotions" {
 		t.Fatalf("last migration = %d %q, want 38 drop_promotions", migration.Version, migration.Name)
 	}
@@ -276,5 +280,57 @@ func TestDropPromotionsMigrationRepricesOpenBillsAndKeepsPaidOnes(t *testing.T) 
 	}
 	if strings.Contains(role.Permissions, "manage_promotions") || !strings.Contains(role.Permissions, "manage_menu") {
 		t.Fatalf("custom role permissions = %s, want manage_menu without manage_promotions", role.Permissions)
+	}
+}
+
+// TestSeededIngredientsFullShelfMigration: a seeded ingredient still at
+// max_stock 0 gets its seeded amount as the full shelf; one the app already
+// sized keeps its maximum.
+func TestSeededIngredientsFullShelfMigration(t *testing.T) {
+	db := migrationIntegrationDBOrSkip(t)
+	if err := db.AutoMigrate(SchemaModels()...); err != nil {
+		t.Fatalf("build the schema: %v", err)
+	}
+	user := entity.User{Email: "full-shelf@example.invalid", AuthProvider: "local", FirstName: "Full", LastName: "Shelf", Status: "active"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	restaurant := entity.Restaurant{Name: "Full shelf", OwnerID: user.ID}
+	if err := db.Create(&restaurant).Error; err != nil {
+		t.Fatalf("create restaurant: %v", err)
+	}
+	seeded := entity.Ingredient{RestaurantID: restaurant.ID, Name: "น้ำตาล", Unit: "กรัม", Stock: 3000, MinStock: 500}
+	sized := entity.Ingredient{RestaurantID: restaurant.ID, Name: "ไข่", Unit: "ฟอง", Stock: 20, MinStock: 5, MaxStock: 60}
+	lowStock := entity.Ingredient{RestaurantID: restaurant.ID, Name: "เกลือ", Unit: "กรัม", Stock: 100, MinStock: 400}
+	for _, row := range []*entity.Ingredient{&seeded, &sized, &lowStock} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create ingredient: %v", err)
+		}
+	}
+
+	var migration SchemaMigration
+	for _, candidate := range schemaMigrationPlan() {
+		if candidate.Version == 39 {
+			migration = candidate
+		}
+	}
+	if migration.Name != "seeded_ingredients_full_shelf" {
+		t.Fatalf("migration 39 = %q, want seeded_ingredients_full_shelf", migration.Name)
+	}
+	if err := migration.Up(&MigrationContext{DB: db}); err != nil {
+		t.Fatalf("migration 39: %v", err)
+	}
+
+	for _, want := range []struct {
+		id  uint
+		max float64
+	}{{seeded.ID, 3000}, {sized.ID, 60}, {lowStock.ID, 400}} {
+		var got entity.Ingredient
+		if err := db.First(&got, want.id).Error; err != nil {
+			t.Fatalf("load ingredient %d: %v", want.id, err)
+		}
+		if got.MaxStock != want.max {
+			t.Fatalf("%s max_stock = %v, want %v", got.Name, got.MaxStock, want.max)
+		}
 	}
 }
